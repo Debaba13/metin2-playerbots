@@ -141,6 +141,34 @@ namespace
 			snprintf(status, statusSize, "%sKaciyom can cok azaldi", prefix);
 			return;
 		}
+		// The luring course says which stage it is in, because "walking away
+		// from the party" and "bringing nine monsters back to it" look the same
+		// from outside and are not the same thing at all.
+		if (state.bLureStage != LURE_STAGE_NONE)
+		{
+			switch (state.bLureStage)
+			{
+				case LURE_STAGE_PLAN:
+					snprintf(status, statusSize, "%sSzykuje lur dla druzyny", prefix);
+					return;
+				case LURE_STAGE_RETURN:
+					snprintf(status, statusSize, "%sWracam do druzyny: prowadze %d mobow",
+							prefix, state.iLureChasing);
+					return;
+				case LURE_STAGE_HANDOFF:
+					snprintf(status, statusSize, "%sPrzekazuje moby: %d przyprowadzonych, %d nadal za mna",
+							prefix, state.iLureDelivered, state.iLureChasing);
+					return;
+				case LURE_STAGE_RECOVER:
+					snprintf(status, statusSize, "%sWstrzymuje lur: druzyna jeszcze walczy", prefix);
+					return;
+				default:
+					snprintf(status, statusSize, "%sLuruje dla PT: %u/%u grupy, sciga mnie %d",
+							prefix, (unsigned int)state.bLureGroupsTagged,
+							(unsigned int)state.bLureGroupsPlanned, state.iLureChasing);
+					return;
+			}
+		}
 		if (state.bRecoveringAfterDeath)
 		{
 			snprintf(status, statusSize, "%sYerdeyiz yine kalkiyom bekle", prefix);

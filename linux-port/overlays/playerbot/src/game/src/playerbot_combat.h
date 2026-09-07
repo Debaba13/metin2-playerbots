@@ -220,6 +220,9 @@ namespace
 				// and therefore only needs its normal skill cooldown.
 				state.mapBuffActiveUntil[buffVnum] = dwNow +
 						(buffVnum == 109 ? 10000 : PLAYERBOT_BUFF_FALLBACK_DURATION);
+				// Straight back for the next one. The ordinary five seconds
+				// resume on the first pass that finds nothing missing.
+				state.dwNextBuffCheckTime = dwNow + PLAYERBOT_BUFF_RECHECK_FAST;
 				sys_log(0, "PLAYERBOT_AI: activated self buff skill pid=%u name=%s vnum=%u",
 						ch->GetPlayerID(), ch->GetName(), buffVnum);
 				return true;
@@ -289,6 +292,24 @@ namespace
 		return false;
 	}
 
+	// A splash skill is for a crowd, and a Metin stone is never a crowd.
+	//
+	// The rotation takes the first skill that is off cooldown, and a stone takes
+	// long enough to put the good ones on cooldown - so what kept coming up
+	// against stones was the splash skill, which is where these builds are
+	// weakest on a single target. Poison Cloud is
+	// -(lv*2 + (atk + str*3 + dex*18)*k) against Fast Attack's
+	// -(atk + (1.6*atk + ...)): one attack rating against two and a half, for
+	// the same 1.4 s of animation lock. Skipping it and letting the ordinary
+	// swing chain through is strictly better on one target. Asked of the engine
+	// rather than kept as a list of VNUMs, so a server whose skill table differs
+	// still gets the right answer.
+	bool IsPlayerBotSplashSkill(DWORD skillVnum)
+	{
+		CSkillProto* proto = CSkillManager::instance().Get(skillVnum);
+		return proto && (proto->dwFlag & SKILL_FLAG_SPLASH) != 0;
+	}
+
 	bool ExecutePlayerBotAttackSkill(LPCHARACTER ch, LPCHARACTER target, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !target || ch->GetSkillGroup() == 0 || dwNow < state.dwNextSkillCastTime)
@@ -307,6 +328,8 @@ namespace
 		{
 			const DWORD skillVnum = build.dwOffensiveSkills[i];
 			if (skillVnum == 0 || ch->GetSkillLevel(skillVnum) == 0)
+				continue;
+			if (target->IsStone() && IsPlayerBotSplashSkill(skillVnum))
 				continue;
 
 			if (ch->UseSkill(skillVnum, target))
@@ -385,92 +408,6 @@ namespace
 				cohesion.OnlineBots() == (int)ch->GetParty()->GetMemberCount();
 	}
 
-	bool ExecutePlayerBotArcherLuring(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
-	{
-		if (!ch || ch->GetJob() != JOB_ASSASSIN || ch->GetSkillGroup() != 2 || !ch->GetParty())
-			return false;
-		// Luring is a group role, not a solo Archer shortcut. Every party member
-		// must be online, on this map and inside one local formation; otherwise an
-		// Archer could pull for a nominal party scattered across different zones.
-		if (!IsPlayerBotPartyCohesive(ch, PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS,
-				PLAYERBOT_PARTY_COHESION_RADIUS))
-			return false;
-
-		LPITEM weapon = NULL;
-		LPITEM arrow = NULL;
-		if (!EnsurePlayerBotArrowsEquipped(ch) ||
-				ch->GetArrowAndBow(&weapon, &arrow, 1) != 1)
-			return false; // Only lure when equipped with a Bow!
-
-		if (dwNow < state.dwNextLureTime)
-			return false;
-
-		state.dwNextLureTime = dwNow + number(3500, 5500);
-
-		LPCHARACTER leader = ch->GetParty()->GetLeaderCharacter();
-		if (!leader || leader->GetMapIndex() != ch->GetMapIndex())
-			return false;
-
-		// Scan for distant mob around party to pull
-		if (!ch->GetSectree())
-			return false;
-
-		struct TLureCollector
-		{
-			TLureCollector(LPCHARACTER me) : m_me(me), m_targetVID(0), m_bestDist(99999) {}
-			bool operator()(LPENTITY ent)
-			{
-				if (!ent || !ent->IsType(ENTITY_CHARACTER))
-					return false;
-				LPCHARACTER mob = static_cast<LPCHARACTER>(ent);
-				if (!mob->IsMonster() || mob->IsDead() || mob->GetVictim() != NULL ||
-						IsPlayerBotSafeZone(mob->GetMapIndex(), mob->GetX(), mob->GetY()) ||
-						mob->GetLevel() > m_me->GetLevel() + 10)
-					return false;
-				int dist = DISTANCE_APPROX(m_me->GetX() - mob->GetX(), m_me->GetY() - mob->GetY());
-				if (dist >= 1200 && dist <= 3000 && dist < m_bestDist &&
-						IsPlayerBotReachable(m_me->GetMapIndex(), m_me->GetX(), m_me->GetY(),
-							mob->GetX(), mob->GetY()))
-				{
-					m_bestDist = dist;
-					m_targetVID = mob->GetVID();
-				}
-				return true;
-			}
-			LPCHARACTER m_me;
-			DWORD m_targetVID;
-			int m_bestDist;
-		};
-
-		TLureCollector collector(ch);
-		ch->GetSectree()->ForEachAround(collector);
-
-		if (collector.m_targetVID != 0)
-		{
-			LPCHARACTER mob = CHARACTER_MANAGER::instance().Find(collector.m_targetVID);
-			if (mob && !mob->IsDead())
-			{
-				ch->SetRotationToXY(mob->GetX(), mob->GetY());
-				// Use a normal bow shot for the pull. Fire Arrow is part of the normal
-				// offensive rotation and was almost always on its real skill cooldown,
-				// which made the old lure silently fail even in a valid six-person PT.
-				int damage = CalcArrowDamage(ch, mob, weapon, arrow, false);
-				if (damage < 5)
-					damage = number(10, 20) + ch->GetLevel() * 2;
-				SendPlayerBotAttackPacket(ch, mob, MOTION_COMBO_ATTACK_1);
-				mob->Damage(ch, damage, DAMAGE_TYPE_NORMAL);
-				ch->UseArrow(arrow, 1);
-				mob->SetSyncOwner(ch);
-				state.dwNextAttackTime = dwNow + PLAYERBOT_SKILL_ANIMATION_LOCK;
-				state.dwLastCombatActionTime = dwNow;
-				sys_log(0, "PLAYERBOT_AI: archer lured distant mob pid=%u name=%s target_vid=%u target=%s damage=%d",
-						ch->GetPlayerID(), ch->GetName(), mob->GetVID(), mob->GetName(), damage);
-				return true;
-			}
-		}
-
-		return false;
-	}
 }
 
 #endif

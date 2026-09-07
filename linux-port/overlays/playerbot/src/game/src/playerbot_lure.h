@@ -1,0 +1,897 @@
+#ifndef __INC_METIN2_PLAYERBOT_LURE_H__
+#define __INC_METIN2_PLAYERBOT_LURE_H__
+
+// The Archer's job in a party: bring the monsters to the people who can kill
+// them.
+//
+// This replaces the occasional extra shot the Archer used to take mid-fight.
+// That version tagged one distant monster, invented a damage number when the
+// real one came out too low, and then went back to its own target - so nothing
+// about it was a pull: the monster arrived at whoever happened to be nearest,
+// or did not arrive at all, and nobody was waiting for it.
+//
+// A course is a whole errand, and it either delivers monsters or says why not:
+//
+//   WAIT_READY -> PLAN -> APPROACH -> TAG -> CONFIRM -> (APPROACH | RETURN)
+//                 -> HANDOFF -> RECOVER -> WAIT_READY
+//
+// The three things this is built around, because each of them is how a luring
+// bot goes wrong:
+//
+// - **A pull is what came back, not what was shot at.** CONFIRM counts the live
+//   monsters actually chasing the Archer, so a miss, a monster killed by the
+//   arrow, and a pack that never woke up all count as nothing. "Oddano strzal"
+//   is not a metric.
+// - **The party has to be standing there.** One lurer per party, and the
+//   receivers are counted alive, on this map and around the gathering point -
+//   with the Archer itself excluded from that test, because walking away is its
+//   whole job and must not cancel its own course.
+// - **Nothing here touches the engine's aggro.** No SetVictim on the monster,
+//   no clearing of aggro tables: the receivers take the monsters over by
+//   fighting them, the way a party does, and a handover may be partial.
+//
+// An implementation fragment in the sense playerbot_types.h describes: include
+// it exactly once, after playerbot_targeting.h, whose pull-target finder,
+// aggressor count and ordinary bow shot this reuses rather than growing second
+// versions of.
+
+namespace
+{
+	// Which bot lures for which party. Keyed by the leader's player id and
+	// resolved again every tick - a character pointer must not outlive the tick
+	// that found it, and a party that changes leader is a party whose claim has
+	// to be made again.
+	struct TPlayerBotLureClaim
+	{
+		DWORD dwLurerPID;
+		DWORD dwSessionId;
+		DWORD dwExpireTime;
+
+		TPlayerBotLureClaim() : dwLurerPID(0), dwSessionId(0), dwExpireTime(0) {}
+	};
+
+	std::map<DWORD, TPlayerBotLureClaim> s_mapPlayerBotLureClaims;
+	DWORD s_dwPlayerBotLureNextSessionId = 1;
+
+	// One party member as the course needs to see it. Copied out of the party
+	// rather than held as pointers: the decisions below take several steps and
+	// nothing here may still be a character by the end of them.
+	struct TPlayerBotLureMember
+	{
+		DWORD dwPID;
+		long x;
+		long y;
+		int iMaxHP;
+		bool bBot;
+		bool bCanReceive;
+		bool bFighting;
+
+		TPlayerBotLureMember() :
+			dwPID(0), x(0), y(0), iMaxHP(0),
+			bBot(false), bCanReceive(false), bFighting(false)
+		{
+		}
+	};
+
+	class CPlayerBotLureRoster
+	{
+		public:
+			CPlayerBotLureRoster() {}
+
+			void operator () (LPCHARACTER member)
+			{
+				if (!member || member->IsDead())
+					return;
+				TPlayerBotLureMember row;
+				row.dwPID = member->GetPlayerID();
+				row.x = member->GetX();
+				row.y = member->GetY();
+				row.iMaxHP = member->GetMaxHP();
+				row.bBot = member->GetDesc() && member->GetDesc()->IsBot();
+				row.bFighting = member->GetVictim() != NULL;
+				// Who can be asked to hold a pack: a bot that fights at arm's
+				// length. A second Archer is a poor anchor for a pull and a human
+				// is not ours to give orders to, so neither is chosen - both
+				// still count towards the party being big enough.
+				row.bCanReceive = row.bBot && !IsPlayerBotArcher(member);
+				m_members.push_back(row);
+			}
+
+			std::vector<TPlayerBotLureMember> m_members;
+	};
+
+	// Monsters that are fighting somebody in this party near the gathering
+	// point. This is what "the party is still busy" means, and what tells a
+	// delivered monster from one that is still chasing the Archer.
+	class CCountPlayerBotLureEngaged
+	{
+		public:
+			CCountPlayerBotLureEngaged(LPCHARACTER owner, long anchorX, long anchorY) :
+				m_owner(owner), m_anchorX(anchorX), m_anchorY(anchorY),
+				m_onParty(0), m_onOwner(0)
+			{
+			}
+
+			bool operator () (LPENTITY entity)
+			{
+				if (!entity || !entity->IsType(ENTITY_CHARACTER))
+					return true;
+				LPCHARACTER candidate = static_cast<LPCHARACTER>(entity);
+				if (!candidate->IsMonster() || candidate->IsDead())
+					return true;
+				LPCHARACTER victim = candidate->GetVictim();
+				if (!victim || !victim->IsPC())
+					return true;
+				if (DISTANCE_APPROX(candidate->GetX() - m_anchorX,
+						candidate->GetY() - m_anchorY) > PLAYERBOT_LURE_ANCHOR_RADIUS)
+					return true;
+				if (victim == m_owner)
+					++m_onOwner;
+				else if (m_owner->GetParty() &&
+						m_owner->GetParty()->IsMember(victim->GetPlayerID()))
+					++m_onParty;
+				return true;
+			}
+
+			int OnParty() const { return m_onParty; }
+			int OnOwner() const { return m_onOwner; }
+
+		private:
+			LPCHARACTER m_owner;
+			long m_anchorX;
+			long m_anchorY;
+			int m_onParty;
+			int m_onOwner;
+	};
+
+	void CountPlayerBotLureEngaged(LPCHARACTER ch, long anchorX, long anchorY,
+			int* onParty, int* onOwner)
+	{
+		if (onParty)
+			*onParty = 0;
+		if (onOwner)
+			*onOwner = 0;
+		if (!ch || !ch->GetSectree())
+			return;
+		CCountPlayerBotLureEngaged counter(ch, anchorX, anchorY);
+		ch->GetSectree()->ForEachAround(counter);
+		if (onParty)
+			*onParty = counter.OnParty();
+		if (onOwner)
+			*onOwner = counter.OnOwner();
+	}
+
+	// The pack this course should go and wake up.
+	//
+	// The multi-pull's finder was tried first and answered "nothing" on every
+	// course: it looks within 2200 for a monster of the puller's own level that
+	// nobody has claimed, which on a map carrying eight hundred bots describes
+	// the ground the party is already standing on and nothing else. A lure
+	// wants the opposite - a pack far enough out that the party has not reached
+	// it, and clear of the fight already in progress - so it asks its own
+	// question. What is worth pulling once found is still the shared combat
+	// policy's answer, not this one's.
+	class CFindPlayerBotLurePack
+	{
+		public:
+			CFindPlayerBotLurePack(LPCHARACTER owner, long anchorX, long anchorY,
+					const std::vector<PIXEL_POSITION>& taken) :
+				m_owner(owner), m_anchorX(anchorX), m_anchorY(anchorY),
+				m_taken(taken), m_bestVID(0), m_bestScore(INT_MAX),
+				m_seen(0), m_busy(0), m_level(0), m_range(0), m_anchor(0),
+				m_reserved(0), m_claimed(0), m_unreachable(0)
+			{
+			}
+
+			bool operator () (LPENTITY entity)
+			{
+				if (!entity || !entity->IsType(ENTITY_CHARACTER))
+					return true;
+				LPCHARACTER candidate = static_cast<LPCHARACTER>(entity);
+				if (candidate == m_owner || !candidate->IsMonster() ||
+						candidate->IsStone() || candidate->IsDead() ||
+						candidate->GetMobRank() >= MOB_RANK_BOSS ||
+						candidate->GetMapIndex() != m_owner->GetMapIndex() ||
+						IsPlayerBotSafeZone(candidate->GetMapIndex(),
+								candidate->GetX(), candidate->GetY()))
+					return true;
+				// From here every rejection is counted. A course that finds
+				// nothing says which rule emptied the field, because "no_pack"
+				// on its own is a symptom and could mean any of six things.
+				++m_seen;
+				if (candidate->GetVictim() != NULL)
+				{
+					++m_busy;
+					return true;
+				}
+				if (candidate->GetLevel() > m_owner->GetLevel() + PLAYERBOT_LURE_MAX_LEVEL_OVER)
+				{
+					++m_level;
+					return true;
+				}
+
+				const int fromMe = DISTANCE_APPROX(m_owner->GetX() - candidate->GetX(),
+						m_owner->GetY() - candidate->GetY());
+				if (fromMe < PLAYERBOT_LURE_MIN_PACK_DISTANCE ||
+						fromMe > PLAYERBOT_LURE_MAX_PACK_DISTANCE)
+				{
+					++m_range;
+					return true;
+				}
+				if (DISTANCE_APPROX(candidate->GetX() - m_anchorX,
+						candidate->GetY() - m_anchorY) < PLAYERBOT_LURE_ANCHOR_CLEARANCE)
+				{
+					++m_anchor;
+					return true;
+				}
+				for (size_t i = 0; i < m_taken.size(); ++i)
+				{
+					if (DISTANCE_APPROX(candidate->GetX() - m_taken[i].x,
+							candidate->GetY() - m_taken[i].y) <
+							PLAYERBOT_LURE_GROUP_SEPARATION)
+					{
+						++m_reserved;
+						return true;
+					}
+				}
+				if (IsTargetClaimedByAnotherBot(m_owner, candidate->GetVID()))
+				{
+					++m_claimed;
+					return true;
+				}
+				if (!IsPlayerBotReachable(m_owner->GetMapIndex(),
+						m_owner->GetX(), m_owner->GetY(),
+						candidate->GetX(), candidate->GetY()))
+				{
+					++m_unreachable;
+					return true;
+				}
+
+				// Nearest wins - the walk out is time the party spends waiting -
+				// with a little jitter so two Archers on one map do not queue up
+				// behind the same pack.
+				const int score = fromMe + (int)(PlayerBotNavHash(
+						m_owner->GetPlayerID() ^ candidate->GetVID()) % 250U);
+				if (score < m_bestScore)
+				{
+					m_bestScore = score;
+					m_bestVID = candidate->GetVID();
+				}
+				return true;
+			}
+
+			DWORD GetBestVID() const { return m_bestVID; }
+
+			void Explain(char* out, size_t size) const
+			{
+				snprintf(out, size,
+						"seen=%d busy=%d level=%d range=%d anchor=%d reserved=%d claimed=%d unreachable=%d",
+						m_seen, m_busy, m_level, m_range, m_anchor, m_reserved,
+						m_claimed, m_unreachable);
+			}
+
+		private:
+			LPCHARACTER m_owner;
+			long m_anchorX;
+			long m_anchorY;
+			const std::vector<PIXEL_POSITION>& m_taken;
+			DWORD m_bestVID;
+			int m_bestScore;
+			int m_seen;
+			int m_busy;
+			int m_level;
+			int m_range;
+			int m_anchor;
+			int m_reserved;
+			int m_claimed;
+			int m_unreachable;
+	};
+
+	LPCHARACTER FindPlayerBotLurePack(LPCHARACTER ch, long anchorX, long anchorY,
+			const std::vector<PIXEL_POSITION>& taken, DWORD dwNow)
+	{
+		if (!ch || !ch->GetSectree())
+			return NULL;
+		CFindPlayerBotLurePack finder(ch, anchorX, anchorY, taken);
+		ch->GetSectree()->ForEachAround(finder);
+		if (finder.GetBestVID() == 0)
+		{
+			char why[192];
+			finder.Explain(why, sizeof(why));
+			PlayerBotLogThrottled("lure_no_pack", dwNow,
+					"PLAYERBOT_LURE: no pack pid=%u name=%s map=%ld %s",
+					ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), why);
+			return NULL;
+		}
+		return CHARACTER_MANAGER::instance().Find(finder.GetBestVID());
+	}
+
+	const char* GetPlayerBotLureStageName(BYTE stage)
+	{
+		switch (stage)
+		{
+			case LURE_STAGE_PLAN:     return "plan";
+			case LURE_STAGE_APPROACH: return "approach";
+			case LURE_STAGE_TAG:      return "tag";
+			case LURE_STAGE_CONFIRM:  return "confirm";
+			case LURE_STAGE_RETURN:   return "return";
+			case LURE_STAGE_HANDOFF:  return "handoff";
+			case LURE_STAGE_RECOVER:  return "recover";
+			default:                  return "none";
+		}
+	}
+
+	void SetPlayerBotLureStage(LPCHARACTER ch, TPlayerBotAIState& state,
+			BYTE stage, DWORD dwNow)
+	{
+		if (state.bLureStage == stage)
+			return;
+		state.bLureStage = stage;
+		state.dwLureStageTime = dwNow;
+		sys_log(1, "PLAYERBOT_LURE: stage pid=%u name=%s session=%u stage=%s groups=%u/%u chasing=%d",
+				ch ? ch->GetPlayerID() : 0, ch ? ch->GetName() : "?",
+				state.dwLureSessionId, GetPlayerBotLureStageName(stage),
+				(unsigned int)state.bLureGroupsTagged,
+				(unsigned int)state.bLureGroupsPlanned, state.iLureChasing);
+	}
+
+	// End of a course, whatever happened. One line per session with everything
+	// the acceptance tests ask about, and the party's claim released - a lurer
+	// that stopped answering must not hold the role.
+	void FinishPlayerBotLure(LPCHARACTER ch, TPlayerBotAIState& state,
+			DWORD dwNow, const char* reason)
+	{
+		if (state.bLureStage == LURE_STAGE_NONE && state.dwLureSessionId == 0)
+			return;
+
+		if (ch && ch->GetParty())
+		{
+			LPCHARACTER leader = ch->GetParty()->GetLeaderCharacter();
+			if (leader)
+			{
+				std::map<DWORD, TPlayerBotLureClaim>::iterator it =
+						s_mapPlayerBotLureClaims.find(leader->GetPlayerID());
+				if (it != s_mapPlayerBotLureClaims.end() &&
+						it->second.dwLurerPID == (ch ? ch->GetPlayerID() : 0))
+					s_mapPlayerBotLureClaims.erase(it);
+			}
+		}
+
+		sys_log(0, "PLAYERBOT_LURE: finished pid=%u name=%s session=%u stage=%s groups=%u/%u tagged=%u delivered=%d chasing=%d course_ms=%u hp=%d/%d streak=%u reason=%s",
+				ch ? ch->GetPlayerID() : 0, ch ? ch->GetName() : "?",
+				state.dwLureSessionId, GetPlayerBotLureStageName(state.bLureStage),
+				(unsigned int)state.bLureGroupsTagged,
+				(unsigned int)state.bLureGroupsPlanned,
+				(unsigned int)state.bLureTagAttempts, state.iLureDelivered,
+				state.iLureChasing,
+				state.dwLureCourseTime != 0 ? dwNow - state.dwLureCourseTime : 0,
+				ch ? ch->GetHP() : 0, ch ? ch->GetMaxHP() : 0,
+				(unsigned int)state.bLureGoodCourses, reason ? reason : "?");
+
+		state.bLureStage = LURE_STAGE_NONE;
+		state.dwLureSessionId = 0;
+		state.dwLureStageTime = 0;
+		state.dwLureCourseTime = 0;
+		state.dwLureShotTime = 0;
+		state.dwLureTargetVID = 0;
+		state.dwLureReceiverPID = 0;
+		state.bLureGroupsPlanned = 0;
+		state.bLureGroupsTagged = 0;
+		state.bLureBudget = 0;
+		state.bLureTagAttempts = 0;
+		state.iLureDelivered = 0;
+		state.iLureChasing = 0;
+		state.vecMultiPullCenters.clear();
+		state.dwLureNextTime = dwNow + number(
+				(int)PLAYERBOT_LURE_COOLDOWN_MIN, (int)PLAYERBOT_LURE_COOLDOWN_MAX);
+		if (ch)
+			ch->SetVictim(NULL);
+		ClearPlayerBotRoute(state, true);
+	}
+
+	// Has this bot got a bow it can actually shoot? The lure fires the ordinary
+	// arrow through ExecutePlayerBotBasicAttack, so it must not start a course
+	// it has no ammunition to finish.
+	bool CanPlayerBotLureShoot(LPCHARACTER ch)
+	{
+		if (!ch || !IsPlayerBotArcher(ch))
+			return false;
+		LPITEM bow = NULL;
+		LPITEM arrow = NULL;
+		if (!EnsurePlayerBotArrowsEquipped(ch))
+			return false;
+		return ch->GetArrowAndBow(&bow, &arrow, 1) == 1;
+	}
+
+	// The whole course, one stage per tick. Returns true when it has taken the
+	// tick - including while it is waiting for the bow's own rhythm, because
+	// falling through to the ordinary grind in the middle of a pull is how the
+	// Archer ends up fighting what it was supposed to be delivering.
+	bool HandlePlayerBotLureCourse(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		const bool inSession = state.bLureStage != LURE_STAGE_NONE;
+
+		// Saving your own life, the errand you are already on, and being dead
+		// all outrank the role. A course in progress ends here rather than
+		// being suspended: half a pull is not a state worth keeping.
+		if (!ch || ch->IsDead() || !ch->GetParty() || !IsPlayerBotArcher(ch) ||
+				state.bTacticalRetreat || state.bRecoveringAfterDeath ||
+				state.bVisitingShop || state.bVisitingBiologist ||
+				state.bVisitingStable || state.bMarketTrip || state.bFishingSession ||
+				IsPlayerBotSafeZone(ch ? ch->GetMapIndex() : 0,
+						ch ? ch->GetX() : 0, ch ? ch->GetY() : 0))
+		{
+			if (inSession)
+				FinishPlayerBotLure(ch, state, dwNow, "ineligible");
+			return false;
+		}
+
+		LPCHARACTER leader = ch->GetParty()->GetLeaderCharacter();
+		if (!leader || leader->GetMapIndex() != ch->GetMapIndex())
+		{
+			if (inSession)
+				FinishPlayerBotLure(ch, state, dwNow, "no_leader");
+			return false;
+		}
+
+		// Who is here. Counted every tick because a party loses people to
+		// death, logout and their own errands while the Archer is away.
+		CPlayerBotLureRoster roster;
+		ch->GetParty()->ForEachOnMapMember(roster, ch->GetMapIndex());
+
+		int present = 0;
+		bool humanPresent = false;
+		const TPlayerBotLureMember* receiver = NULL;
+		for (size_t i = 0; i < roster.m_members.size(); ++i)
+		{
+			++present;
+			if (!roster.m_members[i].bBot)
+				humanPresent = true;
+			if (roster.m_members[i].dwPID == ch->GetPlayerID() ||
+					!roster.m_members[i].bCanReceive)
+				continue;
+			// The sturdiest available body, ties broken by player id so two
+			// Archers in one party would not pick different anchors.
+			if (!receiver || roster.m_members[i].iMaxHP > receiver->iMaxHP ||
+					(roster.m_members[i].iMaxHP == receiver->iMaxHP &&
+					 roster.m_members[i].dwPID < receiver->dwPID))
+				receiver = &roster.m_members[i];
+		}
+
+		if (present < PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS || !receiver)
+		{
+			// A party that shrank mid-course does not get another pack, but the
+			// monsters already following the Archer still have to be brought
+			// home - dropping the course here would leave them on a bot that
+			// has stopped running anywhere.
+			if (!inSession)
+				return false;
+			if (state.bLureStage != LURE_STAGE_RETURN &&
+					state.bLureStage != LURE_STAGE_HANDOFF &&
+					state.bLureStage != LURE_STAGE_RECOVER)
+			{
+				if (state.iLureChasing <= 0)
+				{
+					FinishPlayerBotLure(ch, state, dwNow, "party_too_small");
+					return false;
+				}
+				SetPlayerBotLureStage(ch, state, LURE_STAGE_RETURN, dwNow);
+			}
+		}
+
+		// How many of them are standing where the monsters are to be brought.
+		// The Archer is left out of this on purpose: it is supposed to be away.
+		const long anchorX = state.bLureStage == LURE_STAGE_NONE
+				? (receiver ? receiver->x : ch->GetX()) : state.lLureAnchorX;
+		const long anchorY = state.bLureStage == LURE_STAGE_NONE
+				? (receiver ? receiver->y : ch->GetY()) : state.lLureAnchorY;
+		int ready = 0;
+		int fighting = 0;
+		for (size_t i = 0; i < roster.m_members.size(); ++i)
+		{
+			if (roster.m_members[i].dwPID == ch->GetPlayerID())
+				continue;
+			if (DISTANCE_APPROX(roster.m_members[i].x - anchorX,
+					roster.m_members[i].y - anchorY) > PLAYERBOT_LURE_ANCHOR_RADIUS)
+				continue;
+			++ready;
+			// Not a condition - a party standing idle is exactly the one worth
+			// bringing work to - but it belongs in the line that opens a course,
+			// because a handover onto people who were already busy is a
+			// different result from one onto people who were waiting.
+			if (roster.m_members[i].bFighting)
+				++fighting;
+		}
+
+		const int hpPercent = ch->GetMaxHP() > 0
+				? ch->GetHP() * 100 / ch->GetMaxHP() : 0;
+
+		// ------------------------------------------------------------------
+		// WAIT_READY: no session. Everything that has to be true before one
+		// starts, and the party's claim on the role.
+		// ------------------------------------------------------------------
+		if (state.bLureStage == LURE_STAGE_NONE)
+		{
+			if (dwNow < state.dwLureNextTime)
+				return false;
+			// Asking again is not free - the busy count below is a sector scan,
+			// and an Archer that is not going anywhere would run one four times
+			// a second for ever. A failed check therefore costs a couple of
+			// seconds of quiet, which no cooldown already running is shortened
+			// by.
+			if (state.dwLureNextTime < dwNow + PLAYERBOT_LURE_READY_RECHECK)
+				state.dwLureNextTime = dwNow + PLAYERBOT_LURE_READY_RECHECK;
+
+			if (present < PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS || !receiver ||
+					ready < PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS - 1 ||
+					hpPercent < PLAYERBOT_LURE_START_HP_PERCENT ||
+					!CanPlayerBotLureShoot(ch))
+				return false;
+
+			// Not while the party still has its hands full: the point of a
+			// course is to keep them fed, not to bury them.
+			int onParty = 0, onOwner = 0;
+			CountPlayerBotLureEngaged(ch, anchorX, anchorY, &onParty, &onOwner);
+			if (onParty > PLAYERBOT_LURE_BUSY_MONSTERS || onOwner > 0)
+				return false;
+
+			// One lurer per party. A live claim by somebody else stands; a
+			// stale one is taken over, which is what makes a lurer that died or
+			// logged out cost the party one expiry and no more.
+			TPlayerBotLureClaim& claim = s_mapPlayerBotLureClaims[leader->GetPlayerID()];
+			if (claim.dwLurerPID != 0 && claim.dwLurerPID != ch->GetPlayerID() &&
+					dwNow < claim.dwExpireTime)
+				return false;
+			state.dwLureNextTime = 0;
+
+			state.dwLureSessionId = s_dwPlayerBotLureNextSessionId++;
+			claim.dwLurerPID = ch->GetPlayerID();
+			claim.dwSessionId = state.dwLureSessionId;
+			claim.dwExpireTime = dwNow + PLAYERBOT_LURE_SESSION_TTL;
+
+			// What this party has earned. A course that delivered without
+			// costing anybody grows the plan by a group every few courses; a
+			// party with a human in it stays at the opening size, because
+			// nothing here can promise the human will be fighting.
+			const int earned = humanPresent
+					? 0 : std::min((int)state.bLureGoodCourses / PLAYERBOT_LURE_GROWTH_STREAK,
+							PLAYERBOT_LURE_MAX_GROUPS - PLAYERBOT_LURE_FIRST_GROUPS);
+			state.bLureGroupsPlanned = (BYTE)(PLAYERBOT_LURE_FIRST_GROUPS + earned);
+			state.bLureBudget = (BYTE)std::min(
+					PLAYERBOT_LURE_FIRST_BUDGET + earned * 3, PLAYERBOT_LURE_MAX_BUDGET);
+			state.bLureGroupsTagged = 0;
+			state.bLureTagAttempts = 0;
+			state.iLureDelivered = 0;
+			state.iLureChasing = 0;
+			state.dwLureTargetVID = 0;
+			state.dwLureReceiverPID = receiver->dwPID;
+			state.lLureAnchorX = anchorX;
+			state.lLureAnchorY = anchorY;
+			state.iLureStartHPPercent = hpPercent;
+			state.dwLureCourseTime = dwNow;
+			state.vecMultiPullCenters.clear();
+			ClearPlayerBotRoute(state, true);
+			SetPlayerBotLureStage(ch, state, LURE_STAGE_PLAN, dwNow);
+			sys_log(0, "PLAYERBOT_LURE: planned pid=%u name=%s session=%u level=%u party=%d ready=%d fighting=%d human=%d receiver_pid=%u anchor=(%ld,%ld) groups=%u budget=%u",
+					ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+					ch->GetLevel(), present, ready, fighting, humanPresent ? 1 : 0,
+					state.dwLureReceiverPID, anchorX, anchorY,
+					(unsigned int)state.bLureGroupsPlanned,
+					(unsigned int)state.bLureBudget);
+			SetPlayerBotAction(state, BOT_ACTION_LURE, dwNow);
+			return true;
+		}
+
+		// From here a session is running. Keep the claim alive, and keep the
+		// Archer out of the party's shared focus: a pack two thousand units
+		// away must not become the target the rest of the party walks to.
+		{
+			std::map<DWORD, TPlayerBotLureClaim>::iterator it =
+					s_mapPlayerBotLureClaims.find(leader->GetPlayerID());
+			if (it != s_mapPlayerBotLureClaims.end() &&
+					it->second.dwLurerPID == ch->GetPlayerID())
+				it->second.dwExpireTime = dwNow + PLAYERBOT_LURE_SESSION_TTL;
+		}
+		state.dwTargetVID = 0;
+		SetPlayerBotAction(state, BOT_ACTION_LURE, dwNow);
+
+		if (dwNow - state.dwLureCourseTime > PLAYERBOT_LURE_SESSION_TTL)
+		{
+			FinishPlayerBotLure(ch, state, dwNow, "session_expired");
+			return false;
+		}
+
+		// On the way home the gathering point follows the receiver. The party
+		// does not stand still while the Archer is away - it is fighting - and
+		// coming back to where it stood twenty seconds ago is how a pull gets
+		// delivered to an empty field. During the gathering the original point
+		// stays put, because that is what bounds how far the course may go.
+		if (state.bLureStage == LURE_STAGE_RETURN ||
+				state.bLureStage == LURE_STAGE_HANDOFF ||
+				state.bLureStage == LURE_STAGE_RECOVER)
+		{
+			const TPlayerBotLureMember* anchorOn = NULL;
+			for (size_t i = 0; i < roster.m_members.size(); ++i)
+				if (roster.m_members[i].dwPID == state.dwLureReceiverPID)
+				{
+					anchorOn = &roster.m_members[i];
+					break;
+				}
+			// The receiver died or left: any other body that can hold a pack
+			// will do, and the course is finished rather than abandoned.
+			if (!anchorOn && receiver)
+			{
+				anchorOn = receiver;
+				state.dwLureReceiverPID = receiver->dwPID;
+			}
+			if (anchorOn)
+			{
+				state.lLureAnchorX = anchorOn->x;
+				state.lLureAnchorY = anchorOn->y;
+			}
+		}
+
+		const int fromAnchor = DISTANCE_APPROX(ch->GetX() - state.lLureAnchorX,
+				ch->GetY() - state.lLureAnchorY);
+
+		switch (state.bLureStage)
+		{
+			case LURE_STAGE_PLAN:
+				SetPlayerBotLureStage(ch, state, LURE_STAGE_APPROACH, dwNow);
+				return true;
+
+			case LURE_STAGE_APPROACH:
+			case LURE_STAGE_TAG:
+			case LURE_STAGE_CONFIRM:
+			{
+				// Reasons to stop gathering and start walking back. Each of
+				// them ends the gathering, never the course: whatever is
+				// already following has to be taken somewhere.
+				const char* stop = NULL;
+				if (dwNow - state.dwLureCourseTime > PLAYERBOT_LURE_GATHER_TIME)
+					stop = "gather_time";
+				else if (fromAnchor > PLAYERBOT_LURE_MAX_COURSE_RANGE)
+					stop = "too_far";
+				else if (hpPercent < PLAYERBOT_LURE_BREAK_HP_PERCENT ||
+						state.iLureStartHPPercent - hpPercent >=
+							PLAYERBOT_LURE_MAX_HP_LOSS_PERCENT)
+					stop = "low_hp";
+				else if (state.bLureGroupsTagged >= state.bLureGroupsPlanned ||
+						state.iLureChasing >= (int)state.bLureBudget)
+					stop = "budget";
+				else if (!CanPlayerBotLureShoot(ch))
+					stop = "no_arrows";
+				if (stop)
+				{
+					if (state.iLureChasing > 0)
+					{
+						sys_log(0, "PLAYERBOT_LURE: gathering over pid=%u name=%s session=%u groups=%u/%u chasing=%d reason=%s",
+								ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+								(unsigned int)state.bLureGroupsTagged,
+								(unsigned int)state.bLureGroupsPlanned,
+								state.iLureChasing, stop);
+						SetPlayerBotLureStage(ch, state, LURE_STAGE_RETURN, dwNow);
+						ClearPlayerBotRoute(state, true);
+						return true;
+					}
+					FinishPlayerBotLure(ch, state, dwNow, stop);
+					return false;
+				}
+
+				LPCHARACTER target = state.dwLureTargetVID != 0
+						? CHARACTER_MANAGER::instance().Find(state.dwLureTargetVID) : NULL;
+				if (target && (target->IsDead() || !target->IsMonster() ||
+						target->GetMapIndex() != ch->GetMapIndex()))
+					target = NULL;
+
+				if (state.bLureStage == LURE_STAGE_CONFIRM)
+				{
+					// Read the reaction, not the shot. Anything that is not a
+					// live monster now running at the Archer is not a pull.
+					if (dwNow - state.dwLureShotTime < PLAYERBOT_LURE_CONFIRM_DELAY)
+						return true;
+					const int chasing = CountPlayerBotPullAggressors(ch);
+					if (chasing > state.iLureChasing)
+					{
+						PIXEL_POSITION center;
+						center.x = ch->GetX();
+						center.y = ch->GetY();
+						center.z = 0;
+						if (target)
+						{
+							center.x = target->GetX();
+							center.y = target->GetY();
+						}
+						state.vecMultiPullCenters.push_back(center);
+						++state.bLureGroupsTagged;
+						sys_log(0, "PLAYERBOT_LURE: pack answered pid=%u name=%s session=%u groups=%u/%u chasing=%d gained=%d",
+								ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+								(unsigned int)state.bLureGroupsTagged,
+								(unsigned int)state.bLureGroupsPlanned,
+								chasing, chasing - state.iLureChasing);
+						state.iLureChasing = chasing;
+						state.dwLureTargetVID = 0;
+						state.bLureTagAttempts = 0;
+						SetPlayerBotLureStage(ch, state, LURE_STAGE_APPROACH, dwNow);
+						ClearPlayerBotRoute(state, true);
+						return true;
+					}
+					if (dwNow - state.dwLureShotTime < PLAYERBOT_LURE_CONFIRM_TIMEOUT)
+						return true;
+					// One more arrow at the same pack, then leave it alone. A
+					// pack that does not answer twice is a pack that is not
+					// coming, and standing there shooting it is the failure
+					// this timeout exists to end.
+					if (target && state.bLureTagAttempts < 2)
+					{
+						SetPlayerBotLureStage(ch, state, LURE_STAGE_TAG, dwNow);
+						return true;
+					}
+					if (target)
+					{
+						PIXEL_POSITION center;
+						center.x = target->GetX();
+						center.y = target->GetY();
+						center.z = 0;
+						state.vecMultiPullCenters.push_back(center);
+					}
+					PlayerBotLogThrottled("lure_no_answer", dwNow,
+							"PLAYERBOT_LURE: pack ignored the arrow pid=%u name=%s session=%u attempts=%u",
+							ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+							(unsigned int)state.bLureTagAttempts);
+					state.dwLureTargetVID = 0;
+					state.bLureTagAttempts = 0;
+					SetPlayerBotLureStage(ch, state, LURE_STAGE_APPROACH, dwNow);
+					return true;
+				}
+
+				if (!target)
+				{
+					// A pack nobody needs is not pulled just because a course
+					// is running: the shared combat policy answers here too.
+					target = FindPlayerBotLurePack(ch, state.lLureAnchorX,
+							state.lLureAnchorY, state.vecMultiPullCenters, dwNow);
+					if (target && !IsPlayerBotTargetWorthNow(ch, target, state, dwNow))
+						target = NULL;
+					if (!target)
+					{
+						if (state.iLureChasing > 0)
+						{
+							SetPlayerBotLureStage(ch, state, LURE_STAGE_RETURN, dwNow);
+							ClearPlayerBotRoute(state, true);
+							return true;
+						}
+						FinishPlayerBotLure(ch, state, dwNow, "no_pack");
+						return false;
+					}
+					state.dwLureTargetVID = (DWORD)target->GetVID();
+					state.bLureTagAttempts = 0;
+					ClearPlayerBotRoute(state, true);
+				}
+
+				const int distance = DISTANCE_APPROX(ch->GetX() - target->GetX(),
+						ch->GetY() - target->GetY());
+				if (distance > PLAYERBOT_LURE_SHOT_RANGE)
+				{
+					// Walk into range like anything else does - on foot, since
+					// the shot has to be taken standing still anyway.
+					SetPlayerBotLureStage(ch, state, LURE_STAGE_APPROACH, dwNow);
+					MovePlayerBot(ch, target->GetX(), target->GetY(), dwNow, 4,
+							true, false, false);
+					return true;
+				}
+
+				SetPlayerBotLureStage(ch, state, LURE_STAGE_TAG, dwNow);
+				if (ch->IsStateMove())
+				{
+					ch->Stop();
+					return true;
+				}
+				// The bow's own rhythm, from the ordinary attack. Waiting for
+				// it is taking the tick, not failing to act.
+				if (dwNow < state.dwNextAttackTime)
+					return true;
+				ch->SetRotationToXY(target->GetX(), target->GetY());
+				if (!ExecutePlayerBotBasicAttack(ch, target, state, dwNow))
+					return true;
+				++state.bLureTagAttempts;
+				state.dwLureShotTime = dwNow;
+				SetPlayerBotLureStage(ch, state, LURE_STAGE_CONFIRM, dwNow);
+				return true;
+			}
+
+			case LURE_STAGE_RETURN:
+			{
+				state.iLureChasing = CountPlayerBotPullAggressors(ch);
+				if (dwNow - state.dwLureStageTime > PLAYERBOT_LURE_RETURN_TIME)
+				{
+					FinishPlayerBotLure(ch, state, dwNow, "return_time");
+					return false;
+				}
+				if (fromAnchor <= PLAYERBOT_LURE_HANDOFF_RANGE)
+				{
+					state.iLureDelivered = state.iLureChasing;
+					sys_log(0, "PLAYERBOT_LURE: back with the party pid=%u name=%s session=%u groups=%u chasing=%d walk_ms=%u",
+							ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+							(unsigned int)state.bLureGroupsTagged, state.iLureChasing,
+							dwNow - state.dwLureStageTime);
+					SetPlayerBotLureStage(ch, state, LURE_STAGE_HANDOFF, dwNow);
+					ClearPlayerBotRoute(state, true);
+					return true;
+				}
+				// No skill rotation and no stopping to fight on the way home:
+				// a pull that turns into a fight halfway back is a pull that
+				// was never delivered.
+				MovePlayerBot(ch, state.lLureAnchorX, state.lLureAnchorY, dwNow, 6,
+						true, false, false);
+				return true;
+			}
+
+			case LURE_STAGE_HANDOFF:
+			{
+				int onParty = 0, onOwner = 0;
+				CountPlayerBotLureEngaged(ch, state.lLureAnchorX, state.lLureAnchorY,
+						&onParty, &onOwner);
+				state.iLureChasing = onOwner;
+				if (fromAnchor > PLAYERBOT_LURE_HANDOFF_RANGE)
+				{
+					MovePlayerBot(ch, state.lLureAnchorX, state.lLureAnchorY, dwNow, 6,
+							true, false, false);
+					return true;
+				}
+				if (dwNow - state.dwLureStageTime < PLAYERBOT_LURE_HANDOFF_WAIT)
+					return true;
+
+				// What the receivers actually took over. The engine's aggro is
+				// never written to - a partial handover is a real outcome and
+				// is reported as one.
+				const bool taken = onParty > 0;
+				sys_log(0, "PLAYERBOT_LURE: handover pid=%u name=%s session=%u delivered=%d taken_by_party=%d still_on_me=%d",
+						ch->GetPlayerID(), ch->GetName(), state.dwLureSessionId,
+						state.iLureDelivered, onParty, onOwner);
+				if (taken && state.bLureGroupsTagged > 0)
+				{
+					if (state.bLureGoodCourses < 200)
+						++state.bLureGoodCourses;
+				}
+				else
+				{
+					// A course nobody picked up is not repeated at the same
+					// size: the plan drops back to the opening one.
+					state.bLureGoodCourses = 0;
+				}
+				SetPlayerBotLureStage(ch, state, LURE_STAGE_RECOVER, dwNow);
+				return true;
+			}
+
+			case LURE_STAGE_RECOVER:
+			{
+				int onParty = 0, onOwner = 0;
+				CountPlayerBotLureEngaged(ch, state.lLureAnchorX, state.lLureAnchorY,
+						&onParty, &onOwner);
+				state.iLureChasing = onOwner;
+				// The next course waits for this one to be over. Not on a
+				// clock: on the monsters actually still standing.
+				if (onParty <= PLAYERBOT_LURE_BUSY_MONSTERS && onOwner == 0)
+				{
+					FinishPlayerBotLure(ch, state, dwNow, "done");
+					return false;
+				}
+				if (dwNow - state.dwLureStageTime > PLAYERBOT_LURE_RETURN_TIME)
+				{
+					FinishPlayerBotLure(ch, state, dwNow, "recover_time");
+					return false;
+				}
+				// Anything still on the Archer is its own fight now, and the
+				// ordinary combat pass is better at it than this is.
+				return onOwner == 0;
+			}
+
+			default:
+				FinishPlayerBotLure(ch, state, dwNow, "unknown_stage");
+				return false;
+		}
+	}
+}
+
+#endif

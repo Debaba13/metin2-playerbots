@@ -352,7 +352,13 @@ namespace
 				vnum == PLAYERBOT_SHELLFISH_VNUM || vnum == PLAYERBOT_CAMPFIRE_VNUM ||
 				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM))
 			return false;
-
+		// Hair dye. The merchant pays nothing for it and a player will: it is
+		// the only way to change a character's colour for good, and the anglers
+		// pull it out of the water by the handful.
+		if (IsPlayerBotHairDye(vnum))
+			return false;
+		// A dead fish waits for the campfire at the end of the next session, as
+		// long as the bot has the wood for one; a grilled fish is a potion.
 		if (item->GetType() == ITEM_FISH && item->GetSubType() == FISH_DEAD &&
 				ch->CountSpecifyItem(PLAYERBOT_CAMPFIRE_VNUM) > 0)
 			return false;

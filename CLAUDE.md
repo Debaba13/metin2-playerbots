@@ -315,6 +315,96 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   route, and re-planning towards the old destination finds the door it came
   in by; the wander pass runs only on a tick no subsystem took, and a bot
   dropped among aggressive monkeys is fighting, not wandering.
+- **Whether a fight is worth having is one question with one answer.**
+  `playerbot_combat_value_policy.h` decides it and nothing else does:
+  `BuildPlayerBotCombatContext` is the only place a Context is built, and the
+  three callers - the target collector, the multi-pull and
+  `IsPlayerBotHeldTargetStillWorth` on a three-second clock - all go through
+  it. Filtering only new candidates left the hole open: a monster picked up
+  before the errand changed was fought to the end. The exceptions are
+  countable (quest, material, stone, bounded defence) and each is bounded by
+  something the engine can be asked about, not by intent: the material one by
+  `PERCENT_LVDELTA` (a drop obeys the same level curve as experience, so a
+  need is not a reason to farm what cannot drop it), the defence one by
+  **one episode per bot** - keyed per attacker it was renewed for ever by two
+  monsters taking turns, so it now ends only after
+  `PLAYERBOT_DEFENCE_QUIET_TIME` without a combat action.
+  **Self-defence is bounded by the leash and not by the clock**, and that
+  distinction was learned the hard way: with a ten-second bound on it, nine
+  strong monsters dropped next to a group of bots killed all of them, because
+  after ten seconds each monster was refused as a target while it was still
+  killing its bot. What the episode exists to stop is a bot being walked
+  across a map by a chain of attackers, and `PLAYERBOT_DEFENCE_LEASH` stops
+  exactly that; hitting back at what is hitting you is not a choice to
+  ration. Helping a party member keeps the clock - defending yourself is
+  compulsory in a way that helping is not - and RETREAT outranks both.
+  The level cap has the same shape: `bTargetNeedsParty` decides what a bot
+  walks up to, never what it answers, so a monster whose victim is this bot
+  passes it.
+  `PLAYERBOT_M2: census` is how this is measured: a count of level-40 bots in
+  Bokjung says nothing, the reason each one is there says everything.
+- **A buff cast claims the tick, so the set has to be gathered quickly.**
+  `ManagePlayerBotCombatBuffs` casts one buff and returns; at five seconds
+  between passes a Warrior needed ten seconds for aura and berserk and a
+  weapon Sura fifteen for three enchantments. Aura of the Sword lasts
+  `30+50*k` seconds on a `30+10*k` cooldown, so a bot was spending as long
+  putting it back up as it stayed up, and was usually seen without it.
+  `PLAYERBOT_BUFF_RECHECK_FAST` brings the bot straight back after a cast;
+  the ordinary five seconds resume on the first pass that finds nothing
+  missing. Mana is the other half and is not solved here: 213 bots of 1300
+  hold less than the 300 SP a mastered aura costs.
+- **A splash skill is the weakest thing in the rotation against one target.**
+  `IsPlayerBotSplashSkill` asks the engine for `SKILL_FLAG_SPLASH` and the
+  rotation skips those against a Metin stone, which is never a crowd. The
+  rotation takes the first skill off cooldown, and a stone lasts long enough
+  to put the good ones there, so what actually landed on stones was Poison
+  Cloud - `-(lv*2 + (atk + str*3 + dex*18)*k)` against Fast Attack's
+  `-(atk + (1.6*atk + ...))`, for the same animation lock.
+- **The wallet floor cannot rank two materials; the merchant's price can.**
+  `GetPlayerBotShopAskingPrice` raises a material to a share of the median
+  wallet, and that share was the same number for everything - ~38 000 at a
+  2.6M median - so a shellfish (merchant 3 000) and a white pearl (12 000)
+  stood on the counters at the same price. It is scaled by `npcUnit` against
+  `PLAYERBOT_MARKET_WALLET_REFERENCE_PRICE`, in hundredths and clamped to
+  [100, 800] percent so nothing gets cheaper and nothing runs away. And
+  `PLAYERBOT_MARKET_REGULATOR_MAX` went from 1.35 to 2.0: a third above the
+  prior is not a market answering five hundred bots short of a thing no
+  counter carries.
+- **A keeper trades in the town it is standing in.** The stall used to roll
+  a town and then refuse to open unless the bot was already there - nine
+  rolls in ten chose Joan while the bots with goods stood in Bokjung, so Joan
+  got no stalls at all. The market browse has always read the ring of its own
+  bot's map, so a stall in Joan has map 21's four hundred bots for customers.
+- **A boss is news, and the news travels through a guild.** A boss hub scored
+  `PLAYERBOT_RAID_WORTH` for everybody, which outran every hunting ground by
+  two orders of magnitude, so a whole level band walked to one monster - 145
+  of them in two minutes - and the ones that arrived late stood about. Worse,
+  the chosen hub was kept for `PLAYERBOT_HUB_STICK_TIME` **without asking
+  again whether the boss was still standing**, so four minutes of a column of
+  bots on empty ground was the normal end of every raid. The stick now
+  re-asks (`boss down, going back to work`), the first bot to find him
+  standing calls its own guild through `CGuild::Chat`, and that guild may
+  fill `PLAYERBOT_RAID_CROWD` places while everyone else gets half of them.
+  Count the bots that have *decided* to go, not the ones standing on the hub:
+  `CountPlayerBotRaiders` keeps a roster per race, because a hundred bots
+  choosing in the same second all see an empty hub and all set off.
+- **A pull is what came back, not what was shot at.** `playerbot_lure.h` is
+  the Archer's party role as a whole errand - PLAN, APPROACH, TAG, CONFIRM,
+  RETURN, HANDOFF, RECOVER - and CONFIRM counts the live monsters actually
+  chasing the bot, so a miss, a one-shot kill and a pack that never woke up
+  all count as nothing. It reuses the ordinary bow shot
+  (`ExecutePlayerBotBasicAttack`, which owns range, arrows and rhythm) rather
+  than growing a second damage path; the old `ExecutePlayerBotArcherLuring`
+  had one, complete with an invented damage number when the real one came out
+  under five. Two things it must not do: hold a character pointer across
+  ticks (the roster is copied out of the party every tick, and the claim on
+  the role is keyed by leader PID), and let the party follow it - the lurer
+  keeps `dwTargetVID` at zero so the shared party focus never sees the pack it
+  is waking up. The multi-pull cannot run at the same time by construction:
+  that one refuses a bot in a party and this one needs five.
+  `FindPlayerBotLurePack` is its own finder for a reason - the multi-pull's
+  looks for what is at a solo bot's feet, and on a map carrying eight hundred
+  bots that describes the ground the party is already standing on.
 - **A bot cannot be warped by a warp NPC, and now it is not asked to be.**
   `WarpSet` tells the client to reconnect to whichever core hosts the target
   map; a bot descriptor has nobody to answer that, so the map change is made

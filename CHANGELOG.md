@@ -17,6 +17,194 @@ every version here.
 
 ---
 
+## 1.30.16 — 2026-09-08
+
+### Naprawione
+
+- **Aura, szał i zaklęcia wchodzą od razu, a nie po kolei co pięć sekund.**
+  Rzucenie buffa zajmuje całą turę bota, a kolejnej próby nie było przez pięć
+  sekund — więc wojownik potrzebował dziesięciu sekund na aurę i szał, a sura
+  broni piętnastu na trzy zaklęcia. Aura Miecza trwa od trzydziestu sekund i ma
+  trzydziestosekundowy cooldown, więc bot spędzał na jej odnawianiu tyle czasu,
+  ile trwała, i przez większość walk stał bez niej. Po rzuceniu jednego buffa
+  bot wraca po następny po 1,2 sekundy; pełny zestaw staje w trzy sekundy
+  zamiast piętnastu, a zwykłe pięć sekund wraca, gdy niczego nie brakuje.
+- **Trująca chmura i trująca strzała nie lecą już w kamień Metin.** Rotacja
+  bierze pierwszą umiejętność, która zeszła z cooldownu, a kamień trwa
+  wystarczająco długo, żeby zdjąć z listy te dobre — więc w kamień szła ta
+  obszarowa, czyli akurat najsłabsza na jeden cel. Trująca Chmura to
+  `-(lv*2 + (atk + str*3 + dex*18)*k)` przy `-(atk + (1,6*atk + …))` Szybkiego
+  Ataku: jedna wartość ataku wobec dwóch i pół, za te same 1,4 sekundy blokady
+  animacji. Kamień nigdy nie jest tłumem, więc bot pomija obszarówki i wraca do
+  zwykłych ciosów, które w tym czasie zadają więcej. Silnik jest pytany o flagę
+  `SPLASH`, więc serwer z inną tablicą umiejętności też dostanie dobrą odpowiedź.
+- **Perła kosztuje jak perła, a nie jak małż.** Ceny na straganach mają podłogę
+  liczoną z zasobności kupujących — i ta podłoga była jedna dla wszystkiego. Przy
+  medianie portfela 2,6 mln wypadała na ~38 tysiącach, więc małż, którego
+  handlarz wycenia na 3 000, i biała perła za 12 000 stały na ladzie w tej samej
+  cenie, a krwawa perła ledwie wyżej. Podłoga jest teraz skalowana tym, ile
+  handlarz płaci za tę konkretną rzecz — i **tylko w górę**, więc nic nie
+  tanieje: biała perła idzie do ok. 150 tys., krwawa do ok. 300 tys., a małż
+  zostaje tam, gdzie był.
+  Do tego niedobór wreszcie coś znaczy: dopłata za brak towaru mogła podnieść
+  cenę najwyżej o jedną trzecią, co przy pięciuset botach szukających materiału,
+  którego nie ma na żadnym straganie, nie jest odpowiedzią rynku. Teraz sięga
+  dwukrotności.
+- **Stragany stają w Joan.** Bot losował miasto dla każdego straganu — dziewięć
+  razy na dziesięć Joan — a potem odmawiał otwarcia, jeśli akurat tam nie stał.
+  Ponieważ boty z towarem stoją w Bokjung, dziewięć losowań na dziesięć szło do
+  kosza i w Joan nie było ani jednego straganu, czyli dokładnie odwrotnie, niż
+  to losowanie miało robić. Kupiec handluje teraz w mieście, w którym stoi.
+  Na mapie 21 jest 399 botów, a przy jej rynku stało pięciu —
+  przeglądanie straganów i tak zawsze czytało pierścień tej mapy, na której jest
+  bot, więc stragan w Joan ma od razu swoich klientów.
+
+---
+
+## 1.30.15 — 2026-09-08
+
+### Nowe
+
+- **Ninja łucznik podciąga potwory dla drużyny.** W drużynie pięciu i więcej
+  jeden łucznik dostaje rolę lurera: wybiega, budzi paczkę jednym zwykłym
+  strzałem, sprawdza, czy faktycznie za nim ruszyła, i prowadzi ją z powrotem
+  do towarzyszy, którzy ją przejmują normalną walką.
+  Zastępuje to dawne okazjonalne strzelanie w bok, które nie było
+  podciąganiem: łucznik pukał w jednego potwora, dopisywał sobie obrażenia,
+  gdy prawdziwe wyszły za niskie, i wracał do swojego celu — nikt na to nie
+  czekał i nic z tego nie wynikało.
+  Kurs ma swoje granice i każda z nich broni przed konkretną wpadką: dwanaście
+  sekund na zbieranie, smycz 4500 jednostek od miejsca zbiórki, przerwanie
+  przy spadku HP, jeden lurer na drużynę i limit potworów, który drużyna
+  podnosi dopiero po kilku udanych kursach. Odbiorca musi żyć i stać na
+  miejscu — a to, że sam ninja się oddala, nie unieważnia jego własnej misji.
+  Liczy się to, co wróciło, nie to, ile razy strzelono: potwór zabity strzałem
+  albo taki, który nie zareagował, nie jest dostarczony. Nad głową widać etap:
+  „Luruje dla PT", „Wracam do druzyny: prowadze 9 mobow", „Przekazuje moby".
+  Agresja potworów nie jest przy tym nigdzie podmieniana — drużyna przejmuje
+  je tak, jak przejmuje wszystko inne, i przejęcie bywa częściowe.
+
+### Naprawione
+
+- **Bot broni się tak długo, jak jest bity.** W 1.30.14 ograniczyliśmy epizod
+  obrony do dziesięciu sekund, żeby „ono zaatakowało pierwsze" nie było
+  wymówką do grindu. Skutek uboczny był dotkliwy: po dziesięciu sekundach
+  potwór, który wciąż zabijał bota, przestawał być dopuszczalnym celem —
+  postać stała bezczynnie albo uciekała i ginęła. Przy silnym potworze
+  dochodziło do tego drugie zabezpieczenie, które porzucało cel dziesięć
+  poziomów wyżej nawet wtedy, gdy ten cel właśnie bił.
+  Obronę własną ogranicza teraz **smycz, nie zegar**: bot odpowiada temu, co
+  go bije, tak długo, jak go bije, ale nie daje się przy tym wywlec z miejsca,
+  w którym walka się zaczęła. Od zrywania przegranej walki jest ucieczka i ona
+  dalej ma pierwszeństwo. Pomoc towarzyszowi z drużyny zostaje ograniczona
+  także czasem — bronić siebie trzeba, pomagać można.
+- **Gildia jedzie na bossa dopiero wtedy, gdy ktoś go widzi.** Raz wybrany
+  punkt polowania trzymał się cztery minuty **bez ponownego pytania, czy boss
+  jeszcze stoi**. Boss padał, a boty dalej szły na współrzędne z tabeli i tam
+  stały — stąd te kolumny postaci w szczerym polu. Teraz punkt bossa jest
+  sprawdzany na bieżąco i gdy bossa nie ma, boty wracają do swojej roboty.
+  Do tego boss przestał być wart tyle, że opłacał się każdemu: **kto go
+  zobaczy, woła swoją gildię**, i to ta gildia ma pierwszeństwo do dwunastu
+  miejsc, a reszta świata do sześciu. Na żywo: sto czterdzieści pięć postaci
+  ruszających na jednego potwora spadło do trzynastu, a w logu pojawiły się
+  wołania w rodzaju „Wodz Orkow stoi! Zbieramy sie na niego."
+- **Śmierć wygląda jak śmierć gracza.** Ciało leży dziesięć sekund i dopiero
+  potem postać wstaje — ale wstawała niewidzialna na dziesięć sekund, dwa razy
+  dłużej niż człowiek po `restart_here`. Teraz to te same pięć sekund, które
+  silnik daje graczowi.
+- **Wędkarz nie tonie we własnym połowie.** Ryby otwierały się tylko między
+  zarzuceniami, więc bot, który odszedł od brzegu, nosił je ze sobą — a żywa
+  ryba się nie stackuje, więc trzydzieści ryb to trzydzieści pól i plecak bez
+  miejsca na cokolwiek innego. Połów jest teraz opracowywany wszędzie, przy
+  okazji zwykłego utrzymania. W plecakach świata nie została ani jedna
+  nieotwarta ryba.
+- **Panel: wróciła ramka okna ekwipunku.** Style panelu odwołują się do
+  `inventory-background.png`, którego nie ma w żadnej paczce autora — ani w
+  1.37.1, ani w 1.30.1 — więc u wszystkich poza nim okno ekwipunku było płaskim
+  tłem z ikonami. Grafika z klienta nie jest nasza do rozprowadzania, więc
+  narysowaliśmy własną ramkę w dokładnie tej geometrii, której oczekują style:
+  wnęki na dwanaście gniazd ekwipunku, siatka pięć na dziewięć i pasek na yang.
+- **Launcher mówi, który plik zablokował antywirus.** Gdy Windows przerywa
+  aktualizację komunikatem „plik zawiera wirusa lub potencjalnie niechciane
+  oprogramowanie", w logu zostawało samo to zdanie — bez nazwy pliku, czyli bez
+  niczego, co dałoby się sprawdzić. Teraz launcher rozpoznaje ten błąd przy
+  pobieraniu, przy rozpakowywaniu każdego pliku z osobna i przy wgrywaniu na
+  miejsce, podaje ścieżkę, przypomina, że nic nie zostało zainstalowane i że
+  poprzednia wersja działa dalej, oraz podpowiada wykluczenie w Zabezpieczeniach
+  Windows.
+
+### Zmienione
+
+- **Małże są towarem, nie losem na loterii.** Pierwsze cztery bot trzyma
+  zawsze — dwadzieścia sześć receptur zużywa małża takiego, jaki jest, i tyle
+  właśnie za niego płacą. Otwiera dopiero nadmiar, i tylko wtedy, gdy
+  oczekiwana wartość perły bije cenę całej sztuki.
+- **Farba do włosów trafia na stragany, a raz w życiu na głowę bota.** Silnik
+  przyjmuje ją wprost, kolor jest trwały, więc bot, który ją znajdzie, farbuje
+  się raz — a reszta idzie do sprzedaży zamiast do handlarza jako złom. Osiemset
+  postaci przestaje wyglądać jak jedna skopiowana osiemset razy.
+
+---
+
+## 1.30.14 — 2026-09-07
+
+### Zmienione
+
+- **Bot bije to, z czego cokolwiek ma.** Wysokopoziomowe boty koczowały w
+  Bokjung i tłukły potwory dwadzieścia poziomów niżej. Silnik mnoży przez
+  `aiPercentByDeltaLev` zarówno doświadczenie, jak i drop: piętnaście poziomów
+  nad potworem to jeden procent jednego i drugiego, więc z takiego grindu nie
+  było nic poza zajętą mapą i zatrzymanym rozwojem postaci.
+  Decyzję „czy ta walka ma sens" podejmuje teraz jeden wspólny moduł i
+  podejmuje ją tak samo w każdym miejscu, które pyta: przy wyborze nowego
+  celu, przy podciąganiu grup i — co trzy sekundy — dla potwora, którego bot
+  już bije. Wcześniej filtr działał tylko przy wyborze, więc przeciwnik wzięty
+  chwilę przed zmianą zadania był bity do końca.
+  Powody, dla których wolno walczyć, są policzalne: realne doświadczenie,
+  potwór z aktualnego zadania, brakujący materiał do ulepszenia, kamień Metin
+  i ograniczona obrona. Nic więcej.
+- **Obrona ma koniec, także kiedy zmienia się napastnik.** Wyjątek „ono
+  zaatakowało pierwsze" musi być ograniczony, bo inaczej jest pozwoleniem na
+  dowolny grind. W pierwszej wersji epizod obrony był liczony osobno dla
+  każdego napastnika — dwa potwory na zmianę utrzymywały go więc bez końca.
+  Teraz epizod należy do bota: dopóki trwa, odpiera każdego napastnika w
+  swoim czasie i w swoim promieniu, a nowy zaczyna się dopiero wtedy, gdy
+  walka faktycznie ustała na kilkanaście sekund. Obrona towarzysza z drużyny
+  mieści się w tym samym epizodzie, więc jest ograniczona nie tylko
+  odległością, ale i czasem.
+- **Potrzeba materiału nie usprawiedliwia polowania na coś, co go nie da.**
+  Wyjątek materiałowy sprawdzał, czy botowi rzeczywiście brakuje surowca do
+  receptury — i tylko to. Drop podlega jednak temu samemu przelicznikowi
+  poziomów co doświadczenie, więc „potrzebuję" potrafiło wysłać postać na
+  potwora, z którego ten materiał praktycznie nie wypada. Teraz wyjątek
+  wymaga jeszcze realnej szansy dropu.
+- **Panel seban latino w wersji 1.37.1, tym razem w całości.** Poprzednie
+  wdrożenie było zlepkiem starszej wersji z naszymi poprawkami: brakowało
+  grafik, styli i oryginalnego layoutu. Teraz jest pełny pakiet autora —
+  szablony, style i 1599 plików statycznych — z zachowanymi dwiema naszymi
+  poprawkami: pierwsza migawka kolektora robi się od razu zamiast po pięciu
+  minutach, a pulpit nie wywraca się na świeżej bazie, w której nie ma
+  jeszcze tabeli migawek. Panel zna też wreszcie wersję serwera, na który
+  patrzy, zamiast pokazywać „nieustawiona".
+- **„OTWÓRZ PANEL WWW" pyta, który panel.** Panele są dwa, działają
+  jednocześnie i żaden nie zastępuje drugiego, więc przycisk nie decyduje za
+  nikogo: pokazuje wybór między **oryginalnym panelem** (mapa i sterowanie) a
+  **zaawansowanym panelem seban latino** (profile, rankingi, gospodarka,
+  obciążenie). Porty odczytuje z `.env` tej instalacji, więc świat, który je
+  przesunął, otwiera się pod właściwym adresem.
+
+### Dla ciekawych
+
+- Rdzeń pisze teraz raz na minutę linię `PLAYERBOT_M2: census` — ilu botów od
+  czterdziestego poziomu stoi w Bokjung i z jakiego powodu (zadanie,
+  materiały, wizyta, podróż, obrona, brak planu) — oraz `PLAYERBOT_M2: left
+  after errand` z czasem, jaki bot potrzebował na opuszczenie mapy po
+  załatwieniu swojej sprawy. Sama liczba postaci w mieście nigdy nie
+  odpowiadała na pytanie, czy coś jest zepsute; te dwie linie odpowiadają.
+  Zmierzone na żywo: przez dziesięć minut w Bokjung stało od 45 do 60 botów od czterdziestego poziomu wzwyż i każdy z konkretnego powodu — 297 razy zadanie, 197 razy wizyta u handlarza, 11 razy obrona, ani razu „brak planu"; 222 wyjścia z mapy po załatwionej sprawie, mediana 21 sekund, 182 z nich poniżej pół minuty; 1872 odmowy walki, wszystkie z powodu zerowego doświadczenia.
+
+---
+
 ## 1.30.13 — 2026-09-07
 
 ### Zmienione
