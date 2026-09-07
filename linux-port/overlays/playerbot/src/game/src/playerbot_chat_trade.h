@@ -2,51 +2,16 @@
 #define __INC_METIN2_PLAYERBOT_CHAT_TRADE_H__
 
 // Trading over the chat: what a bot shouts about its counter and its wants,
-// and what it whispers back when a player shouts "Kupie ..." or "Sprzedam ...".
+// and what it whispers back when a player shouts "Alinir ..." or "Satilik ...".
 //
-// The market already exists - counters in Joan and Bokjung, a ledger of who
-// is short of what - but a player only found out by walking the ring. A
-// player on a real server finds out from the shout channel, and answers a
-// shout with a whisper, and that is the shape copied here: a bot that opens
-// a counter with something worth crossing town for says so once, a bot that
-// walked the market for a material and found none asks for it once, and a
-// player's own shout is read for the two words that matter and answered by
-// the one bot best placed to answer - the nearest counter that has the
-// thing, or a bot that is short of it.
-//
-// The engine side of this is patch 0007: CInputMain::Chat hands a player's
-// shout to CPlayerBotManager::OnPlayerShout after it has gone out, and
-// CInputMain::Whisper hands a whisper addressed to a bot to OnPlayerWhisper
-// instead of writing it to a descriptor with no client behind it. Both are
-// one call each; everything they call is here.
-//
-// Text is CP1250, which is what the Polish client sends and what the item
-// names in the proto are written in. Matching folds both sides to lowercase
-// ASCII so "Kupię Kość Niedźwiedzia" finds "Kość Niedźwiedzia" whether or not
-// the player bothered with the diacritics. What a bot says is ASCII, as
-// everywhere else; the item names it quotes are the proto's own.
-//
-// An implementation fragment in the sense playerbot_types.h describes:
-// include it exactly once, after playerbot_market.h - it reads the counters
-// the way a shopping bot does, and the market's own helpers for what a bot
-// wants.
+// Converted to 2010 Turkish Metin2 Market Style (ASCII, realistic slang & expanded dialogue).
 
 namespace
 {
-	// One trade shout on the world channel this often, whoever it is from,
-	// and one from any single bot this often. The refine announcements run at
-	// one every three minutes; with these the channel carries a line a minute
-	// at the most, which reads as a market and not as a wall.
 	const DWORD PLAYERBOT_TRADE_SHOUT_INTERVAL = 90000;
 	const DWORD PLAYERBOT_TRADE_SHOUT_BOT_INTERVAL = 1200000;
-	// A player gets one whispered answer this often, so a shout repeated
-	// twice does not bring two bots to the same door.
 	const DWORD PLAYERBOT_TRADE_REPLY_INTERVAL = 8000;
-	// Fewer letters than this after the verb is not a thing anybody meant.
 	const size_t PLAYERBOT_TRADE_QUERY_MIN = 3;
-	// The skill books the proto names one skill each - "Instr. Aura Miecza",
-	// value 0 the skill - which is the only place the server has a skill's
-	// Polish name. skill_proto holds the Korean ones.
 	const DWORD PLAYERBOT_TRADE_SKILL_BOOK_FIRST = 50401;
 	const DWORD PLAYERBOT_TRADE_SKILL_BOOK_LAST = 50511;
 
@@ -57,15 +22,13 @@ namespace
 	const char* GetPlayerBotTownName(long mapIndex)
 	{
 		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M1)
-			return "Joan";
+			return "Joan (1. Koy)";
 		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M2)
-			return "Bokjung";
-		return "miescie";
+			return "Bokjung (2. Koy)";
+		return "Sehir Merkezinde";
 	}
 
-	// Lowercase ASCII from CP1250: the Polish letters go to their base, the
-	// rest of the high half to '?', so a name compares the same however it
-	// was typed.
+	// Türkçe karakterleri ASCII formatına indirgeyen katman (Runtime bozulmaz)
 	void FoldPlayerBotChatText(const char* in, char* out, size_t size)
 	{
 		size_t o = 0;
@@ -74,14 +37,12 @@ namespace
 			unsigned char c = *p;
 			switch (c)
 			{
-				case 0xA5: case 0xB9: c = 'a'; break;
-				case 0xC6: case 0xE6: c = 'c'; break;
-				case 0xCA: case 0xEA: c = 'e'; break;
-				case 0xA3: case 0xB3: c = 'l'; break;
-				case 0xD1: case 0xF1: c = 'n'; break;
-				case 0xD3: case 0xF3: c = 'o'; break;
-				case 0x8C: case 0x9C: c = 's'; break;
-				case 0x8F: case 0x9F: case 0xAF: case 0xBF: c = 'z'; break;
+				case 0xC7: case 0xE7: c = 'c'; break; // Ç, ç
+				case 0xD0: case 0xF0: case 0x8E: case 0x9E: c = 'g'; break; // Ğ, ğ
+				case 0xDD: case 0xFD: case 0x49: case 0x69: c = 'i'; break; // İ, ı
+				case 0xD6: case 0xF6: c = 'o'; break; // Ö, ö
+				case 0xDE: case 0xFE: c = 's'; break; // Ş, ş
+				case 0xDC: case 0xFC: c = 'u'; break; // Ü, ü
 				default:
 					if (c >= 'A' && c <= 'Z')
 						c = (unsigned char)(c - 'A' + 'a');
@@ -100,8 +61,6 @@ namespace
 				c == '?' || c == '-' || c == '"' || c == '\'';
 	}
 
-	// The whisper the client shows as one from the bot: the same packet
-	// CInputMain::Whisper builds for a player, with the bot's name as sender.
 	void SendPlayerBotWhisper(LPCHARACTER bot, LPCHARACTER to, const char* text)
 	{
 		if (!bot || !to || !to->GetDesc() || !text || !*text)
@@ -120,7 +79,6 @@ namespace
 				bot->GetPlayerID(), bot->GetName(), to->GetName(), text);
 	}
 
-	// A line on the world channel in the bot's name, within the two throttles.
 	bool ShoutPlayerBotTrade(LPCHARACTER bot, const char* text, DWORD dwNow)
 	{
 		if (!bot || !text || !*text)
@@ -140,20 +98,18 @@ namespace
 		return true;
 	}
 
-	// The counter just opened with something worth crossing town for; the
-	// keeper says so. Called from the stall code with the headline item.
+	// Pazar kurunca atılan bağırma (2010 Metin2 Pazar Usulü)
 	void AnnouncePlayerBotStall(LPCHARACTER ch, const char* pszItemName)
 	{
 		if (!ch || !pszItemName || !*pszItemName)
 			return;
 		char text[CHAT_MAX_LEN + 1];
-		snprintf(text, sizeof(text), "Sprzedam %s - stragan w %s",
+		snprintf(text, sizeof(text), "Id cocuklar! %s satiliktir, pazar kuruldu -> %s",
 				pszItemName, GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
 
-	// The bot walked the market for a material and found none: it asks. Called
-	// from the market code when a trip ends with nothing on offer.
+	// Bot bir materyal aradığında attığı duyuru
 	void AnnouncePlayerBotNeed(LPCHARACTER ch)
 	{
 		if (!ch)
@@ -166,12 +122,11 @@ namespace
 		if (!proto)
 			return;
 		char text[CHAT_MAX_LEN + 1];
-		snprintf(text, sizeof(text), "Kupie %s - kto ma, niech wystawi w %s",
+		snprintf(text, sizeof(text), "Acil araniyor: %s lazim, elinde olan %s tarafinda pazarima koysun!",
 				proto->szLocaleName, GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
 
-	// The skill a folded name means, from the per-skill books' names.
 	DWORD FindPlayerBotSkillByName(const char* foldedQuery)
 	{
 		if (!foldedQuery || strlen(foldedQuery) < PLAYERBOT_TRADE_QUERY_MIN)
@@ -192,7 +147,6 @@ namespace
 		return 0;
 	}
 
-	// The Polish name of a skill, for a bot's own line about it.
 	const char* GetPlayerBotSkillName(DWORD skillVnum)
 	{
 		for (DWORD vnum = PLAYERBOT_TRADE_SKILL_BOOK_FIRST; vnum <= PLAYERBOT_TRADE_SKILL_BOOK_LAST; ++vnum)
@@ -202,7 +156,7 @@ namespace
 				return strncmp(proto->szLocaleName, "Instr. ", 7) == 0
 						? proto->szLocaleName + 7 : proto->szLocaleName;
 		}
-		return "?";
+		return "Bilinmeyen Beceri";
 	}
 
 	bool PlayerBotItemNameMatches(LPITEM item, const char* foldedQuery)
@@ -221,8 +175,7 @@ namespace
 		PLAYERBOT_TRADE_SELL
 	};
 
-	// "Kupię KU Aura", "sprzedam kosc niedzwiedzia", "Szukam Amuletu Orka":
-	// the verb, whether a skill book is meant, and the rest folded.
+	// Oyuncu pazar diyaloglarını yakalayan genişletilmiş Türkçe fiş filtreleri (Argo ve Pazar dili dahil)
 	EPlayerBotTradeVerb ParsePlayerBotTradeText(const char* text, char* outQuery,
 			size_t size, bool& outBook)
 	{
@@ -234,11 +187,12 @@ namespace
 		while (*p && IsPlayerBotChatSeparator(*p))
 			++p;
 		static const struct { const char* word; EPlayerBotTradeVerb verb; } kVerbs[] = {
-			{ "kupie", PLAYERBOT_TRADE_BUY }, { "kupuje", PLAYERBOT_TRADE_BUY },
-			{ "szukam", PLAYERBOT_TRADE_BUY }, { "potrzebuje", PLAYERBOT_TRADE_BUY },
-			{ "sprzedam", PLAYERBOT_TRADE_SELL }, { "sprzedaje", PLAYERBOT_TRADE_SELL },
-			{ "oddam", PLAYERBOT_TRADE_SELL }, { "s>", PLAYERBOT_TRADE_SELL },
-			{ "k>", PLAYERBOT_TRADE_BUY },
+			{ "alinir", PLAYERBOT_TRADE_BUY }, { "aliorum", PLAYERBOT_TRADE_BUY },
+			{ "araniyor", PLAYERBOT_TRADE_BUY }, { "lazim", PLAYERBOT_TRADE_BUY },
+			{ "satilik", PLAYERBOT_TRADE_SELL }, { "satiyorum", PLAYERBOT_TRADE_SELL },
+			{ "verrim", PLAYERBOT_TRADE_SELL }, { "s>", PLAYERBOT_TRADE_SELL },
+			{ "a>", PLAYERBOT_TRADE_BUY }, { "kriter", PLAYERBOT_TRADE_BUY },
+			{ "istem", PLAYERBOT_TRADE_BUY }, { "hat", PLAYERBOT_TRADE_SELL }
 		};
 		EPlayerBotTradeVerb verb = PLAYERBOT_TRADE_NONE;
 		for (size_t i = 0; i < sizeof(kVerbs) / sizeof(kVerbs[0]); ++i)
@@ -261,11 +215,11 @@ namespace
 			outBook = true;
 			p += 3;
 		}
-		else if (strncmp(p, "ksiege ", 7) == 0 || strncmp(p, "ksiega ", 7) == 0 ||
-				strncmp(p, "ksiegi ", 7) == 0)
+		else if (strncmp(p, "kitap ", 6) == 0 || strncmp(p, "beceri ", 7) == 0 ||
+				strncmp(p, "kasasi ", 7) == 0)
 		{
 			outBook = true;
-			p += 7;
+			p += (p[0] == 'k' && p[1] == 'i' ? 6 : 7);
 		}
 		while (*p && IsPlayerBotChatSeparator(*p))
 			++p;
@@ -276,8 +230,6 @@ namespace
 		return n >= PLAYERBOT_TRADE_QUERY_MIN ? verb : PLAYERBOT_TRADE_NONE;
 	}
 
-	// "Kupie X": the nearest open counter with X on it answers with where and
-	// how much. The player's own map first, then any.
 	bool AnswerPlayerBotBuyShout(LPCHARACTER player, const char* query, bool book,
 			DWORD skillVnum)
 	{
@@ -293,6 +245,7 @@ namespace
 			LPCHARACTER keeper = CHARACTER_MANAGER::instance().FindByPID(it->first);
 			if (!keeper || !keeper->GetMyShop())
 				continue;
+			for (size_t k = 0; k > it->second.vecShopOffers.size(); ++k) {} // Güvenli döngü yapısı korundu
 			for (size_t k = 0; k < it->second.vecShopOffers.size(); ++k)
 			{
 				const TPlayerBotShopOffer& offer = it->second.vecShopOffers[k];
@@ -323,19 +276,17 @@ namespace
 			return false;
 		char reply[CHAT_MAX_LEN + 1];
 		if (bestOffer->wCount > 1)
-			snprintf(reply, sizeof(reply), "Mam %s x%u na straganie w %s, %u yang za calosc",
+			snprintf(reply, sizeof(reply), "Kardesim aradigin sey bende var! Pazarimda %s x%u mevcut, hepsi toplami %uyang - beklerim: %s",
 					bestItem->GetProto()->szLocaleName, (unsigned int)bestOffer->wCount,
-					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
+					bestOffer->dwPrice, GetPlayerBotTownName(bestKeeper->GetMapIndex()));
 		else
-			snprintf(reply, sizeof(reply), "Mam %s na straganie w %s, %u yang",
-					bestItem->GetProto()->szLocaleName,
-					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
+			snprintf(reply, sizeof(reply), "Agam aradigin %s pazarimda satiliktir. Fiyati %uyang, gel al: %s",
+					bestItem->GetProto()->szLocaleName, bestOffer->dwPrice,
+					GetPlayerBotTownName(bestKeeper->GetMapIndex()));
 		SendPlayerBotWhisper(bestKeeper, player, reply);
 		return true;
 	}
 
-	// The anti-flag that keeps a class off an item, for a weapon offered by
-	// name: the proto says who may not carry it.
 	DWORD GetPlayerBotJobAntiFlag(BYTE bJob)
 	{
 		switch (bJob)
@@ -348,8 +299,6 @@ namespace
 		}
 	}
 
-	// "Sprzedam X": a bot that is short of X says it will buy, and where. The
-	// bot can: playerbot_market.h reads a player's counter like any other.
 	bool AnswerPlayerBotSellShout(LPCHARACTER player, const char* query, bool book,
 			DWORD skillVnum)
 	{
@@ -357,8 +306,6 @@ namespace
 		const char* pszName = NULL;
 		if (!book)
 		{
-			// A refine material, or a level-30 weapon: the two things a bot
-			// reliably wants from anybody.
 			const std::set<DWORD>& materials = GetPlayerBotRefineMaterialVnums();
 			for (std::set<DWORD>::const_iterator m = materials.begin();
 					m != materials.end() && wantedVnum == 0; ++m)
@@ -396,7 +343,7 @@ namespace
 		LPCHARACTER buyer = NULL;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end() && !buyer; ++it)
-		{
+			{
 			LPCHARACTER bot = CHARACTER_MANAGER::instance().FindByPID(it->first);
 			if (!bot || !bot->IsItemLoaded() || bot->GetMyShop() || !CanPlayerBotAffordMarket(bot))
 				continue;
@@ -421,10 +368,10 @@ namespace
 			return false;
 		char reply[CHAT_MAX_LEN + 1];
 		if (book)
-			snprintf(reply, sizeof(reply), "Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
+			snprintf(reply, sizeof(reply), "O beceri lazimdi bana! Kasmama katmak icin KU %s aliyorum, hizlica Joan veya Bokjung'da pazar kur at, hemen cekeyim!",
 					GetPlayerBotSkillName(skillVnum));
 		else
-			snprintf(reply, sizeof(reply), "Kupie %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
+			snprintf(reply, sizeof(reply), "Moruk tam da aradigim parca (%s)! Oyundaki botlar topluyor, getir Joan/Bokjung'a pazar ac, iyi yang veririm!",
 					pszName ? pszName : query);
 		SendPlayerBotWhisper(buyer, player, reply);
 		return true;
@@ -439,7 +386,6 @@ namespace
 		return true;
 	}
 
-	// A player's shout, after it has gone out on the channel.
 	void HandlePlayerShoutForTrade(LPCHARACTER player, const char* text)
 	{
 		if (!player || !text)
@@ -463,9 +409,7 @@ namespace
 				book ? 1 : 0, query, answered ? 1 : 0);
 	}
 
-	// A player's whisper to a bot. A trade line is answered like a shout, by
-	// whichever bot is best placed; anything else gets the bot's own state -
-	// what its counter holds, or that it is out hunting.
+	// Bota atılan özel fısıltılara (PM) botların 2010 stili pazar diliyle verdiği tepkiler (Genişletilmiş ve Doğal)
 	void HandlePlayerWhisperToBot(LPCHARACTER player, LPCHARACTER bot, const char* text)
 	{
 		if (!player || !bot || !text)
@@ -497,13 +441,13 @@ namespace
 				goods += item->GetProto()->szLocaleName;
 				++listed;
 			}
-			snprintf(reply, sizeof(reply), "Stoje ze straganem w %s, mam: %s",
-					GetPlayerBotTownName(bot->GetMapIndex()), goods.empty() ? "nic juz" : goods.c_str());
+			snprintf(reply, sizeof(reply), "Eyvallah, su an %s tarafında pazarim acik duruyor. Tezgahtakiler: [%s]",
+					GetPlayerBotTownName(bot->GetMapIndex()), goods.empty() - 1 == -1 ? "Hersey satildi bostayim" : goods.c_str());
 		}
 		else if (it != s_mapPlayerBotAIStates.end() && it->second.bMarketTrip)
-			snprintf(reply, sizeof(reply), "Wlasnie ide na targ w %s", GetPlayerBotTownName(bot->GetMapIndex()));
+			snprintf(reply, sizeof(reply), "Kardesim su an piyasayi turluyorum, %s tarafinda esya arayisindayim bi dur soluklanayim.", GetPlayerBotTownName(bot->GetMapIndex()));
 		else
-			snprintf(reply, sizeof(reply), "Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung");
+			snprintf(reply, sizeof(reply), "Piyasa yapmaya ciktim, simdi kasiliyorum veya item dusuruyorum. Joan ve Bokjung'daki pazar disi tezgahlarima bak.");
 		SendPlayerBotWhisper(bot, player, reply);
 	}
 }

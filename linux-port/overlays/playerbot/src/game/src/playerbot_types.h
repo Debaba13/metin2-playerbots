@@ -326,7 +326,7 @@ namespace
 	// One eligible bot in twelve founds one. Any more and the world fills with
 	// guilds of one member, which is the opposite of the point.
 	const DWORD PLAYERBOT_GUILD_FOUNDER_SHARE = 12;
-	const size_t PLAYERBOT_GUILD_NAMES_PER_EMPIRE = 2;
+	const size_t PLAYERBOT_GUILD_NAMES_PER_EMPIRE = 8;
 	// The lowest grade, which is what an ordinary member joins at.
 	const int PLAYERBOT_GUILD_MEMBER_GRADE = 15;
 	const int PLAYERBOT_GUILD_INVITE_RANGE = 3000;
@@ -1258,13 +1258,14 @@ namespace
 		const char* itemLabel;
 	};
 
+	// 2010 TR Metin2 Biyolog Gorev Esyalari (Pure ASCII)
 	const TPlayerBotBiologistMission PLAYERBOT_BIOLOGIST_MISSIONS[] = {
-		{ 4,  "make_herb_lv4",  50701, 173, 5,  90, 1000,  500,    "Kwiat Brzoskwini" },
-		{ 7,  "make_herb_lv7",  50702, 175, 5,  90, 3000,  2000,   "Pokrzywa" },
-		{ 10, "make_herb_lv10", 50703, 177, 5,  90, 5000,  6500,   "Kwiat Kaki" },
-		{ 15, "make_herb_lv15", 50704, 181, 5,  90, 10000, 25000,  "Korzen Gango" },
-		{ 20, "make_herb_lv20", 50705, 182, 10, 80, 15000, 95000,  "Bez" },
-		{ 25, "make_herb_lv25", 50706, 183, 10, 70, 20000, 200000, "Grzyb Tue" },
+		{ 4,  "make_herb_lv4",  50701, 173, 5,  90, 1000,  500,    "Seftali Cicegi" },
+		{ 7,  "make_herb_lv7",  50702, 175, 5,  90, 3000,  2000,   "Isirgan Otu" },
+		{ 10, "make_herb_lv10", 50703, 177, 5,  90, 5000,  6500,   "Kaki Cicegi" },
+		{ 15, "make_herb_lv15", 50704, 181, 5,  90, 10000, 25000,  "Gango Koku" },
+		{ 20, "make_herb_lv20", 50705, 182, 10, 80, 15000, 95000,  "Eflatun Cicegi" },
+		{ 25, "make_herb_lv25", 50706, 183, 10, 70, 20000, 200000, "Tue Mantari" },
 		// The Orc Tooth. Ten from the Orcs (601) of the valley, one in twenty
 		// kills while the quest is open; sixty percent of what is handed in is
 		// accepted, the rest is spoiled, as in the quest without the elixir. The
@@ -1272,7 +1273,7 @@ namespace
 		// in what it carries. Then the second half: Jinunggyi's Soul Stone
 		// (30220), one in five hundred Elite Orc kills while the quest waits for
 		// it, and the reward is the quest's own, ten movement speed for good.
-		{ 30, "collect_quest_lv30", 30006, 601, 10, 60, 0, 0, "Zab Orka" }
+		{ 30, "collect_quest_lv30", 30006, 601, 10, 60, 0, 0,     "Ork Disi" }
 	};
 	const size_t PLAYERBOT_BIOLOGIST_ORC_TOOTH_INDEX = 6;
 	const DWORD PLAYERBOT_ORC_TOOTH_VNUM = 30006;

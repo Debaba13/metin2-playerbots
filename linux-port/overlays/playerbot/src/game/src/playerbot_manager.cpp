@@ -880,7 +880,7 @@ size_t CPlayerBotManager::SpawnRegistered(size_t count, BYTE bEmpire)
 	m_uSpawnWindowTotal = selected;
 	m_dwNextSpawnBatchTime = 0;
 	sys_log(0, "PLAYERBOT: staggered spawn scheduled=%u batch=%u every=%ums window=%ums",
-			(unsigned int)selected, (unsigned int)m_uSpawnBatchSize,
+					(unsigned int)selected, (unsigned int)m_uSpawnBatchSize,
 			PLAYERBOT_SPAWN_BATCH_INTERVAL, PLAYERBOT_SPAWN_WINDOW);
 	// The first batch goes now: Update runs off an event that OnPlayerLoaded
 	// starts, so somebody has to be asked for before anybody can drain the
@@ -1743,7 +1743,7 @@ void CPlayerBotManager::Update()
 				const TPlayerBotAIState& statusState = aiIt->second;
 				char statusText[192];
 				if (statusCh->IsDead())
-					snprintf(statusText, sizeof(statusText), "Nieprzytomny - czekam na wstanie");
+					snprintf(statusText, sizeof(statusText), "Baygin - Kalkmayi bekliyor");
 				else
 					BuildPlayerBotStatusText(statusCh, statusState,
 							statusText, sizeof(statusText));
