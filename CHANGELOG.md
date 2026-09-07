@@ -1,0 +1,2781 @@
+# Changelog
+
+Every release of this project, newest first. The admin panel reads this file to
+show you what an update would bring before you install it.
+
+Versions are `MAJOR.MINOR.PATCH`:
+
+- **PATCH** — a fix. Nothing you do changes.
+- **MINOR** — something new, or something behaves better than it did. Safe to
+  take; nothing you have set up stops working.
+- **MAJOR** — something you have to act on. A setting that has to move, a
+  command that no longer exists, a manual step during the update. These say so
+  at the top, in full, before anything else.
+
+Updating never touches your database. Characters, accounts and settings survive
+every version here.
+
+---
+
+## 1.30.13 — 2026-09-07
+
+### Zmienione
+
+- **Boty dochodzą do portalu, zamiast znikać dziewięć metrów przed nim.**
+  Zmiana mapy nigdy nie mogła iść przez silnikowy portal: `WarpSet` każe
+  klientowi połączyć się z rdzeniem, który obsługuje mapę docelową, a bot nie
+  ma klienta, który by odpowiedział — zostałby po prostu porzucony przy
+  portalu. Dlatego przejście robiliśmy po stronie serwera z bezpiecznym
+  zapasem 900 jednostek, i to ten zapas widać było w grze: postać biegła do
+  wyjścia i znikała w szczerym polu.
+  Nowa łatka silnika **0008** każe `warp_npc_event` pomijać boty, więc zapas
+  nie musi już chronić przed niczym — przejście robi się 200 jednostek od
+  portalu, czyli bot dochodzi pod sam NPC i znika tam, gdzie znika gracz.
+  Portale wewnątrz mapy (te w Lochu Małp) działają jak dotąd: to lokalne
+  przeniesienie, nie zmiana rdzenia, i łatka ich nie dotyka.
+  Sprawdzone na żywo: 398 przejść między mapami w dziewięć minut, w tym
+  dwanaście wejść i dwanaście wyjść z Lochu Pająków, i ani jeden zgubiony bot.
+- **Poprawka prywatnych straganów dociera wreszcie do graczy.** Łatka 0004
+  zamieniła w `OpenMyShop` test `GetPart(PART_MAIN) > 2` na `IsPolymorphed()`
+  — bez tego silnik odmawia otwarcia straganu każdemu, kto ma na sobie zbroję,
+  również żywemu graczowi. Łatki silnika trafiają do gracza wyłącznie jako
+  gotowy plik z listy aktualizacji, a `char.cpp` na tej liście nie było, więc
+  ta poprawka od początku działała tylko na maszynie deweloperskiej. Teraz
+  plik jest wysyłany razem z resztą.
+
+- **Bot z celem „zapasy" nie zaczynał po nie iść.** Planista i wykonawca
+  zadawali dwa różne pytania o mikstury. `NeedsPlayerBotPotions` liczy sztuki i
+  mówi „trzeba" przy czerwonych poniżej 150 albo niebieskich poniżej 100 — i na
+  tym stawia cel RESTOCK. Wyzwalacz wizyty liczył natomiast **stosy**, patrzył
+  wyłącznie na cztery czerwone numery przedmiotów, niebieskich nie widział
+  wcale, i odpalał się dopiero przy zerze mikstur w co najmniej w połowie pełnym
+  plecaku. Bot z jednym stosem 32 czerwonych i 56 niebieskich nosił więc cel
+  „zapasy", którego wizyta nigdy nie zaczynała, i stał w Bokjung bijąc, co
+  akurat przeszło obok — 116 botów poziomu 40 i wyżej siedziało tak na M2.
+  Wyzwalacz pyta teraz o dokładnie to samo, co planista. Pomiar po zmianie, w
+  trzynaście minut: 944 rozpoczęte wizyty u handlarzy (w tym 333 u handlarki
+  różności, gdzie kupuje się mikstury), 311 wyjazdów z M2 na mapy dalsze i
+  spadek populacji 40+ w mieście do 93. Pętli zakupowych to nie tworzy: wizyty
+  nadal bramkuje pięcio-dziesięciominutowy odstęp, a warunek wymaga pieniędzy
+  na wyjazd.
+
+  Ustalenie z audytu przekazanego przez Tieru; sprawdzone w kodzie, który
+  właśnie zmieniałem, a nie w starszej kopii z buildera.
+
+Zgłoszenie: Tieru.
+
+---
+
+## 1.30.12 — 2026-09-07
+
+### Naprawione
+
+- **Boty siedziały na tysiącach nieotwartych Szkatułek Blasku.** Przebieg
+  otwierania kończył się na pierwszej skrzynce, której silnik nie otwiera —
+  Skrzynia Eksperta III (50192) i Skrzynia Mistrza I (50193), razem blisko
+  sześć tysięcy odmów na minutę — i przez to nigdy nie docierał do szkatułek
+  leżących za nimi w plecaku. Do tego stał na samym końcu taktu, za walką,
+  łupem, podróżą, miastem i wędrówką, z których każde przejmuje turę.
+  Zmierzone przed zmianą: **9723 szkatułki u 587 botów**, największy stos 106,
+  a otwieranych 190 na godzinę; plecaki miały średnio 29 zajętych kratek z 90,
+  więc miejsce nie było przeszkodą. Po zmianie zaległość zeszła do **887 sztuk
+  u 44 botów w osiem minut**, w szczycie 380 otwarć na minutę. Odmowa pomija
+  teraz jedną skrzynkę zamiast kończyć przebieg i jest zapamiętywana na
+  dziesięć minut, żeby bot nie pytał o to samo co osiem sekund.
+- **Stragany wyceniały bonusy na zero.** Wszystko, co ustalało cenę — tabela
+  sprzedawcy, pamięć sprzedaży, ogranicznik kroku — jest kluczowane numerem
+  przedmiotu i poziomem ulepszenia, czyli dokładnie tą parą, która nie
+  odróżnia butów +7 z pięcioma liniami bonusów od butów +7 bez żadnej. Obie
+  szły po 150 000. Teraz do ceny dochodzi 25% za każdą linię, dodatkowe 100%
+  od czwartej linii wzwyż i 80% za każdą rolkę, na której gracz się zatrzymuje
+  (2000 PŻ, 10% krytyku, 10% przebicia, odporność na ogłuszenie), przy suficie
+  600%. Premia obejmuje także ceny płaskie za +7, +8 i +9 oraz złom — one
+  wychodziły z wyceny wcześniej i to je właśnie widać było na straganach.
+- **Diagnostyka launchera meldowała „OK", gdy silnik Dockera odmawiał.**
+  `docker info` kończy się kodem 0, choć zamiast wersji wypisuje odmowę demona,
+  więc w logu gracza stało „OK: Docker Engine odpowiada (wersja Error response
+  from daemon: Docker Desktop is unable to start)" i werdykt „można uruchomić
+  serwer" — sześć razy z rzędu. Ostrzeżenie o zepsutym WSL, jedyne, które mówi
+  co naprawić, podnosimy tylko gdy silnik jest znany jako wyłączony, więc przy
+  fałszywym „OK" nie pojawiało się wcale. Za wersję uznajemy teraz wyłącznie to,
+  co wygląda jak wersja; przy każdej innej odpowiedzi diagnostyka pokazuje
+  dosłowną treść odmowy demona.
+
+Zgłoszenie: Tieru, OskarPWA, BibiSiu.
+
+---
+
+## 1.30.11 — 2026-09-07
+
+### Zmienione
+
+- **Bot nie czeka już między księgami umiejętności.** Silnik trzyma od
+  osiemnastu do trzydziestu godzin przerwy między dwoma czytaniami tej samej
+  umiejętności; przełącznik KSIĘGI w panelu i tak ją zdejmował, ale bot
+  narzucał sobie w zamian własne pół godziny. Tego półgodzinnego oczekiwania
+  już nie ma: bot czyta wtedy, kiedy ma co czytać.
+  Nie zmieniło się nic z tego, co decyduje, jak daleko umiejętność zajdzie, bo
+  to reguły silnika: 20 000 punktów doświadczenia pobieranych za każde
+  czytanie, losowanie o powodzenie i liczba udanych czytań potrzebnych na
+  kolejny poziom mistrzowski, aż do G.
+
+  Pomiar na 638 botach pokazał przy okazji, gdzie naprawdę jest wąskie gardło:
+  480 botów ma umiejętność na Mistrzu, 326 z nich nosi jakieś księgi, ale tylko
+  **44 mają księgę tej właśnie umiejętności**. Czytań przybyło (z jednego na
+  dziewięć minut do jednego na dwie i pół minuty na całą populację), lecz
+  tempo rozwoju umiejętności ogranicza teraz podaż właściwych ksiąg, a nie
+  żaden zegar.
+
+Zgłoszenie: Tieru.
+
+---
+
+## 1.30.10 — 2026-09-07
+
+### Nowe
+
+- **Każdy bot nosi Trzecią Rękę.** Z nią silnik dopisuje yang z zabitego
+  potwora prosto do sakiewki zabójcy, zamiast rozsypywać kupki monet po ziemi
+  (`CHARACTER::RewardGold` pyta o `UNIQUE_GROUP_AUTOLOOT`). Dla bota to nie
+  wygoda, tylko czas: dojście do każdej kupki kosztuje wyliczenie trasy, a te,
+  do których nie zdąży, i tak znikają — teraz bot zamiast biegać po monetach
+  bije dalej, a na terenach łowieckich przestaje zalegać yang, którego nikt nie
+  podnosi. Boty nie mają sklepu z przedmiotami, więc przedmiot jest im nadawany,
+  a jego zegar zużycia nakręcany — tak samo jak `ManagePlayerBotSkillBooks`
+  kasuje osiemnastogodzinną przerwę między czytaniem tej samej księgi.
+
+Zgłoszenie: OskarPWA.
+
+---
+
+## 1.30.9 — 2026-09-07
+
+### Naprawione
+
+- **Boty tłoczyły się w jednym korytarzu Lochu Małp i nie korzystały z reszty.**
+  Labirynt nie jest jedną przestrzenią. `server_attr` dzieli go na jedenaście
+  osobnych komnat — dziewięć pokoi z regenu i dwie sale bossów — a łączą je
+  wyłącznie NPC-e przenoszące, które teleportują każdego, kto podejdzie na trzy
+  metry (silnik sprawdza to dwa razy na sekundę, nic się nie klika). Wybór
+  pokoju pytał nawigację, czy da się tam dojść po ziemi, a ta odpowiada tylko za
+  komnatę, w której bot stoi — więc każdy bot znajdował jeden pokój z ośmiu w
+  tablicy, ten swój, i szedł na ten sam punkt spawnu co wszyscy, którzy weszli
+  przez wejście. W godzinie logów: 130 wypraw do lochu i ani jedno zaplanowane
+  przejście portalem, a w raporcie gęstości ze wszystkich trzech lochów były
+  wyłącznie komórki komnaty wejściowej. Trzy komnaty — w tym największa, z
+  dziewiętnastoma punktami spawnu, i obie sale bossów — nie miały nawet wpisu.
+  Teraz bot patroluje punkty spawnu komnaty, w której stoi, a po czterech
+  minutach idzie do przejścia prowadzącego do sąsiedniej i nie wraca tym samym,
+  dopóki jest inne. Tablica obejmuje wszystkie jedenaście komnat i 148
+  rzeczywistych punktów spawnu z `regen.txt`.
+- **Przejścia czytane z samych NPC-ów, nie z tablicy.** Trzy Lochy Małp stoją na
+  jednym `server_attr` i mają NPC-e przenoszące w tych samych komórkach, ale
+  **każdy loch jest inaczej okablowany**: przejście przy komórce (80,308)
+  prowadzi w łatwym lochu do (106,547), a w średnim do (520,352); średni i
+  trudny mają dodatkowo dwa przejścia, których łatwy nie ma w ogóle, i przez nie
+  jedenastą komnatę. Cel przejścia jest teraz odczytywany z nazwy NPC-a, tak jak
+  robi to silnik, więc każdy loch chodzi po swoim własnym układzie.
+- **Przekroczenie przejścia rozpoznawane co takt.** Teleport przenosi bota, nie
+  ruszając jego trasy: przy następnym planowaniu nawigacja uznaje stary cel za
+  nieosiągalny, szuka przejścia do niego i znajduje to, którym bot właśnie
+  przyszedł. Bot dropiony między agresywne małpy walczy, a nie wędruje, więc
+  zanim kolejna decyzja wędrówki doszła do słowa, mijał dwa albo trzy przejścia.
+  Teraz komnata jest ustalana raz na takt, zanim cokolwiek zdąży przejąć turę.
+- **Boty stojące bez ruchu w mieście.** Przystanek miejski pozwalał planerowi
+  przyciągnąć cel do najbliższej kratki, na której da się stanąć, nawet o
+  osiemset jednostek — a potem sprawdzał dojście promieniem od 350 do 850. Gdy
+  sprzedawca stoi za ladą albo filarem, bot szedł do przyciągniętej kratki,
+  wciąż był poza promieniem, czyścił trasę i planował tę samą. Zaliczenie punktu
+  trasy zeruje licznik zacięć, więc ratunek serwisowy — ten po sześciu
+  nieudanych próbach — nigdy się nie uruchamiał: jeden bot stał u nauczyciela
+  umiejętności w Joan trzy dni, budzony przez watchdoga co dziewięćdziesiąt
+  sekund i ani razu nie ruszył się z miejsca. Przyciąganie celu mieści się teraz
+  w promieniu dojścia, a cel naprawdę nieosiągalny trafia w istniejący ratunek.
+
+Zgłoszenie: Tieru, Remigiusz.
+
+---
+
+## 1.30.8 — 2026-09-07
+
+### Naprawione
+
+- **Tobołki straganów leżące na ziemi.** Przed otwarciem straganu bot
+  kupuje tobołek (przedmiot 50200 „Tobół”) przez `AutoGiveItem`, a ten
+  przy pełnym plecaku — a plecak tuż przed sprzedażą bywa właśnie pełny —
+  kładzie go na ziemi. Stragan odmawiał (brak tobołka), następna próba
+  kupowała kolejny i plac zapełniał się tobołkami z etykietą „botjade2's”
+  (okno ochrony dropu), a boty biegały między nimi. Ta sama wada co
+  strzały w 1.30.7: teraz tobołek kupowany jest tylko do wolnej kratki,
+  bez niej stragan czeka na następną wizytę (`PLAYERBOT_SHOP: no room for
+  bundle` w logu).
+
+Zgłoszenie: Renagaruu.
+
+---
+
+## 1.30.7 — 2026-09-07
+
+### Nowe
+
+- **Średni i trudny Loch Małp.** Medal Konny to grupa dropu „kill”
+  (jeden na 550 żołnierzy, 500 wojowników, 200 generałów), a silnik skaluje
+  każdy taki rzut różnicą poziomów: piętnaście poziomów nad potworem
+  zostaje 1 % szansy. Bot 45 poziomu w łatwym lochu (małpy 22–29)
+  potrzebował więc ok. 50 tysięcy zabójstw na medal — 140 wypraw na godzinę
+  przynosiło jeden. Teraz loch dobiera poziom: łatwy (25) do 32, średni
+  (108, małpy 35–42) 33–45, trudny (109, małpy 45–54) od 46. Trzy lochy to
+  ten sam labirynt (jeden `server_attr`, te same portale), więc nawigacja,
+  pokoje i wyjście działają wszędzie; mapa 109 przeniesiona na rdzeń
+  game1. Bot, który przerośnie swój loch, wychodzi i wraca do właściwego.
+- **Po medal także z map granicznych.** Losowanie wyprawy po medal
+  czytano tylko w mieście, a bot po czterdziestce mieszka na Dolinie,
+  Pustyni, Sohan i w V1 — stąd 439 botów 40+ bez konia i 435 na koniu
+  poniżej dziesiątki. Teraz wylosowany bot bez drużyny schodzi z mapy
+  granicznej do Bokjung, idzie do swojego lochu i wraca; drużyn nie
+  rozbija. Zniesiony też podział „po 26 poziomie tylko trzecia część
+  szansy” i blokada dla konia ≥ 10: koń bojowy (11–19) dalej potrzebuje
+  medali do dwudziestki.
+- **Medal-dropper jest sklepikarzem medalowym.** Zbiera medale w lochu
+  swojego poziomu (dotąd tylko do 32) i zawsze wystawia je na straganie —
+  wcześniej trzymał je, dopóki jego własny koń mógł ich użyć, a dropper na
+  koniu 10 (kandydat do bojowego, nie wolno mu wydać medalu) nie mógł ich
+  ani użyć, ani sprzedać.
+- **Pełne eq chętniej otwiera stragan.** Bot z każdym slotem zajętym i bez
+  niczego do kupienia na drabince postępu trzyma stragan w trzech
+  przypadkach na dziesięć zamiast jednego (ten sam rzut, więc dotychczasowi
+  handlarze zostają).
+
+### Naprawione
+
+- **Łucznicy wysypywali strzały na ziemię.** `AutoGiveItem` oddaje przedmiot
+  także wtedy, gdy nie miał go gdzie położyć — przy pełnym plecaku paczka
+  strzał lądowała na ziemi, bot płacił, wciąż „potrzebował strzał” i
+  kupował znowu (dwadzieścia razy na godzinę). Teraz przed zakupem sprawdza
+  wolną kratkę, a bez niej czeka na następną wizytę.
+- **Panel seban (port 7790): „Internal Server Error” zaraz po starcie.**
+  Pulpit czyta tabelę zrzutów, którą kolektor zakłada przy pierwszym
+  zrzucie — a kolektor startuje razem z bazą, która na świeżej lub właśnie
+  zaktualizowanej instalacji jeszcze nie odpowiada; po nieudanej próbie
+  czekał pięć minut i przez ten czas każdy, kto otworzył panel, widział
+  błąd 500. Teraz do pierwszego udanego zrzutu kolektor ponawia co 15 s,
+  a pulpit bez tabeli pokazuje pustą sekcję obciążenia zamiast błędu.
+
+Zgłoszenie: OskarPWA, ŁOŚTEK, Remigiusz, stylowy26.
+
+---
+
+## 1.30.6 — 2026-09-07
+
+### Naprawione
+
+- **Świeża instalacja z archiwum repozytorium nie budowała panelu.** Launcher
+  kopiuje przy starcie `files/web_admin_schema.sql` do
+  `linux-port/docker/panel/schema/`, ale gdy tego katalogu nie było (Git go
+  ignoruje, więc archiwum „metin2-playerbots-main” go nie zawiera), pomijał
+  kopię — i budowa panelu padała na `COPY schema/` przy każdym Starcie, po
+  aktualizacji też. Launcher tworzy teraz brakujący katalog. Obejście dla
+  zainstalowanych: utworzyć ręcznie folder `linux-port\docker\panel\schema`
+  i kliknąć Start.
+
+---
+
+## 1.30.5 — 2026-09-07
+
+### Nowe
+
+- **Dwa nowe bossy do wypadów.** Dziewięć Ogonów na Górze Sohan (1901,
+  poziom 72, 166 tys. PZ, dwa lodowe golemy i yeti u boku, odrodzenie co
+  2 godziny w promieniu 150×200 pól) — wypad drużyny co najmniej
+  trzyosobowej, jak na Królową. Bestialski Kapitan w Bokjung (591, poziom
+  42, 19 tys. PZ, co godzinę) — każdy bot od 35 poziomu skręca do niego,
+  póki stoi, jak Dolina do Wodza.
+- **Drużyny na wszystkich mapach granicznych.** Drużyny tworzyły się tylko
+  na Dolinie Orków, a przejście mapy rozwiązuje drużynę, więc w V1 i na
+  Sohan nie było ani jednej (16 botów w V1, wszystkie solo) i nikt nie mógł
+  ruszyć na Królową ani Dziewięć Ogonów. Teraz drużyna zawiązuje się od 40
+  poziomu na każdej mapie granicznej (Dolina, Pustynia, Sohan, V1), do
+  ośmiu osób.
+- **Koń bojowy = częstsze Metiny, i ciosy w rytmie konia.** Jeździec z
+  koniem bojowym losuje wyprawę na Metiny dwa razy częściej. Kombo w siodle
+  ma trzy ciosy, nie cztery, i własne czasy z danych klienta
+  (`horse_<broń>/combo_NN.msa`); dotąd jeździec bijący kamień używał tabeli
+  pieszej, wysyłał czwarty cios, którego koń nie ma, i kolejny za wcześnie,
+  więc kombo nigdy nie grało do końca.
+
+Zgłoszenie: Tieru.
+
+---
+
+## 1.30.4 — 2026-09-07
+
+### Naprawione
+
+- **Tarcza przy broni dwuręcznej.** W 1.30.3 bot odmawiał kupna tarczy,
+  gdy nosił broń dwuręczną — a w Metin2 tarcza ma własny slot niezależny od
+  broni (nosi ją każda postać, także z łukiem). Reguła usunięta; zostają
+  te właściwe: nie kupuj, gdy w plecaku leży co najmniej równie dobry
+  zamiennik, i wymagaj 15 % przewagi nad noszonym.
+
+Zgłoszenie: Tieru.
+
+---
+
+## 1.30.3 — 2026-09-07
+
+### Naprawione
+
+- **Boty kupowały po trzy te same zbroje i tarcze, których nie noszą.**
+  Ocena „czy chcę ten przedmiot ze straganu” porównywała go tylko z tym, co
+  bot ma na sobie, a założenie kupionej rzeczy czekało na przegląd
+  ekwipunku — więc bot stojący przy ladzie kupował tę samą zbroję +6 trzy
+  razy co dwie sekundy, każda lepsza od noszonej i żadna jeszcze nie
+  założona. Teraz bot nie kupuje, gdy w plecaku leży co najmniej równie
+  dobry zamiennik na ten sam slot, a rzecz ze straganu musi być o 15 %
+  lepsza od noszonej i od zapasu (dwie zbroje +6 różnią się tylko rzutem
+  bonusów), nie kupuje tarczy przy broni dwuręcznej, a po zakupie przegląd
+  ekwipunku rusza natychmiast.
+- **Pętla Bokjung ↔ M3 M3-droppera.** Dropper z M3 ma tam zostać do 32
+  poziomu, ale reguła „powyżej 24 opuść M3” wyrzucała go natychmiast, a w
+  Bokjung ta sama logika słała go z powrotem: 148 przejść w kwartę u jednego
+  bota, kolejka do teleportera w Bokjung i boty 25+ „expiące w M2” między
+  skokami. Dropper zostaje na M3, dopóki chce tam być.
+
+Zgłoszenie: OskarPWA.
+
+---
+
+## 1.30.2 — 2026-09-07
+
+### Naprawione
+
+- **Do V1 przez pustynię, jak w grze.** Bot przenosił się z teleportera w
+  Bokjung wprost do Lochu Pająków i wprost z powrotem, czego żaden gracz nie
+  może zrobić. Teraz wejście to dwa etapy: teleporter → Pustynia Yongbi
+  (lewy górny róg) → marsz przez całą pustynię do bramy „Kuahlo Dong” w
+  prawym dolnym rogu (NPC 10016) → V1; powrót: wyjście z V1 na pustynię w
+  prawym dolnym rogu → marsz do bramy Bokjung w lewym górnym rogu → miasto.
+  W drodze bot nie bije mobów (marsz zajmuje tick, wybór celu nie działa), a
+  jedynie Metin w zasięgu 25 metrów, jeśli jest wart jego poziomu (ta sama
+  reguła dropu co przy polowaniu: kamień nie niżej niż 10 i nie wyżej niż 9
+  poziomów od bota); po rozbiciu idzie dalej. Log: `PLAYERBOT_WORLD:
+  transitioned ... reason=desert_crossing_to_v1 / desert_gate_to_v1 /
+  desert_crossing_from_v1 / desert_gate_to_bokjung` oraz `crossing stone`.
+- **Wypady na bossa naprawdę się zdarzają.** Huby Wodza Orków (Dolina) i
+  Królowej Pająków (V1) były oceniane jak każdy obóz — po gęstości potworów
+  z pamięci spotów — a jeden boss co pół godziny to gęstość zero, więc w
+  dobie logów ani jeden bot ich nie wybrał; Królowa nie zginęła ani razu.
+  Teraz hub bossa pyta sektor, czy boss stoi (odpowiedź trzymana 30 s), i
+  gdy stoi, wygrywa z każdym obozem: na Wodza (25 tys. PZ, co 30 minut)
+  rzuca się każdy bot z pasma 45+, także bez drużyny; na Królową (193 tys.
+  PZ, poziom 60, co ok. 4 godziny) idzie tylko lider drużyny co najmniej
+  trzyosobowej, a członkowie za nim. Log: `PLAYERBOT_RAID: boss ...
+  standing/down` i `heading for boss`.
+
+Zgłoszenie: Tieru.
+
+---
+
+## 1.30.1 — 2026-09-07
+
+### Nowe
+
+- **Wyprawa na Metiny.** Dotąd kamienie biła tylko rola łowcy Metinów
+  (co czwarty bot), a reszta rozbijała Metin wyłącznie wtedy, gdy stanął
+  jej na drodze — nie tak gra człowiek, który umawia się na wieczór
+  Metinów i przeczesuje mapę. Teraz każdy pozostały bot od 15 poziomu raz
+  na godzinę losuje (25 % szansy, skalowane suwakiem „Metiny” w panelu)
+  półgodzinną wyprawę: przez ten czas planuje, celuje i wędruje jak łowca —
+  Metin znany z rejestru (widziany przez dowolnego bota na mapie) idzie
+  przed hubem, kamień jest celem ważniejszym niż moby, a na mapach polowań
+  bot zmienia hub co półtorej minuty zamiast co cztery, bo kamień znajduje
+  się pokrywając teren. W każdej chwili około jeden bot na osiem spoza roli
+  łowcy jest na wyprawie. Log: `PLAYERBOT_METIN: expedition start/over`.
+- **Łowcy Metinów poza Joan szukają znanych kamieni.** Na Dolinie Orków,
+  Pustyni, Sohan i w V1 łowca szedł do hubów jak każdy inny i bił kamień
+  tylko z zasięgu skanu; teraz Metin z rejestru mapy jest jego celem
+  wędrówki tak samo, jak na mapie startowej.
+
+Zgłoszenie: OskarPWA.
+
+---
+
+## 1.30.0 — 2026-09-07
+
+### Nowe
+
+- **Metin2 Singleplayer Panel autorstwa seban latino — drugi panel w
+  instalacji.** Startuje razem z serwerem pod `http://127.0.0.1:7790`
+  (klasyczny panel zostaje pod 7788; 7789 należy do mostu przeglądarkowego).
+  Mapa świata botów odświeżana na żywo z pozycjami, poziomami, grupami i
+  botami przy Metinach; profile postaci z ekwipunkiem, magazynem, Yangami i
+  tooltipami przedmiotów w stylu klienta (bonusy, kamienie duszy); rankingi
+  poziomu, Yangów, broni 30 lv, konia, gildii; historia gospodarki (stan
+  przedmiotów, obieg Yangów, wykresy per przedmiot); telemetria CPU, RAM i
+  dysku; sterowanie zachowaniem botów, mnożnikami i bezpiecznym restartem;
+  masowe nadawanie przedmiotów według poziomu, klasy, konia i czasu gry;
+  przybornik GM, trzy motywy, opcjonalne hasło. Przy pierwszym wejściu
+  kreator `/setup`.
+- **Jak to jest wpięte.** Trzy kontenery z jednego obrazu w naszym compose
+  (`seban-panel`, `seban-collector`, `seban-item-grants`) na tej samej bazie,
+  plikach statusu i spoolu co klasyczny panel; hasła z naszego `.env`,
+  wersja z pliku `VERSION`. Nowe, opcjonalne klucze `.env`:
+  `M2_SEBAN_PANEL_PORT` (7790), `M2_SEBAN_SESSION_SECRET` (pusty = sekret
+  strony admina), `M2_SEBAN_TIERU_PANEL_URL`. Quest `web_admin.quest`
+  rozszerzony o polecenia nadań (`BULK_ITEM`, `BULK_MISSING`, `RIDER_ITEM`).
+  Paczka aktualizacji rośnie o ikony przedmiotów (ok. 20 MB); pierwszy start
+  po aktualizacji buduje nowy obraz panelu i grę z nowym questem.
+
+Źródło: seban latino, Metin2 Singleplayer Panel 1.30.1, przygotowany pod
+Playerbots 1.29.10 i tu dostosowany (wersja z pliku, jeden `COPY` kontekstu).
+
+---
+
+## 1.29.17 — 2026-09-07
+
+### Nowe
+
+- **Handel na czacie.** Bot, który otwiera stragan z czymś wartym przejścia
+  przez miasto (broń 30 lv, +7 i wyżej, dobry bonus), woła raz na świecie:
+  „Sprzedam Kozik Czar. Liś.+0 - stragan w Joan”; bot, który przyszedł na
+  targ po materiał i nic nie zastał, woła „Kupie Amulet Orka - kto ma, niech
+  wystawi w Joan”. Najwyżej jedno takie wołanie na 90 s na całym świecie i
+  jedno na bota na 20 minut. Wołanie gracza „Kupię X” / „Szukam X” dostaje
+  szept od najbliższego straganiarza, który ma X (z ceną i miastem);
+  „Sprzedam X” — szept od bota, któremu X brakuje. „KU Aura” rozumiane
+  (nazwy umiejętności z protos ksiąg). Szept do bota zwraca jego stan
+  (co ma na straganie, albo że poluje). Dopasowanie nazw nie zważa na
+  polskie znaki ani wielkość liter.
+- **Boty kupują też na straganach graczy.** Prywatny sklep gracza jest
+  czytany przez boty tak jak stragan bota; linia droższa niż 30 % mediany
+  portfela botów jest pomijana, żeby nikt nie drukował yangów na botach.
+  Gracz może więc odpowiedzieć na „Kupie X” bota, wystawić X w Joan lub
+  Bokjung i sprzedać.
+- **Łatka silnika 0007** (`input_main.cpp`, `shop.h`): wołanie i szept gracza
+  trafiają do botów, a lada sklepu jest czytelna. Pliki są w paczce jak przy
+  0006; pierwszy start po aktualizacji kompiluje grę na nowo.
+
+### Wydajność
+
+- **Dalekie plany tras.** Cache tras: 16 tras na cel zamiast 6, pół godziny
+  zamiast dziesięciu minut, dołączenie z 2400 zamiast 1600 jednostek;
+  długi korytarz szukany zachłanniej (waga 3); najwyżej 80 dalekich planów
+  na minutę, reszta odroczona o sekundę-dwie. Pomiar na 837 botach: tick
+  21–31 s → 8–17 s, planowanie 17–28 s z każdych 60 → 4–14 s, dalekie
+  plany 100–120/min po 221 ms → 30–82/min po 120 ms, trafienia cache
+  143–180 → 196–264/min.
+
+---
+
+## 1.29.16 — 2026-09-07
+
+### Nowe
+
+- **Księgi bez dobowej przerwy (przełącznik w panelu, zakładka AI).** Gra każe
+  czekać 18–30 godzin między dwoma czytaniami tej samej umiejętności, więc
+  bot potrzebował miesiąca ksiąg, by przejść z M1 na G1, a księgi zalegały w
+  plecaku. Domyślnie włączone: bot czyta ponownie po pół godzinie — to, co
+  gracz robi Zwojami Egzorcyzmu. Wyłączenie przywraca tempo gry. Klucz
+  `BOOKS` w pliku wag, jak `CHAT` i `SCRAP`.
+- **Limit ksiąg własnych.** Bot trzyma najwyżej 12 ksiąg jednej swojej
+  umiejętności (dziesięć udanych czytań to M1→G1 z zapasem); nadmiar idzie na
+  ladę lub do handlarza. Stragan nie wystawia już księgi, na którą jej
+  właściciel czeka.
+- **Skrzynki bez klucza pod presją plecaka.** Srebrne i złote szkatułki bez
+  pasującego klucza są trzymane, dopóki jest miejsce; gdy w plecaku zostaje
+  8 lub mniej wolnych pól, idą do handlarza, żeby loot i Szkatułki Blasku
+  (które otwierają się same, ale tylko do wolnego pola) miały gdzie
+  wylądować.
+
+### Naprawione
+
+- **Bot wolał smoczą zbroję +3 od zbroi z +1500 PZ.** Kara za przerośnięty
+  o 20 poziomów pancerz była płaskimi 1500 punktami za poziom i zjadała
+  linie bonusów: zbroja płytowa na 18 lv z 1500 PZ przegrywała na 50 lv ze
+  zbroją o 7 punktów obrony więcej. Kara jest teraz procentem samej obrony
+  (5 % za poziom), a punkt maksymalnego PZ liczy się 15 zamiast 10.
+- **Panel: wyszukiwarka postaci na liście graczy.** Lista brała 200
+  ostatnio grających postaci, a przy 1500 botach nie mieściła w niej żadnej
+  postaci gracza — filtr w przeglądarce nic nie znajdował. Ludzie są teraz
+  na liście zawsze, boty dopełniają ją do 200.
+
+Łuk: log potwierdza, że łucznicy ciągną po 3–4 cele i strzelają obszarowymi
+Strzałą Ognia i Strzałą Trucizny (do 12 trafień w promieniu 300); zwykły
+strzał z łuku jest jednocelowy z natury silnika — bez zmian.
+
+---
+
+## 1.29.15 — 2026-09-06
+
+### Naprawione
+
+- **Koniec fałszywych odmów zakupu.** W godzinie 22–23 było 2158 odmów na
+  501 zakupów, każda z wpisem silnika „this user seems to be a hacker”.
+  Przyczyna: prywatny sklep w silniku to siatka 5 kolumn × 8 wierszy, broń
+  zajmuje 3 pola w kolumnie, zbroja 2, a bot numerował linie 0, 1, 2…, więc
+  każdą linię od drugiego rzędu pod bronią lub zbroją silnik po cichu
+  pomijał („not empty position” w syserr, 280 razy na godzinę) i kupujący
+  trafiali w pusty slot. Linie są teraz układane na siatce tak jak robi to
+  silnik, oferta pamięta swój slot, a do tego jest identyfikowana po id
+  przedmiotu, którego właścicielem wciąż jest straganiarz (ten sam test,
+  który robi silnik), bo sprzedany stos bywa zastąpiony drugim takim samym
+  z plecaka. Po dojściu do stoiska bot czyta ofertę jeszcze raz i kupuje
+  to, co naprawdę tam leży, albo idzie do następnej lady. Wyprzedany
+  stragan zamyka się po id, nie po vnum.
+
+### Nowe
+
+- **Ceny skalowane do portfeli kupujących.** Cena bazowa była trzykrotnością
+  ceny u handlarza, a handlarz płaci grosze: materiał, którego brakowało
+  czterystu botom, stał za 600 yang na rynku, gdzie klienci mają po milion.
+  Co minutę liczona jest mediana wolnego złota botów, które chodzą po
+  zakupy (`wallet=` w raporcie `PLAYERBOT_MARKET: ledger`), i sztuka na
+  ladzie prosi o udział w niej: materiał 1,5 %, zapasowy sprzęt +4/+5/+6
+  odpowiednio 3/4,5/6 %, reszta 1 %, a cały stos najwyżej 30 % — żeby bot z
+  medianą portfela mógł go kupić. Marża handlarza zostaje tam, gdzie jest
+  wyższa; kamienie duszy trzymają tabelę po stopniu; +7/+8/+9 bez zmian.
+- **Pasmo rynku względem ceny bazowej.** Mediana transakcji koryguje cenę w
+  przedziale od ćwierci do czterokrotności ceny bazowej (dotąd: do
+  dwunastokrotności ceny u handlarza), więc jedna przepłata nie wywinduje
+  materiału, a stare tanie sprzedaże nie ściągną go z powrotem do groszy.
+
+---
+
+## 1.29.14 — 2026-09-06
+
+### Nowe
+
+- **Księga rynku.** Co minutę serwer liczy, ile sztuk każdego materiału
+  stoi na otwartych straganach i ilu botów brakuje go do własnej receptury
+  (i ma za co kupić). Dotąd stragan wystawiał każdy zapasowy materiał, więc
+  czterdzieści straganów pokazywało te same rzeczy, których nikt nie
+  potrzebował.
+- **Limit podaży z kodami powodów.** Materiał trafia na ladę tylko wtedy,
+  gdy na straganach jest go mniej niż 1,5 × 5 sztuk na każdego
+  potrzebującego bota (`LIST`). Gdy nikt go nie potrzebuje, jeden stos może
+  stać jako sonda (`PROBE`); kolejne zostają w plecaku (`NO_DEMAND`), a przy
+  pokrytym popycie — `OVERSTOCK`. Odmowy z liczbami idą do logu raz na
+  minutę (`PLAYERBOT_MARKET: held`), a co 10 minut raport
+  `PLAYERBOT_MARKET: ledger` pokazuje osiem najbardziej poszukiwanych
+  materiałów (D = boty, S = sztuki/stragany, ask = ostatnia cena).
+- **Wycena z kotwicą i regulatorem.** Cena bazowa (3× cena u handlarza, dla
+  kamieni tabela po stopniu) łączy się z medianą prawdziwych transakcji
+  wagą n/(n+4) w skali logarytmicznej: dwie sprzedaże przesuwają cenę o
+  jedną trzecią, pełna pamięć ośmiu o dwie trzecie. Dotąd dwie sprzedaże
+  zastępowały cenę bazową w całości. Dla materiałów dochodzi regulator
+  popyt/podaż ((D+5)/(S+5))^0,2 w granicach 0,75–1,35, a cena rynkowa
+  przedmiotu może przesunąć się najwyżej o 5 % na 10 minut (do 30 % naraz
+  po godzinie bez ofert).
+- **Materiał bez receptury nie jest towarem.** Przedmiot typu MATERIAL,
+  którego żadna receptura nie zużywa, nie trafia już na ladę tylko dlatego,
+  że ma taki typ.
+
+Ograniczenie: zakupy graczy na straganach botów przechodzą przez silnik bez
+śladu w tej pamięci — księga i mediana widzą wyłącznie handel bot–bot.
+
+Z dokumentu o handlu i wycenie (etapy A, B i C).
+
+---
+
+## 1.29.13 — 2026-09-06
+
+### Naprawione
+
+- **Stopień Kamienia Duszy był czytany z niewłaściwej cyfry.** Vnum kamienia
+  to 28[stopień][rodzaj] (28037 Potwora+0, 28437 Potwora+4); kod brał
+  ostatnią cyfrę, więc każdy kamień liczył się jako +0, reguła „+3 i +4
+  tylko na sprzęt +6” nigdy nie działała, a +4 Potwora szedł w byle co.
+- **Kamienie Duszy nie idą już do handlarza.** Reguła śmieci uznawała je za
+  złom — kamień, którego bot nie mógł od razu osadzić, sprzedawał NPC za
+  jednego yanga.
+
+### Nowe
+
+- **Zestawy Kamieni Duszy według stylu walki.** Jedna wspólna ocena
+  rodzaju kamienia dla kowala, lady i rynku: Potwora dla każdego, potem
+  Śmierci; Penetracji dla szkół bijących, Powtórki dla skillowych; kamienie
+  klasowe (Wojownika, Sury, Ninja, Szamana) są warte zero w świecie
+  potworów. Na zbroi: Witalności, potem Uchylenia dla tych, co stoją w
+  hordzie, Przyspieszenia dla dystansowych (łucznik, BM, szaman), potem
+  Obrony i Uniku; Magii tylko dla skillowych. Silnik odmawia drugiego
+  kamienia tego samego rodzaju, więc zestaw układa się sam.
+- **Gniazdo warte czekania.** Osadzenie to 30% szansy, a 70% to pęknięty
+  kamień wspawany w gniazdo na zawsze. Na sprzęcie +6 bot osadza tylko +3 i
+  +4, na +8 tylko +4; +0..+2 idą na sprzęt tymczasowy, +3/+4 nigdy poniżej
+  +6.
+- **Kamienie na targowisku.** Straganiarz wystawia kamienie, których nie
+  osadzi (zły rodzaj, brak gniazda, zły stopień na jego sprzęt), z ceną po
+  stopniu (30–500 tys.) do czasu, aż targowisko wyceni je transakcjami; bot
+  z wolnym gniazdem na sprzęcie +6 idzie na targ i kupuje kamień ze swojego
+  zestawu.
+
+Z audytu wiedzy o grze (sekcja 9).
+
+---
+
+## 1.29.12 — 2026-09-06
+
+### Nowe
+
+- **Pamięć dropu materiałów per spot, z zerami.** Każdy podniesiony materiał
+  (typ `ITEM_MATERIAL`) jest liczony w komórce spotu, w której leżał. Bot,
+  któremu brakuje materiału do własnej receptury, wybiera hub, gdzie ten
+  materiał już wypadał (warto o połowę więcej), a komórka z długim
+  rejestrem walk i bez tego dropu nie dostaje premii — zera są obserwacją
+  tak samo jak trafienia. Dotąd wybór szedł wyłącznie z tabel dropu.
+- **Bonus rasowy według tego, co bot naprawdę bije.** Ocena ekwipunku
+  (Silny przeciw Orkom, Nieumarłym…) brała rasę dominującą całej mapy.
+  Teraz każdy bot prowadzi własny histogram ras z ostatnich walk (połowiony
+  co 10 minut) i po 20 walkach to on decyduje; mapa jest zapasem. Pustynia
+  ma skorpiony obok nieumarłych, Dolina orków obok mistyków — liczy się
+  konkretny cel.
+- **Wojownik mentalny rozdaje statystyki jak tank.** 2 WIT : 1 SIŁ do 90,
+  potem ZR; Body bez zmian (2 SIŁ : 1 WIT). Reszta klas była już zgodna z
+  audytem (sura i szaman INT:WIT, ninja ZR:WIT).
+
+Z audytu wiedzy o grze (sekcje 3, 8 i 11).
+
+---
+
+## 1.29.11 — 2026-09-06
+
+### Naprawione
+
+- **Launcher rozpoznaje „read-only file system” Dockera.** Gdy dysk maszyny
+  WSL Docker Desktop przejdzie w tryb tylko do odczytu albo się zapełni,
+  budowa obrazu pada na `desktop-containerd/.../meta.db`, a launcher
+  odsyłał do logów. Teraz mówi, co zrobić: zamknąć Docker Desktop,
+  `wsl --shutdown`, sprawdzić miejsce w `%LOCALAPPDATA%\Docker\wsl`,
+  uruchomić Dockera i GRAJ — i czego nie robić („Clean / Purge data”
+  kasuje bazę z postaciami). Zgłoszenie z serwera (Ciapek).
+
+### Nowe
+
+- **Ryby pieczone na ognisku.** Martwa ryba szła dotąd do handlarza. Rybak
+  kupuje Wysuszone Drzewo (20 000 yang, więc dopiero gdy ma co najmniej 30
+  martwych ryb), na koniec sesji rozpala ognisko (silnik stawia je na 40 s)
+  i podaje mu martwe ryby; pieczone
+  wracają do plecaka i są używane jak mikstury: Karaś, Duży Karaś i Tenchi
+  jako czerwone, Ryba Mandaryna i Sum jako niebieskie, Pieczony Karp
+  (+20 ruchu) i Krasnopiórka (+10 zręczności) jak boostery na początku
+  walki. Wszystko przez natywną ścieżkę silnika (podanie przedmiotu
+  ognisku, `Grill`).
+- **Otwarcie małża to decyzja, nie odruch.** Silnik daje z małża w połowie
+  Kawałek Kamienia, w 30% nic, w 10/7/3% białą, niebieską i krwawą perłę.
+  Bot otwiera małża tylko wtedy, gdy oczekiwana wartość zawartości (ceny z
+  transakcji na targowisku, a bez nich cena u NPC) przebija wartość całego
+  małża; ostrożny kolekcjoner chce półtora raza tyle, specjalista od sprzętu
+  zadowala się mniej. Małż potrzebny własnej recepturze nadal zostaje.
+  Populacja pamięta wyniki wszystkich otwarć — także puste — i po 50
+  otwarciach liczy szansę z własnych danych; raport `PLAYERBOT_SHELLFISH:`
+  co 10 minut. Z audytu wiedzy o grze (sekcje 7 i 12).
+
+---
+
+## 1.29.10 — 2026-09-06
+
+### Naprawione
+
+- **„Nie znaleziono programu Docker Desktop” po STOP albo po aktualizacji.**
+  Launcher szukał `Docker Desktop.exe` tylko w trzech standardowych
+  katalogach; kto miał Dockera na innym dysku, ten po zatrzymaniu serwera
+  (które zatrzymuje też Docker Desktop) nie mógł go już uruchomić z
+  launchera, a aktualizacja, która trafiła w międzyczasie, dostawała winę.
+  Launcher szuka teraz też obok `docker.exe` z PATH i w rejestrze (wpis
+  odinstalowania, `InstallLocation`). Do tego czasu: uruchomić Docker
+  Desktop ręcznie i kliknąć GRAJ.
+- **Dalekie plany w Dolinie liczone raz, nie dla każdego bota z osobna.**
+  Daleki plan trasy (ponad 12 km) kosztował 150–250 ms rdzenia, a w Dolinie
+  szło ich 60–120 na minutę — 10–25 s z każdej minuty — i prawie wszystkie
+  były tą samą drogą: wejście na mapę do huba, hub do wyjścia, hub do huba,
+  proszone przez kolejne boty z tego samego kilkuset metrów. Rdzeń trzyma
+  teraz policzone trasy (start i cel zaokrąglone do 1,2 km, dołączenie tylko
+  przy czystym pierwszym odcinku, ważność 10 minut, do 400 tras na mapę) i
+  bot idący tam, gdzie ktoś już szedł, dostaje gotową trasę bez liczenia.
+  Linia `PLAYERBOT_LOAD` ma `cached=`, a każdy daleki plan ma wpis z celem,
+  wynikiem i kosztem. Pomiar przy 843 botach: 107–176 gotowych tras
+  na minutę, dalekie plany ze 100–170 na 38–93, rdzeń z 45–56% na 35–40%.
+
+- **Boty po 40 nosiły Bojową Tarczę+6 z pierwszego poziomu.** Silnik liczy
+  obronę jako `value1 + 2·value5`, więc Bojowa Tarcza+6 (39) wygrywała z
+  Czarną Okrągłą Tarczą+3 (37) i bot nosił ją „uczciwie” — 61 botów po
+  czterdziestce miało tarczę z 1 poziomu na grzbiecie, a 41-tarczę w
+  plecaku. Element zbroi przerośnięty o ponad 20 poziomów traci punkty za
+  każdy dalszy poziom, więc bot zakłada tarczę, zbroję, hełm i buty z
+  właściwego progu i dopiero je ulepsza (cel ulepszania to nadal +6 i wyżej);
+  41-tarcza od +4 wygrywa z 21-tarczą+6. Zgłoszenie z serwera.
+
+### Nowe
+
+- **Suwaki Szkatułek Księżycowych w panelu.** Zakładka zachowania botów ma
+  dwa suwaki: szansa na szkatułkę z zabitego potwora (‰) i z rozbitego
+  Metina (‰). Rdzeń przepisuje je do silnika w pięć sekund, bez restartu i
+  bez edycji `.env`; dopóki nikt ich nie zapisze, obowiązuje `.env`.
+- **Szyld straganu mówi, co jest na ladzie.** Dotąd szyld to była nazwa
+  konta bota, więc targowisko z czterdziestoma straganami czytało się jak
+  ściana identycznych napisów. Szyld powstaje z zawartości lady: „Bron 30:
+  Miecz Zabojcy”, „Zbroja Smoka+7”, „Futro Wilka, Skora Niedzwiedzia”,
+  „Ksiegi: Aura Miecza i inne”, „Zlom do palenia +0..+3” albo „Zolc
+  Niedzwiedzia i inne”; krótki przedrostek zależny od bota (Tanio, Okazja,
+  Sprzedam) tylko, gdy mieści się w 32 znakach. Szyld jest też w logu
+  otwarcia straganu. Pomysł z Discorda (Renagaruu).
+
+---
+
+## 1.29.9 — 2026-09-06
+
+### Nowe
+
+- **Boty złomiarze (suwak w panelu, domyślnie wyłączone).** Zakładka
+  zachowania botów ma suwak „Boty złomiarze” 0–100%: taki udział
+  straganiarzy wystawia na ladę swoje słabe ulepszenia (+0 do +3) za
+  dwukrotność ceny NPC zamiast sprzedawać je handlarzowi — złom do palenia
+  u kowala, jak na serwerach hard. Złomiarz trzyma złom, dopóki ma ponad
+  20 wolnych komórek w plecaku. Pomysł z Discorda (Remigiusz).
+- **Łucznik ciągnie 3–4 cele naraz.** Multi-pull, dotąd tylko dla
+  tarczowników i wojowników mentalnych, działa też dla łucznika: jedna
+  grupa, limit czterech atakujących zamiast czternastu. Pomysł z Discorda
+  (Archded).
+- **Wypad po drop z Metina.** Przez 20 sekund od rozbicia kamienia bot idzie
+  po swoje przedmioty w promieniu 15 m mimo trwającej walki z przywołaną
+  hordą — jak gracz, który skacze po drop, zanim zabiorą go inni. Dotąd w
+  walce podnosił tylko to, co leżało w zasięgu ręki (300 jednostek, tyle
+  pozwala silnik). Pomysł z Discorda (Kordyl13).
+- **Wypady na bossów.** Wódz Orków (Dolina, poziom 50, co 30 minut) i
+  Królowa Pająków (koniec Lochu V1, poziom 60, co ~4 godziny) są hubami dla
+  drużyn: przywódca z drużyną (najpierw współgildianie) może je wybrać jak
+  obozy Czarnych Orków. Szkatułki bossów (Szkatułka Wodza Orków, Królowej
+  Pająków i pozostałe) boty otwierają tak jak Szkatułkę Księżycową i nie
+  sprzedają ich.
+
+---
+
+## 1.29.8 — 2026-09-06
+
+### Nowe
+
+- **Srebrne i złote skrzynie otwierane kluczem.** Bot, który ma skrzynię
+  skarbów i pasujący klucz, używa klucza na skrzyni tak jak gracz: silnik
+  zabiera oboje i wydaje zawartość. Skrzynie i klucze nie idą do handlarza.
+- **Siedemnaście punktów i Zwój Zapomnienia.** Silnik losuje Mistrza przy
+  każdym punkcie od siedemnastego; bot wbijał do dwudziestu i tracił punkty.
+  Teraz zatrzymuje się na 17, a gdy Mistrz nie wszedł, szuka na targowisku
+  Zwoju Zapomnienia (70037, wypada z potworów): zwój cofa umiejętność o jeden
+  i oddaje punkt, bot wbija siedemnasty ponownie i losuje jeszcze raz. Bot
+  ze zwojem, któremu nie jest potrzebny, wystawia go na ladę; zwój nie jest
+  śmieciem.
+- **Boty od 48 idą tylko do Lochu Pająków i na Sohan**, po połowie. Dolina
+  zostaje dla 36–47, więc na obu wysokich mapach widać kogoś, mimo że
+  populacja sięga dopiero 50 poziomu.
+- **Przełącznik w panelu: czy boty piszą nad głową, co robią.** Zakładka
+  zachowania botów ma pole „Boty piszą nad głową, co robią”; wyłączone
+  ucisza napisy nad głowami (poluje, idzie do kowala, łowi) dla graczy,
+  którym to przeszkadza. Rdzeń odczytuje to w pięć sekund, bez restartu.
+  Wołanie na czacie świata o ulepszeniu na +7/+8/+9 zostaje niezależnie.
+
+### Naprawione
+
+- **Panel: Biolog liczył 6 misji, boty mają 7.** Ząb Orka dodany do listy
+  panelu (ranking, karta bota, etap), licznik 0/7.
+
+---
+
+## 1.29.7 — 2026-09-06
+
+### Naprawione
+
+- **„Góra Sohan” botów była drugą wioską Jinno.** Od 1.29.0 boty 26–39
+  szły na mapę 43 (`metin2_map_c3`, żołnierze 26–36) pod nazwą Sohan.
+  Prawdziwa Góra Sohan to mapa 61 (`map_n_snowm_01`): Zarażeni 49–58 na
+  południu, lodowe stwory i Yeti 62–66 na północy. Boty od 48 dzielą się
+  teraz na trzy: Loch Pająków, Sohan i Dolinę; 30–35 na pół między wyspy
+  Fanatyków i pustynię; poniżej 30 zostają w Bokjung. Czternaście hubów
+  Sohan z regen tej mapy (osiem wśród Zarażonych od 48, sześć w lodzie od
+  58), wejście ze spawnu miasta. Misje polowań na Zarażonych (wiersze od
+  41) są wykonalne, bo ich potwory mają teraz mapę. Mapa 43 wraca na rdzeń
+  Jinno, a boty, które na niej stały, migrator odsyła do Bokjung przy
+  pierwszym starcie po aktualizacji. Panel ma granice i kafelek mapy 61;
+  lista map, na których bot może stać, zna też 61 i 104 (dotąd boty z Lochu
+  Pająków wracały do Bokjung po każdym restarcie).
+- **Migrator nie ściąga już botów na środkową wyspę Doliny.** Krok z czasów,
+  gdy nawigacja nie znała mostów, przy każdym starcie przenosił każdego bota
+  spoza środkowej wyspy z powrotem na nią — 207 botów z wysp Fanatyków i
+  obozów Czarnych Orków na każdy restart. Usunięty.
+
+---
+
+## 1.29.6 — 2026-09-06
+
+### Naprawione
+
+- **Panel odpowiadał „Access denied” do bazy, choć gra działała.** Panel
+  czyta hasło bazy ze swojego pliku `m2panel.conf`, zapisywanego raz przy
+  pierwszym uruchomieniu i trzymanego w wolumenie `panel-conf`. Instalacja
+  przejęta z poprzedniej wersji miała tam stare hasło, a `.env` (i gra)
+  nowe — pulpit panelu i statystyki padały na 1045, migrator i rdzeń
+  działały normalnie. Przy starcie panelu adres, użytkownik i hasło bazy są
+  teraz odświeżane z `.env`; hasło panelu, sól i sekret sesji zostają bez
+  zmian. Plik startowy panelu jedzie w paczce aktualizacji, a aktualizacja
+  przebudowuje obraz panelu.
+
+---
+
+## 1.29.5 — 2026-09-06
+
+### Naprawione
+
+- **Przejęcie starszej instalacji padało na „Cannot bind argument to parameter
+  'Value' because it is an empty string”.** Gdy launcher znajdował istniejący
+  serwer z poprzedniej wersji (kontenery `metin2-db` bez pliku tożsamości
+  `.m2install.json`), przepisywał jego `.env` do nowego — a każdy prawdziwy
+  `.env` ma puste wartości (`M2_BRAND=`, `M2_CLIENT_URL=`…), których funkcja
+  zapisu nie przyjmowała. GRAJ i aktualizacja kończyły się tym błędem w
+  kółko. Puste wartości są pomijane (nie nadpisują niczego), hasła i adresy
+  ze starego pliku przechodzą. Test przejęcia starej instalacji ma teraz
+  puste wartości w `.env`.
+
+---
+
+## 1.29.4 — 2026-09-06
+
+### Naprawione
+
+- **Wojownik mentalny brał iglicę +4 zamiast miecza +6 z 30% na potwory.**
+  Premia +200000 punktów za broń dwuręczną biła każdą różnicę w ulepszeniu i
+  bonusach. Premia działa teraz dopiero od 11 poziomu konia (koń bojowy) —
+  wtedy dwuręczna ma sens, bo bot bije nią Metiny z siodła. Zgłoszenie od
+  gracza z Discorda.
+- **Zaparkowana trasa faktycznie wznawiana.** W 1.29.3 każdy krok do potwora
+  w trakcie walki (inny cel niż hub) kasował zaparkowaną trasę, więc wznowień
+  było 5–18 na minutę przy ~100 dalekich planach. Inny cel już jej nie
+  kasuje, robi to tylko zmiana mapy. Po poprawce: 200–360 wznowień na
+  minutę, dalekie plany spadły ze 100–170 do 46–94 na minutę, rdzeń z 56% na
+  35% przy 843 botach.
+- **Aktualizacja na świeżym silniku Dockera zgłaszała błąd, choć obrazy się
+  zbudowały.** `up --build` ścigał się z własnym pobieraniem i padał na
+  „No such image: mariadb:10.11”; druga próba przechodziła. Launcher pobiera
+  teraz obrazy obce przed budową.
+
+---
+
+## 1.29.3 — 2026-09-06
+
+### Naprawione
+
+- **Świeża instalacja na Linuksie (`installer/install.sh`) padała na patchu
+  szkatułek.** Hunk patcha 0006 zakładał, że w `item_manager.cpp` jest już
+  `#include "high_risk.h"`, a tę linię wstawia dopiero krok High Risk, który
+  w `prepare-context.sh` idzie po overlayu botów. Na czystym drzewie r40250
+  `patch --fuzz=0` odrzucał hunk; na maszynie, gdzie w cache było już drzewo
+  z High Risk, nakładał się przypadkiem. Kontekst hunku nie zależy już od tej
+  linii. Zgłoszenie z dokładną diagnozą przyszło od gracza.
+- **Paczka rozpakowana ręcznie (bez instalatora) nie miała pliku `.env` i nic
+  nie działało.** GRAJ kończył się na „Missing Docker environment file”, a po
+  aktualizacji dokańczanie budowy uruchamiało compose bez haseł bazy
+  (`M2_DB_PASSWORD is missing a value`) — i tak w kółko, bo budowa szła
+  przed krokiem, który plik tworzy. `start-server.ps1` tworzy teraz `.env`
+  z `.env.example`, nowymi hasłami i adresami 127.0.0.1, wypisując hasło
+  panelu; dokańczanie budowy najpierw przygotowuje `.env`. Gdy jest już
+  baza z tej instalacji, a `.env` zniknął, launcher mówi wprost, że hasła
+  trzeba przywrócić z kopii, zamiast wymyślać nowe, których baza nie przyjmie.
+- **Zbieranie logów padało bez pliku `.env`** („WriteAllLines: wartość nie
+  może być zerowa”) — akurat u gracza, któremu logi były najbardziej
+  potrzebne. Pusta lista zmiennych zapisuje się jako „(brak pliku .env)”.
+- **Przerwany marsz jest parkowany, nie kasowany.** Bot idący przez Dolinę do
+  odległego huba zatrzymywał się na każdą walkę, trasa szła do kosza, a po
+  walce rdzeń liczył ją od zera (200 ms za każdym razem, 100–170 dalekich
+  planów na minutę). Trasa przerwana walką jest teraz zachowywana i
+  podejmowana od najbliższego punktu, na który bot może wejść prosto.
+  W pierwszej obserwacji wznowień jest jeszcze niewiele (7–18 na minutę);
+  linia `PLAYERBOT_LOAD` mówi `resumed=`, a każdy daleki plan ma wpis
+  `PLAYERBOT_NAV: far plan` z celem — dalsze strojenie w następnym wydaniu.
+
+### Nowe
+
+- **Misje polowań do 55 poziomu.** Tabela kończyła się na 25, a w praktyce
+  prawie każdy bot stał od tygodni na misji z 14–17 poziomu: przyjął ją w
+  Joan, wyrósł z jej potwora i nigdy po niego nie wrócił. Tabela sięga teraz
+  55 (ostatni wiersz wykonalny na hostowanych mapach). Bot wybiera tę z dwóch
+  opcji, której potwór stoi na jego mapie, a gdy żadna — tę, która stoi
+  gdziekolwiek. Misja o ponad dziesięć poziomów niższa od bota, misja bez
+  potwora na żadnej mapie, misja z potworem na innej mapie niż ta, na której
+  bot osiadł, i misja wisząca dwie godziny są oddawane jako pominięte, bez
+  nagrody, żeby nie blokowały następnych. Nagroda z
+  doświadczenia zwęża się jak w questlib: 2–5% od 31, 1–4% od 51. Panel zna
+  nazwy potworów nowych wierszy.
+- **Ząb Orka u Biologa.** Siódma misja Biologa: dziesięć Zębów Orka z Orków w
+  Dolinie, oddawane po jednym, 60% szansy na przyjęcie i spalony ząb przy
+  porażce — jak u gracza bez eliksiru, tylko bez 22 godzin czekania między
+  oddaniami. Po dziesiątym zębie quest czeka na Kamień Duszy Jinunggyi
+  (1/500 z Elitarnych Orków, przez własny hook questu), bot poluje wtedy na
+  Elitarne Orki, a Kamień oddaje Biologowi: +10 szybkości ruchu na 60 lat i
+  skrzynka, jak w skrypcie. Ząb i Kamień nie idą do handlarza ani na ladę.
+- **Misję Biologa bot bierze tam, gdzie stoi.** Dotąd przyjmował ją tylko na
+  M1, a okazy spadają dopiero po przyjęciu — bot, który minął 25 poziom poza
+  Joan, nie zbierał nic (663 z 876 botów miało Grzyb Tue nietknięty). Teraz
+  przyjmuje ją gdziekolwiek, a do Biologa idzie dopiero z kompletem. Z
+  zaległych misji wybiera tę, której okazy już niesie, potem tę, której potwór
+  stoi na jego mapie — bot z Doliny zbiera zęby zamiast wracać po grzyby.
+
+---
+
+## 1.29.2 — 2026-09-06
+
+### Naprawione
+
+- **Aktualizacja do 1.29.1 padała przy budowaniu obrazu.** Nowy plik obrazu
+  kopiuje tabelę szkatułki z kontekstu, a aktualizacja buduje obraz od razu
+  po wgraniu plików, zanim `start-server.ps1` zdąży ją tam podstawić:
+  „special_item_group.moonlight.txt: not found”. Paczka wkłada teraz ten plik
+  (i tabelę dropu M3) prosto do kontekstu, a launcher podstawia je także przy
+  aktualizacji. Kto już ma ten błąd: kliknięcie GRAJ dokańcza budowanie.
+
+---
+
+## 1.29.1 — 2026-09-06
+
+### Naprawione
+
+- **Szkatułki i trzy księgi z Metina nie docierały do graczy.** Zmiana w
+  silniku z 1.29.0 była patchem, a na Windows launcher nie nakłada patchy —
+  robi to tylko skrypt, który działa u autora. Do tego plik obrazu z podmianą
+  zawartości szkatułki nie jechał w paczce. Efekt: po aktualizacji 30 Metinów
+  nie dało ani jednej szkatułki i jedną księgę. Paczka wiezie teraz oba
+  spatchowane pliki silnika tak samo jak źródła botów, plik obrazu i tabelę
+  szkatułki; obraz zbudowany ścieżką gracza zawiera i tokeny, i tabelę.
+- **Kowal ze Zwojem Błogosławieństwa.** Bez zwoju porażka ulepszania niszczy
+  przedmiot — 1584 spalonych w jedno popołudnie. Ze zwojem z szkatułki bot
+  ulepsza od +6 wzwyż ścieżką silnika ze zwojem: porażka to spadek o poziom,
+  nie strata. Robi to z plecaka, w polu, bez kowala — jak gracz. W pierwsze
+  trzy minuty: 10 sukcesów, 13 spadków o poziom, zero spalonych.
+
+### Nowe
+
+- **Góra Sohan i Loch Pająków V1 dla botów.** Sohan (Żołnierze Czarnego
+  Wiatru i Dzicy, 26–36, trzy rodzaje Metinów) przyjmuje boty od 26: połowa
+  26–29 idzie tam zamiast czekać w Bokjung, a 30–35 dzieli się na trzy
+  między wyspy Fanatyków, pustynię i Sohan. Loch Pająków V1 (pająki 50–58)
+  bierze połowę botów od 48 zamiast Doliny. Dziesięć hubów Sohan i osiem
+  Lochu ze spawnów, wejścia z Town.txt, wyjścia przy NPC obok wejścia. Obie
+  mapy przeniesione na rdzeń, na którym działają boty. Panel zna obie mapy i
+  ma ich kafelki.
+
+---
+
+## 1.29.0 — 2026-09-06
+
+### Nowe
+
+- **Dolina Orków po poziomach, obozy Czarnych Orków dla grup po osiem.** Pięć
+  wysp Fanatyków (35) i Arahanów (38) dla botów 30–39, szesnaście hubów
+  gęstości dla 36+, trzy obozy Czarnych Orków (46) — (601,625), (774,923),
+  (933,639) — dla grupy 40+, a wyspa środkowa z Dręczycielami (49), którzy
+  noszą Księgę Klątw, dla grupy 45+. Boty 30–35 idą na wyspy Fanatyków albo
+  na pustynię, po parzystości pidu. Grupa w Dolinie ma do ośmiu osób; każdy
+  bot poziomu obozu może do niej wejść, nie tylko dziesięcioprocentowa
+  kohorta; współgildianin liczy się w doborze za dwóch przyjaciół, a lider
+  z gildią wybiera obóz po numerze gildii, więc jedna gildia zbiera się na
+  jednym obozie. Marudera za liderem w drodze do nowego obozu grupa nie
+  wyrzuca — 57 z 59 rozpadów pierwszej godziny to była właśnie ta droga.
+- **Wspólna pamięć populacji: gdzie stoi najwięcej potworów.** Każde szukanie
+  celu zapisuje w komórce 6400 jednostek, ile potworów było w zasięgu, jakiego
+  poziomu i ile walk tam zaczęto; wpisy maleją o połowę co dziesięć minut.
+  Hub wybiera się po udziale (potwory w zasięgu podzielone przez boty, które
+  już tam są), o połowę taniej na 20 km, i trzyma cztery minuty. Obóz pełen
+  potworów, których bot nie tknie sam, jest dla niego pusty. Raz na dziesięć
+  minut `PLAYERBOT_SPOT:` wypisuje najbogatsze komórki każdej mapy — komórka
+  bez huba, która wciąż wychodzi na wierzch, to hub, którego brakuje tabeli.
+- **Szkatułka Blasku Księżyca jako event.** Szansa na tysiąc na zabity potwór
+  (`M2_MOONLIGHT_CHEST_PERMILLE`, domyślnie 10) i osobno na kamień Metin
+  (`M2_MOONLIGHT_CHEST_STONE_PERMILLE`, domyślnie 300), z CONFIG, bez
+  przebudowy; 0 wyłącza. W środku, po wadze: Zaczarowanie i Wzmocnienie
+  Przedmiotu, Zielona i Fioletowa Mikstura po pięć, Dłoń Krytyka i Dłoń
+  Przebicia po trzy, Błogosławieństwo Życia i Smoka, Zwój Błogosławieństwa,
+  Księga Umiejętności. Bot otwiera szkatułkę w ciągu sekund, zwoje bonusów
+  idą przez istniejący dobór bonusów (własny zwój przed kupnem), mikstury
+  szybkości przez istniejące picie, wzmocnienia pije na początku walki, a
+  Błogosławieństwa są ostatnią miksturą w zapasie. W pierwsze pół godziny:
+  315 otwartych szkatułek, 876 wypitych wzmocnień.
+- **Trzy Księgi Umiejętności z każdego Metina.** Tabela dawała jedną z szansą
+  od ćwierci do całości; teraz liczba ksiąg z kamienia jest dopełniana do
+  trzech, każda z losową umiejętnością tak jak dotąd.
+- **Cztery osobowości „Dropek”.** Dropek Metinów (co trzeci łowca Metinów)
+  zbiera Księgi Umiejętności — także te, których nie przeczyta — i stawia je
+  na straganie obok broni 30 lv. Dropek z M3 siedzi na Waryong po bronie 30
+  lv do 32 poziomu, niezależnie od tego, czy ma własną. Dropek z M2 obozuje
+  u Bestii w Bokjung po ich bronie do 40 poziomu. Dropek medali chodzi do
+  Łatwego Lochu Małp po medale do 32 poziomu, nie tylko póki jego koń ich
+  potrzebuje, i sprzedaje nadwyżkę. Co ósmy zwykły poszukiwacz jest jednym
+  z trzech ostatnich. Dropek otwiera stragan na co trzeciej wizycie w mieście
+  i dostaje stół handlarza. Panel zna ich nazwy.
+- **Panel po polsku.** 305 wpisów słownika interfejsu miało tylko angielski,
+  niemiecki i turecki, więc polska przeglądarka dostawała angielski; strona
+  konta miała teksty wpisane na sztywno. Wszystko przetłumaczone.
+
+### Naprawione
+
+- **Launcher rozpoznaje port zarezerwowany przez Windows.** Po restarcie
+  Hyper-V/WSL rezerwuje losowe zakresy portów; gdy 11000 albo 13000 w nie
+  trafi, `docker compose` pada sekundę po zbudowaniu obrazów z „ports are
+  not available … zabroniony przez uprawnienia”, a launcher pokazywał to jako
+  nieznany błąd. Jeden gracz przeszedł tak pięć identycznych prób
+  aktualizacji. Teraz diagnostyka sprawdza `netsh interface ipv4 show
+  excludedportrange` przed startem, a po błędzie launcher wypisuje, co zrobić:
+  `net stop winnat`, GRAJ, `net start winnat`.
+- **Wybór huba nie goni najlepszego spotu przez całą mapę.** Pierwsza wersja
+  pamięci spotów przełączała hub przy każdej decyzji: 160–334 dalekich planów
+  na minutę, osiem tysięcy odroczeń, tick 57 s z 60. Waga odległości i
+  przyklejenie do wyboru na cztery minuty sprowadziły to do 33–65 planów i
+  ticku 10–18 s.
+
+---
+
+## 1.28.0 — 2026-09-06
+
+### Nowe
+
+- **Boty logują się stopniowo przez minutę po starcie serwera.** Do tej pory
+  cała populacja wchodziła do świata w jednej sekundzie: 848 postaci, każda w
+  pierwszym ticku prosiła o trasę, a budżet nawigacji to 32 plany na tick.
+  Kto nie dostał trasy, stał; strażnik bezczynności go resetował; reset prosił
+  znowu — 4075 resetów w pierwsze dziewięć minut i rdzeń na 99,9%. Teraz
+  logowanie idzie partiami po 15 na sekundę, a pierwsze ciężkie przebiegi bota
+  (ulepszanie, dobór sprzętu, zakupy, kamienie) są rozłożone po pidzie na tę
+  samą minutę. Populacja 850 botów jest w świecie po 66 sekundach.
+- **Raz na minutę serwer pisze, ile kosztowała populacja.** Linia
+  `PLAYERBOT_LOAD:` w syslogu: czas ticku, liczba i czas planów tras w czterech
+  koszykach odległości, odroczenia, szukanie celu, migawka panelu, skany mapy,
+  zapisy, resety strażnika. Bez tej linii pierwsza wersja wędrówki po materiał
+  została zdiagnozowana z samego CPU — i wszystkie skany populacji wpadły w
+  jedną sekundę.
+
+### Naprawione
+
+- **Zużycie CPU przy 850 botach spadło z 63–68% do 26% rdzenia.** Planer tras
+  pytał silnik o atrybut sektora na żywo dla każdego sąsiada każdego węzła A* —
+  do 24 razy na węzeł — choć siatka nawigacji ma ten sam bit spróbkowany w tym
+  samym punkcie. Tysiąc planów na minutę spędzało na tym 31 s z każdych 60.
+  Teraz planer czyta siatkę; tylko chód (segment przed botem, raz na tick)
+  pyta silnik, żeby wciąż zatrzymać bota przed czymś postawionym po zbudowaniu
+  siatki. Plan przez całą Dolinę Orków: 513 ms → 50–80 ms; plan na 256–1024
+  komórek: 35 ms → 5–10 ms.
+- **Jeden tick nie zatrzymuje już świata na pół sekundy.** Budżet planów na
+  tick liczył sztuki, a plan może kosztować 0,2 ms albo 80 ms. Obok liczby
+  jest teraz czas: po 50 ms planowania reszta próśb w tym ticku idzie
+  ścieżką odroczenia i wraca w ciągu dwóch sekund. Wiąże tylko w minucie po
+  starcie.
+- **Zapis postaci bota co 120 s zamiast co 30 s.** Silnik i tak zapisuje każdą
+  postać co 120 s, a awans poziomu wymusza zapis natychmiast; boty dokładały
+  cztery zbędne zapisy na jeden zapis silnika — blisko trzydzieści na sekundę.
+- **Launcher mówi, czego brakuje, zamiast „exit 1".** Kontener
+  `playerbot-migrate` kończy się w pierwszej sekundzie, gdy brak lub pusty jest
+  plik `playerbots_seed.sql`; launcher kopiował go tylko wtedy, gdy źródło
+  istniało, i milczał, gdy nie. Teraz brak źródła daje ostrzeżenie z pełną
+  ścieżką, brak pliku w paczce zatrzymuje start przed `docker compose` z
+  instrukcją co zrobić, a gdy `compose up` się nie uda, w logu launchera lądują
+  ostatnie 40 linii z `playerbot-migrate`, `mariadb`, `game` i `panel`.
+
+---
+
+## 1.27.0 — 2026-09-06
+
+### Nowe
+
+- **Bot, któremu brakuje ulepszacza, idzie po niego do potwora, który go nosi.**
+  Do tej pory brak materiału kończył się na targu — a jeśli lada była pusta,
+  bot polował gdziekolwiek. Teraz przy wyborze celu potwór, którego przedmiot
+  z tabeli dropu jest na liście braków, wygrywa z sąsiadami; a gdy w zasięgu
+  nie ma żadnego, bot przeszukuje całą mapę i rusza do najbliższego. W pierwsze
+  24 minuty 385 botów wyruszyło 1845 razy, z czego 500 po Amulet Orka.
+- **Cena na straganie bierze się z zakończonych sprzedaży, nie ze stałego
+  mnożnika.** Świat pamięta ostatnie ceny jednostkowe każdego przedmiotu.
+  Przy dwóch sprzedażach lada wystawia medianę: 15% drożej, gdy ostatnia
+  sprzedaż była w ciągu dziesięciu minut, 15% taniej, gdy nikt nie kupił od
+  godziny — w klamrze między ceną u kupca a jej dwunastokrotnością. Cena
+  wystawiona to nadzieja sprzedawcy; cena zapłacona to jedyny pomiar popytu.
+- **Bot porównuje broń po tym, jak jego szkoła zadaje obrażenia.** Miecz sury
+  Czarnej Magii i dzwon szamana mają w proto dwie pary wartości — fizyczną i
+  magiczną — a wycena czytała tylko fizyczną. Szkoły czarujące (Czarna Magia,
+  obie szkoły szamana) liczą teraz magię z połową fizyki; reszta fizykę z
+  ćwiartką magii. Tak samo bonusy: średnie obrażenia są warte więcej szkołom
+  ciosów, obrażenia umiejętności — szkołom skilli; wcześniej te drugie wpadały
+  do domyślnego koszyka wartego dziesięć razy mniej.
+- **Rybia Ość, Małż, perły i Zwój Błogosławieństwa są ulepszaczami.** Ośmiu z
+  84 materiałów receptur nie ma typu „materiał"; Rybia Ość (13 receptur) szła
+  do kupca jako „kieszonkowe wędkarza". Teraz o tym, co jest ulepszaczem,
+  decyduje tabela receptur, nie typ przedmiotu.
+- **Małż potrzebny do receptury nie jest otwierany.** 26 receptur zużywa go
+  jako jest; otwieranie tego, po który bot i tak idzie do kowala, zamieniało
+  pewny materiał na szansę na inny.
+- **Kamień Duszy dobierany pod szkołę.** Kamień Potwora pierwszy dla każdego,
+  Śmierci i Penetracji dla szkół ciosów, Powtórki dla szkół skilli, klasowe
+  na końcu — w świecie potworów. Zbroja: Witalności, potem Uchylenia, Obrony.
+
+### Naprawione
+
+- **Bot wkładał Kamień Duszy z gwarancją sukcesu i za darmo.** Kamień był
+  wpisywany wprost do gniazda i kasowany; gracz ma 30% szans, a przy porażce
+  pęknięty kamień na stałe w gnieździe. Na żywym świecie stało 261 obsadzonych
+  gniazd i zero pękniętych. Teraz kamień idzie tą samą ścieżką co u gracza —
+  zdjęcie sprzętu, próba, odczyt gniazda, założenie. Pierwszego wieczoru:
+  sześć pęknięć, jeden sukces.
+- **Kamień Potwora był po stronie zbroi.** Podział rodzajów kamieni na
+  broń/zbroję miał granicę o jeden za nisko; proto mówi jasno, że 28037 to
+  broń. Poprzedni sposób wkładania nie zauważał różnicy.
+- **Bot mógł przekuć broń w stopień, którego nie założy.** Silnik sprawdza
+  poziom wyniku ulepszania tylko w wersji koreańskiej; ten serwer ma locale,
+  więc kontrola była wyłączona. Pięć rodzin w zasięgu botów podnosi wymagany
+  poziom z każdym plusem — Upiorna Kusza z 38 na 56, trzy dzwony z 52 na 60.
+  Bot pyta teraz o poziom wyniku przed próbą.
+- **Skan mapy po materiał spadał całym stadem naraz.** Po restarcie każdy bot
+  robił go w tej samej sekundzie, i znowu co 90 s — rdzeń szedł na 100%.
+  Pierwszy skan jest rozłożony po pidzie, a na jeden tick przypada ich
+  najwyżej sześć. W stanie ustalonym rdzeń pracuje na 14%.
+
+### Sprostowanie
+
+Wcześniejsza analiza tego projektu twierdziła, że na hostowanych mapach da
+się zdobyć 28 z 84 materiałów. To wynik błędnego odczytu `group_group.txt`.
+Poprawnie: **64 z 84**, plus Rybia Ość z wędkowania. Skóra Niedźwiedzia,
+której czekały 943 sztuki sprzętu na +6, wypada z niedźwiedzi na mapach 21
+i 24 — nie brakowało dropu, brakowało kogoś, kto go zbierze.
+
+---
+
+## 1.26.0 — 2026-09-05
+
+### Nowe
+
+- **Boty wchodzą do Doliny Orków bramą Chunjo i rozchodzą się po wyspach.**
+  Mapa ma cztery teleportery — po jednym na królestwo i jeden na środku,
+  niczyj. Boty lądowały przy tym środkowym, więc cała populacja pojawiała się
+  na wyspie centralnej. Teraz wychodzą tam, gdzie wychodzi postać z Chunjo.
+- **Bot, który przez pięć minut nie ruszył się dalej niż o szerokość huba,
+  idzie do następnego** — nawet jeśli akurat ma tu co bić. Rotacja po miejscach
+  polowania działała wyłącznie w turze, w której nie było żadnego celu, a przy
+  4041 punktach odrodzenia w Dolinie taka tura nie przychodziła nigdy. Razem
+  z bramą Chunjo dało to jedną wyspę z dwudziestu trzech — a Amulet Orka
+  i Ezoteryczny Przewodnik nie mają tam ani jednego punktu odrodzenia.
+- **Ulepszacze krążą między botami.** Materiał, którego znalazca sam nie
+  potrzebował, był złomem i szedł do kupca ogólnego przy najbliższej wizycie
+  w mieście — niszczony w tempie, w jakim wypadał. Teraz zostaje jako towar na
+  własny stragan, do ośmiu komórek (materiały się stackują). Na ladę trafiają
+  wyłącznie te 84 materiały, których faktycznie żąda jakaś receptura, a nie
+  wszystkie 240 przedmiotów typu materiał.
+- **Boty nie zsiadają z konia przy teleporterze.** Zsiadanie ma sens przed
+  rozmową z NPC; z teleporterem bot nie rozmawia, bo przejście jest serwerowe.
+  W jeden wieczór było to 1362 zsiadania, każde z ponownym wsiadaniem trzy
+  sekundy później po drugiej stronie.
+- **Bot porównuje broń po obrażeniach w czasie, a nie po rodzinie.** Broń
+  z zestawu na 30 poziom dostawała płaski bonus tak duży, że żaden bot nigdy
+  jej nie wymieniał — FMS +4 wygrywał z mieczem na 36 poziom +7, który jest
+  lepszy. Do tego silnik skraca o połowę odstęp między ciosami sztyletu
+  i podwaja obrażenia łuku, więc na tych dwóch te same liczby są warte dwa
+  razy tyle: sztylet na 30 poziom z 40-44 bije mocniej niż miecz z 57-73.
+- **Mapy w panelu są dwa razy dokładniejsze.** Kafle 1024 zamiast 512, więc
+  na mapie królestwa piksel to dwie komórki terenu, a nie cztery — mury,
+  budynki i drogi przestały się rozmazywać. Jasne, piaskowe podłoże zamiast
+  ciemnozielonego, bo nakładki cieplne są ciepłe i na ciemnym tle z nim
+  konkurowały. Siatka mapy cieplnej z 44 na 72, więc ognisko wypada na
+  budynku, a nie na dzielnicy. Doszła trzecia warstwa: **awanse umiejętności**.
+
+### Naprawione
+
+- **Boty potrafiły zamarznąć przy teleporterze na dobre.** Marsz do portalu
+  ignorował to, czy udało się wyznaczyć trasę, i zawsze meldował sukces —
+  a podróż zajmuje całą turę, więc nic poniżej już się nie wykonywało. Bot stał
+  bez trasy, przeskakując cel co sześć sekund, a strażnik bezczynności resetował
+  go w kółko prosto z powrotem w tę samą decyzję. Teraz mierzony jest postęp:
+  bez ruchu przez dwadzieścia sekund bot oddaje turę i wraca do polowania.
+- **Bot i potwór potrafili leczyć się nawzajem w nieskończoność.** Reguła
+  „ta walka do niczego nie prowadzi" istniała tylko dla kamieni metin. Zwykły
+  potwór był porzucany wyłącznie wtedy, gdy bot nie potrafił do niego dojść,
+  więc walka z Czarnym Orkiem, który regenerował się szybciej, niż bot zdejmował
+  mu życie, nie miała końca. Teraz obowiązuje ten sam test co przy kamieniach.
+- **Boty przestały bić potwory dużo poniżej swojego poziomu.** Zwykły cel
+  wybierany był po samej odległości, więc bot z 19 poziomu tłukł psy z 1
+  poziomu pod murami Joan. Tabela doświadczenia silnika płaci za takiego
+  potwora jedną setną — potwór niżej niż o dziewięć poziomów jest teraz
+  pomijany, dopóki w zasięgu jest cokolwiek lepszego.
+- **Postacie botów przepadały bezpowrotnie po przejściu na mapę drugiego
+  rdzenia.** Takie przejście udaje się połowicznie: współrzędne się zmieniają,
+  wstawienie do sektora nie — a zwykłe wylogowanie utrwala pozycję, której
+  żaden start już nie wczyta. Bot nie był zablokowany ani bezczynny; był
+  odrzucany przy każdym uruchomieniu i po prostu nie istniał. Teraz rozjazd
+  między mapą a pozycją jest wykrywany i bot wraca do Bokjung.
+
+  Postaci, które zdążyły utknąć wcześniej, poprawka nie odzyska — trzeba je
+  przestawić raz w bazie:
+
+  ```sql
+  UPDATE player.player SET map_index = 21, x = 55700, y = 157900
+  WHERE name LIKE 'bot%'
+    AND map_index NOT IN (21,23,24,25,26,61,63,64,69,70,73,108,216,217);
+  ```
+
+- **Znak straganu znikał tylko tym, którzy akurat patrzyli.** Odwołanie szyldu
+  leci do klientów będących w zasięgu w tej jednej chwili, więc kto podszedł
+  sekundę później, widział bota z szyldem sklepu, którego nie da się otworzyć.
+  Zamknięty stragan odbiera swój znak przez sześć sekund.
+- **Szybka przebudowa serwera potrafiła po cichu wydać starą binarkę.** Dotyczy
+  tylko osób budujących lokalnie przez `tools/fast-game-build`: ścieżka
+  kontenera była przepisywana przez Git Bash, plik nie dostawał świeżego
+  znacznika czasu i `make` uznawał go za aktualny. Teraz brak odświeżenia
+  przerywa budowę zamiast wydać stary plik.
+
+---
+
+## 1.25.8 — 2026-09-05
+
+### Nowe
+
+- **Boty kupują wreszcie bransolety, naszyjniki i kolczyki.** Drabinę sprzętu
+  miało pięć slotów; te trzy nie miały żadnej, więc bot nosił ozdobę tylko
+  wtedy, gdy jakaś mu wypadła. Większość chodziła z trzema pustymi polami na
+  karcie postaci przez całe życie.
+- **Ozdoba jest dobierana do klasy, nie do poziomu.** Kolczyki rotują
+  statystyką w miarę wzrostu — zwinność, siła, kondycja, inteligencja — więc
+  najwyższy nie jest najlepszy dla każdego. Szaman na 62 poziomie bierze teraz
+  kolczyk z 54 poziomu, bo ten ma inteligencję, a ten nowszy dałby mu siłę.
+  Wojownik i sura walczący bronią biorą kolczyk z siłą, ninja ze zwinnością,
+  szaman i sura magiczny z inteligencją.
+- **Cała wycena sprzętu rozróżnia teraz klasy.** Siła, zwinność i inteligencja
+  były warte po tyle samo, kimkolwiek byłeś. Statystyka, którą klasa walczy,
+  jest teraz warta dwa razy tyle, a te nieużywane jedną piątą. Dotyczy to nie
+  tylko zakupów, ale i porównywania tego, co wypadło z potwora.
+
+### Naprawione
+
+- **Do Lochu Małp praktycznie nikt nie chodził, a suwak konia w panelu nic nie
+  robił.** Dwie osobne przyczyny. Warunek wyprawy wymaga poziomu 25, żeby koń
+  mógł wejść z zera na jedynkę, a pasmo lochu kończyło się na 26 — razem dawało
+  to okno **dokładnie dwa poziomy szerokie**, po którym drzwi zamykały się na
+  zawsze. Na testowym świecie 446 botów było powyżej pasma i 435 z nich miało
+  konia poniżej dziesiątki: odcięte od jedynego źródła medali, a przez to od
+  konia bojowego. Teraz powyżej pasma bot nadal przychodzi po medal, dopóki ma
+  konia do podniesienia, z trzykrotnie mniejszą szansą — i wychodzi, gdy tylko
+  medal ma. Druga przyczyna: waga HORSE była czytana wyłącznie przez planer
+  celów, a bramka, która faktycznie wysyła bota do lochu, nigdy o niej nie
+  słyszała. Teraz suwak działa.
+- **Boty kupowały najgorszą bransoletę w grze.** Wytrzymałość nie miała własnej
+  wagi i wpadała do domyślnego kosza, więc dziesięć jej punktów ze startowej
+  bransolety było warte więcej niż cokolwiek, co ta linia oferuje poniżej 46
+  poziomu. Wytrzymałość to pasek biegu — jest teraz warta tyle co punkty many.
+
+## 1.25.7 — 2026-09-05
+
+### Naprawione
+
+- **Bot sprzedawał konia bojowego kupcowi trzy minuty po tym, jak go zdobył.**
+  Reguła złomowania mówi „to szrot", dopóki ktoś jej wyraźnie nie zaprzeczy.
+  Medal konny taki wyjątek miał od dawna, z komentarzem o tym, że postęp w
+  zadaniu musi przeżyć wizytę u kupca — nagroda, do której medal prowadzi, już
+  nie. Pierwszy bot w historii, który ukończył próbę (dwadzieścia jeden medali,
+  sto Czarnych Wichrów i 500 000 yang u stajennego), poszedł do miasta i sprzedał
+  zwój przyzwania za swoją część z 1020 sztuk złota. W całym świecie nie został
+  ani jeden.
+- **Bot powyżej 36 poziomu przestawał ulepszać broń — na zawsze.** Drabina
+  sprzętu sprawdzała tylko osiem stopni, a ósmy to w czterech z pięciu rodzin
+  broń na 36 poziom. Bot uznawał, że jest już uzbrojony, i nigdy nie sięgał
+  wyżej. Zgłoszony przypadek bota na 49 poziomie z bronią +0 nie był wyjątkiem,
+  tylko regułą. Po zmianie drabina sięga tam, dokąd sięga rodzina:
+
+  | broń | było | jest |
+  |---|---|---|
+  | miecz | 36 | **80** |
+  | dwuręczny | 36 | **87** |
+  | łuk | 36 | **80** |
+  | dzwonek | 36 | **80** |
+  | sztylet | 50 | **75** |
+
+  Zbroja dostała dwa brakujące stopnie i sięga teraz 66 zamiast 54. Tarcze i
+  buty już wcześniej dochodziły do końca swojej rodziny i nie były ruszane.
+  Hełmy poszły w drugą stronę — o jeden stopień w dół, bo ósmy sięgał po hełm
+  innej klasy; nic na tym nie tracimy, każda klasa dochodzi do swojego
+  najlepszego hełmu w czwartym stopniu.
+- **Boty z przemianowanym nickiem były niewidoczne na stronie.** Osiemnaście
+  zapytań panelu pytało, czy nick zaczyna się od „bot" — więc mapa na żywo,
+  wszystkie jedenaście rankingów, statystyki świata i strona sezonu przestawały
+  je liczyć, gdy ktoś zmienił im nazwy. Panel pyta teraz o to samo co silnik: o
+  konto `playerbot_NNN`, którego zmiana nicku nie dotyka. Stary test po nicku
+  został jako drugie ramię, żeby ręcznie zrobiony bot na zwykłym koncie nadal
+  był widoczny.
+
+### Warto wiedzieć
+
+- Wyższe stopnie broni (45 i dalej) oraz dwa nowe stopnie zbroi są na razie
+  potwierdzone tylko z danych — żaden bot nie ma jeszcze poziomu, żeby po nie
+  sięgnąć. Potwierdzone na żywym świecie zostały zakupy broni na 40 poziom,
+  stopnia, który wcześniej dla bota nie istniał.
+
+## 1.25.6 — 2026-09-05
+
+### Naprawione
+
+- **Bot w kółko próbował kupić to samo z tego samego straganu.** Regresja z
+  1.25.5. Kiedy silnik odrzucał zakup, bot pytał o dokładnie to samo w następnym
+  ticku — czyli raz na sekundę, aż wyprawa wygasła po półtorej minuty, po czym
+  zaczynał od nowa. W dzienniku wyglądało to jak `Shop::Buy pos 0` bez końca.
+  Silnik odmawia po cichu: „pełny plecak" i „za mało pieniędzy" zapisuje na
+  poziomie logowania, którego nikt nie włącza, więc z zewnątrz widać było tylko
+  powtarzane żądanie. Teraz odmowa kończy wyprawę, a bot z góry pomija pozycję,
+  która mu się nie zmieści — **broń zajmuje trzy komórki plecaka, a wcześniej
+  sprawdzane były dwie**.
+- **Próba o konia bojowego liczyła mniej więcej co drugie zabicie.** Bot bije w
+  dwóch miejscach: w pełnym cyklu decyzyjnym i w tańszym, pośrednim — a ten
+  drugi nie zaliczał niczego. Pełny cykl nie mógł tego nadrobić, bo zabity cel
+  jest podmieniany na żywego, zanim kod dojdzie do zaliczania. Do tego przepadały
+  wszystkie zabicia dobite przez towarzyszy z grupy, więc bot polujący w drużynie
+  potrafił nie ruszyć licznika ani razu. Zmierzone na żywym świecie: **2,6 → 7,7
+  zabicia na minutę**.
+- **Bot z medalem w plecaku tracił konia bojowego bezpowrotnie.** Próba wymaga
+  konia dokładnie na dziesiątym poziomie, a nic nie powstrzymywało bota przed
+  oddaniem kolejnego medalu i awansem na jedenastkę — po którym żaden medal,
+  quest ani NPC już nie cofnie. Drabina zatrzymuje się teraz na dziesiątce,
+  dopóki bojowiec jest do zdobycia. To nie jest zakleszczenie: odbiór sam ustawia
+  konia na jedenaście i drabina rusza dalej. Przy okazji bot przestaje zbierać i
+  kupować medale, których i tak nie może wydać.
+
+### Warto wiedzieć
+
+- Cały łańcuch konia bojowego przeszedł na żywym świecie **pierwszy raz**:
+  medale u stajennego, dziesiąty poziom konia, wyjazd na pustynię, sto zabić
+  Czarnych Wichrów, powrót, opłata 500 000 yang i zwój przyzwania w plecaku.
+  Wcześniej zatrzymywał się na liczniku zabić i nikt nigdy nie dotarł do końca.
+
+## 1.25.5 — 2026-09-05
+
+### Naprawione
+
+- **Boty w Dolinie Orków stały tylko na środku mapy.** Dolina to dwadzieścia trzy
+  wyspy w delcie rzeki, połączone dwudziestoma dwoma mostami. W danych mapy rzeka
+  ma znacznik blokady i znacznik wody, a **pomost nad tą rzeką ma samą wodę, bez
+  blokady** — i właśnie tak mapa mówi „tędy można przejść". Nawigacja bota
+  odrzucała każdą wodę, więc odrzucała też wszystkie mosty. Z punktu wejścia bot
+  miał dostęp do 17,6% chodliwego terenu i 161 z 532 grup potworów, a mapa
+  rozpadała mu się na dziewiętnaście osobnych kawałków. Teraz jest **jednym
+  kawałkiem**. Woda jest przechodnia, ale kosztowna, więc bot wchodzi na most, bo
+  innej drogi z wyspy nie ma, a płycizn na pustyni nie brodzi, kiedy obok jest
+  suchy ląd.
+- **Miejsca łowieckie Doliny obejmowały jedną wyspę.** Lista dwunastu punktów
+  została kiedyś przycięta do tego, co bot potrafił osiągnąć przy zepsutej
+  nawigacji — mieściła się w prostokącie 37×35 km na mapie, której potwory
+  rozstawione są na 133×131 km, i obejmowała 128 z 532 grup. Nowe szesnaście
+  punktów wyliczono z danych respawnu mapy: każdy to prawdziwe miejsce potworów,
+  sprawdzone jako chodliwe i osiągalne z wejścia, rozstawione co najmniej 12 000
+  jednostek od siebie. Obejmują 250 grup.
+- **Na straganach leżał szrot.** Sprzęt na poziom 29 i niższy przy +4 albo +5 nie
+  trafia już na ladę — z 487 takich sztuk w plecakach botów 272 były na poziom 29
+  lub niżej, czyli o klasę za stare dla właściciela i bez wartości dla kogokolwiek
+  innego. Wyjątki zostają: dobre bonusy, wszystko od +6, broń na 30. poziom,
+  a także **tarcze i hełmy od 21. poziomu**, bo w tych dwóch slotach nie ma nic
+  między sprzętem startowym a 41. poziomem.
+- **Stragany z jedną sztuką.** Osiemnaście z trzydziestu czterech straganów
+  otwartych w ciągu kwadransa niosło dokładnie jeden przedmiot. Lada wymaga teraz
+  co najmniej dwóch pozycji — chyba że ta jedna jest tego warta sama w sobie:
+  broń na 30. poziom, medal konny, mocny bonus albo ulepszenie od +6.
+
+### Nowe
+
+- **Boty chodzą na zakupy.** Wcześniej kupowały tylko z lady, która akurat stała
+  dwadzieścia metrów od nich — stąd dwanaście zakupów na pół godziny przy siedmiu
+  setkach botów. Bot, któremu brakuje składnika do ulepszenia, może rozwinąć konia
+  albo nie ma broni na 30. poziom, idzie teraz na rynek, wybiera najbliższą ladę
+  z tą rzeczą, **podchodzi pod nią** i tam kupuje; jeśli przyszedł po dwie rzeczy,
+  zostaje po drugą. Wyprawa ma dziewięćdziesiąt sekund i kończy się w chwili, gdy
+  bot stoi wśród straganów i nic go nie interesuje.
+- **Mapa świata w panelu pokazuje przeprawy.** Tło mapy malowało każdą wodę jako
+  rzekę, więc Dolina Orków wyglądała na deltę bez jednego przejścia — dokładnie
+  tak, jak widziały ją boty. Mosty i brody mają teraz własny kolor, a kafle mają
+  512 pikseli zamiast 256 i próbkują każdą komórkę pod pikselem, bo most ma 600
+  jednostek szerokości i przy próbkowaniu samego środka połowa z nich znikała.
+
+### Warto wiedzieć
+
+- Jeśli u Ciebie Dolina Orków była pusta mimo botów na 36. poziomie i wyżej, to
+  mogła być jeszcze jedna, osobna przyczyna: serwer dzieli mapy na trzy procesy,
+  a bot nie ma klienta, który mógłby przelogować się między nimi, więc Dolina musi
+  być na tym samym procesie co miasta. W kodzie jest tak od 1.22.0 i aktualizacja
+  launcherem przebudowuje obrazy, więc nic nie musisz robić — ale jeśli obraz
+  serwera jest starszy, boty będą stały pod teleporterem zamiast wejść na mapę.
+
+## 1.25.4 — 2026-09-05
+
+### Naprawione
+
+- **Bot z szyldem sklepu biegający po lochu.** Przenosiny między mapami zwalniały
+  wszystko, czego bot nie może zabrać ze sobą — wypisywały z grupy, kasowały cel,
+  zsiadały z konia i odwoływały go, żeby nie został przy portalu — ale **sklepu
+  nie ruszały**. Bot przeniesiony z otwartą ladą zabierał ją ze sobą, a sklep
+  zamykał się dopiero na nowej mapie. Silnik rozsyła wtedy pusty szyld tylko do
+  tych, którzy są w zasięgu wzroku **w tamtej chwili** — czyli do przypadkowych
+  osób w miejscu docelowym. Ludzie, którzy ten szyld naprawdę widzieli, zostawali
+  na rynku i nie dostawali niczego, więc szyld zostawał u nich przyklejony do
+  postaci. Stragan jest teraz zamykany tam, gdzie został postawiony.
+- **Aktualizacje trwały cztery minuty zamiast kilkunastu sekund.** Paczka 1.25.3
+  niosła 4952 pliki zamiast ~200, bo wzorzec obejmujący zawartość `/static`
+  zaciągał 4768 wygenerowanych ikon z kontekstu obrazu — a każdy z nich jest
+  jeszcze kopiowany do kopii zapasowej. Wysyłane jest teraz samo źródło.
+- **Dziennik launchera był częściowo nieczytelny.** Skrypt akcji działa ukryty, z
+  wyjściem przekierowanym do pliku, więc pisał stroną kodową konsoli, a launcher
+  czytał ten plik jako UTF-8. Dlatego w jednym logu stały obok siebie linie
+  poprawne i rozsypane. Obie strony mówią teraz tym samym kodowaniem, a to, co
+  trafia do pliku, jest dodatkowo zapisywane bez polskich znaków — bo ten plik
+  ląduje w Notatniku i we wklejkach, gdzie ogonki i tak nie przechodzą. Okno
+  launchera zostaje z ogonkami, tam wyświetlają się poprawnie.
+
+---
+
+## 1.25.3 — 2026-09-05
+
+> Jeśli po aktualizacji panel nadal pokazuje starą wersję albo brakuje w nim
+> nowych zakładek — **to jest ta poprawka**. Przebudowa obrazu, nawet z
+> `--no-cache`, nie mogła tego naprawić.
+
+### Naprawione
+
+- **Panel raportował wersję sprzed wielu aktualizacji.** Panel czyta numer z
+  `linux-port/docker/panel/app/VERSION`, który stawia tam `prepare-context.sh` —
+  skrypt, jak dokumentuje sam `start-server.ps1`, **nigdy nieuruchamiany na
+  maszynie gracza**. Plik zostawał więc na wartości z instalatora niezależnie od
+  liczby aktualizacji: u jednego z operatorów panel po trzech wydaniach dalej
+  mówił 1.15.6, a `docker compose build --no-cache panel` niczego nie zmieniał,
+  bo budował ze starego pliku.
+- **Dziewięć innych plików miało ten sam problem.** Przejrzeliśmy wszystko, co
+  `prepare-context.sh` przygotowuje, i porównaliśmy z tym, co paczka wysyła.
+  Zamrożone od instalacji były: `panel/app/VERSION`, `panel/app/CHANGELOG.md`
+  (dziennik zmian w panelu), `items.json`, `favicon.png`, cała zawartość
+  `/static`, `panel/schema/web_admin_schema.sql` (schemat bazy dla funkcji
+  panelu), `game/quest/web_admin.quest` (pomocnik teleportacji z panelu),
+  `high_risk.quest` oraz `mob_drop_item.m3.append.txt`. Skrypt startowy
+  synchronizuje teraz wszystkie, a paczka niesie ich źródła.
+- **Wzorzec `katalog/*` w liście aktualizacji schodzi w podkatalogi.** Dotąd
+  łapał wyłącznie pliki bezpośrednio w katalogu, więc `files/static/*` nie
+  pasował do niczego. Dodanie drugiego zestawu ikon nie wymaga już edycji listy.
+
+---
+
+## 1.25.2 — 2026-09-05
+
+### Naprawione
+
+- **Panel po aktualizacji zostawał stary.** Panel istnieje w dwóch kopiach:
+  `files/admin_panel.py` jest źródłem, a `linux-port/docker/panel/app/admin_panel.py`
+  jest tym, z czego powstaje obraz. Przepisuje jedną na drugą `prepare-context.sh`,
+  który — jak `start-server.ps1` sam odnotowuje w trzech miejscach — **nigdy nie
+  uruchamia się u gracza**. Skrypt startowy nadrabiał to dla źródeł botów, dla
+  Makefile i dla seeda SQL, a o panelu zapomniano. Efekt: aktualizacje 1.25.0 i
+  1.25.1 przynosiły poprawny panel w `files/`, a obraz i tak budował się ze
+  starej kopii — więc suwaki zachowania botów i strona sezonu **nie pojawiały
+  się mimo zainstalowanej nowej wersji**. Skrypt startowy synchronizuje teraz
+  panel tak samo jak resztę, a obie kopie w paczce są zgodne.
+
+---
+
+## 1.25.1 — 2026-09-05
+
+> Dalej **wydanie eksperymentalne**, na tych samych zasadach co 1.25.0: baza nie
+> jest ruszana, powrót do poprzedniej wersji nic nie psuje.
+
+### Naprawione
+
+- **Stragany przestały wystawiać szrot.** W wycenie towaru siedziała łapanka
+  `return 1` na wszystko, co nie wpadło do żadnej sensownej kategorii — więc bot
+  z ośmioma spadami po +1 wystawiał całą ósemkę. W plecakach botów na
+  testowanym świecie leżało **1902 sztuki sprzętu +0…+3** wobec 219 sztuk od +4
+  wzwyż, czyli ta jedna linia decydowała o wyglądzie całego targu. Zwykły sprzęt
+  wchodzi teraz na ladę **od +4**, a co nie jest ani sprzętem, ani nazwaną
+  kategorią (broń na 30 lv, duży bonus, +6, medal konny, ulepszacz, księga) — nie
+  jest towarem w ogóle. Lady mają 1–8 pozycji zamiast ośmiu napchanych.
+- **Szyld sklepu, którego nie dało się otworzyć.** Silnik rozsyła szyld do
+  wszystkich w pobliżu **jedną linijkę przed** utworzeniem sklepu, a gdy tworzenie
+  się nie uda, nikt tego szyldu nie cofa: `CloseMyShop` kasuje go tylko wtedy, gdy
+  jest co zamykać. Postać odchodziła ze sklepem, którego nie da się kliknąć.
+  Teraz szyld jest zdejmowany zawsze, gdy sklep nie powstał albo zniknął bez
+  naszego udziału.
+- **Bot prowadzący stragan zdejmuje swoje buffy.** Nic nie rzucał — hak straganu
+  przerywa pętlę decyzji przed umiejętnościami — ale aura rzucona przed
+  siadnięciem do lady dopalała się jeszcze kilkanaście minut i wyglądała, jakby
+  postać grała, stojąc w sklepie.
+
+### Nowe
+
+- **Boty zdobywają konia bojowego.** Wzorem jest quest stajennego i większość
+  została: 35. poziom postaci, koń już na dziesiątce, sto zabitych potworów na
+  pustyni, 500 000 yang na koniec, wydana Księga Opancerzonego Konia i zabrane
+  Zdjęcie Konia. Trzech rzeczy nie dało się zachować i każda z nich to fakt o
+  tym świecie, a nie decyzja: potwory z questa (2105 i 2107) **nie są nigdzie
+  spawnowane**, więc próba liczy bandę Czarnego Wiatru z tej samej pustyni;
+  limitu pół godziny nie ma, bo bot poluje godzinami i nie ma komu przegrać; a
+  ośmiu do szesnastu godzin oczekiwania też nie, bo populacja, która nigdy się
+  nie wylogowuje, przeczekałaby je w logu.
+- **Bot, który zdobył konia, przestaje przepalać yang.** Pierwsza obserwacja na
+  żywo pokazała bota, który skończył próbę z 432 000 yang i w dwadzieścia minut
+  zszedł do 149 000 u kowala i na kamieniach bonusowych — konia nie odebrałby
+  nigdy. Kowal, kamienie i zakupy na targu omijają teraz odłożoną opłatę.
+
+---
+
+## 1.25.0 — 2026-09-05
+
+> **Wydanie eksperymentalne.** Wchodzi naraz kilka nowych systemów, które
+> dotykają tego, jak boty planują cały swój czas, a nie pojedynczej funkcji.
+> Baza danych nie jest ruszana i cofnięcie się do 1.24.9 nic nie psuje, ale
+> spodziewaj się, że coś będzie wymagało dostrojenia. Zgłoszenia są mile
+> widziane — szczególnie takie z opisem, co bot robił i gdzie.
+
+### Nowe
+
+- **Zachowanie botów regulujesz suwakami w panelu, na żywo.** Nowa strona
+  **🧠 Zachowanie botów** daje jedenaście wag: kupowanie mikstur, kowal, księgi
+  umiejętności, koń, Biolog, metiny, grupy, misje polowania, zwykłe bicie
+  potworów, wędkowanie i stragany. 100 to dokładnie tak, jak serwer był
+  zbudowany; 25 znaczy cztery razy rzadziej, 250 — dwa i pół raza częściej.
+  Zapis działa w ciągu pięciu sekund, **bez restartu i bez rozłączania kogokolwiek**.
+  Ucieczka z przegranej walki, wybór profesji i zdobycie broni nie podlegają
+  suwakom — to nie są preferencje.
+- **Sezon tygodniowy i rekordy serwera** pod adresem `/season`, dostępne bez
+  logowania. Metiny, bossy i ulepszenia, które weszły na +7 lub wyżej, z
+  ostatnich siedmiu dni, oraz kafle z rekordami od początku istnienia świata.
+  Statystyki liczą się **wstecz przez całą historię serwera**, bo silnik i tak
+  zapisywał te zdarzenia od pierwszego dnia — nie trzeba było niczego doliczać.
+- **Boty zakładają gildie.** Na 40. poziomie i za 200 000 yang, dokładnie jak
+  gracz u Strażnika Wsi. Mistrz gildii przyjmuje potem stojące obok boty tego
+  samego królestwa. Herbów jeszcze nie ma.
+- **Boty pamiętają, z kim polowały.** Wspólna grupa buduje znajomość, a przy
+  szukaniu drużyny bot wybiera teraz tego, z kim już mu się układało, zamiast
+  pierwszego napotkanego.
+
+### Naprawione
+
+- **Koń bojowy wreszcie może walczyć.** W pętli decyzji siedziało bezwarunkowe
+  zsiadanie wykonywane przed wyborem celu — napisane, zanim walka z siodła w
+  ogóle powstała. Bot dojeżdżał do metina konno i natychmiast lądował na ziemi.
+  Teraz zsiadają tylko te boty, które i tak nie mogą bić z konia, a decyzja
+  zapada tam, gdzie cel jest już znany — więc bot, który podszedł pieszo, potrafi
+  też **wsiąść** przed walką.
+- **Odporność na omdlenie (NNO) przestała być wyrzucana.** W wycenie bonusów nie
+  miała własnego przypadku i wpadała do gałęzi domyślnej, a wartość linii
+  immunitetu wynosi 1 — czyli najcenniejszy roll na tarczy w całej grze był dla
+  bota wart mniej niż punkt szybkości ruchu i szedł do przerzucenia. Doszły też
+  warunki zatrzymania: tarcza z NNO, broń na 30. poziom ze średnimi obrażeniami
+  od 30%, pancerz i biżuteria z 1500 PŻ **nie są już nigdy przerzucane**, choć
+  nadal mogą dostać kolejną linię.
+- **Piąta linia bonusów.** Silnik pozwala na pięć, a pętla kończyła na czterech —
+  każdy bot na świecie chodził o jedną linię uboższy. Na uruchomionym świecie
+  przedmiotów z pięcioma liniami przybyło z 7 do 108 w ciągu godziny.
+- **Boty przestają pilnować jednego respawnu.** Po dojściu na miejsce, na którym
+  nie ma już czego bić, planer przesuwał je o siedemset jednostek i czekał
+  kolejne 8–12 sekund, w kółko. Teraz idą do następnego miejsca, do którego da
+  się dojść. Dotyczy Doliny Orków i Pustyni Yongbi.
+- **Logi przestały zagłuszać serwer.** Katalog logów jednego rdzenia miał 4,5 GB
+  przy 126 MB pozostałych i rósł o 155–278 MB na godzinę, przy 43 wpisach SYSERR
+  na sekundę — a **żaden z nich nie sygnalizował usterki**. Cztery komunikaty
+  pisane z pętli przez każdego bota na mapie: dwa nasze, dwa silnika, wszystkie
+  na poziomie zapisywanym zawsze. Nasze mają teraz licznik i jedną linię na
+  minutę, komunikaty silnika zeszły na poziom diagnostyczny. Po zmianie: **50 MB
+  na godzinę i jeden wpis SYSERR na pięć sekund**.
+  Efektem ubocznym okazał się wyraźny wzrost tempa gry — przy niezmienionej
+  liczbie botów liczba zabić w oknie piętnastu minut wzrosła z ~265 do ~4100.
+  Zapisywanie tych logów kosztowało serwer więcej, niż ktokolwiek podejrzewał.
+
+### Zmienione
+
+- Kod botów rozbity na kolejne moduły: planowanie celów, wagi z panelu, bonusy,
+  gildie i wyciszanie logów mieszkają teraz w osobnych plikach.
+- Łatki silnika są wyszukiwane po wzorcu, a nie wymieniane z nazwy. Jedna z list
+  zdążyła się już rozjechać — łatka straganów była nakładana, ale nie wchodziła
+  do sumy kontrolnej budowania, więc jej zmiana nie unieważniała gotowego obrazu.
+
+---
+
+## 1.24.9 — 2026-09-05
+
+### Zmienione
+
+- **Stragany wystawiają to, co gracz faktycznie chce kupić**, w tej kolejności:
+  - **Broń na 30. poziom** — przy dowolnym ulepszeniu, także bez żadnego. To przedmiot, po który boty jeżdżą przez pół świata.
+  - **Przedmioty z dużym bonusem** — od +1000 PŻ wzwyż, oraz tarcze z blokiem lub odbiciem ciosu, bo tarczę kupuje się dla tego, a nie dla liczby obrony.
+  - **Zapasowy sprzęt od +6** zamiast dotychczasowego +7. To jednocześnie nowa granica, poniżej której nic nie trafia do handlarza NPC za jedną piątą wartości.
+  - **Ulepszacze** — mają zarezerwowaną **połowę lady**, bo sama wycena je z niej wypychała.
+  - **Księgi umiejętności** — żaden bot ich nie czyta, więc to czysty towar.
+- **Medale konne trafiają na sprzedaż** u handlarzy oraz u botów, których koń i tak czeka na wyższy poziom postaci. Wcześniej były wykluczone całkowicie, więc **nikt nie mógł ich kupić**.
+- **Kupujący chcą tego samego.** Medalu, jeśli mają jeszcze konia do wychowania — to godziny lochu, których nie muszą biegać. Broni lv 30 swojej klasy, gdy żadnej nie mają. Oraz przedmiotu z dużym bonusem nawet wtedy, gdy baza wypada na równi z noszonym, bo tysiąc życia nie wchodzi do wyceny sprzętu.
+
+### Naprawione
+
+- **Plac handlowy zwężony do zasięgu, w którym gra pozwala kupować.** `shop_manager.cpp` odrzuca zakup powyżej 2000 jednostek, czyli 20 metrów. Rozstawienie lad na 40 metrów sprawiło, że rynek wyglądał przestronnie i przestał działać: przy dziesięciu straganach i 89 zamożnych botach w mieście nie doszło do **ani jednej** transakcji przez piętnaście minut. Rozrzut wynosi teraz 4–17 metrów — nadal siedem razy więcej niż na początku, ale każda lada jest osiągalna. Tego sufitu nie da się podnieść po naszej stronie.
+
+---
+
+## 1.24.8 — 2026-09-05
+
+### Naprawione
+
+- **Stragany wreszcie powstają w Joan.** Losowanie 90/10 działało poprawnie i było bez znaczenia, bo w ścieżce straganu został twardy warunek z czasów, gdy rynek istniał tylko w Bokjung — i stał **przed** losowaniem. Bot stojący w Joan odpadał, zanim zdążył wybrać miasto. Sprawdzone na uruchomionym świecie: stragany stają teraz w obu miastach, bez ani jednej odmowy.
+
+### Zmienione
+
+- **Plac w Joan przeniesiony pod Strażnika Wsi** na komórkę (634, 639), a stragany rozstawiają się w promieniu **8–40 metrów** zamiast dotychczasowych dwóch i pół. Między ladami da się przejść, a każdy bot ma stały własny punkt, więc rynek nie przestawia się przy każdym otwarciu.
+- **Nowa osobowość: Handlarz.** Mniej więcej co szósty bot bez innego powołania. Handlarz trzyma stragan zawsze, gdy może, a nie raz na dziesięć razy; wystawia **20 pozycji** zamiast ośmiu; pracuje na zmianę 10–20 minut; i **nie przerywa handlu, żeby biec po medale konne** — ta wyprawa zabiera pół świata i godzinę, czyli dokładnie to gonienie za czymś, czego ta osobowość ma nie robić. W panelu widnieje jako **Handlarz** z ambicją **Handel**.
+
+### Warto wiedzieć
+
+- **Ambicja bota jest wyłącznie etykietą.** Trafia do pliku statusu i na stronę, ale żaden kod nigdy się na niej nie rozgałęział — dotyczy to także ambicji, które istniały wcześniej. Zachowanie Handlarza wynika z osobowości, nie z ambicji.
+
+---
+
+## 1.24.7 — 2026-09-05
+
+### Naprawione
+
+- **Boty kończą uderzenia.** Rytm ataku był odmierzany płaskimi 480 ms, skalowanymi tylko szybkością ataku. Klient przyjmuje kolejne uderzenie combo dopiero od `DirectInputTime`, a ta wartość jest **późniejsza niż 480 ms dla każdej broni w grze**: 533 ms miecz jednoręczny, 732 szable, 932 dwuręczny, cała sekunda łuk. Trwająca animacja była więc za każdym razem ucinana.
+  - **Ostatnie uderzenie było ucinane najmocniej.** Krok combo, który ma `DirectInputTime` równe zero, w ogóle się nie łączy — kończy sekwencję i klient odgrywa go w całości. Czwarte combo dzwonka jest właśnie takie i potrzebuje 1333 ms, a dostawało niecałe 400.
+  - Czasy pochodzą z danych animacji, które serwer i tak wozi w `share/data/pc`, i są generowane przez `tools/generate_swing_timing.py` — 4 klasy × 6 rodzajów broni × 4 kroki combo. Dla łuku, który nie ma łańcucha combo, brana jest pełna długość animacji.
+  - **Boty przez to zwolniły, celowo.** Biły mniej więcej dwa razy szybciej, niż pozwala animacja, a obrażenia idą razem z pakietem — więc tempo zdobywania poziomów spadnie proporcjonalnie. To do wyrównania osobnym mnożnikiem, nie oszukiwaniem animacji.
+- **Ranking umiejętności pokazuje najwyższą rangę, nie sumę poziomów.** Sumowanie premiowało rozłożenie punktów po całym drzewku. Teraz widać to, co powiedziałby gracz: `M10 Silne Ciało`, `G1 Przywołanie Błyskawicy`, `P Berserk` — i po tym idzie sortowanie.
+
+### Zmienione
+
+- **Stragany mają wreszcie towar.** Bot wystawiał dokładnie jeden przedmiot; teraz na ladzie stoi do **ośmiu**, najlepsze na przedzie, więc ulepszacze i zapasowy ulepszony sprzęt idą pierwsze. Kupujący przechodzi całą ladę i bierze pozycję, która go interesuje, a nie zawsze pierwszą.
+- **Stragan można wystawić od 1. poziomu.** Wymóg 20. poziomu był nasz, nie gry — tobołek (przedmiot 50200) ma w tabelach `LIMIT_NONE`. To dlatego w Joan nie było żadnego straganu: z pięciuset botów stojących tam pięć miało dwudziestkę, podczas gdy w Bokjung było ich sto dwadzieścia.
+- **Wyprzedany stragan się zwija** i bot wraca do gry, zamiast stać przy pustej ladzie do końca licznika.
+
+---
+
+## 1.24.6 — 2026-09-04
+
+### Naprawione
+
+- **Boty przestały rzucać buffy bojowe poza walką.** Wersja 1.24.2 zdjęła wymóg posiadania celu, bo boty wchodziły do każdej walki bez niczego — ale poszła za daleko w drugą stronę: stały w mieście, rzucając aurę, silne ciało czy czarowane ostrze, które i tak wygasały, zanim dotarły do potworów kilometr dalej. Teraz buff bojowy wchodzi tylko wtedy, gdy bot jest w walce albo był w niej na tyle niedawno, że zaraz będzie w następnej (okno 60 sekund — dłuższe niż przerwa na dobiegnięcie do kolejnego potwora i podniesienie łupu, krótsze niż droga do miasta).
+- **Umiejętności przydatne w drodze działają bez zmian, wszędzie.** To **Bezszelestny Chód** ninja i **Zwinność** szamana — obie przyspieszają ruch, a chodzenie jest tym, co bot robi najczęściej.
+- **Leczenie szamana też zostało poza tą blokadą.** To nie buff, tylko leczenie zależne od własnego zdrowia, a ranny bot wracający do miasta ma więcej powodów, żeby je rzucić, niż ten w walce.
+
+---
+
+## 1.24.5 — 2026-09-04
+
+### Dodane
+
+- **Trzy nowe zakładki w rankingach na stronie**, obok Konia i Biologa:
+  - **Otwarte sklepy** — kto właśnie prowadzi stragan i w którym mieście.
+  - **Umiejętności** — suma wyuczonych poziomów umiejętności.
+  - **Przedmiot +9** — boty posiadające dowolny sprzęt na +9, z ikoną i oznaczeniem, czy nosi go na sobie, czy trzyma w plecaku.
+- **Boty raportują osobną akcję „Prowadzi stragan".** Dotąd sklepikarz zgłaszał tę samą akcję co bot w drodze, więc z zewnątrz nie dało się odróżnić handlującego od przechodzącego — a otwarty stragan istnieje wyłącznie w pamięci silnika i baza nic o nim nie wie. Panel czyta teraz tę akcję z pliku statusu i na niej opiera zakładkę.
+
+### Uwagi
+
+- Zakładka **Przedmiot +9** będzie pusta, dopóki któryś bot nie dobije do +9. W chwili wydania wszystkie przedmioty +9 w świecie należały do postaci gracza, nie do botów; botom udało się dojść do +8.
+
+---
+
+## 1.24.4 — 2026-09-04
+
+### Zmienione
+
+- **Stragany stoją teraz w kole.** W Joan wokół **Strażnika Wsi**, w Bokjung na dotychczasowym placu targowym. Każdy bot ma stały kąt na okręgu i wraca zawsze na to samo miejsce, więc krąg nie rozłazi się przy kolejnych otwarciach.
+  - Pozycja strażnika nie jest zgadnięta: to NPC 11002 z komórki (633,640) mapy `metin2_map_b1`, której `BasePosition` wynosi (0,102400) — czyli świat (63300,166400). Ten sam rachunek daje istniejącej stałej `PLAYERBOT_M1_TELEPORTER` jej (51900,153600) z komórki (519,512), więc jest sprawdzony. Wokół strażnika nie stoi żaden inny NPC w promieniu czterdziestu komórek.
+- **Przy każdym wystawieniu bot losuje miasto: 90% szans na Joan, 10% na Bokjung.** Losowanie jest za każdym razem od nowa, nie przypisane botowi na stałe. Nic nie jest zapamiętywane — bot, który wylosuje miasto, w którym akurat nie stoi, po prostu tym razem nie wystawia i losuje ponownie przy następnej próbie, więc nikt nie utknie w oczekiwaniu na miasto, do którego rzadko zagląda.
+- **Kupujący szukają straganów w obu miastach.** Wcześniej przeglądali wyłącznie Bokjung — po przeniesieniu większości sklepów do Joan dziewięć straganów na dziesięć zostałoby bez klientów.
+
+---
+
+## 1.24.3 — 2026-09-04
+
+### Naprawione
+
+- **Prywatne stragany wreszcie działają — botów i graczy.** Silnik zaczyna `OpenMyShop` od warunku `GetPart(PART_MAIN) > 2`, a `PART_MAIN` przechowuje vnum **założonej zbroi**. Niezałatany silnik odmawiał więc straganu każdemu, kto ma na sobie zbroję — również żywemu graczowi, który próbował wystawić sklep sam.
+  - Łatka `0004-private-shop-guard.patch`, która zamienia ten warunek na `IsPolymorphed()`, istnieje od dawna, jest w paczce aktualizacji i leży w każdej instalacji — ale nakłada ją `prepare-context.sh`, którego ścieżka przebudowy w launcherze **nigdy nie uruchamiała**. Łatka była dowożona i nigdy nakładana.
+  - Launcher nakłada teraz łatki silnika przy każdej przebudowie, **odkrywając** katalog zamiast trzymać listę nazw. To trzeci błąd tej samej klasy po seedzie i wildcardzie w Makefile.
+  - O tym, czy łatka już jest, decyduje **odczyt plików docelowych**, a nie kod wyjścia `patch`. Podczas pracy nad tym `patch -N` z busyboxa nałożył 18-kilobajtową łatkę integracji na drzewo, które już ją miało, i zdublował w niej wszystkie deklaracje. Porównywany jest cały blok hunka wraz z kontekstem — pojedyncza dodana linia nie wystarcza, bo `if (IsPolymorphed())` występuje w `char.cpp` w trzech innych miejscach.
+  - Gdy nałożenie się nie powiedzie, launcher **mówi o tym wprost** zamiast po cichu zgłosić sukces.
+- **Boty ze straganem nie rzucają już buffów.** Rzucanie skilla nie zamyka prywatnego sklepu — silnik zamyka go tylko przy ogłuszeniu, śmierci i wyjściu ze świata — ale sklepikarz machający aurą przy ladzie marnował manę i wyglądał niepoważnie.
+- **Rynek w Bokjung jest wyłączony ze strefy buffowania.** Ten warunek obejmował dotąd wyłącznie mapę 21, a rynek jest na mapie 23.
+
+---
+
+## 1.24.2 — 2026-09-04
+
+### Podziękowania
+
+- **OskarPWA** udostępnił swoją wersję panelu i zgodził się, żeby wziąć z niej dwie rzeczy: **okno magazynu bota** oraz **ikony przy umiejętnościach**. Jedno i drugie jest w tym wydaniu. Dzięki!
+
+### Dodane
+
+- **Magazyn bota na stronie.** Obok ekwipunku doszła ikona magazynu. Okno jest niezależne od karty bota: można je przeciągać po stronie i zostaje otwarte, gdy zamkniesz i otworzysz kartę. Siatka 5×9 jest tą samą, którą rysuje ekwipunek.
+  - **Uwaga na teraz:** boty jeszcze nie korzystają z magazynu — w kodzie AI nie ma ani jednego odwołania do skrytki — więc okno będzie pokazywać „Magazyn jest pusty", dopóki nie dołożymy botom samego zachowania. Sam widok działa.
+- **Ikony przy umiejętnościach.** Każda umiejętność na karcie bota ma teraz swoją ikonę, z osobnym wariantem dla mistrzowskich (M/G/P). Gdy ikony nie ma w danej instalacji, nazwa wyświetla się sama, bez zepsutego obrazka.
+
+- **Nazwy bonusów na przedmiotach są teraz takie jak w grze.** Panel miał własną, ręcznie pisaną listę; teraz opisy pochodzą wprost z klienta — numery z enuma serwera, przypisanie z `AFFECT_DICT` klienta, brzmienie z jego polskiego `locale_game.txt`. Nic nie jest tłumaczone na piechotę.
+  - **`71` i `72` były zamienione miejscami.** `71` to Obrażenie Umiejętności, `72` to Średnie Obrażenia — istotne przy FMS/RIB.
+  - **Brakowało bonusów `87`–`91`**, więc odporność na lód, ziemię i mrok oraz odporności na cios krytyczny i przeszywający pokazywały się jako „Bonus #89" i podobne.
+  - **`42` i `47`** (szansa na odzyskanie PE/PŻ po zabiciu) były pokazywane jako zwykłe liczby zamiast procentów, a **`48`–`50`** dostawały doklejone „+1%", choć w grze to same nazwy bez wartości.
+  - **`51` i `77` zniknęły z opisów.** `51` to spakowana liczba (numer umiejętności plus wartość), a nie bonus do pokazania; `77` nie występuje w tym kliencie.
+  - Wartość ujemna nie da już zapisu `+-10`.
+
+### Naprawione
+
+- **Aktualizacja przestała kończyć się błędem Dockera.** Zatrzymanie serwera wyłącza także Docker Desktop, a aktualizacja szła prosto do budowania i trafiała na martwy silnik — już po podmianie plików. Rozsądna kolejność (zatrzymaj, potem zaktualizuj) zawodziła zawsze. Teraz silnik jest podnoszony przed budowaniem. To samo dotyczyło przycisku GRAJ, który dokańczał zaległe budowanie, zanim cokolwiek zdążyło uruchomić Dockera.
+- **Launcher przestał zgłaszać wersję, której nie ma.** Numer zapisywał się dopiero po udanym budowaniu, więc po nieudanym launcher w kolejnych uruchomieniach wciąż podawał poprzednią wersję, proponował tę samą aktualizację i pobierał ją od nowa — za każdym razem z nowym katalogiem w `backups`.
+- **Teleportacja do bota działa dla każdego.** Przycisk wysyłał na sztywno wpisaną nazwę postaci, więc na każdej instalacji przenosił tę jedną postać, a wszystkim pozostałym po cichu nie robił nic.
+- **Boty mają włączone swoje najważniejsze umiejętności.** Buffy rzucały się wyłącznie wtedy, gdy bot miał już cel — czyli bot wchodził do każdej walki bez nich, tracił pierwsze sekundy na rzucanie, a po walce znów stał goły. Teraz utrzymuje je także poza walką.
+  - **Sura WP zdejmowała sobie Czarowane Ostrze.** Na liście buffów było 66, czyli Rozproszenie Magii — a to nie buff, tylko atak z flagą `REMOVE_GOOD_AFFECT`, rzucany sam na siebie. Czarowana Zbroja (65) nie była buffowana w ogóle.
+  - **Wojownik nigdy nie rzucał Berserku, a szaman jednego z dwóch buffów.** Numery umiejętności były skrzyżowane z flagami efektów, przez co włączony jeden buff raportował drugi jako już aktywny. Sprawdzone w `skill_proto`.
+
+---
+
+## 1.24.1 — 2026-09-04
+
+### Fixed
+
+- **Boty faktycznie kupują na rynku.** Wersja 1.24.0 wystawiała towar i nikt go nie brał, bo zakup wymaga **dwóch** rzeczy naraz, a ustawiona była jedna: `CShopManager::Buy` odrzuca kupującego, który nie jest zarejestrowany jako **gość straganu** (to `AddGuest` ustawia `ch->GetShop()`), nawet gdy właściciel sklepu jest ustawiony poprawnie. Bez tego funkcja wychodziła w pierwszej linii, po cichu.
+  - Przy okazji filtr wykluczał boty z `bVisitingShop` — czyli akurat te, które są w mieście i stoją przy rynku. Rynek nie miał w ogóle klientów.
+  - **Sprawdzone na serwerze:** transakcje bot–bot z przepływem yanga w obie strony.
+
+---
+
+## 1.24.0 — 2026-09-04
+
+### Changed
+
+- **Bot pilnujący straganu milczy.** Nad głową ma już szyld sklepu, a linia statusu zamazywała jedyną etykietę, której przechodzący gracz naprawdę potrzebuje — nazwę straganu, który właśnie rozważa otworzyć. Ta sama zasada wycisza okrzyk o udanym ulepszeniu.
+- **Yang podnoszony pierwszy i niemal natychmiast.** Kolejka łupu sortowała się wyłącznie po odległości, więc bot mijał trzy kupki monet w drodze do skóry, a potem wracał po każdą z osobna — czas schodził na chodzenie po wyczyszczonym polu. Yang idzie teraz przed przedmiotami, a jego opóźnienie spada z 1000–1800 ms na **150–350 ms**. To zresztą yang płaci za mikstury, które pozwalają dalej zabijać.
+- **Łatwy Loch Małp dostał własne pasmo poziomów: 18–26.** Wyprawa zależała dotąd tylko od poziomu konia i klasy, nigdy od poziomu postaci — na żywym świecie siedziało tam **48 botów na poziomach 25–35**, tracąc półgodzinne wizyty na medale warte grosze wobec tego, co ten sam czas daje na granicy.
+  - Warunek sprawdzany jest w jednym miejscu i działa w obie strony: bot już w środku przelicza go co takt, więc ten, który wyrośnie z pasma, kończy, co robi, i wychodzi, zamiast czekać na trzydziestominutowy limit.
+  - **Sprawdzone na serwerze:** po przebudowie **wszystkie** działające boty powyżej pasma opuściły loch (82 wyjścia z powodem `monkey_horse_complete_direct`).
+
+### Added
+
+- **Mapa w panelu ma prawdziwy teren pod spodem.** Rysowany z tego samego `server_attr`, po którym nawigują boty, a nie zrzucony z klienta: ląd, woda i blokady w trzech kolorach, 256×256, **20 KB na wszystkie sześć map**.
+  - Pokrywa się ze znacznikami co do piksela, bo jedno i drugie liczone jest z tych samych granic mapy. Dzięki temu jest to tyle samo tło, co narzędzie diagnostyczne: jezioro na obrazku to jezioro, którego znaczniki nigdy nie przekroczą.
+  - `tools/render_map_tiles.py` odtwarza kafle, gdy dojdzie nowa mapa.
+- **Pasma filtra poziomów dopasowane do świata.** 1-5/6-10/11-15/16+ wrzucało prawie każdego bota do ostatniego kubełka, odkąd populacja sięga 37 poziomu. Teraz **1-15 / 16-25 / 26-35 / 36+**, gdzie 36+ to obsada Doliny Orków.
+
+---
+
+Pomysły gracza z `m2singleplayer.pl` (EXP, miejsce przebywania, umiejętności) panel ma już od dawna — jego strona to wersja 1.15.6. Jedyną rzeczą, której faktycznie brakowało, było tło mapy, i to zostało dodane.
+
+---
+
+## 1.23.10 — 2026-09-04
+
+### Fixed
+
+- **Dwa z dwunastu punktów łowieckich Doliny Orków leżały za wodą i nie dało się do nich dojść.** Zastąpione punktami wewnątrz obszaru, po którym boty faktycznie chodzą — wybranymi tak samo jak pozostałe: najgęstsze skupiska spawnów, przyciągnięte do prawdziwej współrzędnej z `regen.txt`.
+
+### Mosty: boty ich nie przechodzą i nie powinny próbować
+
+Dolina Orków to wysokie wyspy nad przepaściami z wodą na dnie, połączone mostami. Pytanie, czy boty przez nie przechodzą, było więc zasadne — i odpowiedź brzmi **nie**, ale konsekwencja jest odwrotna, niż mogłoby się wydawać.
+
+Przeszukałem całą mapę pod kątem chodliwych pasm z wodą po obu stronach, czyli tego, jak most wygląda w `server_attr`. Na 3,16 mln chodliwych komórek znalazły się **dwa pasma po 16 komórek**, oba poza terenem botów. **Mosty tej mapy nie istnieją w danych kolizji serwera** — dno przepaści jest oznaczone jako woda, a pokład mostu nad nim nie został z niej wycięty.
+
+Dlatego poluzowanie blokady wody **nie pomogłoby, tylko zaszkodziło**: bot nie wszedłby na most, tylko przeszedłby przez wodę na dnie przepaści. Blokada zostaje.
+
+Co z tego wynika w praktyce:
+
+- **Cały teren łowiecki botów to jeden lity ląd.** Sprawdzone wprost: wewnątrz tego obszaru nie ma ani jednej komórki o profilu mostu, więc **żadna trasa między punktami łowieckimi nie prowadzi przez most**.
+- Odcinki wody odcinające resztę mapy mają **4 600–6 750 jednostek** — to przepaście, nie strumyki do przeskoczenia.
+- **Mapa nigdy nic nie stawia na wodzie:** ani jeden z 532 punktów spawnu, ani jeden z 16 NPC.
+- Silnik r40250 **w ogóle nie blokuje wody** — czyta `ATTR_WATER` tylko dla łowienia. Blokada jest naszą decyzją.
+
+**Ograniczenie, wprost:** boty korzystają z około 30% Doliny Orków. Reszta leży za wodą, której nie przejdą, dopóki mosty nie zostaną opisane w danych kolizji.
+
+---
+
+## 1.23.9 — 2026-09-04
+
+### Fixed
+
+- **Dolina Orków była mapą, na którą bot mógł wejść, ale nie mógł na niej grać.** Boty lądowały w punkcie startowym imperium, a `map_n_threeway` to mapa graniczna trzech imperiów — **każdy róg jest odgrodzony murem**. Z tego miejsca bot sięgał **17 z 532 grup spawnu** i ani jednego z dwunastu punktów łowieckich.
+  - Trzynaście botów siedziało tam na dokładnie wejściowym poziomie i nie awansowało, planując w kółko trasy, które nie mogły istnieć: **7812 z 8259** wpisów „unreachable" w jednej sesji pochodziło z tej jednej mapy.
+  - Wejście i wyjście są teraz w największym spójnym obszarze mapy — **161 grup spawnu** i wszystkie punkty łowieckie. Oba to współrzędne z `regen.txt`, więc są chodliwe, i oba w tym samym obszarze: **do wyjścia bot idzie pieszo**, więc wyjście za murem zablokowałoby każdego, kto tam wszedł.
+  - Migracja przenosi boty zostawione w starym rogu do terenu łowieckiego, zanim rdzeń gry je wczyta.
+- **Wędrówka pyta, czy punkt jest osiągalny, zanim do niego pójdzie** — na mapach granicznych i w Małpiej Świątyni. Kosztuje to sprawdzenie spójnego obszaru, a oszczędza przeszukiwanie trasy, które i tak musi się nie udać. Bot po złej stronie muru poluje tam, gdzie stoi, zamiast cyklicznie próbować dwunastu niemożliwych celów.
+
+### Added
+
+- **`tools/analyse_map_reach.py`** — narzędzie, którym to zmierzono. Dekoduje `server_attr`, stosuje tę samą regułę blokowania co nawigacja botów, rozlewa się od zadanego punktu i mówi, jaka część tablicy spawnów jest po tej samej stronie murów. Pustynia dostaje z wejścia **1170 z 1172** — dlatego ta mapa zawsze działała, a tamta nigdy.
+
+---
+
+**Zmierzone na uruchomionym serwerze:** trasy nieosiągalne do Doliny Orków **7812 → 0**, w całym ostatnim oknie logu zostały **4 awarie od 2 botów**. Bot obecny na mapie stoi wewnątrz głównego terenu łowieckiego.
+
+**Zamknięte zgłoszenia:** [#5](https://github.com/TieruYT/metin2-playerbots/issues/5) i [#7](https://github.com/TieruYT/metin2-playerbots/issues/7).
+
+## 1.23.8 — 2026-09-04
+
+### Changed
+
+- **Podział kodu botów dokończony — wydanie bez zmian w zachowaniu.** `playerbot_manager.cpp` miał rano **12 527 linii**; ma **1 521**. Wszystko to przeniesienia, nic nie zostało przepisane.
+  - Wydzielone w tym kroku: `playerbot_targeting.h` (wybór celu i rezerwowanie go przed setką innych botów), `playerbot_loot.h`, `playerbot_survival.h`, `playerbot_wandering.h`, `playerbot_status.h`.
+  - Rdzeń celowania został **jednym plikiem**, choć ma 1266 linii: rezerwacja celu, licznik atakujących metin i decyzja o multi-pullu muszą widzieć ten sam obraz tego, kto z czym walczy. Rozbicie ich dałoby trzy pliki czytające trzy różne prawdy.
+  - Sprawdzenie „czy gracz jest blisko" trafiło do statusu — to ono decyduje, że przy nikim nie ma po co nic nadawać.
+  - W menedżerze została **rola menedżera**: kim bot jest, jego drużyna, drobne przeglądy, watchdog i sam takt. Takt zostaje tam celowo — jako jedyny musi widzieć wszystkie podsystemy.
+
+---
+
+**Weryfikacja:** kontrola `-m32` w gcc:13 po każdym cięciu — zero błędów, te same dwanaście ostrzeżeń przez cały czas, test jednostkowy przechodzi. Obraz zbudowany i uruchomiony: rejestr 1012 tożsamości, boty piją mikstury, ulepszają, zakładają sprzęt, rozdają punkty, wycofują się taktycznie i wspierają drużynę.
+
+## 1.23.7 — 2026-09-04
+
+### Changed
+
+- **Kod botów podzielony na podsystemy — wydanie bez zmian w zachowaniu.** `playerbot_manager.cpp` miał rano **12 527 linii**; ma **4 001**. Nic nie zostało przepisane, wszystko to przeniesienia.
+
+  | Plik | Co |
+  |---|---|
+  | `playerbot_navigation.h` | Gdzie bot może stanąć i czy dwa punkty się łączą |
+  | `playerbot_world_memory.h` | Czego populacja nauczyła się o świecie |
+  | `playerbot_movement.h` | Jazda trasą: koń, waypointy, portale, rejestr metinów |
+  | `playerbot_gear.h` | Co bot nosi i dźwiga |
+  | `playerbot_activities.h` | Koń i łowienie |
+  | `playerbot_missions.h` | Biolog i polowanie na poziom, bez okna zadania |
+  | `playerbot_skills.h` | Karta postaci: punkty, kolejność umiejętności, bufy |
+  | `playerbot_combat.h` | Sama walka: pakiety ciosu i zaklęcia, umiejętności ataku |
+  | `playerbot_economy.h` | Pieniądze i plecak: śmieci, handlarze, kowal, bonusy, stragany |
+  | `playerbot_travel.h` | Gdzie bot powinien być i jak przechodzi między mapami |
+  | `playerbot_town.h` | Wizyta w mieście od bramy do ostatniej sprawy |
+
+  Lista `#include` na górze menedżera jest teraz **kolejnością zależności całego systemu**, czytaną z góry na dół. W jednej jednostce kompilacji i jednej anonimowej przestrzeni nazw kolejność definicji *jest* kolejnością zależności, więc plik, który idzie pierwszy, to ten, który nie woła niczego.
+
+  W menedżerze została pętla walki (wybór celu, rezerwacja go przed innymi botami, atak, multi-pull, łup, drużyna, wędrówka), tekst statusu i sam takt.
+
+---
+
+**Weryfikacja:** kontrola `-m32` w gcc:13 po każdym cięciu — zero błędów, te same dwanaście ostrzeżeń przez cały czas, test jednostkowy przechodzi. Na koniec obraz zbudowany i uruchomiony: rejestr 1012 tożsamości, boty piją mikstury, ulepszają, kupują sprzęt, chodzą do kowala i handlarza, rozdają punkty.
+
+## 1.23.6 — 2026-09-04
+
+### Fixed
+
+- **Rejestr po cichu odrzucał każdego bota od PID 1003 w górę.** `LPAD` w MySQL nie dopełnia, tylko **skraca**, gdy wartość jest dłuższa niż podana szerokość — więc `LPAD(1001,3,'0')` to `100`, czyli login zupełnie innego bota. Zapytanie rejestru porównywało z tym konto każdej postaci, przez co każdy bot powyżej PID 1002 nie przechodził warunku, którego nie mógł przejść. Bez żadnego błędu w logu.
+  - Obsada nie mogła urosnąć powyżej tysiąca, **niezależnie od tego, ile postaci utworzyło ziarno**.
+  - Zmierzone na żywym świecie z 1500 zasianymi botami: zapytanie zwracało **511**, po poprawce zwraca **1012**.
+
+### Changed
+
+- **Kanoniczna obsada powiększona do 1500** (PID 4..1503), a limit w launcherze razem z nią. Świat, który nosi boty ze starszego rozruchu, zachowuje je — ale zajmują one PID-y, których rejestr nigdy nie przyjmie, więc jedyny sposób, by dać takiemu światu więcej grających botów, to poszerzyć zakres kanoniczny poza nie.
+- **Wydzielony `playerbot_movement.h`** (720 linii): trasy, wsiadanie na konia, przechodzenie waypointów, portale Małpiej Świątyni. Rejestr znanych metinów trafił tam razem z nimi — o tym, czy kamień warto zapamiętać, decyduje to, czy ktoś może do niego dojść, więc rozdzielenie ich znaczyłoby przekazywanie osiągalności z powrotem.
+  - `playerbot_manager.cpp`: **8 388 linii** zamiast 12 527 z dzisiejszego rana.
+
+---
+
+**Zmierzone na działającym serwerze, krok po kroku:**
+
+| | boty w grze |
+|---|---|
+| przed 1.23.5 | 180 |
+| po 1.23.5 (ziarno wreszcie dociera) | 511 |
+| po 1.23.6 (poprawka rejestru + obsada 1500) | **750** |
+
+## 1.23.5 — 2026-09-04
+
+### Fixed
+
+- **Powiększona obsada botów nigdy do nikogo nie dotarła.** Kontener migracji montuje `linux-port/docker/mariadb/playerbot`, więc SQL, który faktycznie wykonuje, to **kopia** ziarna z overlaya — umieszczana tam przez `prepare-context.sh`, który wymaga czystego drzewa silnika i u gracza nie uruchamia się nigdy. Kopia, którą stosowały wszystkie instalacje, była **z 23 sierpnia**. Rejestr 1000 postaci z 1.23.2 i dzisiejsze dokładanie kont jechały w każdej paczce i nie zmieniały niczego.
+  - Synchronizacja overlaya odświeża teraz również tę kopię — na tej samej zasadzie co kontekst budowania: overlay jest źródłem prawdy, a każda jego kopia musi być aktualna, zanim wystartuje to, co ją czyta.
+  - **Sprawdzone na żywym świecie z 668 botami**: 668 zachowanych bez zmian, 332 utworzone, 1000 obecnych, a te 667, które miały postęp, nadal go mają. Druga migracja nie tworzy nic i nie zgłasza nic.
+- **Nowy plik źródłowy silnika nie skompilowałby się u gracza.** `Makefile` w kontekście budowania jest łatany przez `prepare-context.sh`, więc zmiana na `$(wildcard playerbot_*.cpp)` naprawiła ścieżkę deweloperską i ominęła tę, która ma znaczenie. Naprawiane jest teraz to jedno miejsce przy synchronizacji — bez nadpisywania graczom całego `Makefile`.
+- **Migracja przestała ostrzegać sama przed sobą.** PID zwykle wpada w kilka reguł pomijania naraz, a klucz główny zamieniał każde powtórzenie w ostrzeżenie o duplikacie — dwa tysiące linii przed operatorem, zasłaniających te dwie, które mówią, co migracja zrobiła.
+
+### Changed
+
+- **Kod botów podzielony na moduły.** `playerbot_manager.cpp` miał 12 527 linii, bo dodanie funkcji nic nie kosztowało, a dodanie **pliku** kosztowało pięć edycji w `prepare-context.sh` plus edycję łatki. Ta asymetria zniknęła: nic już nie wymienia tych plików z nazwy — skrypt odkrywa katalog, `Makefile` bierze wildcard, pakowarka rozwija wzorzec.
+  - Usunięte **483 linie martwego kodu** — stara nawigacja (`CPlayerBotNavGrid`, `MovePlayerBotLegacy`) była osiągalna wyłącznie z siebie nawzajem.
+  - Wydzielone `playerbot_navigation.h`, `playerbot_world_memory.h` i `playerbot_gear.h`. Menedżer ma **9 085 linii** zamiast 12 527.
+  - To były czyste przeniesienia. **Sprawdzone na żywo**: 1000 botów chodzi, walczy, kupuje, ulepsza, handluje i łowi.
+
+---
+
+## 1.23.4 — 2026-09-04
+
+### Added
+
+- **Boty poprawiają bonusy na swoim sprzęcie.** Ekwipunek to tylko połowa siły postaci — druga połowa to cztery linie bonusów, a do tej pory nikt na nie nie patrzył. Bot na 30+ poziomie, stojąc u kowala, dokłada brakującą linię (`Wzmocnienie Przedmiotu`) albo przelosowuje słabe (`Zaczarowanie Przedmiotu`).
+  - Oba przedmioty sprawdzone w `item_proto`, nie wzięte z notatek: **71084** to `USE_CHANGE_ATTRIBUTE`, **71085** to `USE_ADD_ATTRIBUTE`.
+  - Silnik **odmawia** zmiany bonusów w założonym przedmiocie (`if (item2->IsEquipped()) return false`), więc bot zdejmuje część, losuje i zakłada z powrotem — dokładnie jak gracz.
+  - Punktacja jest celowo zgrubna: ma odróżnić „warto zachować" od „losuj jeszcze raz", a nie odwzorować wzór na obrażenia. Broń ceni obrażenia od umiejętności, krytyki i przebicia; reszta sprzętu punkty życia i obronę.
+  - Bot nie tknie ostatnich **120 tysięcy** yang — mikstury i sprzęt są ważniejsze — i wydaje najwyżej trzy kamienie na wizytę.
+
+### Fixed
+
+- **Bot potrafił przestać łowić na dobre.** Sesja wędkarska zwalnia bota z watchdoga bezczynności (stanie przy brzegu **jest** czynnością), więc bot, który nie mógł dojść nad wodę, stał w miejscu w całkowitej ciszy. Teraz:
+  - punkt na brzegu jest **przyciągany do zweryfikowanej chodliwej komórki**, tak samo jak punkty usług w mieście;
+  - gdy brzeg i tak jest nieosiągalny, bot **zarzuca tam, gdzie stoi** — `fishing()` w r40250 wymaga tylko niezablokowanego pola, wędki i przynęty, a wody nie sprawdza w ogóle (wylicza kierunek i go odrzuca);
+  - co 15 sekund trafia do dziennika jedna linia `PLAYERBOT_FISHING: progress` z pozycją, celem, odległością i stanem sprzętu, więc następne zgłoszenie będzie można rozstrzygnąć jedną linią.
+- **Panel nazywał co trzeci bonus „Bonus #63".** Tablica nazw pokrywała typy 1–25 i garść innych; brakowało między innymi odbicia ataku, odporności na omdlenie, magicznej wartości ataku i całej rodziny „silny przeciwko…". Dodane **31 brakujących** nazw, po polsku i angielsku.
+- **Panel pokazywał cztery podstawowe statystyki jako procenty.** Siła, Zręczność, Inteligencja i Energia Życiowa to liczby, nie procenty — podobnie jak magiczna wartość ataku i obrony czy wytrzymałość. Rozróżnienie ma teraz własną listę zamiast testu na cztery typy.
+
+---
+
+## 1.23.3 — 2026-09-04
+
+### Fixed
+
+- **Serwer nie budował się po aktualizacji — to naprawiamy w pierwszej kolejności.** Zgłosili to `Archded` (build kończył się na `playerbot_types.h: No such file or directory`) i `Nagash` (`class 'CPlayerBotManager' does not have any field named 'm_bRegistryLoaded'`). Obie awarie miały **jedną przyczynę**: aktualizacja wysyłała nowy plik bota do kontekstu budowania, ale **bez jego własnych nagłówków**. Kompilator widział wtedy nowy kod obok nagłówka z poprzedniego wydania — albo bez nagłówka w ogóle.
+  - Winne było założenie, że kontekst budowania utrzymuje `prepare-context.sh`. Ten skrypt wymaga czystego drzewa silnika, którego paczka **celowo nie zawiera**, więc u gracza nie uruchamiał się nigdy.
+  - Teraz launcher i `start-server.ps1` **kopiują cały katalog źródeł bota** do kontekstu przed każdym budowaniem, więc kolejny nowy plik nie może się już zgubić. Dodatkowo pakowarka aktualizacji **odmawia zbudowania paczki**, w której źródło i jego kopia się rozjeżdżają.
+  - `Nagash` podejrzewał, że zepsuła to jego zmiana nazw botów. Tak nie było — nazwy nie miały z tym nic wspólnego.
+- **Sklepy botów nie były zamykane; nazwa stragana zostawała nad głową.** Zgłosił `Nagash`. Straganem zarządza silnik, a termin jego zamknięcia — kod bota, i zamykanie wykonywało się **za** watchdogiem bezczynności oraz ratunkami nawigacji. Każdy z nich przerywa takt, więc handlujący bot potrafił nigdy nie dojść do własnego kodu zamykania — a ratunek nawigacji mógł go **przenieść z rynku razem z wywieszonym szyldem**. Zamykanie stragana wykonuje się teraz **przed wszystkim innym**, a dodatkowo:
+  - straganowi bez terminu zamknięcia termin jest **dopisywany**, więc żadna ścieżka nie zostawi go otwartego na zawsze;
+  - bot, który zginął albo znalazł się poza rynkiem, zamyka stragan natychmiast;
+  - stanie przy straganie **liczy się jako aktywność**, więc watchdog nie zgłasza już błędu co 90 sekund dla każdego handlarza.
+- **Stragany stały zbyt długo, by ktokolwiek zobaczył ich zamknięcie.** Czas otwarcia zmieniony z 20–60 minut na **10–25 minut**.
+- **Świeża instalacja z obsadą 1000 botów przerwałaby się na ziarnie.** Końcowa asercja porównywała wynik z liczbą **350** wpisaną na sztywno — przy rejestrze 1000 pozycji zgłaszała błąd przy **każdym** udanym zasianiu. Teraz porównuje z rzeczywistym rozmiarem rejestru.
+- **Czytelny komunikat o limicie GitHuba.** Kilka kliknięć „Sprawdź aktualizacje" pod rząd wyczerpuje anonimowy limit zapytań, a launcher pokazywał wtedy tylko „Operacja nie powiodła się". Teraz mówi wprost, że to limit po stronie GitHuba, że instalacja jest sprawna i że wystarczy poczekać.
+
+### Changed
+
+- **Baza sama dokłada brakujące postacie botów.** Poprosił o to `Gacek`. Do tej pory **jedna** zmieniona nazwa bota unieważniała całe ziarno: świat zostawał na tylu botach, ile akurat miał, a suwak w launcherze obiecywał więcej, niż baza mogła dostarczyć. Teraz postać, która nie należy do ziarna, jest po prostu **pomijana** — a brakujące PID-y powstają normalnie.
+  - **Żaden istniejący wiersz nie jest zmieniany ani usuwany.** Twoje postacie, przezwiska i postęp zostają nietknięte; dokładane są wyłącznie te, których w bazie nie ma.
+  - Migracja wypisuje teraz, ile postaci zachowała i ile utworzyła.
+- **Launcher pokazuje wersje na dole okna:** `Aktualna wersja` i `Najnowsza wersja`. Zielono, gdy masz najnowszą. Manifest czytany jest **raz na sesję**, żeby nie zużywać limitu GitHuba.
+
+---
+
+## 1.23.2 — 2026-09-04
+
+### Changed
+
+- **Suwak liczby botów sięga teraz 1000, a nie 668 — i ta liczba wreszcie coś znaczy.** Sedno problemu nie było w suwaku: spawnować mogą się **wyłącznie boty z rejestru nasion**, a ten miał **350 pozycji**. Dlatego gracz przesuwał suwak wyżej i dostawał 350. Rejestr obejmuje teraz 1000 postaci (PID 4..1003).
+  - **Uwaga: istniejący świat zachowuje swoją obsadę.** Migracja celowo nie nadpisuje świata, który ma już własne boty — wypisuje ostrzeżenie i pomija nasiona. Nowy limit dostaną **świeże instalacje**; przeniesienie istniejącego świata na większą obsadę to osobna, świadoma operacja na bazie.
+
+### Fixed
+
+- **Bot wysyłał się na ryby, mimo że nie mógł unieść wędki.** Wędkarzem mógł zostać bot od 10 poziomu, a wędka wymaga 30 — więc bot kupował sprzęt, którego nigdy nie założy, i próbował w kółko. Zgłosił to `OskarPWA`, widząc bota na 13 poziomie zablokowanego przy Rybaku. Teraz o tym, kto może łowić, decyduje **wymagany poziom samej wędki**, odczytany z danych przedmiotu — więc zmiana wędki nie rozjedzie się z kodem.
+- **Łowienie w ogóle nie mogło się odbyć.** Rzeka jest w Joan, a każdy bot dość wysoki, by unieść wędkę, dawno stamtąd wyszedł — więc warunek „łowimy tylko w M1" nie mógł być nigdy spełniony. Wyprawa na ryby jest teraz **prawdziwym celem podróży**: bot wraca do Joan, łowi i dopiero potem wraca do polowania.
+- **Sesja łowienia ma twardy limit czasu.** Bot, który nie dotrze nad wodę, kończy sesję z wpisem w dzienniku, zamiast w nieskończoność chodzić tą samą nieudaną trasą.
+
+---
+
+## 1.23.1 — 2026-09-03
+
+### Fixed
+
+- **Boty, które utknęły bez sektora, wracają do gry.** Postać bez sektora nie może się ruszyć **w ogóle**, a kod tylko zapisywał błąd i próbował ponownie w następnym takcie. W logach z jednego dnia dało to **35 tysięcy takich wpisów od 45 botów**, które nie zrobiły już ani kroku, plus 7900 bezskutecznych resetów watchdoga. Teraz taki bot jest przenoszony na punkt wejścia swojej mapy.
+- **Boty zapisane na mapie, której serwer nie prowadzi, nigdy się nie pojawiały.** Wczytanie postaci pytało o pozycję, nie dostawało odpowiedzi i się poddawało — te same dwa boty przepadały przy każdym z 17 startów w ciągu dnia, bez możliwości odzyskania, bo pętla AI widzi tylko boty, które się pojawiły. Migracja przy starcie przenosi je teraz do Bokjung. **U mnie odzyskała 4 boty.**
+- **Koniec zalewania dziennika przy starcie.** Zabezpieczenie przed przejęciem cudzego konta zapisywało błąd dla każdego niezarejestrowanego numeru — 170 linii przy każdym uruchomieniu za coś, co działa dokładnie tak, jak ma działać. Teraz jest to jedna zbiorcza linia.
+- **Paczka diagnostyczna zbierana przy wyłączonym Dockerze** była oznaczana jako udana, choć zamiast logów kontenerów zawierała same błędy połączenia. Teraz na górze pliku jest wyraźne **PACZKA NIEPEŁNA** z informacją, co zrobić.
+
+---
+
+## 1.23.0 — 2026-09-03
+
+### Added
+
+- **Boty prowadzą stragany w Bokjung.** Stała dziesiąta część botów po załatwieniu spraw w mieście idzie na rynek, zsiada z konia i wystawia jeden przedmiot na 20–60 minut: materiał albo naprawdę zbędną broń czy zbroję, w cenie liczonej z kursu NPC. Zapasy, noszony sprzęt i rzeczy, których gra zabrania sprzedawać, nie trafiają nigdy. **Możesz u nich normalnie kupować.**
+- **Walka z siodła.** Koń bojowy (11+ poziom) jedzie teraz do walki, zamiast zostawać na podejściu. Metiny bije z siodła każdy, kto takiego konia ma; wojownicy i sury tłuką konno także zwykłe spoty. Łucznicy i zwykłe konie nadal walczą pieszo. Blokadą nie był dystans zsiadania, tylko podejście do walki wołające ruch bez zgody na konia — bot zsiadał za każdym razem.
+- **Wędkowanie.** Część botów w M1 kupuje wędkę u Rybaka i łowi na brzegu poniżej niego. Zrobione pod to, co silnik faktycznie robi, a nie pod opis: przynęta siedzi w gnieździe 2 wędki, branie przychodzi po 10–40 s i daje 6 sekund okna, a szczyt wypada około 3 s po braniu — więc bot czeka na właściwy moment, zamiast szarpać. Połów jest patroszony, a małże otwierane, co wprowadza do gospodarki **perły**. Pas brzegu i kierunek odczytane z `server_attr` mapy, nie zgadnięte.
+- **Ogłoszenia u kowala na Wołaj.** Udane ulepszenie na +7 i wyżej ma szansę trafić na czat, najwyżej raz na trzy minuty w skali świata. **Przy zaatakowaniu, w PvP i po zabiciu boty milczą.**
+- **Pamięć ras map.** Populacja zapamiętuje, z czego składa się każda mapa, i waży tym bonusy rasowe — „silny przeciw orkom" liczy się bardziej tam, gdzie orki naprawdę są. Mapa musi mieć 200 obserwacji i wyraźną większość, zanim cokolwiek zostanie uznane za jej rasę.
+
+### Fixed
+
+- **Prywatnego sklepu nie mógł otworzyć nikt w zbroi — także Ty.** `OpenMyShop` zaczynał się od `GetPart(PART_MAIN) > 2`, a silnik trzyma w `PART_MAIN` numer noszonej zbroi, więc warunek odrzucał każdą ubraną postać. Miał chronić przed otwieraniem sklepu w transformacji i teraz pyta o to wprost. Zmiana idzie jako osobna łatka rdzenia.
+- **Bot trzymający cel nie sprawdzał już podróży** ([#10](https://github.com/TieruYT/metin2-playerbots/issues/10)), przez co gęste spoty potrafiły go uwięzić.
+- **Loch Małp nie pytał o mikstury** ([#11](https://github.com/TieruYT/metin2-playerbots/issues/11)) — bot bez mikstur zostawał i ginął w kółko. Zgłoszone razem z poprawką przez `sentydeploy`.
+- **Paczka aktualizacji nie zawierała trzech plików**, bez których przebudowa u gracza kończy się błędem kompilacji: `playerbot_world_rules.h` (zyskał nowe pole), nowy `playerbot_types.h` oraz `prepare-context.sh`, który jako jedyny kopiuje pliki overlaya do budowania.
+
+---
+
+## 1.22.4 — 2026-09-03
+
+### Changed
+
+- **Boty idą po mikstury dopiero wtedy, gdy są na wykończeniu.** Poprzednia wersja wysyłała je do handlarki już przy połowie pasa, co kosztowało dobry spot za zakup, którego nie potrzebowały. Wyprawa po zakupy to teraz próg **150 czerwonych / 100 niebieskich**. Uzupełnianie **do pełna** (800/600) zostaje bez zmian, ale dzieje się przy okazji — gdy bot i tak stoi u handlarki, dokupienie nic nie kosztuje.
+
+---
+
+## 1.22.3 — 2026-09-03
+
+### Fixed
+
+- **Boty powyżej 35 poziomu nie mogły wyjść z Joan i biły tam wilki.** Zgłoszone przez `sentydeploy` w [#9](https://github.com/TieruYT/metin2-playerbots/issues/9) razem z pomiarem na 350 botach: **z 276 postaci powyżej 35 poziomu aż 243 tkwiły w Joan**, goniąc Dzikie Psy i Niebieskie Wilki. Bramka wyjścia z miasta sprawdzała tylko przynależność do grupy expiącej w Bokjung, która kończy się na 35 poziomie — więc bot 36+ odbijał się od niej przy każdym takcie i nigdy nie docierał do trasy na nowe mapy. To właśnie te „boty biją psy na 30 poziomie", które wracały na Discordzie. Przechodzi teraz każdy, kto ma dokąd pójść.
+- **Pętla Joan ↔ Bokjung powyżej sufitu.** Bot, którego Joan wypuściła, docierał do Bokjung, a tam odsyłano go z powrotem, bo nie należał do tamtejszej grupy. Powyżej 35 poziomu nie ma już powodu wracać.
+
+### Changed
+
+- **Boty noszą znacznie większy zapas mikstur: 800 czerwonych i 600 niebieskich**, jeśli mają na to yang (wcześniej 300 i 80). Uzupełniają je po zejściu poniżej połowy, a nie dopiero przy pustym pasie, i nigdy nie wydają więcej niż połowy portfela. Limit odsprzedaży nadmiaru podniesiony razem z zakupem — inaczej boty od razu sprzedałyby to, co kupiły.
+
+---
+
+## 1.22.2 — 2026-09-02
+
+### Fixed
+
+- **Boty kupowały hełm innej klasy i nie mogły go założyć.** Zgłoszone przez `sentydeploy` w [#8](https://github.com/TieruYT/metin2-playerbots/issues/8) — bardzo dobra diagnoza. Rodziny hełmów dzieli 140 numerów, a pętla wyboru sięgała dokładnie `baza + 140`, czyli startowego hełmu sąsiedniej klasy. Ponieważ wygrywało „ostatnie trafienie", a startowy hełm wymaga 0 poziomu, zawsze nadpisywał poprawny wybór. Wojownik kupował hełm Ninji, Sura hełm Szamana — i gra odmawiała założenia. Widać to było w danych: Szaman, którego rodzina jest ostatnia w łańcuchu, miał hełm w 100% przypadków, pozostałe klasy poniżej 50%. Wybór idzie teraz według **najwyższego wymaganego poziomu**, więc przedmiot startowy obcej klasy nigdy nie przebije właściwego. Ta sama poprawka objęła wszystkie pięć list progresji (broń, zbroja, tarcza, hełm, buty).
+
+- **Przerwana aktualizacja nie zostawia już serwera w martwym punkcie.** Gdy Docker nie dokończył budowania, nowe pliki (w tym `VERSION`) były już na dysku, więc launcher mówił „masz najnowszą wersję" i nigdy nie ponawiał budowania — a „GRAJ" startowało stare obrazy. **Właśnie dlatego część graczy nie widziała nowych map na stronie mimo aktualizacji.** Launcher zapisuje teraz znacznik nieukończonej przebudowy: dopóki istnieje, wersja liczy się jako nieznana, a kliknięcie **GRAJ** samo dokańcza budowanie. Nic nie trzeba robić ręcznie.
+
+### Changed
+
+- **Nowe pasma poziomów dla map.** Bokjung do 29, **Pustynia Yongbi 30–35**, **Dolina Orków od 36**. Zwykłe moby w Dolinie mają 18–25 poziom, ale jej **metiny mają 45, 48 i 50** — a metina opłaca się rozbijać dopiero od `poziom_metina − 9`. Dolina zaczyna się więc realnie opłacać dopiero od 36 poziomu i tam trafiła, mimo słabych mobów.
+- **Większy zapas niebieskich mikstur dla klas walczących wręcz.** Wojownik i Ninja uzupełniają je teraz do 20 sztuk zamiast 10 — umiejętności zużywają SP bez przerwy. Brak niebieskich nadal nie blokuje podróży, bo to właśnie zamykało boty w mieście.
+
+---
+
+## 1.22.1 — 2026-09-02
+
+### Fixed
+
+- **Aktualizacja z launchera nie wywala już serwera przy dużym świecie.** Migracja bazy czekała na nią 5 minut i się poddawała, a Docker traktuje to jako nieudany start całego serwera — stąd „Docker nie zbudował serwera", mimo że uruchomienie ręczne minutę później działało. Świat, który nie został czysto zamknięty, potrafi odtwarzać się dłużej niż 5 minut, więc limit to teraz 30 minut, a skrypt na bieżąco pisze, że czeka. **To samo naprawia panel www, który u części graczy nie pokazywał nowych map** — przerwana aktualizacja nie zdążyła przebudować strony.
+- **Migracja pokazuje wreszcie błąd bazy, zamiast go połykać.** Odrzucone logowanie wyglądało dokładnie tak samo jak wolny import. Teraz wypisuje powód, a przy „Access denied" wprost odsyła do przycisku „NAPRAW DOSTĘP DO BAZY".
+- **Boty przestały odbijać się od nowych map.** Przyjeżdżały i wracały po kilku sekundach — 271 przyjazdów na Pustynię dawało 269 powrotów, więc obie mapy wyglądały na puste, bo każdy bot był akurat w drodze. Złożyły się na to trzy rzeczy: brak niebieskich mikstur uznawany za sytuację awaryjną **także u wojownika i ninja** (dotyczyło 210 z 442 postaci, które ich nie używają), sprawdzanie ekwipunku zanim zdążył się wczytać po zmianie mapy, oraz brak minimalnego czasu pobytu. Bot zostaje teraz co najmniej 2 minuty, chyba że naprawdę nie może walczyć.
+- **Bot, który trafi na nieobsługiwaną mapę, wraca do Bokjung.** Na nowych mapach stoją prawdziwe NPC teleportujące; wejście w ich zasięg przenosiło postać tam, gdzie AI nie ma żadnego planu, i bot zostawał tam na zawsze.
+
+### Changed
+
+- Ostrzeżenie Dockera o wolumenie `db-data` nie pojawia się już w oknie launchera. Jest nieszkodliwe, ale słowo „warning" obok bazy skłaniało graczy do `down -v` — jedynej komendy, która naprawdę kasuje świat. W dzienniku sesji zostaje.
+
+---
+
+## 1.22.0 — 2026-09-02
+
+### Added
+
+- **Boty wychodzą wreszcie poza Bokjung — na Dolinę Orków i Pustynię Yongbi.** Progresja kończyła się na M2, którego moby przestają się opłacać koło 27 poziomu, więc bot, który je przerósł, był odsyłany do Joan bić wilki na 3 poziomie. Dolina Orków (moby 18–25) obsługuje poziomy 20–27, Pustynia (moby 26–30) poziomy 28–33. Boty podróżują przez Teleportera, którego każda wioska ma naprawdę, i wracają bramką kilka kroków od miejsca, w którym się pojawiły.
+- **Obie mapy na stronie.** Selektor na `/map` ma teraz sześć pozycji, więc widać boty także na nowych mapach. Teleport do bota działa tam bez zmian.
+- **Mapy cieplne.** Nowy przełącznik pokazuje, **gdzie boty giną** i **gdzie rozbijają metiny** — na podstawie zdarzeń, które serwer i tak zapisuje. Wielkość plamy skaluje się pierwiastkiem z liczby zdarzeń, więc jedno gorące miejsce nie zalewa całej mapy.
+
+### Fixed
+
+- **Brakujący hełm nie przykuwa już bota do jednej mapy.** Brak dowolnej części EQ liczył się jako krytyczna potrzeba miasta, a ta blokowała podróż bezterminowo. Bot zawsze chciał na zakupy, więc nigdy nie wolno mu było wyjść — i bił wilki na 3 poziomie mając 27 poziom i ponad milion yang. Teraz blokują tylko braki, które faktycznie uniemożliwiają grę (broń, zbroja, mikstury, strzały, pełny plecak); reszta dostaje jedną wizytę w mieście i jeśli miasto nie ma czym pomóc, bot rusza dalej.
+- **Poprawione przyciski teleportacji w panelu.** „Pustynia" i „Ognista Ziemia" wskazywały współrzędne spoza świata gry, więc nigdy nie działały. Wszystkie miejsca celują teraz w punkt odrodzenia Chunjo danej mapy; doszły też Bokjung, Dolina Orków, Pustynia i Góra Sohan.
+
+### Changed
+
+- **Osobowość bota wpływa teraz na to, gdzie gra**, a nie tylko na to, jak ryzykownie ulepsza. Wędrowiec wyrusza na dalekie mapy 7 razy na 8 i zostaje tam dwa razy dłużej, ostrożny kolekcjoner 2 na 8 i wraca szybciej. Około 38% każdego pasma zostaje w Bokjung, żeby miasto, bestie i pula na drużyny nie pustoszały.
+- Mapa 64 przeniesiona na rdzeń `game1`. Bot serwerowy nie ma klienta, który przełączyłby się między rdzeniami, więc cała jego trasa musi być na jednym — mapa 303 poszła w drugą stronę dla zachowania balansu.
+
+---
+
+## 1.21.2 — 2026-09-02
+
+### Fixed
+
+- **Launcher prosi o ponowne uruchomienie po aktualizacji.** Aktualizacja podmienia pliki samego launchera, ale okno, które masz otwarte, wczytało stary kod przy starcie — więc nowe przyciski się nie pojawiały i wyglądało to, jakby aktualizacja nie weszła (choć na dysku była). Teraz launcher wykrywa, że podmienił własne pliki, i pyta: „Uruchomić ponownie teraz?".
+- **„IMPORTUJ BAZĘ" przy wyłączonym Dockerze nie kłamie już, że nie ma czego importować.** Wcześniej lista baz wychodziła pusta i komunikat brzmiał jak utrata danych. Teraz launcher sprawdza silnik i mówi wprost: uruchom Docker i spróbuj ponownie — dane są całe. To samo dotyczy „NAPRAW DOSTĘP DO BAZY".
+
+### Added
+
+- **Data utworzenia przy każdej bazie na liście importu.** Nazwy instalacji to nieczytelne skróty (`m2pb-34c3e45f`), więc lista pokazuje teraz `m2pb-34c3e45f   (utworzona 2026-08-31 23:51)` — widać, która jest która. Działa tak samo w launcherze graficznym i tekstowym.
+
+---
+
+## 1.21.1 — 2026-09-02
+
+### Added
+
+- **„ZBIERZ / WYŚLIJ LOGI" wysyła paczkę prosto na Discorda projektu.** Gdy kanał zgłoszeń jest włączony, jeden klik pakuje logi i wrzuca je na serwer autora — bez szukania folderu i przeciągania pliku. Paczka nadal ma wycięte hasła, a wiadomość nie może nikogo oznaczyć (żadnych `@everyone`).
+- Gdy kanał jest wyłączony albo nie ma internetu, launcher robi to co dotąd: zapisuje ZIP, otwiera jego folder — a teraz dodatkowo otwiera zaproszenie na Discorda, żeby było wiadomo, gdzie go wrzucić.
+
+### Changed
+
+- **Adres kanału zgłoszeń jest pobierany z manifestu aktualizacji**, a nie wbudowany w launcher. Dzięki temu można go włączyć, zmienić albo unieważnić edycją jednego pliku na GitHubie — bez wydawania nowej wersji i bez ponownej instalacji u graczy. Własne ustawienie w `.m2launcher.json` nadal ma pierwszeństwo.
+- Launcher rozpoznaje pomyłkę „zaproszenie zamiast webhooka" (`discord.gg/...`) i mówi wprost, jak wygląda poprawny adres, zamiast zgłaszać błąd HTTP.
+- Paczka większa niż 10 MB jest odrzucana **przed** wysyłką, z informacją ile waży — wcześniej Discord odrzucał ją dopiero po przesłaniu całości.
+
+---
+
+## 1.21.0 — 2026-09-02
+
+### Fixed
+
+- **Import nie potrafi już zniszczyć bazy.** Jeśli baza tej instalacji jeszcze nie istniała, import montował nieistniejący wolumen — Docker tworzył go pustego, a MariaDB inicjalizowała bazę **bez hasła i bez schematów gry**. Ponieważ wolumen przestawał być pusty, właściwa inicjalizacja nigdy się już nie uruchamiała i instalacja zostawała trwale zepsuta (trzeba było kasować wolumeny). Teraz launcher odmawia i mówi wprost: najpierw uruchom serwer („GRAJ"), dopiero potem importuj.
+- **Czytelna podpowiedź przy błędzie startu.** Gdy `playerbot-migrate` nie może zalogować się do bazy, launcher pokazuje konkretną instrukcję: kliknij „NAPRAW DOSTĘP DO BAZY", zamiast surowego błędu Dockera.
+
+### Added
+
+- **Suwak liczby botów (0–668).** Zamiast wpisywania liczby — suwak z podglądem wartości. Efektywny limit to liczba botów w Twoim świecie (kanoniczna paczka ma 350).
+- **Widoczny postęp podczas uruchamiania.** Log w launcherze pokazuje teraz przebieg **na żywo**, a pasek postępu i status podają upływający czas oraz etap budowy (np. `game deps 4/6 (67%)`). Koniec z ciszą przez kilka minut i pytaniem „czy to się zawiesiło?". Przy pierwszym budowaniu launcher wprost uprzedza, że potrwa to kilkanaście–kilkadziesiąt minut.
+
+### Changed
+
+- **Jeden przycisk aktualizacji.** Zamiast osobnych „SPRAWDŹ" i „ZAINSTALUJ" jest teraz samo **SPRAWDŹ AKTUALIZACJE**: launcher sprawdza kanał i — jeśli faktycznie jest nowsza wersja — pyta „Znaleziono nową wersję. Zainstalować teraz?" (TAK/NIE). Gdy nic nowego nie ma, mówi to wprost, zamiast cokolwiek instalować.
+- **Szybsze zgłaszanie problemów.** Przycisk „ZBIERZ / WYŚLIJ LOGI" potrafi od razu wysłać paczkę logów do autora, jeśli w konfiguracji ustawiono kanał pomocy; w przeciwnym razie zapisuje ZIP i otwiera folder do załączenia na Discordzie. Hasła są z logów usuwane.
+
+## 1.20.0 — 2026-09-02
+
+### Fixed
+
+- **Import świata już nie blokuje startu serwera.** Po „IMPORTUJ BAZĘ" migrator botów potrafił nie uwierzytelnić się w bazie (`playerbot-migrate` kończył się błędem), przez co gra i panel nie wstawały. Import zamyka teraz bazę pomocniczą łagodnie (bez wymuszania odzysku InnoDB) i po podmianie świata odtwarza techniczne konto bazy wraz z uprawnieniami. Postacie, przedmioty i boty pozostają nietknięte.
+- **Nowy przycisk „NAPRAW DOSTĘP DO BAZY".** Jednym kliknięciem odtwarza techniczne konto bazy dla osób, które zaimportowały świat wcześniejszą wersją i zostały z serwerem, który nie startuje. Nie zmienia postaci ani botów.
+
+## 1.19.0 — 2026-09-01
+
+### Added
+
+- **Dostęp do bazy z Navicat / HeidiSQL / DBeaver.** Baza jest wystawiona na `127.0.0.1:3306` (tylko lokalnie). Loguj się jako `root` / `local-playerbots-root` albo `metin2` / `local-playerbots-game`, aby edytować itemy, NPC i questy.
+- **Ustawianie liczby grających botów (0–350)** w launcherze — przycisk „LICZBA BOTÓW".
+- **Import świata z innej instalacji** („IMPORTUJ BAZĘ") — kopiuje postacie/poziomy/ekwipunek z innego wolumenu Docker na tym komputerze, z kopią zapasową i bez ruszania źródła. Pokazuje datę utworzenia świata i ostatniej gry.
+
+### Fixed
+
+- **Koniec fałszywego „Błąd: Start (kod )".** Launcher nie myli już postępu Dockera na stderr (ani nieodczytanego kodu wyjścia w GUI) z awarią — udany start pokazuje „Gotowe".
+- **Mapa botów po zmianie nazwy.** Panel rozpoznaje boty po koncie `playerbot_`, więc bot ze zmienioną nazwą znów jest widoczny na mapie.
+- **Bezpieczeństwo.** Zwykła postać gracza nie może już zostać przejęta jako bot.
+- Poprawne wykrywanie i przejmowanie istniejących instalacji Docker przy pierwszym uruchomieniu z nowego folderu.
+
+## 1.17.0 — 2026-08-25
+
+### Added
+
+- **Autonomous Chunjo multi-map progression.** Bots now travel between Joan (M1), Bokjung (M2), Waryong (M3) and the Easy Monkey Dungeon through the real portals and local dungeon teleports. M1 remains the natural early zone, most level 20–35 characters move into M2, and a suitably equipped cohort visits M3.
+- **A real Horse Medal journey.** Eligible bots enter the Easy Monkey Dungeon, navigate its disconnected rooms through the native GOTO portal graph, pick up actual Medal drops and deliver them to a Stable Boy. The M2 Stable Boy is used after a dungeon trip, avoiding the old M2 → M1 detour. Different bots deliberately farm a stock of one to three medals before leaving, with a bounded visit time.
+- **Mounted travel.** Bots with a horse mount for long journeys to merchants, the Blacksmith, the Biologist and world portals, then dismount near the destination and before ordinary combat. Combat-horse fighting remains a later milestone.
+- **M3 equipment progression.** Infected animals can drop the class-specific level-30 weapon families and the level-21 Pentagon Shield through an additive serverfiles overlay. Bots value positive average-damage weapons especially highly.
+- **Operational safety tools.** Added a verified compressed MariaDB backup helper and a read-only horse-journey diagnostic report.
+- **A bilingual live world panel.** `/map` now supports Polish and English throughout, filters M1/M2/M3/Monkey Dungeon positions, and localises classes, professions, skills, hunting missions, Biologist stages and item names from the stock Polish locale table.
+
+### Changed
+
+- Loot remains visible for 1.0–1.8 seconds and is picked up one stack at a time instead of disappearing in the kill tick. Bots finish an active pull before starting the loot sweep.
+- Combat target selection now prioritises the remaining monsters already attacking the bot or its party, so a character does not abandon a half-finished group for a fresh target.
+- Playerbot combat ignores both attackers and targets inside `ATTR_BANPK` safe zones, preventing endless attacks against invulnerable monsters near teleporters.
+- Shields are now treated as core progression gear: bots buy a Battle Shield when missing one, equip better shields and include them in Blacksmith refinement decisions.
+- Skill development is no longer identical within a class. Mental Warriors rotate between Strong Body, Bash, Spirit Strike and Stump priorities; Dragon Shamans alternate Dragon's Aid and Dragon Roar openings. Dagger Ninjas learn Stealth but do not waste PvE actions casting it.
+- Long-distance navigation can retain its mounted state across incremental route updates. Monkey Dungeon routing blocks immediate reverse-portal loops.
+- The Playerbot autospawn safety ceiling was raised from 350 to 1000 while the reproducible bundled seed remains 350 bots.
+- Docker-published auth, game and panel ports accept the explicit `M2_HOST_BIND_ADDRESS` setting.
+
+### Fixed
+
+- Corrected the Waryong arrival point to the walkable `Town.txt` location. The previous generic teleporter coordinates landed at the unwalkable north-west border without a sectree.
+- Bots carrying a Horse Medal in M2 no longer return to M1 before looking for a Stable Boy.
+- Bots no longer instantly clear freshly spawned Metin loot or leave it behind because town-service logic ran first.
+- Horse travel no longer repeatedly dismounts and remounts when a lightweight AI update continues an existing route.
+
+### Verification
+
+- Rebuilt the full r40250 game image and the panel image successfully.
+- Verified 51 live bots moving on valid Waryong coordinates after deployment, with no recurrence of the old arrival coordinate or missing-sectree error.
+- Verified both Polish and English panel views, map filters and localised equipment/skill details against a live 668-bot development world.
+
+---
+
+## 1.16.0 — 2026-08-24
+
+### Changed
+
+- **The project is now installable independently of the retired upstream repository.** Installer, updater, panel metadata, and image labels point at `TieruYT/metin2-playerbots`.
+- **Native-client-only installation.** The withdrawn upstream WebClient is not fetched, published, or started. Legacy WebClient flags remain accepted only so old saved commands do not fail.
+- **Bring your own files (BYOF).** No third-party r40250 server/client mirror is built in. Supply a local server archive/reference directory and, optionally, a native client archive you are authorised to use. Windows adds `-ClientArchive` and `-NoClient`.
+- Added an explicit provenance and attribution document, retained upstream Git history, and clarified the licensing boundary for all game files.
+
+### Fixed
+
+- Corrected Docker Compose host/container port interpolation so a fresh local install can bind the panel and game ports without producing an invalid four-part port mapping.
+- Verified the complete local archive path against `Reference_Server.zip`: checksum, r40250 baseline, extraction, 30 patched files, and staging all pass without fuzz or rejects.
+
+---
+
+## 1.15.6 — 2026-08-14
+
+### Fixed
+
+- **Fixed Issue with Admin Panel**
+
+---
+
+---
+
+## 1.15.5 — 2026-08-14
+
+### Added
+
+- **The panel points at the community's Discord.** A quiet line in the footer of every page, and a proper card for anyone signed in to their game account, saying what is actually there: what changed in the last update, when the server is down for maintenance, and people who answer a question faster than you can search for it — and that a bug reported there is the quickest way to get it fixed. In all three languages the panel speaks.
+
+- The address is **part of the software, not a setting.** It is written into the code rather than read from a config file, deliberately: it is where this project posts its news, so an install cannot quietly drift to a different address and leave its players pointed at nothing. An operator running their own community changes that one line, which is a change to the software and looks like one.
+
+---
+
+## 1.15.4 — 2026-08-14
+
+### Fixed
+
+- **Updating a server could leave it unable to start.** The scripts that start and supervise the game cores are installed into the images with `chmod +x`, and that cannot repair the one thing that was wrong with them. A file staged as "executable by everyone but readable only by its owner" already has the execute bit for everybody, so `+x` changes nothing — and the server does not run as the owner. A compiled program would still have run; a shell script cannot, because the shell has to *read* it. The result was a game container restarting in a loop, once a minute, on `Permission denied`, with every other container healthy and the cause nowhere near the message. The four images that install scripts now set an absolute mode instead, the way the bridge image always did — which is exactly why the bridge was the one part that never broke.
+
+- **The updater could not apply any change to the game's own code.** Every customisation this project makes to the server — the Custom Experience, High Risk mode, the storeroom pages — is a Python script, and the updater image did not contain Python. So an update that carried one of them stopped with `FATAL: python3 is needed`, refused to go further, and left the server on its old version. It never showed up during a first install, because that runs on the host, where Python is present. The updater image now carries it.
+
+### Note for anyone running a server
+
+Both of these are in the images, so they take effect the next time the images are rebuilt — which is what an update does anyway. If your server is currently in the restart loop described above, the update that fixes it is the same update that was failing; rebuild the images once and it clears.
+
+---
+
+## 1.15.3 — 2026-08-14
+
+### Added
+
+- **The storeroom at the Storekeeper has three pages.** It opened with one page — 45 slots — and the only way the game ever gave you more was a premium account or an item-mall chest expander, neither of which exists on a server that sells nothing, so the second and third pages were unreachable by design. Every account now gets all three, 135 slots, the moment the cores are rebuilt. Nothing is stored per account and nothing has to be bought, claimed or unlocked. Three is also the most this game can hold: the chest is exactly 135 slots wide internally, and the build refuses to go past it rather than quietly corrupting itself. Nothing you have stored moves and nothing is lost — the extra pages are added after the slots you already have, and every client already draws as many page tabs as the server tells it to, so there is no client update to install.
+
+- **The bonus drops off metins and bosses can be dropped, handed to another player and put in a private shop.** Every item in that drop group — Blessing Scroll, Bravery Cape, Exorcism Scroll, Concentrated Reading, the two bonus scrolls, the Experience Ring and the Thief's Gloves — shipped locked to the character who found it: no dropping it, no handing it over, no shop. All three locks are now off. Selling them to an NPC is still refused, deliberately: it is the one mistake you cannot undo.
+
+- **Exorcism Scrolls and Concentrated Reading stack.** Both rows already claimed to be stackable and were vetoed by a second flag on the same row, so a handful of them took a handful of inventory slots. Using one out of a stack spends one — the branch that consumes them already counted down instead of deleting the item.
+
+- **Experience Rings and Thief's Gloves stack, and only while they are unused.** A ring you have worn never merges back into the fresh pile, so you can never lose the time left on one by stacking it: a unique item keeps its remaining time in a socket, the countdown only runs while it is on, and all three places the server merges items already compare every socket before combining anything. Putting one on takes **one** out of the pile — the server moved the whole stacked item into the slot, which was harmless while these could not stack and would have destroyed the entire pile when the hour ran out, so the two changes are made together and neither is applied without the other. If your bags are completely full the ring is not put on at all, rather than the rest of the pile being thrown away to make room. Quivers are untouched.
+
+### Fixed
+
+- **The bonus items dropped by metin stones were the wrong ones.** They were the pair that re-rolls the two *rare* bonus slots — the fifth and sixth, which almost nothing in this game ever fills and no ordinary item shows. Players were being handed items that appeared to do nothing on everything they owned. They are now the pair that works on bonuses one to four, which is what a player actually reads off a weapon or a piece of armour.
+
+- **Ordinary monsters dropped boss loot.** The drop table was attached to 130 monsters it was never meant to include — everything at the rank just below a boss, the stone apes among them. That rank is a common monster in this distribution, not a boss, so the metin and boss reward was falling off things that die by the dozen. The table now covers exactly what it says: 68 metin stones and 108 bosses.
+
+### Note for anyone running a server
+
+Two of these changes are in the game's C++ and not in a data file — the three storeroom pages and the split that takes a single ring out of a stack. **The cores have to be rebuilt** for this release to do anything; re-running the installer is enough. Your database is not touched, and characters, accounts and stored items all survive.
+
+---
+
+## 1.15.2 — 2026-08-13
+
+### Fixed
+
+- **Killing another High Risk player never costs reputation.** It was already meant to be free, and mostly was — but only as a side effect of the killer mark the mode keeps lit, and that mark blinks: it is cleared the moment its wearer dies and only comes back a few seconds later, and there is a gap right after someone opts in before it is lit at all. A kill landing in either gap quietly took 20,000 reputation off the killer for something the mode promises is free. The rule now asks whether the victim is in High Risk instead of watching for the mark.
+
+- **Updating with `--domain` forgot the e-mail address your certificate is registered with.** It was only ever read back from your server's settings inside the branch that runs when you *don't* name a domain — and naming it is exactly what the panel's own update command does. Passing `--domain` therefore skipped it and handed the certificate tool an empty address. It is now read back first, whichever way you run it.
+
+## 1.15.0 — 2026-08-13
+
+### Fixed
+
+- **High Risk did nothing at all, on every server built from this repository.** The mode was offered at level 15, the player chose it, the choice was saved — and then nothing happened: they were not attackable, not marked, dropped nothing extra on death and got none of the bonuses. Only the *quest* half was ever staged into a build. The half that gives the choice meaning is a change to the game core, and that change existed only on the machine where it had been applied by hand; the server tree is re-staged from the pristine archive on every build, so it was never in anyone else's server. It is now applied during the build, every time, and the build refuses to start if it is missing rather than quietly producing a server where the mode is decorative.
+- If you have High Risk switched on, this is the update that makes it real. Nobody has to re-choose anything: the choice was being recorded correctly the whole time and takes effect the moment the cores are rebuilt.
+
+### Changed
+
+- **High Risk sets your combat mode for you.** Choosing the mode put you in reach of everyone else in it without letting you fight back: whether *you* may hit someone is decided by your own combat mode, and that is Peace until you change it by hand. It is now set to Free for as long as High Risk is on, and kept there — the game quietly resets it in a few places, such as when a duel ends, and it comes straight back. Game masters and characters below the protection level are left alone, exactly as the rest of the game leaves them alone.
+- **High Risk is now a pool, not a licence.** It only ever pairs you with other players who also chose it. Someone in No Risk can no longer kill a High Risk player and take what they drop, and a High Risk player can no longer hunt someone who never opted in — neither direction works, inside an empire or across empires. Both of you chose, or there is no fight. Guild wars, castle sieges, duels and the arena are settled before this rule and keep working between the two modes, because those are consensual on their own terms.
+- **A High Risk death costs more.** Dying with the mode on now drops something from your bags **one time in two** (was one in ten) and something you are wearing **one time in ten** (was one in five). Quantities are unchanged — eight items from the bags, one worn item — and so is everything about which items can be lost at all. Characters who are simply Cruel are not affected: they still drop on exactly the odds the game shipped with, which is what the mode borrowed before and no longer does.
+
+### Added
+
+- **Skill books stack, and only with books of the same skill.** Part of the Custom Experience. Books for one skill now merge into a single slot instead of taking a fresh one each, whether you pick them up, drag them together or store them in the chest. Books for *different* skills never merge, and this is not a promise the change had to make good on itself: the generic Skill Book is one and the same item number for every skill it can teach — it carries the skill in a socket rather than in its number — and all three places the server merges items already compare every socket before they combine anything. Two books that teach different things differ there and are refused.
+- Reading one book out of a stack now spends one book. The core deleted the *item* when a book was read, which was the same thing while books could not stack and would have thrown away the whole pile once they could, so the two changes are made together and neither is applied without the other.
+- Off unless the Custom Experience is on. Unlike the Blessing Scroll, there is nothing in the shipped files that contradicts itself here — all 45 skill books agree that they do not stack — so this is a deliberate change rather than a fix, and it sits with the other deliberate ones.
+
+## 1.13.1 — 2026-08-13
+
+### Fixed
+
+- **Nothing could be picked up.** Neither items nor Yang, by key or by clicking — the character walked to the drop and left it lying there. Removing a diagnostic line before the release took the body of an `if` with it, so the branch adopted the next statement and the pick-up was nested inside a condition that could never be true at the same time. It compiled without a warning. Browser client 1.11.6; the game data is unchanged, so this is a 17 MB update rather than 1.7 GB.
+
+## 1.13.0 — 2026-08-13
+
+### Added
+
+- **Enable Custom Experience? — one question, and everything behind it.** The installer now asks once, before it downloads anything, whether your server should play the way the original files do or the friendlier way this project has been using. It is **off** by default and nothing changes for anyone who says no. Say yes and you get: items and Yang picked up from twice as far away, a horse that always comes when you call it, no waiting until tomorrow between the Horse Medal steps, bonus drops on 283 metin stones and bosses, Musk Oil stocked in the General Store, High Risk offered to your players, and everyone 20% faster on foot. Rates are untouched and so are your existing characters.
+- **It is written down, and it is replayable.** The answer is kept as `M2_CUSTOM_EXPERIENCE` in your server's `.env`, so every later update rebuilds the server you have instead of the one the defaults would produce, and the update command the panel shows you names it. For an unattended install, `--custom-experience` / `--no-custom-experience` on Linux, `-CustomExperience` / `-NoCustomExperience` on Windows, or `M2_CUSTOM_EXPERIENCE=1` in the environment. `--yes` takes the default and leaves it off. Everything behind the switch now lives in `files/custom/` and is applied to the server tree at every build, so it survives updates instead of being quietly reverted by the next one — which is exactly what used to happen to changes made by hand.
+- Turning it on also turns High Risk on and sets the movement-speed bonus to 20%, as starting points rather than as locks: `M2_HIGH_RISK=0` and a movement-speed bonus you have chosen yourself both still win, and both are carried forward untouched by later updates.
+- **High Risk — a mode your players choose, at level 15.** They are asked once, shortly after they reach it: live dangerously, or carry on as before. High Risk means anyone may attack and kill them, anywhere, their own empire included, and nobody is punished for doing it. In exchange they earn 50% more experience and find 50% more drops — and when they die they drop items the way the cruellest characters do, out of their bags and off their bodies, using the game's own Cruel rules rather than a new one. No Risk changes nothing at all.
+- **It is never a trap.** A character in High Risk is drawn the way a player-killer is drawn, to themselves and to everyone around them, so nobody is in it without knowing and nobody attacks one by accident. There is a line in the chat window at every login while it is on, and the choice can be reversed as often as they like at any Guardian or City Guard.
+- Town safe zones still protect everyone, High Risk included — killing inside one would break every shop standing in it. Characters below level 15 and game masters are outside the mode entirely.
+- To run a server without it, delete `files/high_risk.quest` before assembling, or set `M2_HIGH_RISK=0`. The rest of the change does nothing on its own: without that file no character can enter the mode and every check falls back to the ordinary rules.
+- **The browser client keeps what it downloads.** It used to fetch half a gigabyte of game data in the background and lose it again by the next visit — not because the server said so, but because a browser's ordinary cache is one shared pool that the game's own reading pushes things out of. It now keeps that data in storage of its own. Measured: 144 downloads on a first visit, **one** on the second.
+- **If it crashes, it offers to say so.** A dialog appears with what went wrong, a box to describe what you were doing, and a button to send it. Nothing leaves the browser unless that button is pressed, and the complete report can be read first. Account name and password are not in it — they are not reachable from the page at all.
+- **Playing in the browser fills the window.** The game followed a fixed 1024×768 and let the browser stretch it. It now follows the window, including full screen, and remembers if you pin a resolution instead.
+
+### Fixed
+
+- **The Drachenhort quest paid out its own fee.** Handing in the items credited 150,000 Yang instead of charging it, and it could be repeated. Anyone who found it had unlimited money. This one is not behind the Custom Experience switch and never will be: it is a hole in the shipped files, it is open on every server running them untouched, and every server gets it closed.
+- **A character with a friend, or in a guild of more than one, could not play in the browser.** The screen stayed grey at login and never finished loading. One line of the interface used a variable name that Python 3 no longer allows there, and it ran on every friend and every guild member.
+- **A script error no longer takes the whole browser client down with it.** It is written to the console and the game carries on — which is how the bug above was found in seconds after days of guessing.
+- Skills and emoticons can be dragged onto the quick slots again, and from one slot to another.
+- Selling something no longer quotes a price with decimals in it. The price charged was always correct; only the confirmation was wrong.
+- A weapon no longer stays in your hands after you take it off, and a metin's aura stays on the metin instead of occasionally landing on the player.
+- Items and Yang are picked up from 600 units away on foot and 800 on a mount, instead of 300. With the Custom Experience on.
+- Blessing Scrolls and Bravery Capes stack, along with eight more items that claimed to and never did — including Blessing Marbles and Scrolls of Correction. Every server gets this: the rows say they stack and then do not, which is a mistake in the table rather than a decision.
+- The Horse Medal quests no longer make you wait between steps, and characters already waiting are released instead of serving out the rest. With the Custom Experience on.
+- The Musk Oil quest points at the General Store, where the oil is actually sold, instead of an Item Shop this server does not have. With the Custom Experience on, which is also what puts the oil on the counter — the two go together, or the quest would send players to an empty shelf.
+- Seven quests handed out rewards that did not match what they promised — among them one that skipped its Yang, experience and level-up entirely. Every server gets these: in each case the quest contradicts its own text, and the pack itself says which side was meant.
+
+## 1.12.2 — 2026-08-12
+
+### Fixed
+
+- **The installer survives being run from a directory that was deleted.** Uninstall, then reinstall from the same terminal, and the installer used to stop three minutes in with `fatal: Unable to read current working directory` — which reads like a network problem and is not one. It now says what actually happened and carries on. The same protection covers the installer's own doing: it refreshes its checkout by deleting it, which pulled the rug out from under anyone who happened to be standing in it.
+- [UNINSTALL.md](UNINSTALL.md) now says to leave the directory before deleting it, and shows that error so it can be recognised.
+
+## 1.12.1 — 2026-08-12
+
+- **[UNINSTALL.md](UNINSTALL.md)** — how to remove an installation completely and put a fresh one in its place. It says which of the five places an installation lives in can be thrown away freely, which one holds every character on your server, and how to save that one first. It also lists the three cheaper things to try before wiping anything.
+
+## 1.12.0 — 2026-08-12
+
+### Added
+
+- **A second place to download from.** When MEGA answers `509 over quota` — the share's daily allowance, spent by other people, nothing to do with your machine — the installer now moves straight on to another copy of the same archive instead of stopping. It is the identical file and it is checked against the same checksum, so an install that used to mean coming back in a few hours carries on within seconds. This covers the three big downloads: the browser client's data, the desktop client, and the server files.
+- Nothing to set up. The links travel in `artifacts.json` and an update picks them up. A link you supplied yourself is still tried first, and a fallback is only ever reached after the one before it has already failed.
+
+## 1.11.13 — 2026-08-12
+
+### Fixed
+
+- The installer no longer tells you to copy the browser client onto the panel's volume by hand. It printed `docker compose cp ./browser panel:…` whenever playing in the browser was switched on — a leftover from before 1.11.0, when that really was the only way. Since then the installer fetches and installs the client itself, and the command it printed can only fail: there is no `./browser` directory in an install, so it answers `lstat …/browser: no such file or directory`. Reported by an operator who did exactly what the installer told him to.
+- The same instruction is corrected in the Docker README, where it also pointed one directory too high — a client copied there is invisible to both the panel and nginx, which serve `browser/current`.
+
+## 1.11.12 — 2026-08-12
+
+### Added
+
+- **A server-wide movement-speed bonus.** Set `M2_MOVE_SPEED_BONUS` in `.env` to a percentage and every character gets it at login — no item, no button, nothing for players to know about. `0` is off, which is what a server that says nothing gets. Changing the number takes effect at each character's next login; nothing has to be cleaned up.
+
+## 1.11.11 — 2026-08-12
+
+- The "What is this?" box on the front page says you can play in the browser — on servers that offer it — and no longer explains the panel to people who are looking for the game.
+
+## 1.11.10 — 2026-08-12
+
+- The front page puts the game account first, then the ways to play in one frame: **JETZT IM BROWSER SPIELEN**, a line saying **ODER**, and the download with its steps.
+- The account card says what an account is for and that the same one works in the browser and in the download.
+
+## 1.11.9 — 2026-08-12
+
+- After registering, a player is shown the ways into the game this server really offers — the browser, the download, or both side by side with **ODER** between them.
+- The browser card stands out and its button opens the game in a **new tab**, so the panel stays open behind it.
+
+## 1.11.8 — 2026-08-12
+
+- You are asked which clients you want **before** anything large is downloaded, instead of after.
+- The Windows installer downloads only the server too, about 220 MB instead of 1.6 GB.
+- The release notes below are written in plain language.
+
+## 1.11.7 — 2026-08-12
+
+- The Windows installer no longer stops at the question about which clients to install.
+- A new install downloads only the server, about 220 MB instead of 1.6 GB.
+- The desktop client is fetched from its own download.
+
+## 1.11.6 — 2026-08-12
+
+- The admin panel starts again on servers that use a domain name.
+
+## 1.11.5 — 2026-08-12
+
+- **Play in Browser** hands out a link that works on servers with HTTPS.
+- The client download is fast again and no longer blocks the panel while it runs.
+
+## 1.11.4 — 2026-08-12
+
+- Updating now really does update the browser client.
+- The installer writes its web-server settings again.
+
+## 1.11.3 — 2026-08-12
+
+- The browser client starts instead of stopping at "starting…".
+- The browser client reaches servers that use a domain name.
+- **Play in Browser** works on servers with HTTPS.
+- The game stutters far less in the browser.
+- A file that was briefly missing is no longer remembered as missing for a year.
+
+## 1.11.2 — 2026-08-12
+
+- The **Play in Browser** card appears in the panel again.
+
+## 1.11.1 — 2026-08-12
+
+- A server that chose the browser client now actually gets one.
+
+## 1.11.0 — 2026-08-11
+
+# 🌍 Play in the browser — no download
+
+## Your players click a link and they are in the game. No client to download, no installation, nothing to set up on their side.
+
+The installer asks which clients you want to offer — browser, desktop, or both
+— and fetches only what you chose. Servers installed before this keep working
+exactly as they are; the browser client is simply offered on your next update.
+
+### Added
+
+- Play in the browser: a link is all a player needs.
+- The installer asks which clients you want and downloads only those.
+- The browser client is installed for you, checked, and kept up to date.
+- An update to the browser client is a small download, not the whole game again.
+- Updating it cannot leave a player with half a client, and it can be undone.
+- **Play in Browser** appears on the panel's front page once everything is ready.
+
+## 1.10.0 — 2026-08-11
+
+- The item search works on a local install and in older browsers, and says so when it cannot reach the server.
+- Setting a level above what your server allows now tells you, instead of quietly doing nothing.
+- The highest character level is 120 by default. Change `M2_MAX_LEVEL` in `.env` to raise it.
+- **Game language** and **Admin passphrase** moved to the bottom of the admin page, under their own heading.
+
+---
+
+## 1.9.0 — 2026-08-11
+
+### Added
+
+- **Game language** on the admin page. The server files carry fifteen
+  languages; pick one and the game speaks it — quest text, system messages,
+  item and monster names. The game restarts for well under a minute.
+- The download page says which language the game is in.
+- After a switch, the panel shows players who already downloaded the game how
+  to change their copy: one file to rename, nothing to download again.
+- The client the panel hands out is built in the server's language.
+
+### Fixed
+
+- The patch log button had two translations, of which only the second was ever
+  used.
+
+---
+
+## 1.8.0 — 2026-08-10
+
+### Added
+
+- **Admin passphrase** on the admin page, just under the introduction. Pick
+  your own instead of the generated one; it takes effect straight away and you
+  stay logged in.
+
+### Changed
+
+- The installer shows the admin passphrase every time it runs, including one
+  you chose yourself in the panel, and never changes it behind your back.
+- The introduction no longer says teleport and running speed are missing from
+  a normal install. They are there; they need the player to be logged in.
+
+---
+
+## 1.7.0 — 2026-08-10
+
+### Fixed
+
+- The item search shows the names your game actually uses. The index had been
+  built from the German name file while the server and the client use the
+  English one, so nothing you saw in game matched what the panel offered.
+- Searching for several words now needs all of them. "Full Moon Sword" no
+  longer offers Half Moon Sword as well.
+- Item numbers work in the search box, with or without the `#`. Typing `299`
+  or `#299` finds that item, and `29` offers everything starting with it.
+
+### Added
+
+- **Show more** at the bottom of the item list, which used to stop at forty
+  without saying so.
+- German and Turkish item names are search keywords, so an item can be found
+  by whichever of the three names you know.
+
+---
+
+## 1.6.0 — 2026-08-10
+
+### Added
+
+- Game master ranks on the player page. Pick a rank to give somebody the
+  in-game admin commands, or set them back to a normal player. Granting takes
+  effect immediately, even mid-game; taking a rank away applies at the player's
+  next login.
+
+### Fixed
+
+- The game cores' admin interface had no password, which made an empty one
+  correct. It now gets a generated password, like the others.
+- The tutorial no longer claims that teleport and running speed do not work.
+
+---
+
+## 1.5.0 — 2026-08-10
+
+### Changed
+
+- Updating no longer asks for the address players connect to, or for your
+  domain name. Both are kept from your settings. The address is only asked
+  about when this machine has moved to a different one.
+
+### Added
+
+- `--no-domain`, to drop the domain a server was set up with and go back to
+  plain HTTP on its address.
+
+---
+
+## 1.4.1 — 2026-08-10
+
+### Fixed
+
+- Running speed can be changed back. "Normal (reset)" resets it, a slower
+  setting is slower than a faster one, and characters that were sped up before
+  this version are put right the next time you set their speed.
+
+---
+
+## 1.4.0 — 2026-08-10
+
+### Added
+
+- The panel's in-game actions work. Items, yang and levels reach a character
+  who is logged in straight away instead of at their next login, and teleport
+  and running speed work at all.
+
+Set `M2_INGAME_HELPER=0` in `.env` to leave the helper out.
+
+---
+
+## 1.3.4 — 2026-08-10
+
+### Fixed
+
+- The in-game helper no longer crashes the channel it runs on. It is still not
+  installed by default — nobody has played on the fix yet.
+
+---
+
+## 1.3.3 — 2026-08-10
+
+### Fixed
+
+- The item search works in English and Turkish. It matched the whole box
+  against German names, so "Full Moon Sword" found nothing while
+  "Vollmondschwert" worked. It now matches word by word, translates the common
+  ones, and ranks by how many words fit.
+
+---
+
+## 1.3.2 — 2026-08-10
+
+### Fixed
+
+- The in-game helper introduced in 1.3.0 disconnects the character it acts on.
+  It is no longer installed. Items, yang and levels work as they did before
+  1.3.0 — written to the account, visible at the next login — and teleport and
+  running speed refuse instead of dropping the player.
+
+**If you are on 1.3.0 or 1.3.1, update.** Until you do, avoid the buttons on a
+character's page while somebody is playing on them.
+
+---
+
+## 1.3.1 — 2026-08-10
+
+### Fixed
+
+- Updating a server never picked up changes to the game itself. The source was
+  staged once and reused, so the rebuild produced the same binaries and every
+  C++ change since the install was dropped. If you updated to 1.3.0 and teleport
+  still does not work, update again.
+
+---
+
+## 1.3.0 — 2026-08-10
+
+### Added
+
+- Teleport and running speed work. The helper that carries them out is now
+  built and installed with the server.
+- Items, yang and levels reach a character who is logged in straight away,
+  instead of at their next login.
+
+### Fixed
+
+- On a Linux host the game could start with no quests loaded at all, and still
+  report itself healthy. Staged quest files could carry permissions the server
+  account could not read.
+
+### Security
+
+- The database function the helper uses accepts only statements against the
+  panel's own queue table.
+
+---
+
+## 1.2.3 — 2026-08-10
+
+### Fixed
+
+- The update command shown in the panel now includes the options the server was
+  installed with, such as `--domain` and `--email`. It previously showed the
+  bare one-liner, which on the next update would have dropped the certificate.
+
+---
+
+## 1.2.2 — 2026-08-10
+
+### Fixed
+
+- Giving an item, yang or a level to a character who is logged in no longer
+  claims they were not in game. It says the change was written to the account
+  and appears at their next login.
+- Teleport and running speed now say that nothing in the game answered and
+  that nothing was changed, instead of suggesting the game server might be
+  down.
+
+---
+
+## 1.2.1 — 2026-08-10
+
+### Changed
+
+- Removed the paragraph about the deleted `admin` and `test` accounts from the
+  panel's introduction.
+
+---
+
+## 1.2.0 — 2026-08-10
+
+### Changed
+
+- The patch log splits the changelog at the version you are running: "What an
+  update would bring" lists only the releases you do not have yet, and "What
+  you are running" the rest. No release appears in both.
+
+---
+
+## 1.1.9 — 2026-08-10
+
+### Changed
+
+- The patch log shows the changelog once. When an update was available it was
+  printed twice, under two headings, with the same releases in both.
+
+---
+
+## 1.1.8 — 2026-08-10
+
+### Changed
+
+- The update page now says to re-run the command that installed the server,
+  and what an update leaves alone, instead of explaining a setting that is off.
+
+---
+
+## 1.1.7 — 2026-08-10
+
+### Changed
+
+- Removed the heading above the changelog on the patch log page. The file
+  brings its own, so there were two.
+
+---
+
+## 1.1.6 — 2026-08-10
+
+### Added
+
+- A "Check for the latest version" button on the patch log page. It asks
+  straight away instead of waiting for the daily check.
+
+---
+
+## 1.1.5 — 2026-08-10
+
+### Changed
+
+- The installer now ends with the panel address and the game, instead of
+  opening with them and scrolling them off the screen.
+- A local Windows install no longer prints an admin passphrase. The panel does
+  not ask for one there.
+- Removed the note about the shipped `admin` and `test` accounts. They are
+  deleted during setup.
+
+---
+
+## 1.1.4 — 2026-08-10
+
+### Fixed
+
+- The Windows installer now updates an existing server as well, and shows the
+  installed and published versions before asking. Re-running it previously
+  re-applied the settings and restarted without fetching anything.
+
+---
+
+## 1.1.3 — 2026-08-10
+
+### Changed
+
+- When a server is already installed, the installer shows which version it is
+  on and which one is published, then asks whether to update or to only
+  re-apply the settings and restart.
+- A server installed before versions existed is recognised as such and offered
+  the update.
+
+---
+
+## 1.1.2 — 2026-08-10
+
+### Fixed
+
+- Re-running the installer on a server that was already installed now updates
+  it. It used to rewrite the settings and restart the containers without
+  fetching anything, so the server stayed on the version it was installed with.
+
+---
+
+## 1.1.1 — 2026-08-10
+
+### Changed
+
+- The patch log has its own card in the admin area, with a button. It used to
+  be a grey line at the bottom of the page.
+- The card highlights itself when a newer version is available.
+- The front page shows the version number only. The patch log and the update
+  notice are in the admin area.
+- Shorter wording when the update check cannot reach the server.
+
+---
+
+## 1.1.0 — 2026-08-09
+
+### Added
+
+- A `VERSION` file and this changelog.
+- An update check in the admin panel. It compares your version against the
+  published one roughly once a day and tells you when a newer one exists, with
+  the release notes for it. Can be switched off with `M2_UPDATE_CHECK=0`.
+- A patch-log page in the panel, showing this file.
+- The command that updates your server, shown on that page. The installer
+  records it, so the panel shows the exact line for your install. Re-running
+  the installer pulls the published version, rebuilds and restarts, and keeps
+  your database, passwords and settings.
+- A one-click update button on Linux. Off by default; see
+  [UPDATING.md](UPDATING.md) to turn it on. On Windows the panel shows the
+  command to paste instead.
+
+---
+
+## 1.0.0 — 2026-08-09
+
+First public release. A Metin2 r40250 server that runs on ordinary Linux — or
+on a Windows PC, for one person — installed with a single command.
+
+### Added
+
+- The Linux port, as a 109 KB patch over 28 files. A fresh copy of the upstream
+  package plus this patch reproduces the running server byte for byte.
+- Docker packaging: game cores, MariaDB, the admin panel and a client builder,
+  in one compose stack.
+- One-command installers for Linux and Windows. The Linux one publishes the
+  game ports and opens the firewall; the Windows one binds everything to
+  `127.0.0.1` and creates no firewall rule.
+- The admin panel — English, German and Turkish. Server rates, giving items and
+  yang, levels, password-reset links, registration and a client download.
+- A client builder that patches the game to point at your server and offers it
+  for download. On a Windows install it unpacks the game and puts a
+  `Metin2 Singleplayer` shortcut on the Desktop.
+
+### Fixed
+
+- The client download returned 500 on every request. The panel could not create
+  the file it counts downloads in.
+- The panel showed a running server as offline, and the player count stayed at
+  zero.
+- "Give 1000 potions" silently gave 255.
+- Items were refused to characters that had room for them: the panel searched
+  one inventory page of 45 where r40250 gives four.
+- The dashboard reported "the database cannot be reached" for a character who
+  had never played.
+- The game archive was downloaded twice, once for the server and once for the
+  client.
+- A path containing a space broke the client build.
+
+### Security
+
+- The shipped `admin` and `test` accounts are deleted during setup, together
+  with their game-master entry.
+- Download limits: three per address per day, plus a server-wide daily ceiling.
+- Rate limits on registration, account login and the admin passphrase.
+- Passwords are generated on the machine at install time.

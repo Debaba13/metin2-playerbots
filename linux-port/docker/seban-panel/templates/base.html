@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}{{ panel_brand }} · Seban Panel{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='manage.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='enhancements.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script></head><body data-theme="{{settings.theme}}">
+<aside><a class="brand" href="{{ url_for('dashboard') }}">{{ panel_brand }}<span>Seban Control Center</span></a>
+<nav><a href="{{ url_for('dashboard') }}">⌂ Dashboard</a><a href="{{ url_for('players') }}">♙ Gracze i boty</a><a href="{{ url_for('rankings') }}">♜ Rankingi botów</a><a href="{{ url_for('economy') }}">◇ Gospodarka</a><a href="{{ url_for('maps') }}">⌖ Aktywność map</a><a href="{{ url_for('season') }}">✦ Sezon</a><a href="{{ url_for('system') }}">▤ Wydajność</a><hr><a href="{{ url_for('manage') }}">⚙ Zarządzanie</a><a href="{{ url_for('accounts') }}">♧ Konta i GM</a><a href="{{ url_for('gm_commands') }}">⌘ Komendy GM</a><a href="{{ url_for('items_database') }}">▦ Baza przedmiotów</a><hr><a href="{{ tieru_url }}" target="_blank">↗ Panel Tieru (klasyczny)</a></nav>
+<form action="{{ url_for('logout') }}" method="post"><button class="quiet">Wyloguj</button></form></aside>
+<main>{% with messages=get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{category}}">{{ message }}</div>{% endfor %}{% endwith %}{% block content %}{% endblock %}</main></body></html>

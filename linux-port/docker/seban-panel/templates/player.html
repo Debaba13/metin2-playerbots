@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% macro tooltip(item) -%}
+<div class="item-tip"><b>{{item.item_name}}</b><span class="tip-vnum">VNUM {{item.vnum}}</span>{% if item.count > 1 %}<span>Ilość: {{item.count}}</span>{% endif %}{% for stat in item.base_stats %}<span class="tip-base">{{stat}}</span>{% endfor %}{% for bonus in item.bonuses %}<span class="tip-bonus {% if '-' in bonus %}negative{% endif %}">{{bonus}}</span>{% endfor %}{% for stone in item.stones %}<span class="tip-stone">{{stone.name}}</span>{% for bonus in stone.bonuses %}<span class="tip-bonus {% if '-' in bonus %}negative{% endif %}">{{bonus}}</span>{% endfor %}{% endfor %}</div>
+{%- endmacro %}
+{% block title %}{{character.name}} · {{panel_brand}}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{url_for('static',filename='player-profile.css')}}">
+<a class="back" href="{{url_for('players')}}">← Powrót do graczy</a>
+<p class="eyebrow">PODGLĄD POSTACI</p>
+<h1>{{character.name}} <span class="muted">· {{character.job_name}} · poziom {{character.level}}</span></h1>
+<section class="bot-profile-head">
+  <article>
+    <div class="profile-tags"><span>HP {{character.hp}} / {{character.max_hp}}</span><span>MP {{character.mp}} / {{character.max_mp}}</span><span>Yang {{'{:,}'.format(character.gold or 0).replace(',', ' ')}}</span><span>{{map_name(character.map_index)}}</span></div>
+    <div class="vital-bars" aria-label="Stan postaci"><div class="vital hp"><span>❤ PŻ</span><div class="bar"><i style="width:{{character.hp_percent}}%"></i></div><b>{{character.hp_percent}}%</b></div><div class="vital mp"><span>✦ PM</span><div class="bar"><i style="width:{{character.mp_percent}}%"></i></div><b>{{character.mp_percent}}%</b></div><div class="vital exp"><span>⚡ EXP</span><div class="bar"><i style="width:{{character.experience.percent}}%"></i></div><b>{{character.experience.percent}}% · {{'{:,}'.format(character.experience.current).replace(',', ' ')}} / {{'{:,}'.format(character.experience.required).replace(',', ' ')}}</b></div></div>
+    <dl class="bot-live-details"><div><dt>Pozycja</dt><dd>{{character.x}}, {{character.y}}</dd></div><div><dt>Ranga</dt><dd><span class="honor {{character.honor.css}}">{{character.honor.title}}</span> · {{'{:,}'.format(character.honor.points).replace(',', ' ')}} pkt</dd></div><div><dt>Osobowość</dt><dd>{{character.personality}}</dd></div><div><dt>Ambicja</dt><dd>{{character.ambition}}</dd></div><div><dt>Aktualny cel</dt><dd>{{character.goal}}</dd></div><div><dt>Akcja</dt><dd>{{character.action}}</dd></div><div><dt>Koń</dt><dd>Lv {{character.horse_level}}</dd></div></dl>
+    <div class="profile-sections"><section><h2>📊 Statystyki</h2><div class="stat-cells"><div>STR<b>{{character.st}}</b></div><div>VIT<b>{{character.ht}}</b></div><div>DEX<b>{{character.dx}}</b></div><div>INT<b>{{character.iq}}</b></div></div><p class="muted">Nierozdane: {{character.stat_point or 0}} pkt statystyk · {{character.skill_point or 0}} pkt umiejętności</p></section><section><h2>✨ Umiejętności</h2><div class="skills">{% for skill in character.skills %}<div class="skill"><img class="skill-icon" src="{{tieru_url}}/static/skill_icons/{{skill.vnum}}{{skill.icon_suffix}}.png" alt="" onerror="this.style.display='none'"><span>{{skill.name}}</span><b>{{skill.rank}}</b></div>{% else %}<p class="muted">Postać nie wybrała jeszcze profesji.</p>{% endfor %}</div></section></div>
+    <section class="panel bot-log"><h2>📜 Ostatnie logi postaci</h2><div class="log-lines">{% for line in logs %}<div><time>{{line.time}}</time><span>{{line.type}} · {{line.how}}{% if line.hint %} · {{line.hint}}{% endif %}{% if line.what %} · {{line.what}}{% endif %}</span></div>{% else %}<p class="muted">Brak zapisanych zdarzeń w logu.</p>{% endfor %}</div></section>
+  </article>
+  <aside class="inventory-panel">
+    <h2>⚔ Zawartość ekwipunku</h2>
+    <div class="storage-tabs"><button class="active" data-storage="inventory">Ekwipunek</button><button data-storage="safebox">Magazyn{% if not has_safebox %} (pusty){% endif %}</button></div>
+    <div id="inventory-storage">
+      <div class="metin-inventory" aria-label="Ekwipunek postaci">
+        <div class="equipment-layer">{% for slot in ['weapon','body','head','foots','wrist','neck','ear','shield','unique1','unique2','arrow','belt'] %}{% set item=equipment.get(slot) %}<div class="equip-slot {{slot}}">{% if item %}{% if item_icon(item.vnum) %}<img src="{{item_icon(item.vnum)}}" alt="{{item.item_name}}">{% else %}<span>{{item.vnum}}</span>{% endif %}{{ tooltip(item) }}{% endif %}</div>{% endfor %}</div>
+        <div class="inv-tabs"><button class="active" data-page="0" aria-label="Pierwsza strona ekwipunku" data-active="/static/inventory-ui/page-1-active.png" data-inactive="/static/inventory-ui/page-1-inactive.png"><img src="/static/inventory-ui/page-1-active.png" alt="Strona I"></button><button data-page="1" aria-label="Druga strona ekwipunku" data-active="/static/inventory-ui/page-2-active.png" data-inactive="/static/inventory-ui/page-2-inactive.png"><img src="/static/inventory-ui/page-2-inactive.png" alt="Strona II"></button></div>
+        <div class="inventory-layer">{% for item in inventory %}{% set page=0 if item.pos < 45 else 1 %}{% set local=item.pos % 45 %}<div class="inv-slot" data-page="{{page}}" style="--col:{{local % 5}};--row:{{local // 5}};--size:{{item.item_size}}">{% if item_icon(item.vnum) %}<img src="{{item_icon(item.vnum)}}" alt="{{item.item_name}}">{% else %}<span>{{item.vnum}}</span>{% endif %}{% if item.count > 1 %}<b>{{item.count}}</b>{% endif %}{{ tooltip(item) }}</div>{% endfor %}</div>
+        <div class="inventory-yang"><span>{{'{:,}'.format(character.gold or 0).replace(',', ' ')}} Yang</span></div>
+      </div>
+      <p id="inventory-empty" class="muted" hidden>Ta strona ekwipunku jest pusta.</p>
+    </div>
+    <div id="safebox-storage" hidden><div class="safebox-grid">{% for item in safebox %}<div class="safebox-slot" style="grid-column:{{(item.pos % 45) % 5 + 1}};grid-row:{{((item.pos % 45) // 5) + 1}}">{% if item_icon(item.vnum) %}<img src="{{item_icon(item.vnum)}}" alt="{{item.item_name}}">{% else %}<span>{{item.vnum}}</span>{% endif %}{% if item.count > 1 %}<b>{{item.count}}</b>{% endif %}{{ tooltip(item) }}</div>{% endfor %}</div>{% if not safebox %}<p class="muted">Magazyn dozorcy jest pusty.</p>{% endif %}</div>
+  </aside>
+</section>
+<script>
+const hasTwo={{'true' if has_inventory_page_two else 'false'}};
+function setPage(n){document.querySelectorAll('.inv-tabs button').forEach(x=>{const active=x.dataset.page===String(n);x.classList.toggle('active',active);x.querySelector('img').src=active?x.dataset.active:x.dataset.inactive});document.querySelectorAll('.inv-slot[data-page]').forEach(x=>x.hidden=x.dataset.page!==String(n));document.getElementById('inventory-empty').hidden=!(n===1&&!hasTwo)}
+document.querySelectorAll('.inv-tabs button').forEach(b=>b.onclick=()=>setPage(Number(b.dataset.page)));
+document.querySelectorAll('.storage-tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.storage-tabs button').forEach(x=>x.classList.toggle('active',x===b));document.getElementById('inventory-storage').hidden=b.dataset.storage!=='inventory';document.getElementById('safebox-storage').hidden=b.dataset.storage!=='safebox'});
+setPage(0);
+</script>
+{% endblock %}

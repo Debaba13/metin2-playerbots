@@ -1,0 +1,78 @@
+METIN2 SINGLEPLAYER (PLAYERBOTS) — PACZKA TESTOWA Z POPRAWKAMI
+==============================================================
+Wersja: 2026-09-01 (fixed)   |   Serwer r40250 + Playerbots
+
+To jest samowystarczalna paczka do postawienia serwera OD ZERA. Zawiera pełny
+kontekst kompilacji (kompiluje się lokalnie przy pierwszym uruchomieniu — bez
+pobierania z sieci), dumpy pięciu baz r40250 oraz kanoniczny seed 350 botów.
+
+
+WYMAGANIA
+---------
+- Docker Desktop (zainstalowany i URUCHOMIONY — poczekaj na „Engine running").
+
+
+JAK URUCHOMIĆ (od zera)
+-----------------------
+1. Rozpakuj CAŁE archiwum do krótkiej ścieżki, np.  C:\Metin2_Test
+2. Uruchom  Metin2-Launcher-GUI.bat
+3. Kliknij  „1. ZAINSTALUJ / PRZYGOTUJ”  (sprawdzi paczkę, poprosi o plik EXE
+   klienta, utworzy skrót).
+4. Kliknij  „2. GRAJ (SERWER + KLIENT)”.
+   Pierwsza kompilacja serwera to kilkanaście–kilkadziesiąt minut (jednorazowo).
+5. Panel i mapa botów:  http://127.0.0.1:7788/map
+6. Uruchom osobno pobrany natywny klient Metin2.
+
+Konto testowe w grze:  login  admin   /   hasło  admin
+Boty biegają w Chunjo (żółci). W grze wpisz:  /warp botdariusz
+
+
+ZAPIS / ZATRZYMANIE (test „od początku do końca")
+-------------------------------------------------
+- „ZATRZYMAJ I ZAPISZ” zatrzymuje serwer BEZ kasowania postępu (dane trzymane są
+  w wolumenach Dockera  m2fresh_*).
+- Po ponownym „GRAJ” świat i postać wracają. Tak sprawdzisz pełny cykl:
+  instalacja → gra → zapis → ponowny start → dane na miejscu.
+
+
+WAŻNE — IZOLACJA OD TWOICH ISTNIEJĄCYCH SERWERÓW
+------------------------------------------------
+Ta paczka używa WŁASNEJ, odizolowanej tożsamości projektu Docker: „m2fresh”
+(plik  linux-port\docker\.env → M2_COMPOSE_PROJECT_NAME=m2fresh). Dzięki temu:
+- nie miesza się z Twoimi wcześniejszymi stackami (metin2, m2pb-*),
+- tworzy własne, świeże wolumeny  m2fresh_db-data / m2fresh_game-var / itd.
+
+Jeśli inny serwer AKTUALNIE działa i zajmuje port 7788 lub 11000, launcher
+świadomie odmówi startu i napisze, która instalacja trzyma port — zatrzymaj ją
+najpierw (jej własnym „ZATRZYMAJ I ZAPISZ” albo `docker stop <nazwa>`).
+
+Pełny reset TEJ paczki (skasowanie świata testowego m2fresh):
+    docker compose --project-directory linux-port\docker down
+    docker volume rm m2fresh_db-data m2fresh_game-var m2fresh_panel-conf ^
+                     m2fresh_panel-data m2fresh_rates-spool m2fresh_update-spool
+(UWAGA: kasuje postęp TYLKO tej paczki m2fresh; Twoich innych stacków nie rusza.)
+
+
+UWAGA O OBRAZIE GRY (żeby na pewno mieć poprawki C++)
+-----------------------------------------------------
+„GRAJ” uruchamia  docker compose up -d  i UŻYWA istniejącego obrazu
+metin2/game:40250, jeśli taki jest już na maszynie. Na CZYSTEJ maszynie (bez
+wcześniejszych obrazów metin2) obraz zbuduje się od zera z tej paczki i będzie
+zawierał wszystkie poprawki.
+Jeśli testujesz na maszynie, gdzie stary obraz już istnieje, wymuś jednorazowy
+rebuild, aby wciągnąć poprawiony rdzeń gry:
+    docker compose --project-directory linux-port\docker up -d --build
+
+
+CO ZOSTAŁO NAPRAWIONE W TEJ PACZCE
+----------------------------------
+- Bezpieczeństwo: zwykła postać gracza NIE może już zostać przejęta jako bot
+  (walidacja rejestru seeda w rdzeniu gry; blokada „kradzieży konta”).
+- Launcher: koniec z fałszywym „Błąd: Start (kod )” — postęp `docker compose`
+  na stderr nie jest już mylnie traktowany jako awaria (start/stop/rebuild).
+- Launcher: poprawne wykrywanie istniejących instalacji Docker (naprawiony
+  błąd enumeracji JSON w Windows PowerShell 5.1) i bezpieczne przejmowanie/
+  odrzucanie migracji starych instalacji.
+- Spójność integracji rdzenia botów (autospawn korzysta z SpawnRegistered).
+
+Szczegóły techniczne:  docs\CLAUDE_HANDOFF_2026-09-01.md

@@ -1,0 +1,95 @@
+# Files copied into a server update ZIP. Keep .env and databases out.
+# A line may use a wildcard in its last segment; it expands to what is there.
+files/admin_panel.py
+# The rest of what prepare-context.sh stages out of files/. That script does not
+# run on a player's machine - start-server.ps1 stages these instead - so every
+# one of them has to travel with the update or the copy in the image stays at
+# whatever the installer shipped.
+files/items.json
+files/favicon.png
+files/web_admin_schema.sql
+files/web_admin.quest
+# Seban's panel: the whole tree, icons included. It is built on the player's
+# machine like the classic panel, so what ships is the source.
+linux-port/docker/seban-panel/*
+files/high_risk.quest
+files/speed_boost.quest
+# The panel's skill icons. Two copies for the same reason admin_panel.py has
+# two: files/ is the source and linux-port/docker/panel/app/ is the build
+# context the image is actually made from, and an update that refreshed only
+# one of them would leave the running panel behind the sources.
+# Only the source copy travels. start-server.ps1 stages it into
+# panel/app/static on the way to the build, and the staged directory also holds
+# 4700 generated item icons that are not in the source tree - shipping it whole
+# would put seventeen megabytes of them into every update and overwrite an
+# operator's own regenerated set.
+files/static/*
+linux-port/docker/docker-compose.yml
+linux-port/docker/.env.example
+linux-port/docker/mariadb/initdb.d/10-import-dumps.sh
+# Waits for the database before seeding. Its timeout decides whether a slow
+# recovery fails the whole compose "up".
+linux-port/docker/mariadb/playerbot/apply.sh
+# Discovers the overlay sources and copies them into the build context.
+linux-port/docker/prepare-context.sh
+linux-port/docker/panel/app/admin_panel.py
+# The panel image entrypoint: it refreshes the database credentials in an
+# existing m2panel.conf, so a panel-conf volume from an older install follows
+# .env instead of answering "Access denied" while the game runs.
+linux-port/docker/panel/bin/entrypoint.sh
+linux-port/overlays/playerbot/serverfiles/mob_drop_item.m3.append.txt
+linux-port/overlays/playerbot/serverfiles/special_item_group.moonlight.txt
+linux-port/overlays/playerbot/sql/playerbots_seed.sql
+# ...and the copy the migrate container actually mounts and runs. The launcher
+# refreshes it before every start, but shipping it as well means an install that
+# starts compose directly is not silently seeding an August-era registry.
+linux-port/docker/mariadb/playerbot/playerbots_seed.sql
+linux-port/overlays/playerbot/tools/generate_seed.py
+# The overlay sources, and the staged build context they are compiled from.
+# Wildcards, not lists: splitting a source file must not require editing this
+# file, and forgetting to is what shipped a manager without its own headers in
+# 1.22.4 and again in 1.23.2. The packager refuses a package in which the two
+# sides disagree.
+linux-port/overlays/playerbot/src/game/src/playerbot_*
+linux-port/docker/game/src/server/game/src/playerbot_*
+# Engine files carrying an overlay patch added after the full package was
+# built. prepare-context.sh never runs on a player's machine, so a patch that
+# only lives under overlays/playerbot/patches reaches nobody; the staged,
+# patched file does - the same way the playerbot sources do.
+linux-port/docker/game/src/server/game/src/char.cpp
+linux-port/docker/game/src/server/game/src/item_manager.cpp
+linux-port/docker/game/src/server/game/src/config.cpp
+linux-port/docker/game/src/server/game/src/input_main.cpp
+linux-port/docker/game/src/server/game/src/shop.h
+# The engine patches, by pattern for the same reason as the sources above: a
+# new one must not need an edit here to reach the people running the server.
+# The launcher applies whatever it finds in that directory and decides for
+# itself which of them the installed tree already has.
+linux-port/overlays/playerbot/patches/*.patch
+# Assigns maps to game cores. The bots' route now includes Orc Valley, and
+# a server-side bot cannot cross between cores, so this must ship with it.
+linux-port/docker/game/bin/m2-render-config
+linux-port/docker/game/Dockerfile
+# The chest table the Dockerfile COPYs, at the path the COPY reads it from.
+# The update builds the image the moment the files land, before start-server
+# gets to stage it, so the package puts it there itself.
+linux-port/docker/game/special_item_group.moonlight.txt
+linux-port/docker/game/mob_drop_item.m3.append.txt
+PACZKA_INFO.txt
+CHANGELOG.md
+VERSION
+start-server.ps1
+start.bat
+stop.bat
+Metin2-Launcher.ps1
+Metin2-Launcher.bat
+Metin2-Launcher-GUI.ps1
+Metin2-Launcher-GUI.bat
+launcher/Metin2Launcher.psm1
+launcher/Metin2Launcher.Diagnostics.psm1
+launcher/launcher.config.example.json
+launcher/update-manifest.example.json
+launcher/server-update-files.txt
+launcher/client-update-files.example.txt
+docs/LAUNCHER.md
+tools/New-M2UpdatePackage.ps1
