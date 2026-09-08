@@ -4,6 +4,10 @@ Metin2 Singleplayer Panel to alternatywny panel administracyjny i obserwacyjny d
 
 Projekt korzysta z tej samej bazy, plików statusu Playerbots i kolejki administracyjnej. Nie zastępuje klasycznego panelu ani nie wymaga migracji danych — rozszerza instalację o dodatkowy, nowoczesny widok świata i narzędzia administracyjne. W menu znajduje się opcjonalny odnośnik do Panelu Tieru.
 
+## Wydanie 1.37.0
+
+To wydanie jest przygotowane dla Playerbots Tieru `1.30.12`. Zawiera Łatwy, Normalny i Trudny Loch Małp (ID 25, 108 i 109) na mapie live, mapach historycznych, heatmapach i w ustawieniach respawnu. Dla tych lochów można zmieniać tylko respawn potworów: pakiety map nie zawierają osobnego pliku `stone.txt` dla Metinów.
+
 ## Co oferuje
 
 - mapa świata botów odświeżana co 1,5 sekundy, z prawidłowymi proporcjami obsługiwanych map;
@@ -85,6 +89,7 @@ Bez ostatniego punktu działa monitoring, profile, rankingi, gospodarka i konfig
 | `PLAYERBOTS_RATES_SPOOL_VOLUME` | Wolumen kolejki mnożników, zachowań i restartu. |
 | `PLAYERBOTS_GAME_HOST` | Nazwa DNS kontenera gry w tej sieci. |
 | `PLAYERBOTS_LOGIN_PORT`, `PLAYERBOTS_WORLD_PORT` | Porty używane do kontroli etapu restartu. |
+| `PLAYERBOTS_VERSION` | Wersja aktualnie zainstalowanego wydania Tieru, wyświetlana na Dashboardzie. Aktualizuj ją razem z rdzeniem. |
 | `PLAYERBOTS_STATUS_GLOB` | Położenie plików `playerbot_status.tsv` wewnątrz panelu. |
 | `TIERU_PANEL_URL` | Publiczny adres klasycznego Panelu Tieru; używany przez link i ikony umiejętności. |
 | `SEBAN_SESSION_SECRET` | Długi, losowy sekret sesji. Nigdy go nie publikuj. |
@@ -93,6 +98,8 @@ Bez ostatniego punktu działa monitoring, profile, rankingi, gospodarka i konfig
 `seban-panel.env` jest ignorowany przez Git. Nie umieszczaj w repozytorium haseł, adresów prywatnych ani sekretów.
 
 ## Aktualizacja
+
+Od wersji 1.34.0 wspólne ustawianie mnożników i osobnych czasów respawnu potworów/Metinów wymaga również [integracji z kontenerem gry](integration/README.md). Samo zaktualizowanie kontenera panelu nie wystarczy do obsługi tej kolejki. Postęp, data oraz źródło restartu są widoczne w tej samej sekcji co przyciski zarządzania.
 
 ```bash
 git pull

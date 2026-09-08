@@ -45,15 +45,17 @@ namespace
 	// with his position is kept for PLAYERBOT_RAID_BOSS_CHECK_INTERVAL: a
 	// hundred bots choosing hubs in the same minute ask once.
 	bool IsPlayerBotBossAlive(long mapIndex, long x, long y, WORD wRace, DWORD dwNow,
-			long* pBossX, long* pBossY)
+			long* pBossX, long* pBossY, char* pName = NULL, size_t nameSize = 0)
 	{
-		struct TBossAnswer { DWORD dwStamp; bool bAlive; long lX; long lY; };
+		struct TBossAnswer { DWORD dwStamp; bool bAlive; long lX; long lY; char szName[32]; };
 		static std::map<WORD, TBossAnswer> s_mapAnswers;
 		std::map<WORD, TBossAnswer>::iterator it = s_mapAnswers.find(wRace);
 		if (it != s_mapAnswers.end() && dwNow - it->second.dwStamp < PLAYERBOT_RAID_BOSS_CHECK_INTERVAL)
 		{
 			if (pBossX) *pBossX = it->second.lX;
 			if (pBossY) *pBossY = it->second.lY;
+			if (pName && nameSize > 0)
+				strlcpy(pName, it->second.szName, nameSize);
 			return it->second.bAlive;
 		}
 		LPCHARACTER boss = NULL;
@@ -80,9 +82,86 @@ namespace
 		answer.bAlive = bAlive;
 		answer.lX = boss ? boss->GetX() : x;
 		answer.lY = boss ? boss->GetY() : y;
+		strlcpy(answer.szName, boss ? boss->GetName() : "Boss", sizeof(answer.szName));
 		if (pBossX) *pBossX = answer.lX;
 		if (pBossY) *pBossY = answer.lY;
+		if (pName && nameSize > 0)
+			strlcpy(pName, answer.szName, nameSize);
 		return bAlive;
+	}
+
+	// A boss is news, and news travels through the guild of whoever saw him.
+	//
+	// Before this every bot of the band walked to a boss hub the moment the
+	// sector said he was standing - a raid worth a hundred thousand outscored
+	// every hunting ground by two orders of magnitude - and the ones that
+	// arrived after he was down stood about at the table point waiting for a
+	// monster that was not there. Now the first bot to find him standing calls
+	// its own guild, and it is that guild's business until there are enough
+	// bodies on him; everybody else goes on hunting.
+	struct TPlayerBotRaidCall
+	{
+		DWORD dwGuild;
+		DWORD dwStamp;
+		TPlayerBotRaidCall() : dwGuild(0), dwStamp(0) {}
+	};
+	std::map<WORD, TPlayerBotRaidCall> s_mapPlayerBotRaidCalls;
+
+	void NotePlayerBotRaidSighting(LPCHARACTER ch, WORD wRace, const char* bossName,
+			DWORD dwNow)
+	{
+		if (!ch || !ch->GetGuild())
+			return;
+		TPlayerBotRaidCall& call = s_mapPlayerBotRaidCalls[wRace];
+		if (call.dwStamp != 0 && dwNow - call.dwStamp < PLAYERBOT_RAID_CALL_TIME)
+			return;
+		call.dwGuild = ch->GetGuild()->GetID();
+		call.dwStamp = dwNow;
+		char msg[128];
+		FormatPlayerBotText(msg, sizeof(msg), "",
+				"%s stoi! Zbieramy sie na niego.",
+				bossName && *bossName ? bossName : "Boss");
+		ch->GetGuild()->Chat(msg);
+		sys_log(0, "PLAYERBOT_RAID: called pid=%u name=%s guild=%u race=%u boss=%s",
+				ch->GetPlayerID(), ch->GetName(), (unsigned int)call.dwGuild,
+				(unsigned int)wRace, bossName ? bossName : "?");
+	}
+
+	// Who has already set off. Counting the bots standing on the hub instead
+	// answers "nobody yet" to every one of a hundred bots deciding in the same
+	// second, because none of them has arrived - which is how a throttle of
+	// twelve let a hundred and forty-five head for one monster.
+	std::map<WORD, std::map<DWORD, DWORD> > s_mapPlayerBotRaidRoster;
+
+	int CountPlayerBotRaiders(WORD wRace, DWORD dwNow)
+	{
+		std::map<DWORD, DWORD>& roster = s_mapPlayerBotRaidRoster[wRace];
+		std::map<DWORD, DWORD>::iterator it = roster.begin();
+		while (it != roster.end())
+		{
+			if (dwNow - it->second > PLAYERBOT_RAID_CALL_TIME)
+				roster.erase(it++);
+			else
+				++it;
+		}
+		return (int)roster.size();
+	}
+
+	void NotePlayerBotRaider(WORD wRace, DWORD pid, DWORD dwNow)
+	{
+		s_mapPlayerBotRaidRoster[wRace][pid] = dwNow;
+	}
+
+	bool IsPlayerBotRaidCalled(LPCHARACTER ch, WORD wRace, DWORD dwNow)
+	{
+		if (!ch || !ch->GetGuild())
+			return false;
+		std::map<WORD, TPlayerBotRaidCall>::const_iterator it =
+				s_mapPlayerBotRaidCalls.find(wRace);
+		return it != s_mapPlayerBotRaidCalls.end() &&
+				it->second.dwStamp != 0 &&
+				dwNow - it->second.dwStamp < PLAYERBOT_RAID_CALL_TIME &&
+				it->second.dwGuild == ch->GetGuild()->GetID();
 	}
 
 	bool ChoosePlayerBotHuntingHub(LPCHARACTER ch, const TPlayerBotHuntingHub* hubs,
@@ -126,8 +205,11 @@ namespace
 			if (hub.wBossRace != 0)
 			{
 				long bossX = hub.x, bossY = hub.y;
-				if (!IsPlayerBotBossAlive(ch->GetMapIndex(), hub.x, hub.y, hub.wBossRace, dwNow, &bossX, &bossY))
+				char bossName[32] = "";
+				if (!IsPlayerBotBossAlive(ch->GetMapIndex(), hub.x, hub.y, hub.wBossRace,
+						dwNow, &bossX, &bossY, bossName, sizeof(bossName)))
 					continue;
+				NotePlayerBotRaidSighting(ch, hub.wBossRace, bossName, dwNow);
 				// Where the boss actually stands is walkable by definition; the
 				// question is whether it is this bot's terrain.
 				const DWORD bossGround = navigation.GetComponentAtWorld(bossX, bossY, 12);
@@ -185,7 +267,22 @@ namespace
 				worth += worth * PLAYERBOT_SPOT_MATERIAL_BONUS_PERCENT / 100;
 			// The bot's share of what is there: the monsters in reach divided among
 			// the bots already in reach of them, plus this one.
-			int score = hub.wBossRace != 0 ? PLAYERBOT_RAID_WORTH : worth / (1 + others);
+			int score;
+			if (hub.wBossRace != 0)
+			{
+				// A raid is twelve, not a province. The guild that was called
+				// may fill it; anybody else takes only the first half, so a
+				// boss nobody called still gets killed and the rest of the band
+				// carries on hunting instead of queueing on a snowfield.
+				const int raiders = CountPlayerBotRaiders(hub.wBossRace, dwNow);
+				const int room = IsPlayerBotRaidCalled(ch, hub.wBossRace, dwNow)
+						? PLAYERBOT_RAID_CROWD : PLAYERBOT_RAID_CROWD / 2;
+				if (raiders >= room)
+					continue;
+				score = PLAYERBOT_RAID_WORTH;
+			}
+			else
+				score = worth / (1 + others);
 			// Nearer is better, all else equal: a camp across the delta costs a
 			// route of two hundred milliseconds to plan and three minutes to walk.
 			const int distance = DISTANCE_APPROX(ch->GetX() - hub.x, ch->GetY() - hub.y);
@@ -736,8 +833,28 @@ namespace
 			// on a stone hunt, which is done by covering ground.
 			const DWORD hubStick = IsPlayerBotMetinHunting(state, dwNow)
 					? PLAYERBOT_METIN_EXPEDITION_HUB_STICK : PLAYERBOT_HUB_STICK_TIME;
+			// A hub is kept for a few minutes so a bot does not cross the map
+			// twice for a slightly better camp - but a boss hub is only a place
+			// while the boss is standing on it. Keeping one for four minutes
+			// after he went down is what put a column of bots on an empty
+			// snowfield with nothing to fight: the stick has to ask again.
+			const bool stickIsBoss = state.wHuntingHub < hubCount &&
+					hubs[state.wHuntingHub].wBossRace != 0;
+			bool stickBossStanding = true;
+			if (stickIsBoss)
+			{
+				long bossX = 0, bossY = 0;
+				stickBossStanding = IsPlayerBotBossAlive(ch->GetMapIndex(),
+						hubs[state.wHuntingHub].x, hubs[state.wHuntingHub].y,
+						hubs[state.wHuntingHub].wBossRace, dwNow, &bossX, &bossY);
+				if (!stickBossStanding)
+					PlayerBotLogThrottled("raid_over", dwNow,
+							"PLAYERBOT_RAID: boss down, going back to work race=%u pid=%u name=%s map=%ld",
+							(unsigned int)hubs[state.wHuntingHub].wBossRace,
+							ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex());
+			}
 			if (state.wHuntingHub < hubCount && state.dwHubChosenTime != 0 &&
-					dwNow - state.dwHubChosenTime < hubStick &&
+					dwNow - state.dwHubChosenTime < hubStick && stickBossStanding &&
 					ch->GetLevel() >= hubs[state.wHuntingHub].bMinLevel &&
 					ch->GetLevel() <= hubs[state.wHuntingHub].bMaxLevel)
 			{
@@ -802,11 +919,15 @@ namespace
 				state.wHuntingHub = (WORD)hubIndex;
 				state.dwHubChosenTime = dwNow;
 				if (hubs[hubIndex].wBossRace != 0)
-					sys_log(0, "PLAYERBOT_RAID: heading for boss race=%u pid=%u name=%s level=%u map=%ld party=%u guild=%u",
+				{
+					NotePlayerBotRaider(hubs[hubIndex].wBossRace, pid, dwNow);
+					sys_log(0, "PLAYERBOT_RAID: heading for boss race=%u pid=%u name=%s level=%u map=%ld party=%u guild=%u raiders=%d",
 							(unsigned int)hubs[hubIndex].wBossRace, ch->GetPlayerID(), ch->GetName(),
 							ch->GetLevel(), ch->GetMapIndex(),
 							ch->GetParty() ? (unsigned int)ch->GetParty()->GetMemberCount() : 0U,
-							ch->GetGuild() ? (unsigned int)ch->GetGuild()->GetID() : 0U);
+							ch->GetGuild() ? (unsigned int)ch->GetGuild()->GetID() : 0U,
+							CountPlayerBotRaiders(hubs[hubIndex].wBossRace, dwNow));
+				}
 				sys_log(0, "PLAYERBOT_SPOT: hub chosen pid=%u name=%s level=%u map=%ld hub=%u pos=(%ld,%ld) band=%u-%u party_hub=%d party=%u guild=%u score=%d",
 						pid, ch->GetName(), ch->GetLevel(), ch->GetMapIndex(), (unsigned int)hubIndex,
 						hubs[hubIndex].x, hubs[hubIndex].y, hubs[hubIndex].bMinLevel, hubs[hubIndex].bMaxLevel,

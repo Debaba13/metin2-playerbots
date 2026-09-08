@@ -537,8 +537,13 @@ namespace
 			// in its own right - twenty-six recipes on this proto consume one as
 			// it is. Prying open the one the bot's own anvil is about to ask for
 			// trades a certain material for a chance at a different one.
+			// A shell is worth something whole, so the first few are never
+			// gambled with: they go to the anvil or onto the counter, and only
+			// the surplus is pried open.
 			if (vnum == PLAYERBOT_SHELLFISH_VNUM &&
-					(PlayerBotNeedsRefineMaterial(ch, vnum) || !ShouldPlayerBotOpenShellfish(ch, get_dword_time())))
+					(ch->CountSpecifyItem(PLAYERBOT_SHELLFISH_VNUM) <= PLAYERBOT_SHELLFISH_KEEP ||
+					 PlayerBotNeedsRefineMaterial(ch, vnum) ||
+					 !ShouldPlayerBotOpenShellfish(ch, get_dword_time())))
 				continue;
 			const int stoneBefore = ch->CountSpecifyItem(PLAYERBOT_STONE_PIECE_VNUM);
 			const int whiteBefore = ch->CountSpecifyItem(PLAYERBOT_PEARL_FIRST_VNUM);
@@ -565,6 +570,40 @@ namespace
 			sys_log(0, "PLAYERBOT_FISHING: processed catch pid=%u name=%s vnum=%u kind=%s",
 					ch->GetPlayerID(), ch->GetName(), vnum,
 					aliveFish ? "fish" : "shellfish");
+			return true;
+		}
+		return false;
+	}
+
+	// One bot, one colour, for good.
+	//
+	// The dye is fished up and dropped often enough that bots were carrying it
+	// about as scrap. The engine takes it straight from UseItem - SetPart on
+	// PART_HAIR, no client involved - and the colour is permanent, which is
+	// exactly why it is worth using: eight hundred characters that all look
+	// alike stop looking like one character copied eight hundred times. Used
+	// once and once only; everything after the first is goods, and the engine
+	// would refuse a second one for three levels anyway.
+	bool ManagePlayerBotHairDye(LPCHARACTER ch)
+	{
+		if (!ch || ch->GetPart(PART_HAIR) != 0)
+			return false;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item)
+				continue;
+			const DWORD vnum = item->GetVnum();
+			// Only the range char_item.cpp answers for, and not the remover:
+			// washing out a colour that was never applied consumes the item and
+			// changes nothing.
+			if (vnum <= PLAYERBOT_HAIR_DYE_FIRST_VNUM ||
+					vnum > PLAYERBOT_HAIR_DYE_LAST_VNUM)
+				continue;
+			if (!ch->UseItem(TItemPos(INVENTORY, cell)))
+				continue;
+			sys_log(0, "PLAYERBOT_LOOK: hair dyed pid=%u name=%s vnum=%u part=%d",
+					ch->GetPlayerID(), ch->GetName(), vnum, ch->GetPart(PART_HAIR));
 			return true;
 		}
 		return false;

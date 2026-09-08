@@ -75,17 +75,17 @@ namespace
 	{
 		switch (mapIndex)
 		{
-			case PLAYERBOT_MAP_CHUNJO_M1: return "do Joan";
-			case PLAYERBOT_MAP_CHUNJO_M2: return "do Bokjung";
-			case PLAYERBOT_MAP_CHUNJO_M3: return "do Pyungmoo";
-			case PLAYERBOT_MAP_MONKEY_EASY: return "do Lochu Malp";
-			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "do Lochu Malp II";
-			case PLAYERBOT_MAP_MONKEY_HARD: return "do Lochu Malp III";
-			case PLAYERBOT_MAP_DESERT: return "na Pustynie Yongbi";
-			case PLAYERBOT_MAP_ORC_VALLEY: return "do Doliny Orkow";
-			case PLAYERBOT_MAP_SOHAN: return "na Gore Sohan";
-			case PLAYERBOT_MAP_SPIDER_V1: return "do Lochu Pajakow";
-			case PLAYERBOT_MAP_HWANG: return "do Swiatyni Hwang";
+			case PLAYERBOT_MAP_CHUNJO_M1: return PlayerBotText("do Joan");
+			case PLAYERBOT_MAP_CHUNJO_M2: return PlayerBotText("do Bokjung");
+			case PLAYERBOT_MAP_CHUNJO_M3: return PlayerBotText("do Pyungmoo");
+			case PLAYERBOT_MAP_MONKEY_EASY: return PlayerBotText("do Lochu Malp");
+			case PLAYERBOT_MAP_MONKEY_MEDIUM: return PlayerBotText("do Lochu Malp II");
+			case PLAYERBOT_MAP_MONKEY_HARD: return PlayerBotText("do Lochu Malp III");
+			case PLAYERBOT_MAP_DESERT: return PlayerBotText("na Pustynie Yongbi");
+			case PLAYERBOT_MAP_ORC_VALLEY: return PlayerBotText("do Doliny Orkow");
+			case PLAYERBOT_MAP_SOHAN: return PlayerBotText("na Gore Sohan");
+			case PLAYERBOT_MAP_SPIDER_V1: return PlayerBotText("do Lochu Pajakow");
+			case PLAYERBOT_MAP_HWANG: return PlayerBotText("do Swiatyni Hwang");
 			default: return "";
 		}
 	}
@@ -108,8 +108,8 @@ namespace
 			case BOT_ACTION_STABLE: return PlayerBotText("odwiedzam Stajennego");
 			case BOT_ACTION_STALL: return PlayerBotText("prowadze stragan");
 			case BOT_ACTION_MARKET: return PlayerBotText("jestem na zakupach");
-			case BOT_ACTION_LURE: return "podciagam moby dla PT";
-			case BOT_ACTION_TOWN_REST: return "chodze po straganach";
+			case BOT_ACTION_LURE: return PlayerBotText("podciagam moby dla PT");
+			case BOT_ACTION_TOWN_REST: return PlayerBotText("chodze po straganach");
 			default: return PlayerBotText("mysle");
 		}
 	}
@@ -183,19 +183,19 @@ namespace
 			{
 				size_t redCount = 0, blueCount = 0;
 				CountPlayerBotPotions(ch, redCount, blueCount);
-				snprintf(status, statusSize, "%s%s - potki %u/%u", prefix,
+				FormatPlayerBotText(status, statusSize, prefix, "%s - potki %u/%u",
 						GetPlayerBotTownStatusLabel(state),
 						(unsigned int)redCount, (unsigned int)blueCount);
 				return;
 			}
-			snprintf(status, statusSize, "%s%s (cel: %s)", prefix,
+			FormatPlayerBotText(status, statusSize, prefix, "%s (cel: %s)",
 					GetPlayerBotTownStatusLabel(state), goal);
 			return;
 		}
 
 		if (state.bTacticalRetreat)
 		{
-			snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Uciekam - mam malo HP"));
+			FormatPlayerBotText(status, statusSize, prefix, "Uciekam - mam malo HP");
 			return;
 		}
 		// An errand the watchdog interrupted, and the map the bot still means to
@@ -207,10 +207,11 @@ namespace
 			const char* where = state.lDepartureMap != 0
 					? GetPlayerBotMapDestinationPl(state.lDepartureMap) : "";
 			if (where[0])
-				snprintf(status, statusSize, "%sCzekam na trase do handlarza; potem %s",
-						prefix, where);
+				FormatPlayerBotText(status, statusSize, prefix,
+						"Czekam na trase do handlarza; potem %s", where);
 			else
-				snprintf(status, statusSize, "%sCzekam na trase do handlarza", prefix);
+				FormatPlayerBotText(status, statusSize, prefix,
+						"Czekam na trase do handlarza");
 			return;
 		}
 		// The luring course says which stage it is in, because "walking away
@@ -221,29 +222,33 @@ namespace
 			switch (state.bLureStage)
 			{
 				case LURE_STAGE_PLAN:
-					snprintf(status, statusSize, "%sSzykuje lur dla druzyny", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Szykuje lur dla druzyny");
 					return;
 				case LURE_STAGE_RETURN:
-					snprintf(status, statusSize, "%sWracam do druzyny: prowadze %d mobow",
-							prefix, state.iLureChasing);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Wracam do druzyny: prowadze %d mobow", state.iLureChasing);
 					return;
 				case LURE_STAGE_HANDOFF:
-					snprintf(status, statusSize, "%sPrzekazuje moby: %d przyprowadzonych, %d nadal za mna",
-							prefix, state.iLureDelivered, state.iLureChasing);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Przekazuje moby: %d przyprowadzonych, %d nadal za mna",
+							state.iLureDelivered, state.iLureChasing);
 					return;
 				case LURE_STAGE_RECOVER:
-					snprintf(status, statusSize, "%sWstrzymuje lur: druzyna jeszcze walczy", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Wstrzymuje lur: druzyna jeszcze walczy");
 					return;
 				default:
-					snprintf(status, statusSize, "%sLuruje dla PT: %u/%u grupy, sciga mnie %d",
-							prefix, (unsigned int)state.bLureGroupsTagged,
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Luruje dla PT: %u/%u grupy, sciga mnie %d",
+							(unsigned int)state.bLureGroupsTagged,
 							(unsigned int)state.bLureGroupsPlanned, state.iLureChasing);
 					return;
 			}
 		}
 		if (state.bRecoveringAfterDeath)
 		{
-			snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Odpoczywam po smierci"));
+			FormatPlayerBotText(status, statusSize, prefix, "Odpoczywam po smierci");
 			return;
 		}
 
@@ -253,7 +258,8 @@ namespace
 		{
 			case BOT_ACTION_FIGHT:
 				if (target && target->IsStone())
-					FormatPlayerBotText(status, statusSize, prefix, "Rozbijam %s", target->GetName());
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Rozbijam %s", target->GetName());
 				else if (target && target->IsMonster())
 				{
 					int huntingRemaining = 0;
@@ -261,7 +267,8 @@ namespace
 							ch, &huntingRemaining);
 					if (huntingMob != 0 && target->GetRaceNum() == huntingMob)
 					{
-						FormatPlayerBotText(status, statusSize, prefix, "Polowanie: %s (zostalo %d)",
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Polowanie: %s (zostalo %d)",
 								target->GetName(), huntingRemaining);
 						break;
 					}
@@ -278,143 +285,165 @@ namespace
 					// looked at this target.
 					if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_SELF_DEFENSE)
-						snprintf(status, statusSize, "%sBronie sie przed %s", prefix,
-								target->GetName());
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Bronie sie przed %s", target->GetName());
 					else if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_PARTY_DEFENSE)
-						snprintf(status, statusSize, "%sPomagam druzynie: %s", prefix,
-								target->GetName());
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Pomagam druzynie: %s", target->GetName());
 					else if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_MATERIAL)
-						snprintf(status, statusSize, "%sZbieram material z %s", prefix,
-								target->GetName());
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Zbieram material z %s", target->GetName());
 					else if (distance > range)
-						FormatPlayerBotText(status, statusSize, prefix, "Gonie %s", target->GetName());
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Gonie %s", target->GetName());
 					else
-						FormatPlayerBotText(status, statusSize, prefix, "Walcze z %s", target->GetName());
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Walcze z %s", target->GetName());
 				}
 				else
-						snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Szukam przeciwnika"));
+					FormatPlayerBotText(status, statusSize, prefix, "Szukam przeciwnika");
 				break;
 			case BOT_ACTION_LOOT:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Podnosze lup"));
+				FormatPlayerBotText(status, statusSize, prefix, "Podnosze lup");
 				break;
 			case BOT_ACTION_RECOVER:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Regeneruje HP"));
+				FormatPlayerBotText(status, statusSize, prefix, "Regeneruje HP");
 				break;
 			case BOT_ACTION_TRAIN:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Wybieram profesje"));
+				FormatPlayerBotText(status, statusSize, prefix, "Wybieram profesje");
 				break;
 			case BOT_ACTION_SHOP:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Handluje"));
+				FormatPlayerBotText(status, statusSize, prefix, "Handluje");
 				break;
 			case BOT_ACTION_REFINE:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Ulepszam ekwipunek"));
+				FormatPlayerBotText(status, statusSize, prefix, "Ulepszam ekwipunek");
 				break;
 			case BOT_ACTION_READ_BOOK:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Czytam ksiege umiejetnosci"));
+				FormatPlayerBotText(status, statusSize, prefix,
+						"Czytam ksiege umiejetnosci");
 				break;
 			case BOT_ACTION_SOCKET_STONE:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Wkladam kamien duszy"));
+				FormatPlayerBotText(status, statusSize, prefix, "Wkladam kamien duszy");
 				break;
 			case BOT_ACTION_PARTY_ASSEMBLE:
-				snprintf(status, statusSize, "%s%s", prefix, PlayerBotText("Szukam celu dla grupy"));
+				FormatPlayerBotText(status, statusSize, prefix,
+						"Szukam celu dla grupy");
 				break;
 			case BOT_ACTION_BIOLOGIST:
 			{
 				const TPlayerBotBiologistMission* mission =
 						GetActivePlayerBotBiologistMission(ch);
 				if (!mission)
-					snprintf(status, statusSize, "%sWracam od Biologa", prefix);
+					FormatPlayerBotText(status, statusSize, prefix, "Wracam od Biologa");
 				else if (state.bVisitingBiologist &&
 						DISTANCE_APPROX(ch->GetX() - PLAYERBOT_BIOLOGIST_X,
 								ch->GetY() - PLAYERBOT_BIOLOGIST_Y) > 850)
-					snprintf(status, statusSize, "%sIde do Biologa z: %s", prefix, mission->itemLabel);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do Biologa z: %s", mission->itemLabel);
 				else if (state.bVisitingBiologist)
-					snprintf(status, statusSize, "%sOddaje Biologowi: %s", prefix, mission->itemLabel);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Oddaje Biologowi: %s", mission->itemLabel);
 				else
-					snprintf(status, statusSize, "%sZbieram dla Biologa: %s", prefix, mission->itemLabel);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Zbieram dla Biologa: %s", mission->itemLabel);
 				break;
 			}
 			case BOT_ACTION_STABLE:
 				if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_STABLE_BOY_X,
 						ch->GetY() - PLAYERBOT_STABLE_BOY_Y) > 850)
-					snprintf(status, statusSize, "%sIde do Stajennego z medalem", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do Stajennego z medalem");
 				else
-					snprintf(status, statusSize, "%sOddaje medal konny (%u/21)", prefix,
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Oddaje medal konny (%u/21)",
 							(unsigned int)ch->GetHorseLevel());
 				break;
 			case BOT_ACTION_FISHING:
 				if (ch->CountSpecifyItem(PLAYERBOT_FISHING_BAIT_VNUM) <
 						PLAYERBOT_FISHING_BAIT_RESTOCK)
-					snprintf(status, statusSize, "%sIde do Rybaka po przynete", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do Rybaka po przynete");
 				else if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_FISHING_BANK_X,
 						ch->GetY() - PLAYERBOT_FISHING_BANK_Y) >
 						PLAYERBOT_FISHING_BANK_RADIUS)
-					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide nad rzeke lowic ryby");
 				else if (state.bIsFishing)
-					snprintf(status, statusSize, "%sLowie ryby - czekam na branie", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Lowie ryby - czekam na branie");
 				else if (!IsPlayerBotHoldingRod(ch))
 					// The old text here was a plain else, so an angler standing at
 					// the water with no rod on its back announced that it was
 					// baiting one - which is what got reported as "bots put bait
 					// on weapons". Nothing was ever put on a weapon; the label
 					// was simply wrong about what the bot was doing.
-					snprintf(status, statusSize, "%sSzukam wedki", prefix);
+					FormatPlayerBotText(status, statusSize, prefix, "Szukam wedki");
 				else
-					snprintf(status, statusSize, "%sZakladam przynete na wedke", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Zakladam przynete na wedke");
 				break;
 			case BOT_ACTION_TOWN_REST:
-				snprintf(status, statusSize, "%sOgladam stragany", prefix);
+				FormatPlayerBotText(status, statusSize, prefix, "Ogladam stragany");
 				break;
 			case BOT_ACTION_MARKET:
 				if (state.dwMarketStallVID != 0)
-					snprintf(status, statusSize, "%sOgladam stragan", prefix);
+					FormatPlayerBotText(status, statusSize, prefix, "Ogladam stragan");
 				else
-					snprintf(status, statusSize, "%sSzukam czegos na straganach", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Szukam czegos na straganach");
 				break;
 			case BOT_ACTION_TRAVEL:
 				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sIde przez portal do M2 po Medal Konny", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide przez portal do M2 po Medal Konny");
 				else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
 						ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) == 0 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sIde do Lochu Malp po Medal Konny", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do Lochu Malp po Medal Konny");
 				else if (ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) > 0)
-					snprintf(status, statusSize, "%sIde do najblizszego Stajennego z Medalem", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do najblizszego Stajennego z Medalem");
 				else if (IsPlayerBotMonkeyMap(ch->GetMapIndex()))
-					snprintf(status, statusSize, "%sWychodze z Lochu Malp", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Wychodze z Lochu Malp");
 				// "Szukam miejsca do expa (cel: zapasy)" was said over a bot
 				// walking to a merchant, which is the audit's example of a
 				// status that describes an action without its purpose. Say
 				// where the bot is going, and when the errand is not experience,
 				// say the errand instead.
 				else if (state.bLongTermGoal == BOT_GOAL_RESTOCK)
-					snprintf(status, statusSize, "%sIde do miasta po zapasy", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do miasta po zapasy");
 				else if (state.bLongTermGoal == BOT_GOAL_REFINE)
-					snprintf(status, statusSize, "%sIde do kowala ulepszyc ekwipunek", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do kowala ulepszyc ekwipunek");
 				else if (state.bLongTermGoal == BOT_GOAL_BIOLOGIST)
-					snprintf(status, statusSize, "%sIde do Biologa", prefix);
+					FormatPlayerBotText(status, statusSize, prefix, "Ide do Biologa");
 				else if (state.bLongTermGoal == BOT_GOAL_FISHING)
-					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide nad rzeke lowic ryby");
 				else if (state.bLongTermGoal == BOT_GOAL_GET_EQUIPMENT)
-					snprintf(status, statusSize, "%sIde do miasta po ekwipunek", prefix);
+					FormatPlayerBotText(status, statusSize, prefix,
+							"Ide do miasta po ekwipunek");
 				else
 				{
 					const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
 					const char* where = wantMap != 0 && wantMap != ch->GetMapIndex()
 							? GetPlayerBotMapDestinationPl(wantMap) : "";
 					if (where[0])
-						snprintf(status, statusSize, "%sIde %s (cel: %s)", prefix,
-								where, goal);
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Ide %s (cel: %s)", where, goal);
 					else
-						snprintf(status, statusSize, "%sSzukam lepszego miejsca (cel: %s)",
-								prefix, goal);
+						FormatPlayerBotText(status, statusSize, prefix,
+								"Szukam lepszego miejsca (cel: %s)", goal);
 				}
 				break;
 			default:
-				snprintf(status, statusSize, "%sPlanuje: %s", prefix, goal);
+				FormatPlayerBotText(status, statusSize, prefix, "Planuje: %s", goal);
 				break;
 		}
 	}

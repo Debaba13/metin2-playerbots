@@ -14,17 +14,6 @@ TERMINAL = {"done": "Nadano", "has_item": "Już posiada", "full": "Brak miejsca 
 LABELS = {"waiting": "Czeka na wysłanie", "queued": "Przekazano aktywnej postaci", **TERMINAL}
 
 
-def grantable_item(item):
-    """Return whether the item can occupy an ordinary inventory slot.
-
-    Metin stones, costumes and special equipment are valid inventory items too.
-    The old type blacklist rejected them before the game quest could create them.
-    Keep only the safety checks that describe the destination inventory itself.
-    """
-    return (item is not None and 1 <= int(item.get("size") or 0) <= 3
-            and int(item.get("type") or 0) != 0)
-
-
 def init(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS player.web_seban_grants (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, batch CHAR(32) NOT NULL,
@@ -141,7 +130,7 @@ def install(app, db, login_required, game_text):
             cur.execute("SELECT vnum,locale_name,type,size FROM player.item_proto WHERE vnum=%s", (vnum,))
             item = cur.fetchone()
             if not item: abort(404, "Nie ma przedmiotu o tym VNUM.")
-            if not grantable_item(item):
+            if not 1 <= int(item["size"] or 0) <= 3 or int(item["type"] or 0) in (0, 10, 30):
                 abort(400, "Ten przedmiot nie jest obsługiwany przez zwykły ekwipunek.")
             recipients = candidates(cur, vnum, criteria, only_missing)
             fingerprint = json.dumps((vnum, quantity, criteria, only_missing), sort_keys=True)
