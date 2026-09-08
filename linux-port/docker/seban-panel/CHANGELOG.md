@@ -1,5 +1,11 @@
 # Zmiany
 
+## 2026-09-08 12:30 CEST · 1.37.2
+
+- Konsola „Zastosowanie zmian i restart” naprawdę zleca restart. Panel publikował własny plik `server-settings.request`, którego kontener gry nigdy nie czytał — pilnuje on pliku `request` — i którego nikt nie kasował, więc po pierwszym kliknięciu każde następne było odrzucane jako „poprzednie zlecenie nadal trwa”. Oba przyciski idą teraz tą samą drogą, co strona mnożników.
+- Blokada podwójnego kliknięcia wygasa po dziesięciu minutach, żeby milczący kontener gry nie zablokował konsoli na stałe.
+- Zmiany respawnu z tej konsoli nie są już ogłaszane jako wykonane: ten obraz gry nie ma modułu zapisującego pliki `regen.txt`.
+
 ## 2026-09-07 22:55 CEST · 1.37.1
 
 - Poprawiono źródło wersji Playerbots w Dashboardzie: jest ustawiane jawnie w `PLAYERBOTS_VERSION`, a przykładowa konfiguracja wskazuje 1.30.12.

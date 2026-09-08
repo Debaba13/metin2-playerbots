@@ -110,16 +110,23 @@ namespace
 	typedef std::map<DWORD, TPlayerBotSaleMemory> TPlayerBotSaleMap;
 	TPlayerBotSaleMap s_mapSaleMemory;
 
-	DWORD PlayerBotSaleKey(DWORD vnum, BYTE refine)
+	// One key per commodity, and a skill book is not one commodity.
+	//
+	// vnum*16+refine put every ordinary book on the same market: 50300 is the
+	// vnum whatever skill sits in its socket, so a cheap sale of somebody's
+	// spare anchored Aura Miecza, and a sale of Aura moved the price of every
+	// other book. Skills run 1..111, which is seven bits.
+	DWORD PlayerBotSaleKey(DWORD vnum, BYTE refine, DWORD skillVnum = 0)
 	{
-		return vnum * 16 + (refine & 15);
+		return (vnum * 16 + (refine & 15)) * 128 + (skillVnum & 127);
 	}
 
-	void RememberPlayerBotSale(DWORD vnum, BYTE refine, DWORD unitPrice, DWORD dwNow)
+	void RememberPlayerBotSale(DWORD vnum, BYTE refine, DWORD unitPrice, DWORD dwNow,
+			DWORD skillVnum = 0)
 	{
 		if (vnum == 0 || unitPrice == 0)
 			return;
-		TPlayerBotSaleMemory& mem = s_mapSaleMemory[PlayerBotSaleKey(vnum, refine)];
+		TPlayerBotSaleMemory& mem = s_mapSaleMemory[PlayerBotSaleKey(vnum, refine, skillVnum)];
 		mem.dwUnitPrice[mem.bNext] = unitPrice;
 		mem.bNext = (BYTE)((mem.bNext + 1) % PLAYERBOT_SALE_MEMORY);
 		if (mem.bCount < PLAYERBOT_SALE_MEMORY)
@@ -130,11 +137,13 @@ namespace
 	// The unit price the market has shown it will pay, nudged by how recently
 	// it paid it - or 0 while there are not enough sales to say. A median
 	// rather than a mean, so one bot overpaying once does not move it.
-	DWORD GetPlayerBotSaleUnitPrice(DWORD vnum, BYTE refine, DWORD dwNow, size_t* pSamples)
+	DWORD GetPlayerBotSaleUnitPrice(DWORD vnum, BYTE refine, DWORD dwNow, size_t* pSamples,
+			DWORD skillVnum = 0)
 	{
 		if (pSamples)
 			*pSamples = 0;
-		TPlayerBotSaleMap::const_iterator it = s_mapSaleMemory.find(PlayerBotSaleKey(vnum, refine));
+		TPlayerBotSaleMap::const_iterator it =
+				s_mapSaleMemory.find(PlayerBotSaleKey(vnum, refine, skillVnum));
 		if (it == s_mapSaleMemory.end() || it->second.bCount < PLAYERBOT_SALE_MIN_SAMPLES)
 			return 0;
 		const TPlayerBotSaleMemory& mem = it->second;
@@ -265,21 +274,40 @@ namespace
 	// five percent from the one before would otherwise walk a price sevenfold
 	// in the ten minutes they take to open. An hour with no counter asking at
 	// all and the memory is dropped: the next ask starts fresh.
-	DWORD LimitPlayerBotAskStep(DWORD vnum, BYTE refine, DWORD wanted, DWORD dwNow)
+	DWORD LimitPlayerBotAskStep(DWORD vnum, BYTE refine, DWORD wanted, DWORD dwNow,
+			DWORD skillVnum = 0)
 	{
-		TPlayerBotAskMemory& mem = s_mapAskMemory[PlayerBotSaleKey(vnum, refine)];
-		if (mem.dwUnit == 0 || dwNow - mem.dwAskTime >= PLAYERBOT_MARKET_ASK_STALE)
+		TPlayerBotAskMemory& mem = s_mapAskMemory[PlayerBotSaleKey(vnum, refine, skillVnum)];
+		// An anchor under the floor is not a price to step away from, it is an
+		// accident to forget. One yang got onto the counters because the median
+		// wallet is zero until the ledger has run for the first time, and in
+		// that first minute anything without a merchant price came out at
+		// max(1, 0); after that the anchor could never move, because five
+		// percent of one yang is nothing in integer arithmetic and every stall
+		// that listed the item kept the memory too fresh to go stale.
+		if (mem.dwUnit == 0 || mem.dwUnit < PLAYERBOT_MARKET_ASK_FLOOR ||
+				dwNow - mem.dwAskTime >= PLAYERBOT_MARKET_ASK_STALE)
 		{
 			mem.dwUnit = wanted;
 			mem.dwAskTime = mem.dwMovedTime = dwNow;
 			return wanted;
 		}
 		mem.dwAskTime = dwNow;
+		// Whole intervals only. The "1 +" here gave every call a free step even
+		// when no time had passed, and each accepted step reset the clock - so
+		// forty counters opening in the same minute moved the shared anchor
+		// forty times, whatever the comment about five percent per ten minutes
+		// said. A price is set once and then moves with the clock.
 		const DWORD steps = std::min<DWORD>(PLAYERBOT_MARKET_STEP_MAX_STEPS,
-				1 + (dwNow - mem.dwMovedTime) / PLAYERBOT_MARKET_STEP_INTERVAL);
+				(dwNow - mem.dwMovedTime) / PLAYERBOT_MARKET_STEP_INTERVAL);
 		const DWORD span = PLAYERBOT_MARKET_STEP_PERCENT * steps;
-		const DWORD lo = std::max<DWORD>(1, mem.dwUnit * (100 - span) / 100);
-		const DWORD hi = std::max<DWORD>(lo, mem.dwUnit * (100 + span) / 100);
+		// At least one yang of movement per whole interval. A purely
+		// multiplicative step cannot leave any anchor below four, and the point
+		// of a step limiter is to slow a price down, not to hold one still.
+		const DWORD move = steps == 0 ? 0
+				: std::max<DWORD>(steps, mem.dwUnit * span / 100);
+		const DWORD lo = mem.dwUnit > move ? mem.dwUnit - move : 1;
+		const DWORD hi = mem.dwUnit + move;
 		const DWORD unit = std::min(hi, std::max(lo, wanted));
 		if (unit != mem.dwUnit)
 		{

@@ -203,21 +203,108 @@ namespace
 		if (!CanPlayerBotUseFishingRod(ch))
 			return false;
 		const DWORD roll = PlayerBotNavHash(ch->GetPlayerID() ^ 0x46495348U) % 100U;
-		// Twenty collectors in a hundred and two of everyone else, stretched or
-		// shrunk by the FISHING weight. At the neutral 100 the two thresholds are
-		// exactly the ones this has always used.
-		const int chance = state.bPersonality == BOT_PERSONALITY_CAREFUL_COLLECTOR ? 20 : 2;
+		// Thirty collectors in a hundred and eight of everyone else, stretched or
+		// shrunk by the FISHING weight.
+		//
+		// Raised from 20/2 because fishing is the one errand that takes a bot to
+		// Joan and keeps it there: the bank, the Fisherman who sells the bait and
+		// the market ring are all on map 21, so an angler is a customer, a
+		// passer-by and a stall in one. Joan looked deserted with nineteen of
+		// eight hundred live bots standing on its map, and half of those nineteen
+		// were the anglers.
+		const int chance = state.bPersonality == BOT_PERSONALITY_CAREFUL_COLLECTOR ? 30 : 8;
 		return PlayerBotWeightedRoll(roll, chance, PLAYERBOT_WEIGHT_FISHING);
 	}
 
-	// Anglers spread out along the shoreline rather than stacking on one tile.
-	// The band is walked along Y because that is the way this stretch of bank
-	// runs; every resulting point is inside the verified standable rectangle.
-	void GetPlayerBotFishingStand(DWORD playerID, long& standX, long& standY)
+	// Which angler stands where. A stand is claimed for the session and released
+	// with it, because a hash cannot promise what the Discord asked for: fifty
+	// anglers drawing from fifty slots collide by the birthday problem long
+	// before they fill them, and what that looks like in game is a heap.
+	//
+	// The engine constrains none of this. CHARACTER::fishing() tests only the
+	// cell the angler is standing on; it computes a point four hundred units in
+	// front of the character and then never reads it. So the bank is chosen to
+	// look right - standable ground with the river in front - and the spacing is
+	// a metre because that is what was asked for.
+	struct TPlayerBotFishingStand
 	{
-		const DWORD hash = PlayerBotNavHash(playerID ^ 0x42414e4bU);
-		standX = PLAYERBOT_FISHING_BANK_X + (long)(hash % 5U) * 50;
-		standY = PLAYERBOT_FISHING_BANK_Y + (long)((hash / 5U) % 10U) * 50;
+		DWORD dwPid;
+		DWORD dwTouched;
+	};
+	std::map<int, TPlayerBotFishingStand> s_mapPlayerBotFishingStands;
+
+	void ReleasePlayerBotFishingStand(DWORD playerID)
+	{
+		for (std::map<int, TPlayerBotFishingStand>::iterator it =
+				s_mapPlayerBotFishingStands.begin();
+				it != s_mapPlayerBotFishingStands.end(); ++it)
+		{
+			if (it->second.dwPid == playerID)
+			{
+				s_mapPlayerBotFishingStands.erase(it);
+				return;
+			}
+		}
+	}
+
+	void GetPlayerBotFishingStand(DWORD playerID, DWORD dwNow, long& standX, long& standY)
+	{
+		const int slots = (int)PLAYERBOT_FISHING_STAND_COUNT;
+		int mine = -1;
+		for (std::map<int, TPlayerBotFishingStand>::iterator it =
+				s_mapPlayerBotFishingStands.begin();
+				it != s_mapPlayerBotFishingStands.end(); ++it)
+		{
+			if (it->second.dwPid == playerID)
+			{
+				mine = it->first;
+				it->second.dwTouched = dwNow;
+				break;
+			}
+		}
+		if (mine < 0)
+		{
+			// From its own place in the row, then along it: the same bot comes
+			// back to the same stand session after session while the bank is
+			// empty, and takes the next free one when it is not.
+			const int start = (int)(PlayerBotNavHash(playerID ^ 0x42414e4bU) % (DWORD)slots);
+			for (int step = 0; step < slots && mine < 0; ++step)
+			{
+				const int slot = (start + step) % slots;
+				std::map<int, TPlayerBotFishingStand>::const_iterator it =
+						s_mapPlayerBotFishingStands.find(slot);
+				if (it == s_mapPlayerBotFishingStands.end() ||
+						dwNow - it->second.dwTouched >= PLAYERBOT_FISHING_STAND_CLAIM)
+					mine = slot;
+			}
+			// More anglers than stands one day: share a stand rather than refuse
+			// to fish.
+			if (mine < 0)
+				mine = start;
+			TPlayerBotFishingStand& claim = s_mapPlayerBotFishingStands[mine];
+			claim.dwPid = playerID;
+			claim.dwTouched = dwNow;
+		}
+		standX = PLAYERBOT_FISHING_STANDS[mine].x;
+		standY = PLAYERBOT_FISHING_STANDS[mine].y;
+	}
+
+	// The water this stand looks at. Due east was right for the one straight
+	// stretch the first version knew about and wrong for every bend.
+	void GetPlayerBotFishingFacing(DWORD playerID, long& waterX, long& waterY)
+	{
+		waterX = PLAYERBOT_FISHING_WATER_X;
+		waterY = 0;
+		for (std::map<int, TPlayerBotFishingStand>::const_iterator it =
+				s_mapPlayerBotFishingStands.begin();
+				it != s_mapPlayerBotFishingStands.end(); ++it)
+		{
+			if (it->second.dwPid != playerID)
+				continue;
+			waterX = PLAYERBOT_FISHING_STANDS[it->first].waterX;
+			waterY = PLAYERBOT_FISHING_STANDS[it->first].waterY;
+			return;
+		}
 	}
 
 	bool IsPlayerBotHoldingRod(LPCHARACTER ch)
@@ -225,6 +312,14 @@ namespace
 		LPITEM rod = ch ? ch->GetWear(WEAR_WEAPON) : NULL;
 		return rod && rod->GetType() == ITEM_ROD;
 	}
+
+	// A bot stops walking at PLAYERBOT_NAV_ARRIVAL_DISTANCE from its goal, so an
+	// arrival test tighter than that can never pass: the walk reports success,
+	// the caller asks for another step, nothing moves, and the bot stands in the
+	// gap with no failure recorded anywhere. Both files are included here, so
+	// the rule can be checked rather than remembered.
+	static_assert(PLAYERBOT_FISHING_ARRIVE >= PLAYERBOT_NAV_ARRIVAL_DISTANCE,
+			"an arrival radius below the navigation's own strands the bot short of it");
 
 	bool EquipPlayerBotRod(LPCHARACTER ch)
 	{
@@ -481,15 +576,27 @@ namespace
 		if (ch && ch->m_pkFishingEvent)
 			ch->fishing_take();
 
+		if (ch)
+			ReleasePlayerBotFishingStand(ch->GetPlayerID());
 		state.bFishingSession = false;
 		state.bIsFishing = false;
 		state.dwFishingCastTime = 0;
+		state.dwFishingIdleSince = 0;
 		state.dwFishingSessionEndTime = 0;
 		state.dwNextFishingActionTime = 0;
 		state.dwNextFishingCheckTime = dwNow +
 				number(PLAYERBOT_FISHING_REST_MIN, PLAYERBOT_FISHING_REST_MAX);
 		StowPlayerBotRod(ch);
 		ClearPlayerBotRoute(state, true);
+		// An angler that has just packed the rod away is the one bot reliably
+		// standing in Joan with nothing left to do. Half of them wander over to
+		// the market ring for a while instead of walking straight back out -
+		// which is the whole of what makes that square look inhabited, since the
+		// bank, the bait merchant and the stalls are all on this one map.
+		if (ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
+				number(1, 100) <= PLAYERBOT_TOWN_LINGER_PERCENT)
+			state.dwTownLingerUntil = dwNow + number(
+					(int)PLAYERBOT_TOWN_LINGER_MIN, (int)PLAYERBOT_TOWN_LINGER_MAX);
 		if (ch)
 			sys_log(0, "PLAYERBOT_FISHING: session over pid=%u name=%s pearls=%d/%d/%d reason=%s",
 					ch->GetPlayerID(), ch->GetName(),
@@ -645,16 +752,18 @@ namespace
 		}
 		else
 		{
-			GetPlayerBotFishingStand(ch->GetPlayerID(), destX, destY);
-			// The bank spots are hand-picked world coordinates. server_attr is the
-			// only authority on whether one is standable, and the town services
-			// already learned that a hand-picked point can be a cell the navigation
-			// refuses. Snap to a verified walkable cell before walking at it.
+			GetPlayerBotFishingStand(ch->GetPlayerID(), dwNow, destX, destY);
+			// A last check against the navigation's own grid, in case a stand
+			// falls in a cell it refuses - but within two cells, not twelve.
+			// Twelve is six hundred world units against an arrival radius of
+			// twenty-five, which is the same mistake the portal walk made: two
+			// stands a hundred and fifty apart could both be dragged onto one
+			// cell, and two anglers were found eight units apart because of it.
 			CPlayerBotNavigation& navigation =
 					CPlayerBotNavigation::instance(ch->GetMapIndex());
 			PIXEL_POSITION bank;
 			if (navigation.Init(ch->GetMapIndex()) &&
-					navigation.FindNearestWalkableWorld(destX, destY, 12, bank,
+					navigation.FindNearestWalkableWorld(destX, destY, 2, bank,
 							ch->GetPlayerID()))
 			{
 				destX = bank.x;
@@ -740,6 +849,27 @@ namespace
 		if (dwNow < state.dwNextFishingActionTime)
 			return true;
 
+		// Ready to fish and not fishing. If that goes on long enough the session
+		// is over: a rod that will not go on, a bait that will not seat, or
+		// anything else nobody has thought of yet, all end the same way instead
+		// of standing at the water for hours.
+		if (state.bIsFishing)
+			state.dwFishingIdleSince = 0;
+		else
+		{
+			if (state.dwFishingIdleSince == 0)
+				state.dwFishingIdleSince = dwNow;
+			else if (dwNow - state.dwFishingIdleSince >= PLAYERBOT_FISHING_NO_CAST_GIVE_UP)
+			{
+				sys_log(0, "PLAYERBOT_FISHING: no cast pid=%u name=%s rod=%d bait=%d idle_ms=%u",
+						ch->GetPlayerID(), ch->GetName(),
+						IsPlayerBotHoldingRod(ch) ? 1 : 0,
+						ch->CountSpecifyItem(PLAYERBOT_FISHING_BAIT_VNUM),
+						(unsigned int)(dwNow - state.dwFishingIdleSince));
+				return EndPlayerBotFishingSession(ch, state, dwNow, "never_cast");
+			}
+		}
+
 		LPITEM rod = ch->GetWear(WEAR_WEAPON);
 		if (!state.bIsFishing && rod && rod->GetSocket(2) == 0 && !BaitPlayerBotRod(ch))
 		{
@@ -786,7 +916,9 @@ namespace
 
 			// Face straight across at the river rather than along the bank: the
 			// water lies due east of this stretch.
-			ch->SetRotationToXY(PLAYERBOT_FISHING_WATER_X, ch->GetY());
+			long waterX = 0, waterY = 0;
+			GetPlayerBotFishingFacing(ch->GetPlayerID(), waterX, waterY);
+			ch->SetRotationToXY(waterX, waterY != 0 ? waterY : ch->GetY());
 			ch->fishing();
 			if (!ch->m_pkFishingEvent)
 			{

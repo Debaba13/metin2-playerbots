@@ -9,11 +9,14 @@ function Get-M2DefaultLauncherConfig {
 
     [pscustomobject]@{
         schema = 1
-        language = 'pl'
         manifestUrl = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
         clientRoot = ''
         clientExecutable = ''
         supportUploadUrl = ''
+        # Interface language: 'pl' or 'en'. More and more of the Discord is
+        # English-speaking, and a launcher nobody can read is a launcher nobody
+        # runs correctly.
+        language = 'pl'
         serverRoot = [IO.Path]::GetFullPath($ServerRoot)
     }
 }
@@ -30,10 +33,7 @@ function Get-M2LauncherConfig {
     }
 
     $loaded = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($loaded.PSObject.Properties['language'] -and [string]$loaded.language -in @('pl', 'en')) {
-        $defaults.language = [string]$loaded.language
-    }
-    foreach ($name in @('manifestUrl', 'clientRoot', 'clientExecutable', 'supportUploadUrl')) {
+    foreach ($name in @('manifestUrl', 'clientRoot', 'clientExecutable', 'supportUploadUrl', 'language')) {
         if ($null -ne $loaded.PSObject.Properties[$name]) {
             $defaults.$name = [string]$loaded.$name
         }
@@ -47,7 +47,7 @@ function Save-M2LauncherConfig {
         [Parameter(Mandatory = $true)][string]$ConfigPath
     )
 
-    $Config | Select-Object schema, language, manifestUrl, clientRoot, clientExecutable, supportUploadUrl |
+    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl, language |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 }
 
@@ -108,6 +108,37 @@ function Test-M2Sha256 {
     return $Value -match '^[A-Fa-f0-9]{64}$'
 }
 
+function Test-M2AntivirusBlock {
+    # Windows zglasza blokade antywirusa jako zwykly blad operacji na pliku:
+    # ERROR_VIRUS_INFECTED (0x800700E1) albo ERROR_VIRUS_DELETED (0x800700E2).
+    # Bez tej zamiany w logu zostaje samo "plik zawiera wirusa lub potencjalnie
+    # niechciane oprogramowanie" - bez nazwy pliku, a wiec bez niczego, co
+    # dalo by sie sprawdzic.
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $codes = @(-2147024671, -2147024670)
+    $exception = $ErrorRecord.Exception
+    while ($exception) {
+        if ($codes -contains $exception.HResult) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $ErrorRecord.Exception.Message -match 'wirus|virus'
+}
+
+function New-M2AntivirusError {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$ErrorRecord
+    )
+
+    return ("Antywirus zablokowal plik aktualizacji: $Path`n" +
+        "Windows zglosil: $($ErrorRecord.Exception.Message)`n" +
+        'Nic nie zostalo zainstalowane - poprzednia wersja serwera dziala dalej. ' +
+        'Dodaj katalog serwera do wykluczen w Zabezpieczeniach Windows (Ochrona przed ' +
+        'wirusami > Zarzadzaj ustawieniami > Wykluczenia) albo przeslij ten log, ' +
+        'zebysmy zobaczyli, o ktory plik chodzi.')
+}
+
 function Get-M2Download {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
@@ -123,7 +154,15 @@ function Get-M2Download {
     if (-not [Uri]::TryCreate($Source, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne 'https') {
         throw 'Pakiet aktualizacji musi pochodzić z lokalnego pliku albo adresu HTTPS.'
     }
-    Invoke-WebRequest -Uri $uri -OutFile $Destination -UseBasicParsing -TimeoutSec 300
+    try {
+        Invoke-WebRequest -Uri $uri -OutFile $Destination -UseBasicParsing -TimeoutSec 300
+    }
+    catch {
+        if (Test-M2AntivirusBlock -ErrorRecord $_) {
+            throw (New-M2AntivirusError -Path $Destination -ErrorRecord $_)
+        }
+        throw
+    }
 }
 
 function Expand-M2SafeZip {
@@ -157,8 +196,19 @@ function Expand-M2SafeZip {
             New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
             $input = $entry.Open()
             try {
-                $output = [IO.File]::Open($target, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
-                try { $input.CopyTo($output) } finally { $output.Dispose() }
+                # Kazdy plik osobno, zeby blokada antywirusa wskazala ten jeden,
+                # a nie cala paczke: skaner sprawdza plik przy zamknieciu uchwytu,
+                # wiec to tutaj wychodzi na jaw.
+                try {
+                    $output = [IO.File]::Open($target, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                    try { $input.CopyTo($output) } finally { $output.Dispose() }
+                }
+                catch {
+                    if (Test-M2AntivirusBlock -ErrorRecord $_) {
+                        throw (New-M2AntivirusError -Path $entry.FullName -ErrorRecord $_)
+                    }
+                    throw
+                }
             }
             finally { $input.Dispose() }
         }
@@ -259,7 +309,15 @@ function Invoke-M2PackageUpdate {
         try {
             foreach ($change in $changes) {
                 New-Item -ItemType Directory -Path (Split-Path -Parent $change.Destination) -Force | Out-Null
-                Copy-Item -LiteralPath $change.Source -Destination $change.Destination -Force
+                try {
+                    Copy-Item -LiteralPath $change.Source -Destination $change.Destination -Force
+                }
+                catch {
+                    if (Test-M2AntivirusBlock -ErrorRecord $_) {
+                        throw (New-M2AntivirusError -Path $change.Relative -ErrorRecord $_)
+                    }
+                    throw
+                }
             }
         }
         catch {

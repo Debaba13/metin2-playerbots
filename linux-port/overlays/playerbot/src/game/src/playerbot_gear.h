@@ -1388,6 +1388,37 @@ namespace
 		return price;
 	}
 
+	// Is this piece one the bot could put on right now, and better than what it
+	// already wears there?
+	//
+	// The stall listed any weapon or armour whose slot was already filled, which
+	// reads as "this is a spare" and nearly always is. A player handing a bot a
+	// pair of +9 boots does not fill an empty slot, it beats a full one - and the
+	// counter got there first, because the private shop pass runs at the top of
+	// the tick and the equipment pass three hundred lines below it. Reported from
+	// the Discord by three people in one afternoon, each of whom had just given a
+	// bot something good and watched it go on sale at the top of the counter: a
+	// spare at +6 or better is the highest-scoring thing a stall can carry.
+	//
+	// "Could put on right now" is the engine's own CanEquipNow, so a piece the
+	// bot has not grown into is not held off the market on a promise: a level-30
+	// sword in the bag of a bot of five is goods, and stays goods.
+	bool IsPlayerBotWearableUpgrade(LPCHARACTER ch, LPITEM item, WORD cell)
+	{
+		if (!IsPlayerBotEquipmentCandidate(ch, item))
+			return false;
+		const int wearCell = item->FindEquipCell(ch);
+		if (wearCell < 0 || wearCell >= WEAR_MAX_NUM)
+			return false;
+		LPITEM worn = ch->GetWear((BYTE)wearCell);
+		if (worn && IS_SET(worn->GetFlag(), ITEM_FLAG_IRREMOVABLE))
+			return false;
+		if (!ch->CanEquipNow(item, TItemPos(INVENTORY, cell)))
+			return false;
+		return !worn || GetPlayerBotEquipmentScore(item, ch) >
+				GetPlayerBotEquipmentScore(worn, ch);
+	}
+
 	enum EPlayerBotPotionSupply
 	{
 		PLAYERBOT_POTION_SUPPLY_HP = 0,

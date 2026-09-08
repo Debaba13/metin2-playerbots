@@ -46,6 +46,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 docker cp "$BUILDER_CONTAINER:/src/server/game/game" "$TEMP_DIR/game"
+# The scripts ship with the core; see Dockerfile.runtime for what taking
+# them from the stale base layer cost.
+cp -a "$REPO_ROOT/linux-port/docker/game/bin" "$TEMP_DIR/bin"
 docker build \
     --build-arg "RUNTIME_BASE=$RUNTIME_BASE" \
     -f "$SCRIPT_DIR/Dockerfile.runtime" \

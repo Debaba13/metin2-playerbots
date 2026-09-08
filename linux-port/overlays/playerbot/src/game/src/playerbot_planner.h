@@ -156,8 +156,18 @@ namespace
 		OfferPlayerBotGoal(candidates, rank, count,
 				state.bAmbition == BOT_AMBITION_SKILLS && canReadBook,
 				BOT_GOAL_MASTER_SKILL, PLAYERBOT_WEIGHT_SKILL);
+		// The medal dropper does not wait for the horse ambition to come round.
+		//
+		// Farming medals is the whole of what that personality is for, and the
+		// ambition rotates: seventy-three bots of eight hundred and thirty-eight
+		// hold it at any moment, so thirteen droppers were idle nine times out of
+		// ten and all three Monkey Dungeons stood nearly empty - seven bots
+		// between them, none at all in the easy one. Everyone else still needs
+		// the ambition, so this does not turn the dungeon into a conveyor belt.
 		OfferPlayerBotGoal(candidates, rank, count,
-				state.bAmbition == BOT_AMBITION_HORSE && canAdvanceHorse,
+				canAdvanceHorse && (state.bAmbition == BOT_AMBITION_HORSE ||
+					GetPlayerBotPersonalityByPID(ch->GetPlayerID()) ==
+						BOT_PERSONALITY_MEDAL_DROPPER),
 				BOT_GOAL_HORSE, PLAYERBOT_WEIGHT_HORSE);
 		OfferPlayerBotGoal(candidates, rank, count,
 				state.bAmbition == BOT_AMBITION_BIOLOGIST && hasBiologistMission,

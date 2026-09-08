@@ -12,19 +12,24 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     client=panel.app.test_client()
     form={'submit_action':'apply','exp':'150','drop':'170','yang':'190','map_21':'1','map_stone_21':'350','map_1':''}
     assert client.post('/manage/restart-config',data=form).status_code==302
-    request=Path(tmp)/'server-settings.request'; original=request.read_text()
-    assert 'map_stone_21=350' in original and 'map_21=1' in original and 'map_1=reset' in original
-    assert not (Path(tmp)/'request').exists() and not (Path(tmp)/'map-regens.request').exists()
+    # The game container watches `request' and nothing else; the old
+    # server-settings.request was read by nobody and deleted by nobody.
+    request=Path(tmp)/'request'; original=request.read_text()
+    assert 'exp=150' in original and 'drop=170' in original and 'yang=190' in original
+    assert not (Path(tmp)/'server-settings.request').exists()
+    # A restart already under way is refused, and the refusal expires.
     assert client.post('/manage/restart-config',data=form).status_code==302
     assert request.read_text()==original
-    request.unlink()
+    (Path(tmp)/'rates.status').write_text('state=ok\ntime=1\n')
     for key,value in [('map_stone_21','0'),('map_21','3601'),('exp','not-a-number')]:
         invalid=dict(form);invalid[key]=value
+        request.unlink(missing_ok=True)
         assert client.post('/manage/restart-config',data=invalid).status_code==302
         assert not request.exists()
-    assert client.post('/manage/restart-config',data={'submit_action':'restart','exp':'bad','map_21':'-1'}).status_code==302
-    assert 'action=restart' in request.read_text() and 'map_21=' not in request.read_text()
-    request.unlink()
+    with patch.object(panel,'read_rates',return_value={'exp':111,'drop':112,'yang':113}):
+        assert client.post('/manage/restart-config',data={'submit_action':'restart'}).status_code==302
+    assert 'exp=111' in request.read_text()
+    request.unlink(); (Path(tmp)/'rates.status').unlink()
     (Path(tmp)/'map-regens.status').write_text('state=ok\nmap_21=1\nmap_stone_21=350\n')
     status=panel.read_map_regen_status()
     assert status['values']=={21:'1'} and status['stones']=={21:'350'}
@@ -44,8 +49,8 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     assert panel.MAP_NAMES[108] == 'Loch Małp Normalny' and panel.MAP_NAMES[109] == 'Loch Małp Trudny'
     assert panel.MAP_BOUNDS[61] == (358400, 153600, 153600, 153600)
     assert 61 in panel.MAP_STONE_RESPAWN_IDS and not {25, 104, 108, 109} & panel.MAP_STONE_RESPAWN_IDS
-    assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [21, 23, 24, 25, 61, 63, 64, 104, 108, 109]
-    assert panel.changelog_entries()[0]['version'] == '1.37.1'
+    assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [21, 23, 24, 25, 61, 63, 64, 104, 108, 109, 65]
+    assert panel.changelog_entries()[0]['version'] == '1.37.2'
     with patch.object(panel, 'rows', return_value=[]) as ranking_rows:
         assert panel.bot_ranking('bosses') == []
         assert "BOSS_KILL" in ranking_rows.call_args.args[0]

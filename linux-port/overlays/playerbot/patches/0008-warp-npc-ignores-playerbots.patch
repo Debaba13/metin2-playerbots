@@ -21,3 +21,4 @@ diff --git a/game/src/char.cpp b/game/src/char.cpp
  				{
  					pkChr->Show(pkChr->GetMapIndex(), m_lTargetX, m_lTargetY);
  					pkChr->Stop();
+ 				}

@@ -18,12 +18,20 @@
 // Scope: ordinary monsters only. Keep existing Metin/PvP/safety rules.
 namespace playerbot_combat_value {
 
-enum Mode { OBJECTIVES, COMMITTED_TRAVEL, RETREAT };
+// SERVICE_ONLY appended, never inserted: the numbering is read by nothing
+// outside this header today, but the reasons are logged and compared.
+//
+// It is the residence rule the 8 September audit asked for - a map a bot has
+// outgrown is a place to buy, to pass through and to finish a named errand in,
+// and not a place to grind. COMMITTED_TRAVEL cannot express that: it refuses
+// everything but defence, including the quest the bot is actually there for.
+enum Mode { OBJECTIVES, COMMITTED_TRAVEL, RETREAT, SERVICE_ONLY };
 enum Reason {
     REJECT_BASE_RULES, REJECT_RETREAT, REJECT_COMMITTED_TRAVEL,
     REJECT_NO_EXP_EVIDENCE, REJECT_ZERO_EXP, REJECT_LOW_EXP,
     ALLOW_SELF_DEFENSE, ALLOW_PARTY_DEFENSE, ALLOW_QUEST,
-    ALLOW_MATERIAL, ALLOW_EQUIPMENT, ALLOW_EXP
+    ALLOW_MATERIAL, ALLOW_EQUIPMENT, ALLOW_EXP,
+    REJECT_RESIDENCE_POLICY
 };
 
 struct Policy {
@@ -76,6 +84,10 @@ inline Decision Evaluate(const Context& c, const Policy& p = Policy()) {
     if (c.activeQuestTarget) return Decision(true, ALLOW_QUEST);
     if (c.activeMaterialTarget) return Decision(true, ALLOW_MATERIAL);
     if (c.activeEquipmentTarget) return Decision(true, ALLOW_EQUIPMENT);
+    // Past the named objectives on purpose: a bot that has outgrown this map
+    // may still finish an errand here, but experience is not a reason to be
+    // here at all.
+    if (c.mode == SERVICE_ONLY) return Decision(false, REJECT_RESIDENCE_POLICY);
     if (!c.expEvidenceKnown || c.levelExpPercent < 0)
         return Decision(false, REJECT_NO_EXP_EVIDENCE);
     if (!c.canReceiveExp || c.levelExpPercent == 0)
@@ -99,6 +111,7 @@ inline const char* ReasonName(Reason r) {
         case ALLOW_MATERIAL: return "material";
         case ALLOW_EQUIPMENT: return "equipment";
         case ALLOW_EXP: return "exp";
+        case REJECT_RESIDENCE_POLICY: return "residence_policy";
     }
     return "unknown";
 }

@@ -79,6 +79,27 @@ namespace
 		if (PlayerBotNeedsRefineMaterial(ch, offer->GetVnum()))
 			return true;
 
+		// A skill book for a skill this bot is actually raising.
+		//
+		// There was no branch for these at all, so no bot ever bought one off a
+		// counter: books piled up on stalls, and the only way to a skill was to
+		// find the book yourself. What a bot wants is a small working stock of
+		// its own build's skills - two or three, not every book to Grand Master
+		// - and only while the skill can still be read up.
+		if (offer->GetType() == ITEM_SKILLBOOK)
+		{
+			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(offer);
+			if (skillVnum == 0 || ch->GetSkillGroup() == 0 ||
+					!IsPlayerBotOwnSkill(ch, skillVnum))
+				return false;
+			// Already at the grade a book stops helping, or already holding the
+			// working stock: somebody else needs it more.
+			if (ch->GetSkillMasterType(skillVnum) >= SKILL_GRAND_MASTER)
+				return false;
+			return CountPlayerBotSkillBooksAhead(ch, offer, skillVnum) <
+					PLAYERBOT_BOOK_KEEP_PER_SKILL;
+		}
+
 		// A horse medal, if this bot still has a horse to raise. Buying one is
 		// hours of the Monkey Dungeon it does not have to run.
 		if (offer->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
@@ -169,12 +190,16 @@ namespace
 		LPCHARACTER keeper;
 		DWORD dwVnum;
 		DWORD dwPrice;
+		// Which skill, for a skill book. The purchase is recorded against the
+		// book's own market, not against every book that shares vnum 50300.
+		DWORD dwSkillVnum;
 		BYTE bSlot;
 		BYTE bRefine;
 		WORD wCount;
 
 		TPlayerBotStallPick()
-			: keeper(NULL), dwVnum(0), dwPrice(0), bSlot(0), bRefine(0), wCount(0)
+			: keeper(NULL), dwVnum(0), dwPrice(0), dwSkillVnum(0), bSlot(0),
+			  bRefine(0), wCount(0)
 		{
 		}
 	};
@@ -266,6 +291,8 @@ namespace
 				outPick.bSlot = candidate.bSlot;
 				outPick.bRefine = candidate.bRefine;
 				outPick.wCount = candidate.wCount;
+				outPick.dwSkillVnum = candidateItem->GetType() == ITEM_SKILLBOOK
+						? GetPlayerBotSkillBookSkillVnum(candidateItem) : 0;
 				bestDistance = distance;
 				break;
 			}
@@ -302,8 +329,10 @@ namespace
 		const int paid = goldBefore - ch->GetGold();
 		// A sale is the one measurement of demand there is. The asking price on
 		// a counter is what a seller hoped for; this is what a buyer did.
+		// With the skill, so a book sale lands on its own market.
 		RememberPlayerBotSale(pick.dwVnum, pick.bRefine,
-				(DWORD)paid / std::max<DWORD>(1, pick.wCount), get_dword_time());
+				(DWORD)paid / std::max<DWORD>(1, pick.wCount), get_dword_time(),
+				pick.dwSkillVnum);
 		sys_log(0, "PLAYERBOT_MARKET: bought pid=%u name=%s from=%s slot=%u vnum=%u refine=%u count=%u asked=%u paid=%d gold=%d",
 				ch->GetPlayerID(), ch->GetName(), pick.keeper->GetName(),
 				(unsigned int)pick.bSlot, pick.dwVnum, (unsigned int)pick.bRefine,
@@ -321,6 +350,12 @@ namespace
 		if (ch && state.bMarketTrip)
 			sys_log(0, "PLAYERBOT_MARKET: trip over pid=%u name=%s reason=%s pos=(%ld,%ld)",
 					ch->GetPlayerID(), ch->GetName(), reason, ch->GetX(), ch->GetY());
+		// Joan was looked at and had nothing this bot wanted, so Bokjung is
+		// worth a walk for a while. Without this a shopper would cross to the
+		// quiet market for ever and never see the busy one.
+		if (ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 && state.bMarketTrip)
+			state.dwMarketM2AllowedUntil = get_dword_time() +
+					PLAYERBOT_MARKET_M2_FALLBACK;
 		state.bMarketTrip = false;
 		state.dwMarketTripUntil = 0;
 		state.dwMarketBrowseTime = 0;
@@ -475,6 +510,22 @@ namespace
 		// off. That is the difference between a market and a vending machine.
 		if (!haveStallInReach && !PlayerBotWantsAnythingFromMarket(ch))
 			return false;
+		// Joan first. A shopper standing in Bokjung crosses to the quieter market
+		// before browsing the one under its nose: that is what gives the Joan
+		// counters customers, and it is also what stops five hundred bots
+		// circling the same seven stalls. Bokjung opens up again for a while
+		// once Joan has been looked at and had nothing.
+		if (!haveStallInReach && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
+				dwNow >= state.dwMarketM2AllowedUntil)
+		{
+			PlayerBotLogThrottled("market_to_m1", dwNow,
+					"PLAYERBOT_MARKET: looking in Joan first pid=%u name=%s",
+					ch->GetPlayerID(), ch->GetName());
+			return MovePlayerBotToWorldPortal(ch, state,
+					PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
+					PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_GUARD_X,
+					PLAYERBOT_M1_GUARD_Y, dwNow, "market_to_m1");
+		}
 		if (!haveStallInReach &&
 				DISTANCE_APPROX(ch->GetX() - pitchX, ch->GetY() - pitchY) >
 					PLAYERBOT_MARKET_TRIP_RANGE)
@@ -512,6 +563,7 @@ namespace
 		s_mapMarketLedger.clear();
 
 		DWORD stalls = 0, lines = 0, demandBots = 0;
+		s_iPlayerBotStallsInM2 = 0;
 		std::set<DWORD> wanted;
 		std::vector<DWORD> wallets;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
@@ -524,6 +576,8 @@ namespace
 			if (ch->GetMyShop() && !state.vecShopOffers.empty())
 			{
 				++stalls;
+				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+					++s_iPlayerBotStallsInM2;
 				for (size_t k = 0; k < state.vecShopOffers.size(); ++k)
 				{
 					const TPlayerBotShopOffer& offer = state.vecShopOffers[k];

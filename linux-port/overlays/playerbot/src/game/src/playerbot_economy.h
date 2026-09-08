@@ -402,8 +402,12 @@ namespace
 			if (ch->GetSkillGroup() == 0)
 				return false;
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
+			// Somebody else's skill is not scrap. Aura Miecza found by a ninja
+			// was going to the merchant for a fraction of what the warrior three
+			// stalls away would pay for it - the stall pass takes these, and
+			// only a book nobody in the world could want is loot.
 			if (!IsPlayerBotOwnSkill(ch, skillVnum))
-				return true;
+				return skillVnum == 0;
 			// Its own, and only so many of them - see PLAYERBOT_BOOK_KEEP_PER_SKILL.
 			return CountPlayerBotSkillBooksAhead(ch, item, skillVnum) >= PLAYERBOT_BOOK_KEEP_PER_SKILL;
 		}

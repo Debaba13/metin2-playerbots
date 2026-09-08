@@ -32,6 +32,10 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		typedef std::set<DWORD> TRegisteredPlayerBotSet;
 
 		bool	LoadRegisteredBots();
+		// Says in one line why the cohort is smaller than the seed.
+		void	ReportPlayerBotRegistryShortfall(unsigned int usable);
+		// Re-queues registered identities that are not in the world.
+		void	TopUpMissingBots(DWORD dwNow);
 
 		TPlayerBotMap		m_mapBots;
 		THandleToPlayerMap	m_mapHandles;
@@ -44,6 +48,8 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		BYTE			m_bPendingSpawnEmpire;
 		DWORD			m_dwSpawnWindowStarted;
 		size_t			m_uSpawnWindowTotal;
+		// When to count the world again and re-queue whoever is missing.
+		DWORD			m_dwNextTopUpTime;
 		bool			m_bRegistryLoaded;
 		bool			m_bRegistryAvailable;
 };

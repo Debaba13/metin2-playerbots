@@ -134,7 +134,10 @@ namespace
 		const int accepted = IsPlayerBotBiologistKeyPhase(ch, missionIndex) ? 0 : std::max(0, ch->GetQuestFlag(
 				GetPlayerBotBiologistFlag(*mission, "collect_count")));
 		const int remaining = std::max(0, required - accepted);
-		return remaining > 0 && ch->CountSpecifyItem(wantedVnum) >= remaining;
+		// Same threshold as the hand-in itself, or the trip would never start
+		// for a bot the Biologist would happily serve.
+		return remaining > 0 && ch->CountSpecifyItem(wantedVnum) >=
+				std::min(remaining, PLAYERBOT_BIOLOGIST_MIN_HANDIN);
 	}
 
 	// Above this level Bokjung has nothing left to offer, so nothing there is
@@ -144,6 +147,23 @@ namespace
 	bool IsPlayerBotPastM2Ceiling(LPCHARACTER ch)
 	{
 		return ch && ch->GetLevel() > PLAYERBOT_M2_COHORT_MAX_LEVEL;
+	}
+
+	// May this bot start an ordinary fight where it is standing?
+	//
+	// Bokjung above the cohort ceiling is the one place where the answer is no.
+	// A bot that has outgrown it may still be there as a customer, a traveller,
+	// a trader or to finish a named errand - the combat policy keeps allowing a
+	// quest target, a material it is genuinely short of and self-defence - but
+	// experience is not a reason to be there, and "my ambition is Metins" is
+	// not consent. Everywhere else this is true and nothing changes.
+	bool IsPlayerBotGrindAllowedHere(LPCHARACTER ch)
+	{
+		if (!ch)
+			return false;
+		if (ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M2)
+			return true;
+		return !IsPlayerBotPastM2Ceiling(ch);
 	}
 
 	bool IsPlayerBotM2LevelingCohort(LPCHARACTER ch)
@@ -203,8 +223,28 @@ namespace
 		// Forty-eight and up: the Spider Dungeon for half, Mount Sohan for the
 		// other half, decided once per character so the answer does not change
 		// under a bot halfway there. The valley is for those still short of it.
+		// Fifty-two and up has a third frontier: the Hwang Temple, whose Elite
+		// Esoterics start exactly there and whose turtles and bogeys run to
+		// fifty-eight. It is not more experience than Sohan or the Spider
+		// Dungeon - it is the only hosted map that drops the Frog Tongue, the
+		// Leaf, the Unknown Talisman+ and the Curse Book+, which eighteen refine
+		// recipes want and no counter in this world has ever carried.
+		if (level >= PLAYERBOT_HWANG_MIN_LEVEL)
+		{
+			switch (draw % 3U)
+			{
+				case 0: return PLAYERBOT_MAP_SPIDER_V1;
+				case 1: return PLAYERBOT_MAP_SOHAN;
+				default: return PLAYERBOT_MAP_HWANG;
+			}
+		}
 		if (level >= PLAYERBOT_SPIDER_MIN_LEVEL && level >= PLAYERBOT_SOHAN_MIN_LEVEL)
 			return (draw & 1U) != 0 ? PLAYERBOT_MAP_SPIDER_V1 : PLAYERBOT_MAP_SOHAN;
+		// Thirty-six to forty-seven: the valley and the desert share them, the
+		// same way thirty to thirty-five already do. See
+		// PLAYERBOT_DESERT_MAX_LEVEL for what was sitting unused.
+		if (level >= PLAYERBOT_ORC_VALLEY_MIN_LEVEL && level <= PLAYERBOT_DESERT_MAX_LEVEL)
+			return (draw & 1U) != 0 ? PLAYERBOT_MAP_ORC_VALLEY : PLAYERBOT_MAP_DESERT;
 		if (level >= PLAYERBOT_ORC_VALLEY_MIN_LEVEL && level <= PLAYERBOT_ORC_VALLEY_MAX_LEVEL)
 			return PLAYERBOT_MAP_ORC_VALLEY;
 		// Thirty to thirty-five: the Fanatic islands and the desert share the
@@ -585,6 +625,16 @@ namespace
 		{
 			state.dwPortalWalkSince = 0;
 			state.iPortalWalkBest = 0;
+			// And get off the horse on the way out. The tick handed back here is
+			// the bot's whole escape - it is meant to fall through to hunting and
+			// wandering, end up somewhere else and plan from there - and the
+			// manager's "a transport horse must not fight" pass was taking it:
+			// that pass dismounts a rider and claims the tick, so the bot spent
+			// the escape tick getting off the horse, mounted again on the next
+			// travel pass, and stalled for another twenty seconds. Forty-six bots
+			// were found doing exactly that at the Sohan exit, mounting and
+			// dismounting every twenty seconds without moving a step.
+			SetPlayerBotRidingForTravel(ch, state, false, dwNow, "portal_walk_stalled");
 			PlayerBotLogThrottled("portal_stuck", dwNow,
 					"PLAYERBOT_WORLD: portal walk stalled pid=%u name=%s map=%ld pos=(%ld,%ld) portal=(%ld,%ld) distance=%d reason=%s",
 					ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(),
@@ -598,7 +648,8 @@ namespace
 		// MovePlayerBot performs on arrival at an ordinary destination buys nothing
 		// here. It was 1362 of one evening's dismounts, each followed by a remount
 		// on the far side three seconds later.
-		MovePlayerBot(ch, portalX, portalY, dwNow, 24, true, true, false, true);
+		MovePlayerBot(ch, portalX, portalY, dwNow, PLAYERBOT_PORTAL_SNAP_CELLS,
+				true, true, false, true);
 		return true;
 	}
 
@@ -912,11 +963,25 @@ namespace
 			// Same rule in Bokjung: its own shops own this need, but only until a
 			// visit has actually happened. Otherwise a bot the town cannot equip
 			// would never reach the frontier maps either.
-			if (BlocksPlayerBotTravel(ch))
+			// The intent to leave outlives the errand that holds it up. The
+			// audit's point: a higher-priority purchase defers the departure,
+			// it does not cancel it, and after the visit the traveller comes
+			// straight back rather than waiting for another roll of ambition.
+			if (BlocksPlayerBotTravel(ch) ||
+					(needsCriticalTownServices && (state.dwNextShopCheckTime == 0 ||
+						dwNow < state.dwNextShopCheckTime)))
+			{
+				const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
+				if (wantMap != 0 && state.lDepartureMap != wantMap)
+				{
+					state.lDepartureMap = wantMap;
+					state.dwDepartureSince = dwNow;
+					sys_log(0, "PLAYERBOT_DEPARTURE: held pid=%u name=%s level=%u to=%ld reason=%s",
+							ch->GetPlayerID(), ch->GetName(), ch->GetLevel(), wantMap,
+							BlocksPlayerBotTravel(ch) ? "gear_or_potions" : "town_visit");
+				}
 				return false;
-			if (needsCriticalTownServices && (state.dwNextShopCheckTime == 0 ||
-					dwNow < state.dwNextShopCheckTime))
-				return false; // local M2 town visit owns this need
+			}
 
 			if (needsHorseExpedition)
 			{

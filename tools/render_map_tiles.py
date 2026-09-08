@@ -44,6 +44,7 @@ MAPS = [
     (64, "map_n_threeway", 256000, 665600, 153600, 153600),
     (61, "map_n_snowm_01", 358400, 153600, 153600, 153600),
     (104, "metin2_map_spiderdungeon", 51200, 486400, 76800, 76800),
+    (65, "metin2_map_milgyo", 537600, 51200, 102400, 102400),
 ]
 
 # Sand and dark earth rather than the old dark green. Two reasons, both about

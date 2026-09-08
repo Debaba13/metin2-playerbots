@@ -68,8 +68,30 @@ linux-port/docker/game/src/server/game/src/shop.h
 linux-port/overlays/playerbot/patches/*.patch
 # Assigns maps to game cores. The bots' route now includes Orc Valley, and
 # a server-side bot cannot cross between cores, so this must ship with it.
-linux-port/docker/game/bin/m2-render-config
+# Every container-side script, not just the one that assigns maps.
+# Reported from the Discord: an install with no panel/bin/apply_rates.sh had
+# no way to get one, because updates carried entrypoint.sh and nothing else
+# beside it - and the same held for m2-rates, m2-supervise, m2-gm and m2-lang,
+# which are the whole of how the game container is driven. A script that ships
+# only in the installer is a script no update can ever repair.
+linux-port/docker/game/bin/*
+linux-port/docker/panel/bin/*
 linux-port/docker/game/Dockerfile
+# Every other build context that "docker compose up" builds on the player's
+# machine. Only the game's Dockerfile used to ship, and an update therefore
+# could not repair one of the others: a two-byte panel/Dockerfile - reported
+# from the Discord - failed the bake before it started, so game and seban-panel
+# were CANCELED with it and nothing came up at all. Clicking PLAY again cannot
+# help, because nothing in the update replaces the broken file.
+linux-port/docker/panel/Dockerfile
+linux-port/docker/panel/.dockerignore
+linux-port/docker/game/.dockerignore
+linux-port/docker/client-builder/Dockerfile
+linux-port/docker/client-builder/.dockerignore
+linux-port/docker/webclient-fetcher/Dockerfile
+linux-port/docker/wsbridge/Dockerfile
+linux-port/docker/wsbridge/.dockerignore
+linux-port/docker/updater/Dockerfile
 # The chest table the Dockerfile COPYs, at the path the COPY reads it from.
 # The update builds the image the moment the files land, before start-server
 # gets to stage it, so the package puts it there itself.

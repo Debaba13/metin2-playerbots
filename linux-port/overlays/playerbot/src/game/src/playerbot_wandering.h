@@ -659,6 +659,32 @@ namespace
 				// level sixty.
 				{ 89700, 525100, PLAYERBOT_SPIDER_MIN_LEVEL, 255, true, 2091 }
 			};
+			// The Hwang Temple, from the density of its own regen.txt rather than
+			// from the map: every spawn point binned into 6400-unit cells and the
+			// richest taken, which is the same unit the population's own memory
+			// scores a place by. It falls into two bands, which is how the map is
+			// built - the Elite Esoterics of 52-55 in the west where the temple
+			// is entered, the Tree Turtle Soldier and the Bogey of 55-58 in the
+			// east. Every one of these was then checked against milgyo's
+			// server_attr for standing room; two of the density centres came out
+			// inside a wall and a river and were moved to the nearest free cell,
+			// which is what the odd numbers are.
+			//
+			// No boss hub. Its two boss points roll among three races - the
+			// Esoteric Summoner at 54, the Frog General at 61 and the Yellow
+			// Tiger Spectre at 75 - and a boss hub names one race and asks the
+			// sector whether that one is standing.
+			const TPlayerBotHuntingHub hwangHubs[] = {
+				{ 553600, 118400, PLAYERBOT_HWANG_MIN_LEVEL, 255, false, 0 },
+				{ 553600,  92800, PLAYERBOT_HWANG_MIN_LEVEL, 255, false, 0 },
+				{ 553600,  67200, PLAYERBOT_HWANG_MIN_LEVEL, 255, false, 0 },
+				{ 585600,  66950, PLAYERBOT_HWANG_MIN_LEVEL, 255, false, 0 },
+				{ 630500, 137600, PLAYERBOT_HWANG_EAST_MIN_LEVEL, 255, false, 0 },
+				{ 630400, 118400, PLAYERBOT_HWANG_EAST_MIN_LEVEL, 255, false, 0 },
+				{ 624000, 112000, PLAYERBOT_HWANG_EAST_MIN_LEVEL, 255, false, 0 },
+				{ 630400,  86400, PLAYERBOT_HWANG_EAST_MIN_LEVEL, 255, false, 0 },
+				{ 604800,  67200, PLAYERBOT_HWANG_EAST_MIN_LEVEL, 255, false, 0 }
+			};
 			const bool inDesert = ch->GetMapIndex() == PLAYERBOT_MAP_DESERT;
 			const TPlayerBotHuntingHub* hubs = orcValleyHubs;
 			size_t hubCount = sizeof(orcValleyHubs) / sizeof(orcValleyHubs[0]);
@@ -676,6 +702,11 @@ namespace
 			{
 				hubs = spiderHubs;
 				hubCount = sizeof(spiderHubs) / sizeof(spiderHubs[0]);
+			}
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_HWANG)
+			{
+				hubs = hwangHubs;
+				hubCount = sizeof(hwangHubs) / sizeof(hwangHubs[0]);
 			}
 			const DWORD pid = ch->GetPlayerID();
 			// A stone anybody has seen on this map comes before any hub while the

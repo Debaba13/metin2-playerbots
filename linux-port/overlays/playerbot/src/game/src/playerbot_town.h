@@ -221,7 +221,10 @@ namespace
 				GetPlayerBotBiologistFlag(*mission, "collect_count")));
 		const int remaining = std::max(0, required - accepted);
 		const int carried = ch->CountSpecifyItem(wantedVnum);
-		if (!state.bVisitingBiologist && carried < remaining)
+		// A handful is worth the walk. See PLAYERBOT_BIOLOGIST_MIN_HANDIN: the
+		// quest takes them one at a time, so there is nothing to wait for.
+		const int worthTheWalk = std::min(remaining, PLAYERBOT_BIOLOGIST_MIN_HANDIN);
+		if (!state.bVisitingBiologist && carried < worthTheWalk)
 			return false;
 
 		if (!state.bVisitingBiologist)
@@ -356,6 +359,29 @@ namespace
 		state.dwTownWaitUntil = 0;
 		state.dwNextShopCheckTime = dwNow +
 			(completed ? number(300000, 600000) : number(60000, 120000));
+		if (completed)
+		{
+			state.dwErrandDoneTime = dwNow;
+			// The errand is done, so the recovery that was carrying it is over
+			// and the departure the audit asked to keep alive can go ahead.
+			if (state.bServicePending)
+				sys_log(0, "PLAYERBOT_SERVICE: settled pid=%u name=%s map=%ld age_ms=%u",
+						ch ? ch->GetPlayerID() : 0, ch ? ch->GetName() : "?",
+						ch ? ch->GetMapIndex() : 0,
+						state.dwServiceSince != 0 ? dwNow - state.dwServiceSince : 0);
+			state.bServicePending = false;
+			state.dwServiceRetryAt = 0;
+			state.dwServiceSince = 0;
+		}
+		// Half the bots that finish an errand in Joan stay a while instead of
+		// walking straight back out. See PLAYERBOT_TOWN_LINGER_PERCENT: a town
+		// with four hundred bots on its map and two dozen in its square does not
+		// look like a town, and the stalls that now open there have nobody to
+		// stand among. Bokjung is left out on purpose - it is crowded already.
+		if (completed && ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
+				number(1, 100) <= PLAYERBOT_TOWN_LINGER_PERCENT)
+			state.dwTownLingerUntil = dwNow + number(
+					(int)PLAYERBOT_TOWN_LINGER_MIN, (int)PLAYERBOT_TOWN_LINGER_MAX);
 		// Free, standing in town, errands done: the one moment this bot is the
 		// customer the market needs. The shopping timer is cleared rather than
 		// left where the visit pushed it - every check that ran during the visit
@@ -469,6 +495,13 @@ namespace
 			return ApplyPlayerBotBonusPremium(PLAYERBOT_SHOP_PRICE_PLUS8, bonusPercent);
 		if (refine == 7)
 			return ApplyPlayerBotBonusPremium(PLAYERBOT_SHOP_PRICE_PLUS7, bonusPercent);
+		// A skill book's own market, and the goods whose merchant price says
+		// nothing about what they are worth here. Both come from the audit of
+		// 8 September: the merchant charges a thousand yang for every book
+		// whatever skill is in its socket, and the pearls' proto prices were set
+		// for wallets a hundred times smaller than these.
+		const DWORD bookSkill = item->GetType() == ITEM_SKILLBOOK
+				? GetPlayerBotSkillBookSkillVnum(item) : 0;
 		const DWORD npcUnit = GetPlayerBotNpcSellUnitPrice(item);
 		// Scrap gear is priced as scrap: twice what the merchant pays, so the
 		// player burning it at the blacksmith is not paying market money for it.
@@ -477,9 +510,38 @@ namespace
 			return ApplyPlayerBotBonusPremium(
 					std::max<DWORD>(1, npcUnit * PLAYERBOT_SCRAP_PRICE_MULT), bonusPercent);
 		DWORD unit = npcUnit * PLAYERBOT_SHOP_MATERIAL_MARKUP;
+		// The opening prices. Blended away by the sale memory below as real
+		// transactions accumulate - a prior is where a price starts, not where
+		// it stays.
+		if (bookSkill != 0)
+		{
+			if (bookSkill == 4)
+				unit = PLAYERBOT_PRIOR_BOOK_AURA;
+			else if (bookSkill == 63)
+				unit = PLAYERBOT_PRIOR_BOOK_ENCHANTED_BLADE;
+			else if (bookSkill == 19)
+				unit = PLAYERBOT_PRIOR_BOOK_STRONG_BODY;
+			else
+				unit = std::max(unit, PLAYERBOT_PRIOR_BOOK_ORDINARY);
+		}
+		else if (item->GetVnum() == PLAYERBOT_PEARL_FIRST_VNUM)
+			unit = PLAYERBOT_PRIOR_PEARL_WHITE;
+		else if (item->GetVnum() == PLAYERBOT_PEARL_FIRST_VNUM + 1)
+			unit = PLAYERBOT_PRIOR_PEARL_BLUE;
+		else if (item->GetVnum() == PLAYERBOT_PEARL_LAST_VNUM)
+			unit = PLAYERBOT_PRIOR_PEARL_RED;
+		else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
+			unit = PLAYERBOT_PRIOR_HORSE_MEDAL;
 		// A soul stone has no merchant price: the counter asks by grade.
 		if (item->GetType() == ITEM_METIN)
 			unit = PLAYERBOT_SHOP_PRICE_SOUL_STONE[std::min(4, GetPlayerBotSoulStoneGrade(item->GetVnum()))];
+
+		// Anything the merchant refuses to buy has no prior at all, and the
+		// wallet block below is skipped whole while the ledger has not run yet -
+		// the first minute after every start. That pair is what put horse medals
+		// and unopened chests on the counters at one yang each.
+		if (unit == 0)
+			unit = PLAYERBOT_PRIOR_NO_MERCHANT_PRICE;
 
 		// And scaled to the buyers' wallets, where that is more - see the
 		// PLAYERBOT_MARKET_*_WALLET_* constants for why the merchant's markup
@@ -493,7 +555,25 @@ namespace
 			else if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) && refine > 2)
 				permille = PLAYERBOT_MARKET_GEAR_WALLET_PERMILLE_PER_REFINE * (refine - 2);
 			const unsigned long long count = std::max<DWORD>(1, item->GetCount());
-			const DWORD walletUnit = (DWORD)((unsigned long long)wallet * permille / 1000);
+			// The wallet says what the market can afford, the merchant's own
+			// price says how two materials rank against each other, and taking
+			// the wallet number flat threw the ranking away - see
+			// PLAYERBOT_MARKET_WALLET_REFERENCE_PRICE.
+			//
+			// Materials only. Gear already has its own scale in this block - a
+			// permille per refine level - and a piece of level-50 armour the
+			// merchant values at twenty thousand would come out eight times
+			// dearer for no reason anybody asked for.
+			DWORD worthPercent = PLAYERBOT_MARKET_WALLET_WORTH_MIN_PERCENT;
+			if (IsPlayerBotTradeableMaterial(item))
+			{
+				worthPercent = (DWORD)((unsigned long long)npcUnit * 100 /
+						PLAYERBOT_MARKET_WALLET_REFERENCE_PRICE);
+				worthPercent = std::max(PLAYERBOT_MARKET_WALLET_WORTH_MIN_PERCENT,
+						std::min(PLAYERBOT_MARKET_WALLET_WORTH_MAX_PERCENT, worthPercent));
+			}
+			const DWORD walletUnit = (DWORD)((unsigned long long)wallet * permille /
+					1000 * worthPercent / 100);
 			const DWORD stackCap = (DWORD)((unsigned long long)wallet *
 					PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100 / count);
 			unit = std::max(unit, std::max<DWORD>(1, std::min(walletUnit, stackCap)));
@@ -515,7 +595,8 @@ namespace
 		// of every other bot's reach, and one giveaway cannot drag it back to
 		// the merchant's pennies.
 		size_t samples = 0;
-		const DWORD paid = GetPlayerBotSaleUnitPrice(item->GetVnum(), refine, dwNow, &samples);
+		const DWORD paid = GetPlayerBotSaleUnitPrice(item->GetVnum(), refine, dwNow,
+				&samples, bookSkill);
 		if (paid != 0)
 		{
 			const DWORD floor = std::max<DWORD>(std::max<DWORD>(1, npcUnit),
@@ -556,7 +637,8 @@ namespace
 
 		// And a bounded step from wherever the last counter had it, so the
 		// market's price of a thing drifts rather than jumps.
-		unit = LimitPlayerBotAskStep(item->GetVnum(), refine, std::max<DWORD>(1, unit), dwNow);
+		unit = LimitPlayerBotAskStep(item->GetVnum(), refine, std::max<DWORD>(1, unit),
+				dwNow, bookSkill);
 		// And last, the lines rolled on it - on top of the step limiter rather
 		// than under it, because the limiter and the sale memory are both keyed
 		// by vnum and refine, the one pair that cannot tell two otherwise
@@ -696,6 +778,11 @@ namespace
 				return 450;
 			return -1;
 		}
+		// Hair dye: the one the bot is wearing is spent, the rest are stock.
+		// Ranked above ordinary spare gear because there is nowhere else in this
+		// world to buy one.
+		if (IsPlayerBotHairDye(item->GetVnum()))
+			return 900;
 		// A Forgetting Scroll sells well; the keeper keeps it only while one of
 		// its own skills is waiting for it.
 		if (item->GetVnum() == PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
@@ -750,9 +837,90 @@ namespace
 			return 100;
 		}
 
+		// An unopened box. Ranked between the materials and the spare gear: it
+		// is a gamble somebody might want, not a thing anybody came for.
+		if (IsPlayerBotSurplusChest(item))
+			return 350;
+
 		// Whatever is left is the bot's own business, not goods. A stall with two
 		// things worth buying beats one padded out to eight.
 		return -1;
+	}
+
+	// Standing about in town, because that is what a town is for.
+	//
+	// Claims the tick while it runs, so the wandering does not walk the bot back
+	// out to the fields - and the inactivity watchdog is told about it in the
+	// manager, since a bot resting on purpose is still and that is the point.
+	// Anything with a claim on the bot ends it: an errand, a stall of its own, a
+	// shopping trip, a retreat, or simply leaving the map.
+	bool ManagePlayerBotTownLinger(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch || state.dwTownLingerUntil == 0)
+			return false;
+		// Over for good: the clock ran out, the bot left Joan, it opened a stall
+		// of its own, or it is busy staying alive.
+		if (dwNow >= state.dwTownLingerUntil ||
+				ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1 ||
+				ch->GetMyShop() || state.bTacticalRetreat || state.bRecoveringAfterDeath)
+		{
+			state.dwTownLingerUntil = 0;
+			state.dwTownBrowseUntil = 0;
+			return false;
+		}
+		// Merely interrupted: an errand, a shopping trip, a cast or a fight has
+		// the tick for now and the rest resumes when it is done. Clearing the
+		// clock here instead is what made this never happen at all - an angler
+		// that finishes a session is usually out of bait, so a town visit starts
+		// on the very next tick and cancelled the rest before it began.
+		if (state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
+				state.bMarketTrip || state.bFishingSession || ch->GetVictim() != NULL)
+			return false;
+
+		long pitchX = 0, pitchY = 0;
+		if (!GetPlayerBotShopCentre(ch->GetMapIndex(), pitchX, pitchY))
+		{
+			state.dwTownLingerUntil = 0;
+			return false;
+		}
+		// A new place on the market ring every few seconds, rather than one spot
+		// held for the whole visit. The salt is the clock, so each stop is
+		// somewhere else and the square keeps moving; what a passer-by sees is
+		// people walking between the counters, which is what a market looks
+		// like. This is the whole of the change asked for on the Discord: bots
+		// were standing still in town for up to ten minutes at a time.
+		SetPlayerBotAction(state, BOT_ACTION_TOWN_REST, dwNow);
+		const bool arrived = state.dwTownBrowseUntil != 0 &&
+				DISTANCE_APPROX(ch->GetX() - state.lTownBrowseX,
+						ch->GetY() - state.lTownBrowseY) <= PLAYERBOT_MARKET_ARRIVE;
+		// A counter it cannot reach is abandoned rather than walked at for ever:
+		// without the second clause a bot whose route keeps failing would stand
+		// facing an unreachable point for the whole visit, which is exactly the
+		// standing still this replaced.
+		if (state.dwTownBrowseUntil == 0 || (arrived && dwNow >= state.dwTownBrowseUntil) ||
+				dwNow >= state.dwTownBrowseUntil + PLAYERBOT_TOWN_BROWSE_GIVE_UP)
+		{
+			long offsetX = 0, offsetY = 0;
+			GetPlayerBotStableOffset(ch->GetPlayerID() ^ (dwNow >> 13), 0x52455354U,
+					PLAYERBOT_SHOP_RING_MIN, PLAYERBOT_SHOP_RING_RADIUS + 900,
+					offsetX, offsetY);
+			state.lTownBrowseX = pitchX + offsetX;
+			state.lTownBrowseY = pitchY + offsetY;
+			state.dwTownBrowseUntil = dwNow + number(
+					(int)PLAYERBOT_TOWN_BROWSE_MIN, (int)PLAYERBOT_TOWN_BROWSE_MAX);
+		}
+		if (DISTANCE_APPROX(ch->GetX() - state.lTownBrowseX,
+				ch->GetY() - state.lTownBrowseY) > PLAYERBOT_MARKET_ARRIVE)
+		{
+			MovePlayerBot(ch, state.lTownBrowseX, state.lTownBrowseY, dwNow, 6, true);
+			return true;
+		}
+		// Standing at a counter for a moment is the looking; the clock above
+		// sends it to the next one.
+		if (ch->IsStateMove())
+			ch->Stop();
+		ch->SetPosition(POS_STANDING);
+		return true;
 	}
 
 	// Is this worth putting a sign up for? Three lines make a stall; fewer than
@@ -812,6 +980,12 @@ namespace
 			const BYTE type = item->GetType();
 			if (type == ITEM_WEAPON || type == ITEM_ARMOR)
 			{
+				// Something the bot ought to be wearing is not a spare, whatever
+				// the slot says. This pass runs near the top of the tick and the
+				// equipment pass near the bottom, so without this line the
+				// counter always won the race for a gift.
+				if (IsPlayerBotWearableUpgrade(ch, item, cell))
+					continue;
 				const int wearCell = item->FindEquipCell(ch);
 				if (wearCell < 0 || ch->GetWear((BYTE)wearCell) == NULL)
 					continue;
@@ -1173,17 +1347,39 @@ namespace
 		// for an idle moment that never arrives.
 		const bool justFinishedInTown = state.dwNextShopCheckTime != 0 &&
 				dwNow < state.dwNextShopCheckTime;
-		// Where to trade is rolled afresh for every stall, not fixed per bot: nine
-		// openings in ten choose Joan. Nothing is remembered - a bot that rolls the
-		// town it is not standing in simply does not open this time and rolls again
-		// on its next attempt, so the choice can never strand a keeper waiting for
-		// a town it rarely visits.
+		// A keeper trades in the town it is standing in.
+		//
+		// This used to roll a town - nine openings in ten choosing Joan - and
+		// then refuse to open unless the bot already happened to be there. The
+		// bots with anything to sell are in Bokjung, so nine rolls in ten were
+		// thrown away and Joan got no stalls at all, which is the opposite of
+		// what the roll was for. The market browse already reads the ring of
+		// whatever map its own bot is on, so a stall in Joan has the four
+		// hundred bots of map 21 for customers.
 		long pitchX = 0, pitchY = 0;
-		const long wantedMap = (number(1, 100) <= (int)PLAYERBOT_SHOP_M1_SHARE)
-				? PLAYERBOT_MAP_CHUNJO_M1 : PLAYERBOT_MAP_CHUNJO_M2;
-		if (ch->GetMapIndex() != wantedMap ||
-				!GetPlayerBotShopCentre(ch->GetMapIndex(), pitchX, pitchY))
+		if (!GetPlayerBotShopCentre(ch->GetMapIndex(), pitchX, pitchY))
 			return false;
+		// Bokjung's ring is capped. A keeper that finds it full takes its goods
+		// to Joan rather than adding an eighth counter nobody can see past -
+		// which is the only way the second market ever gets stock, since this is
+		// where the bots with something to sell happen to be standing.
+		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
+				s_iPlayerBotStallsInM2 >= PLAYERBOT_SHOP_M2_MAX_STALLS)
+		{
+			std::vector<std::pair<int, WORD> > worthTaking;
+			CollectPlayerBotShopItems(ch, worthTaking, IsPlayerBotStallKeeper(state));
+			if (!IsPlayerBotStallWorthOpening(worthTaking.size(),
+					worthTaking.empty() ? 0 : worthTaking[0].first))
+				return false;
+			PlayerBotLogThrottled("stall_overflow", dwNow,
+					"PLAYERBOT_SHOP: Bokjung full, taking the stall to Joan pid=%u name=%s stalls=%d lines=%u",
+					ch->GetPlayerID(), ch->GetName(), s_iPlayerBotStallsInM2,
+					(unsigned int)worthTaking.size());
+			return MovePlayerBotToWorldPortal(ch, state,
+					PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
+					PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_GUARD_X,
+					PLAYERBOT_M1_GUARD_Y, dwNow, "stall_overflow_to_m1");
+		}
 		// A keeper already standing on the ring counts as in town too. A server
 		// restart drops every shop - they live only in memory - and leaves its
 		// keeper parked exactly where the stall was, with no errand to bring it
@@ -1225,6 +1421,10 @@ namespace
 		if (!MovePlayerBotTownLeg(ch, state, dwNow, stallX, stallY,
 				PLAYERBOT_MARKET_ARRIVE))
 			return true; // still walking to the pitch
+		// Counted the moment it opens rather than at the next ledger sweep, or
+		// eight keepers arriving in the same minute would all read six.
+		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+			++s_iPlayerBotStallsInM2;
 
 		// OpenMyShop refuses a character whose main part is not its own body, so
 		// the horse has to go before the stall can be set up.
@@ -1340,25 +1540,25 @@ namespace
 		// is; a short prefix by pid keeps neighbours from matching word for word.
 		char sign[SHOP_SIGN_MAX_LEN + 1];
 		{
-						static const char* const s_apszPrefixes[] = {
-							"", PlayerBotText("Tanio: "), PlayerBotText("Okazja: "),
-							PlayerBotText("Sprzedam ") };
+			static const char* const s_apszPrefixes[] = {
+					"", PlayerBotText("Tanio: "), PlayerBotText("Okazja: "),
+					PlayerBotText("Sprzedam ") };
 			const char* pszPrefix = s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 			if (pszWeapon30)
-								snprintf(body, sizeof(body), PlayerBotText("Bron 30: %s"), pszWeapon30);
+				snprintf(body, sizeof(body), PlayerBotText("Bron 30: %s"), pszWeapon30);
 			else if (pszPrecious)
 				snprintf(body, sizeof(body), "%s", pszPrecious); // the name carries its +N
 			else if (iMaterials >= 2)
 				snprintf(body, sizeof(body), "%s, %s", apszMaterials[0], apszMaterials[1]);
 			else if (iBooks > 1 && iBooks >= tableCount / 2)
-								snprintf(body, sizeof(body), PlayerBotText("Ksiegi: %s i inne"), pszBook);
+				snprintf(body, sizeof(body), PlayerBotText("Ksiegi: %s i inne"), pszBook);
 			else if (iBooks == 1 && tableCount == 1)
-								snprintf(body, sizeof(body), PlayerBotText("Ksiega: %s"), pszBook);
+				snprintf(body, sizeof(body), PlayerBotText("Ksiega: %s"), pszBook);
 			else if (iScrap > 0 && iScrap >= tableCount / 2)
-								snprintf(body, sizeof(body), "%s", PlayerBotText("Zlom do palenia +0..+3"));
+				snprintf(body, sizeof(body), "%s", PlayerBotText("Zlom do palenia +0..+3"));
 			else if (pszBestName && tableCount > 1)
-								snprintf(body, sizeof(body), PlayerBotText("%s i inne"), pszBestName);
+				snprintf(body, sizeof(body), PlayerBotText("%s i inne"), pszBestName);
 			else
 				snprintf(body, sizeof(body), "%s", pszBestName ? pszBestName : ch->GetName());
 			// The prefix goes only where the whole line still fits: the goods are
@@ -1384,7 +1584,16 @@ namespace
 			// in the drop-protection window while the bots ran about between them.
 			if (ch->GetEmptyInventory(1) < 0)
 			{
-				sys_log(0, "PLAYERBOT_SHOP: no room for bundle pid=%u name=%s lines=%u",
+				// And back off. Returning without a clock left the keeper asking
+				// again on the very next tick: one log line a second per bot, and
+				// the bot itself pacing its pitch with a stall it could never
+				// open - reported from the Discord with eight identical lines a
+				// second for one pid. A full bag is relieved by the merchant leg
+				// of an ordinary town visit, which cannot have the tick while
+				// this pass keeps claiming it.
+				state.dwNextShopKeepTime = dwNow + number(60000, 180000);
+				PlayerBotLogThrottled("shop_no_bundle_room", dwNow,
+						"PLAYERBOT_SHOP: no room for bundle pid=%u name=%s lines=%u",
 						ch->GetPlayerID(), ch->GetName(), (unsigned int)tableCount);
 				return false;
 			}

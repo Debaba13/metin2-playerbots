@@ -31,6 +31,24 @@ namespace
 	// bridges and walls, this guarantees that a character standing on a valid
 	// native cell can always attach to the planning graph.
 	const int PLAYERBOT_NAV_CELL = 50;
+	// How far the goal of a portal walk may be snapped, in cells.
+	//
+	// It was twenty-four - twelve hundred world units - against a switch
+	// distance of two hundred, so a route could legitimately end a thousand
+	// units short of the portal and the arrival test could never pass. The bot
+	// stood at the end of its route, the walk timed out after twenty seconds,
+	// and the next tick planned the same thing again: "portal walk stalled ...
+	// distance=323" a hundred times a minute, bots piled at the Bokjung
+	// teleporter, and of a hundred and fifteen that set off across the desert
+	// for the Spider Dungeon not one ever arrived.
+	//
+	// This is the trap MovePlayerBotTownLeg already sprang once and the same
+	// rule closes it: a snapped goal must stay inside the radius that tests
+	// arrival. Half of that radius, so the walk still has somewhere to land if
+	// the exact cell is occupied - every portal point in this world stands on
+	// open ground, checked against server_attr, so it rarely has to.
+	const int PLAYERBOT_PORTAL_SNAP_CELLS =
+			PLAYERBOT_PORTAL_SWITCH_DISTANCE / PLAYERBOT_NAV_CELL / 2;
 	// What a step through water costs on top of the ordinary ten. High enough
 	// that a bot walks round a lake it could wade across, low enough that a
 	// twelve-cell bridge - which is the only way off an island - is never worth
@@ -59,6 +77,25 @@ namespace
 	// old M1 load by four. Already built routes still advance every update; only
 	// new expensive HPA/A* requests wait for a later staggered slot.
 	const int PLAYERBOT_NAV_MAX_HEAVY_PLANS_PER_TICK = 32;
+	// What a plan costs against that budget, by distance bucket - because the
+	// comment below says a count is the wrong unit and the code then charged
+	// every plan one slot anyway.
+	//
+	// Measured over a minute at 839 bots: 7086 of 7440 plans were sub-64-cell
+	// hops to the next monster, costing 41 milliseconds between them, while 148
+	// long ones cost eleven of the twelve seconds. The hops filled the tick and
+	// the long plans were the ones turned away - half of every request deferred,
+	// and the walks to a portal starved outright: a bot was found waiting
+	// thirteen minutes for a route, standing at the Sohan exit mounting and
+	// dismounting its horse every twenty seconds. A hop is free now and distance
+	// pays; the microsecond budget below still bounds the whole tick.
+	const int PLAYERBOT_NAV_PLAN_COST[4] = { 0, 1, 3, 8 };
+	// A request nobody has answered for this many attempts stops queueing behind
+	// the count. It still waits for the microsecond budget and for the far-plan
+	// minute, so this cannot open a hole - it only stops one bot being last in
+	// the queue for ever, which is what a fair queue exists to prevent and what
+	// this world did not have.
+	const BYTE PLAYERBOT_NAV_STARVED_ATTEMPTS = 20;
 	const int PLAYERBOT_NAV_MAX_EXPANDED_NODES = 120000;
 	// A count is the wrong unit for the budget: a hop to the next monster plans
 	// in a fifth of a millisecond and a crossing of Orc Valley in eighty, so
@@ -111,6 +148,10 @@ namespace
 	DWORD s_uPlayerBotNavPlanUsThisTick = 0;
 	DWORD s_dwPlayerBotNavFarMinuteStamp = 0;
 	int s_iPlayerBotNavFarPlansThisMinute = 0;
+	// Which budget refused the last plan. Three different limits returned the
+	// same DEFERRED and the log could not tell them apart, so a deferral was
+	// read more than once as a destination with no route to it.
+	const char* s_szPlayerBotNavDeferReason = "none";
 
 	enum EPlayerBotNavPlanResult
 	{
@@ -229,7 +270,8 @@ namespace
 						mapIndex != PLAYERBOT_MAP_ORC_VALLEY &&
 						mapIndex != PLAYERBOT_MAP_DESERT &&
 						mapIndex != PLAYERBOT_MAP_SOHAN &&
-						mapIndex != PLAYERBOT_MAP_SPIDER_V1)
+						mapIndex != PLAYERBOT_MAP_SPIDER_V1 &&
+						mapIndex != PLAYERBOT_MAP_HWANG)
 					return false;
 
 				if (m_initialized && m_mapIndex == mapIndex)
@@ -456,12 +498,12 @@ namespace
 			// say which subsystem asked for it and whether the search failed.
 			EPlayerBotNavPlanResult FindRoute(long startX, long startY, long targetX, long targetY,
 					DWORD seed, DWORD now, int targetSnapRadius, bool flexibleTargetSnap,
-					std::vector<PIXEL_POSITION>& outWaypoints)
+					std::vector<PIXEL_POSITION>& outWaypoints, bool starved = false)
 			{
 				const DWORD farUsBefore = s_uPlayerBotLoadPlanBucketUs[3];
 				const DWORD farCountBefore = s_uPlayerBotLoadPlanBucket[3];
 				const EPlayerBotNavPlanResult result = FindRouteInner(startX, startY, targetX, targetY,
-						seed, now, targetSnapRadius, flexibleTargetSnap, outWaypoints);
+						seed, now, targetSnapRadius, flexibleTargetSnap, outWaypoints, starved);
 				if (s_uPlayerBotLoadPlanBucket[3] != farCountBefore)
 					sys_log(0, "PLAYERBOT_NAV: far plan map=%ld from=(%ld,%ld) to=(%ld,%ld) result=%s cost_ms=%u waypoints=%u",
 							m_mapIndex, startX, startY, targetX, targetY,
@@ -474,7 +516,7 @@ namespace
 
 			EPlayerBotNavPlanResult FindRouteInner(long startX, long startY, long targetX, long targetY,
 					DWORD seed, DWORD now, int targetSnapRadius, bool flexibleTargetSnap,
-					std::vector<PIXEL_POSITION>& outWaypoints)
+					std::vector<PIXEL_POSITION>& outWaypoints, bool starved)
 			{
 				outWaypoints.clear();
 				if (!m_initialized || !IsInsideWorld(startX, startY) ||
@@ -545,17 +587,28 @@ namespace
 					s_dwPlayerBotNavFarMinuteStamp = now;
 					s_iPlayerBotNavFarPlansThisMinute = 0;
 				}
-				if (s_iPlayerBotNavHeavyPlansThisTick >= PLAYERBOT_NAV_MAX_HEAVY_PLANS_PER_TICK ||
+				// Three different budgets end in the same answer, and the log
+				// could not tell them apart - so "deferred" was read as "no way
+				// there" more than once. Say which one it was.
+				const int planCost = PLAYERBOT_NAV_PLAN_COST[planBucket];
+				const bool overCount = planCost > 0 && !starved &&
+						s_iPlayerBotNavHeavyPlansThisTick + planCost >
+							PLAYERBOT_NAV_MAX_HEAVY_PLANS_PER_TICK;
+				if (overCount ||
 						s_uPlayerBotNavPlanUsThisTick >= PLAYERBOT_NAV_PLAN_TIME_BUDGET_US ||
 						(planBucket == 3 &&
 						 s_iPlayerBotNavFarPlansThisMinute >= PLAYERBOT_NAV_MAX_FAR_PLANS_PER_MINUTE))
 				{
+					s_szPlayerBotNavDeferReason = overCount
+								? "plans_per_tick"
+								: (s_uPlayerBotNavPlanUsThisTick >= PLAYERBOT_NAV_PLAN_TIME_BUDGET_US
+									? "plan_time_budget" : "far_plans_per_minute");
 					++s_uPlayerBotLoadPlanDeferred;
 					return PLAYERBOT_NAV_PLAN_DEFERRED;
 				}
 				if (planBucket == 3)
 					++s_iPlayerBotNavFarPlansThisMinute;
-				++s_iPlayerBotNavHeavyPlansThisTick;
+				s_iPlayerBotNavHeavyPlansThisTick += planCost;
 				++s_uPlayerBotLoadPlans;
 				TPlayerBotLoadTimer planTickTimer(s_uPlayerBotNavPlanUsThisTick);
 

@@ -701,6 +701,12 @@ services:
       # every .env already carries, so no install runs on the upstream default.
       SEBAN_SESSION_SECRET: "${M2_SEBAN_SESSION_SECRET:-${M2_ADMINPAGE_PASSWORD:-change-this-before-public-use}}"
       SEBAN_COLLECTOR_INTERVAL: "${M2_SEBAN_COLLECTOR_INTERVAL:-300}"
+      # Which Playerbots release this world is running. Read from the same
+      # VERSION file the launcher writes, so the panel's dashboard reports the
+      # server it is actually looking at rather than "nieustawiona".
+      # The default is bumped with every release, so a world nobody has
+      # configured still reports the version it is actually running.
+      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-1.30.24}"
       TZ: "${M2_TZ:-UTC}"
     ports:
       # 7790 outside: 7789 is the browser bridge's port in this stack.

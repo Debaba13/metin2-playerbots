@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-07T23:04:00Z",
-  "statusMessage": "Aktualizacja 1.30.16. Aury i zaklecia wchodza od razu zamiast po jednym co piec sekund, obszarowki nie leca juz w kamien Metin, perly kosztuja jak perly, a stragany staja wreszcie takze w Joan. Pierwszy start po aktualizacji kompiluje gre na nowo, kilka minut dluzej.",
+  "publishedAt": "2026-09-08T14:54:00Z",
+  "statusMessage": "Aktualizacja 1.30.24. Naprawiona regresja z 1.30.22: wedkarze stali w miejscu zamiast lowic, bo promien przybycia zszedl ponizej progu, przy ktorym marsz sam sie zatrzymuje. Teraz lowia wszyscy. Pierwszy start po aktualizacji kompiluje gre na nowo, kilka minut dluzej.",
   "server": {
-    "version": "1.30.16",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.30.16/metin2-server-update-1.30.16.zip",
-    "sha256": "2505D1010F6B95122C53A38E891FDFE51374B5B01ED27EC548C2CE8E95BFAC14"
+    "version": "1.30.24",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.30.24/metin2-server-update-1.30.24.zip",
+    "sha256": "EC332335C25394C4DD0FB085393C0541CE47DF198FD93B9DC0EC81D6C84093CD"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
