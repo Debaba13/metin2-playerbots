@@ -28,7 +28,7 @@ jobs:
           git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
           git fetch upstream main
           git switch -c sync/upstream-main
-          git merge --no-edit --no-ff upstream/main
+          git merge --no-edit upstream/main
 
       - name: Open sync pull request
         uses: peter-evans/create-pull-request@v7
