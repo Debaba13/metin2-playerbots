@@ -46,6 +46,15 @@ class WorkerTests(unittest.TestCase):
 
 
 class FormTests(unittest.TestCase):
+    def test_valid_inventory_item_types_are_grantable(self):
+        for item_type in (1, 2, 10, 29, 30):
+            self.assertTrue(grants.grantable_item({'type': item_type, 'size': 1}))
+
+    def test_placeholders_and_invalid_sizes_are_not_grantable(self):
+        self.assertFalse(grants.grantable_item({'type': 0, 'size': 1}))
+        self.assertFalse(grants.grantable_item({'type': 1, 'size': 0}))
+        self.assertFalse(grants.grantable_item({'type': 1, 'size': 4}))
+
     def setUp(self):
         self.app = Flask(__name__)
         self.app.secret_key = 'test-only'
