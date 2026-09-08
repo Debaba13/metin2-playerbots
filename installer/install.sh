@@ -68,10 +68,10 @@ set -eu
 #      M2_SRC_ARCHIVE=/path/to/serverfiles.zip       sh install.sh
 #      M2_LOCAL_CONTEXT=/path/to/linux-port/docker   sh install.sh
 # -----------------------------------------------------------------------------
-M2_REPO_URL="${M2_REPO_URL:-https://github.com/TieruYT/metin2-playerbots.git}"
+M2_REPO_URL="${M2_REPO_URL:-https://github.com/Debaba13/metin2-playerbots.git}"
 # Where this script itself lives. The panel shows it as the way to update, so
 # an operator who fetched this from somewhere else gets told to go back there.
-M2_INSTALLER_URL="${M2_INSTALLER_URL:-https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/installer/install.sh}"
+M2_INSTALLER_URL="${M2_INSTALLER_URL:-https://raw.githubusercontent.com/Debaba13/metin2-playerbots/main/installer/install.sh}"
 M2_REPO_DIR="${M2_REPO_DIR:-}"
 M2_LOCAL_CONTEXT="${M2_LOCAL_CONTEXT:-}"
 

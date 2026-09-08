@@ -1546,7 +1546,7 @@ def local_changelog():
 # CHANGELOG.md (text, escaped before it is ever shown).
 UPDATE_BASE_URL = _env_path(
     "M2PANEL_UPDATE_URL",
-    "https://raw.githubusercontent.com/TieruYT/"
+    "https://raw.githubusercontent.com/Debaba13/"
     "metin2-playerbots/main")
 
 UPDATE_TIMEOUT  = 8             # seconds, hard, on every network operation

@@ -85,10 +85,10 @@ try {
 #      $env:M2_SRC_ARCHIVE        = 'C:\path\to\the-package.zip'
 #      $env:M2_LOCAL_CONTEXT      = 'C:\path\to\linux-port\docker'
 # -----------------------------------------------------------------------------
-$script:RepoUrl      = if ($env:M2_REPO_URL)          { $env:M2_REPO_URL }          else { 'https://github.com/TieruYT/metin2-playerbots.git' }
+$script:RepoUrl      = if ($env:M2_REPO_URL)          { $env:M2_REPO_URL }          else { 'https://github.com/Debaba13/metin2-playerbots.git' }
 # Where this script itself lives, so it can tell the panel how to update: on
 # Windows the update IS re-running this, and the panel shows the line to paste.
-$script:SelfUrl      = if ($env:M2_INSTALLER_URL)     { $env:M2_INSTALLER_URL }     else { 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/installer/install.ps1' }
+$script:SelfUrl      = if ($env:M2_INSTALLER_URL)     { $env:M2_INSTALLER_URL }     else { 'https://raw.githubusercontent.com/Debaba13/metin2-playerbots/main/installer/install.ps1' }
 $script:RepoDir      = if ($env:M2_REPO_DIR)          { $env:M2_REPO_DIR }          else { '' }
 $script:LocalContext = if ($env:M2_LOCAL_CONTEXT)     { $env:M2_LOCAL_CONTEXT }     else { '' }
 $script:SrcArchive   = if ($env:M2_SRC_ARCHIVE)       { $env:M2_SRC_ARCHIVE }       else { '' }

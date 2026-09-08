@@ -9,7 +9,7 @@ function Get-M2DefaultLauncherConfig {
 
     [pscustomobject]@{
         schema = 1
-        manifestUrl = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
+        manifestUrl = 'https://raw.githubusercontent.com/Debaba13/metin2-playerbots/main/update-manifest.json'
         clientRoot = ''
         clientExecutable = ''
         supportUploadUrl = ''
