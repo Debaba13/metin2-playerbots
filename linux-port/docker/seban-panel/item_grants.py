@@ -88,6 +88,11 @@ def has_item_sql(vnum, alias="p"):
        (i.owner_id={alias}.account_id AND i.window IN ('SAFEBOX','MALL'))))""", [vnum]
 
 
+def grantable_item(item):
+    """Accept every real item that can occupy one to three inventory slots."""
+    return bool(item) and 1 <= int(item.get("size") or 0) <= 3 and int(item.get("type") or 0) != 0
+
+
 def candidates(cur, vnum, criteria, only_missing, player_id=None):
     conditions, params = where_for(criteria)
     if only_missing:
@@ -130,7 +135,7 @@ def install(app, db, login_required, game_text):
             cur.execute("SELECT vnum,locale_name,type,size FROM player.item_proto WHERE vnum=%s", (vnum,))
             item = cur.fetchone()
             if not item: abort(404, "Nie ma przedmiotu o tym VNUM.")
-            if not 1 <= int(item["size"] or 0) <= 3 or int(item["type"] or 0) in (0, 10, 30):
+            if not grantable_item(item):
                 abort(400, "Ten przedmiot nie jest obsługiwany przez zwykły ekwipunek.")
             recipients = candidates(cur, vnum, criteria, only_missing)
             fingerprint = json.dumps((vnum, quantity, criteria, only_missing), sort_keys=True)
