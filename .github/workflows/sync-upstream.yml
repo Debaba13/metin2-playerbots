@@ -41,4 +41,3 @@ jobs:
             Automated sync from `TieruYT/metin2-playerbots:main`.
 
             This pull request preserves the fork's commits and lets conflicts be resolved before updating `main`.
-          labels: upstream-sync
