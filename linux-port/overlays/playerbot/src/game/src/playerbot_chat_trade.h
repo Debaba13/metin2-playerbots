@@ -60,7 +60,7 @@ namespace
 			return "Joan";
 		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M2)
 			return "Bokjung";
-		return "miescie";
+				return PlayerBotText("miescie");
 	}
 
 	// Lowercase ASCII from CP1250: the Polish letters go to their base, the
@@ -147,7 +147,7 @@ namespace
 		if (!ch || !pszItemName || !*pszItemName)
 			return;
 		char text[CHAT_MAX_LEN + 1];
-		snprintf(text, sizeof(text), "Sprzedam %s - stragan w %s",
+				snprintf(text, sizeof(text), PlayerBotText("Sprzedam %s - stragan w %s"),
 				pszItemName, GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
@@ -166,7 +166,7 @@ namespace
 		if (!proto)
 			return;
 		char text[CHAT_MAX_LEN + 1];
-		snprintf(text, sizeof(text), "Kupie %s - kto ma, niech wystawi w %s",
+				snprintf(text, sizeof(text), PlayerBotText("Kupie %s - kto ma, niech wystawi w %s"),
 				proto->szLocaleName, GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
@@ -234,9 +234,11 @@ namespace
 		while (*p && IsPlayerBotChatSeparator(*p))
 			++p;
 		static const struct { const char* word; EPlayerBotTradeVerb verb; } kVerbs[] = {
-			{ "kupie", PLAYERBOT_TRADE_BUY }, { "kupuje", PLAYERBOT_TRADE_BUY },
-			{ "szukam", PLAYERBOT_TRADE_BUY }, { "potrzebuje", PLAYERBOT_TRADE_BUY },
-			{ "sprzedam", PLAYERBOT_TRADE_SELL }, { "sprzedaje", PLAYERBOT_TRADE_SELL },
+						{ "kupie", PLAYERBOT_TRADE_BUY }, { "kupuyor", PLAYERBOT_TRADE_BUY },
+						{ "ariyorum", PLAYERBOT_TRADE_BUY }, { "aradim", PLAYERBOT_TRADE_BUY },
+						{ "szukam", PLAYERBOT_TRADE_BUY }, { "potrzebuje", PLAYERBOT_TRADE_BUY },
+						{ "sprzedam", PLAYERBOT_TRADE_SELL }, { "sprzedaje", PLAYERBOT_TRADE_SELL },
+						{ "satilik", PLAYERBOT_TRADE_SELL }, { "satiyorum", PLAYERBOT_TRADE_SELL },
 			{ "oddam", PLAYERBOT_TRADE_SELL }, { "s>", PLAYERBOT_TRADE_SELL },
 			{ "k>", PLAYERBOT_TRADE_BUY },
 		};
@@ -323,11 +325,11 @@ namespace
 			return false;
 		char reply[CHAT_MAX_LEN + 1];
 		if (bestOffer->wCount > 1)
-			snprintf(reply, sizeof(reply), "Mam %s x%u na straganie w %s, %u yang za calosc",
+				snprintf(reply, sizeof(reply), PlayerBotText("Mam %s x%u na straganie w %s, %u yang za calosc"),
 					bestItem->GetProto()->szLocaleName, (unsigned int)bestOffer->wCount,
 					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
 		else
-			snprintf(reply, sizeof(reply), "Mam %s na straganie w %s, %u yang",
+				snprintf(reply, sizeof(reply), PlayerBotText("Mam %s na straganie w %s, %u yang"),
 					bestItem->GetProto()->szLocaleName,
 					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
 		SendPlayerBotWhisper(bestKeeper, player, reply);
@@ -421,10 +423,10 @@ namespace
 			return false;
 		char reply[CHAT_MAX_LEN + 1];
 		if (book)
-			snprintf(reply, sizeof(reply), "Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
+						snprintf(reply, sizeof(reply), PlayerBotText("Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja"),
 					GetPlayerBotSkillName(skillVnum));
 		else
-			snprintf(reply, sizeof(reply), "Kupie %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
+						snprintf(reply, sizeof(reply), PlayerBotText("Kupie %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja"),
 					pszName ? pszName : query);
 		SendPlayerBotWhisper(buyer, player, reply);
 		return true;
@@ -497,13 +499,13 @@ namespace
 				goods += item->GetProto()->szLocaleName;
 				++listed;
 			}
-			snprintf(reply, sizeof(reply), "Stoje ze straganem w %s, mam: %s",
+						snprintf(reply, sizeof(reply), PlayerBotText("Stoje ze straganem w %s, mam: %s"),
 					GetPlayerBotTownName(bot->GetMapIndex()), goods.empty() ? "nic juz" : goods.c_str());
 		}
 		else if (it != s_mapPlayerBotAIStates.end() && it->second.bMarketTrip)
-			snprintf(reply, sizeof(reply), "Wlasnie ide na targ w %s", GetPlayerBotTownName(bot->GetMapIndex()));
+						snprintf(reply, sizeof(reply), PlayerBotText("Wlasnie ide na targ w %s"), GetPlayerBotTownName(bot->GetMapIndex()));
 		else
-			snprintf(reply, sizeof(reply), "Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung");
+						snprintf(reply, sizeof(reply), "%s", PlayerBotText("Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung"));
 		SendPlayerBotWhisper(bot, player, reply);
 	}
 }

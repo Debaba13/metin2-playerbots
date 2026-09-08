@@ -1340,23 +1340,25 @@ namespace
 		// is; a short prefix by pid keeps neighbours from matching word for word.
 		char sign[SHOP_SIGN_MAX_LEN + 1];
 		{
-			static const char* const s_apszPrefixes[] = { "", "Tanio: ", "Okazja: ", "Sprzedam " };
+						static const char* const s_apszPrefixes[] = {
+							"", PlayerBotText("Tanio: "), PlayerBotText("Okazja: "),
+							PlayerBotText("Sprzedam ") };
 			const char* pszPrefix = s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 			if (pszWeapon30)
-				snprintf(body, sizeof(body), "Bron 30: %s", pszWeapon30);
+								snprintf(body, sizeof(body), PlayerBotText("Bron 30: %s"), pszWeapon30);
 			else if (pszPrecious)
 				snprintf(body, sizeof(body), "%s", pszPrecious); // the name carries its +N
 			else if (iMaterials >= 2)
 				snprintf(body, sizeof(body), "%s, %s", apszMaterials[0], apszMaterials[1]);
 			else if (iBooks > 1 && iBooks >= tableCount / 2)
-				snprintf(body, sizeof(body), "Ksiegi: %s i inne", pszBook);
+								snprintf(body, sizeof(body), PlayerBotText("Ksiegi: %s i inne"), pszBook);
 			else if (iBooks == 1 && tableCount == 1)
-				snprintf(body, sizeof(body), "Ksiega: %s", pszBook);
+								snprintf(body, sizeof(body), PlayerBotText("Ksiega: %s"), pszBook);
 			else if (iScrap > 0 && iScrap >= tableCount / 2)
-				snprintf(body, sizeof(body), "Zlom do palenia +0..+3");
+								snprintf(body, sizeof(body), "%s", PlayerBotText("Zlom do palenia +0..+3"));
 			else if (pszBestName && tableCount > 1)
-				snprintf(body, sizeof(body), "%s i inne", pszBestName);
+								snprintf(body, sizeof(body), PlayerBotText("%s i inne"), pszBestName);
 			else
 				snprintf(body, sizeof(body), "%s", pszBestName ? pszBestName : ch->GetName());
 			// The prefix goes only where the whole line still fits: the goods are
