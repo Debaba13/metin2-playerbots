@@ -25,6 +25,53 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
 
+$launcherConfig = Get-M2LauncherConfig -ServerRoot $root -ConfigPath $configPath
+$script:m2Language = if ([string]$launcherConfig.language -in @('pl', 'en')) { [string]$launcherConfig.language } else { 'pl' }
+$script:m2Texts = @{
+    pl = @{
+        DockerNotInstalled = 'Docker: NIEZAINSTALOWANY'; DockerReady = 'Docker: GOTOWY'; DockerStarting = 'Docker: STARTUJE / WYMAGA NAPRAWY'; DockerStopped = 'Docker: ZATRZYMANY'
+        ServerRunning = 'Serwer: DZIAŁA'; ServerStopped = 'Serwer: ZATRZYMANY'; Ready = 'Gotowy.'; Running = 'Trwa'; Done = 'Gotowe'; Error = 'Błąd'
+        Language = 'Język'; English = 'English'; Polish = 'Polski'; RestartLanguage = 'Uruchom ponownie launcher, aby zastosować język.'
+        Subtitle = 'Prosty launcher: Docker, serwer, klient, aktualizacje i diagnostyka w jednym miejscu.'
+        Install = '1. ZAINSTALUJ / PRZYGOTUJ'; Play = '2. GRAJ (SERWER + KLIENT)'; StartDocker = 'URUCHOM DOCKER'; Stop = 'ZATRZYMAJ I ZAPISZ'; WebPanel = 'OTWÓRZ PANEL WWW'
+        ChooseClient = 'WYBIERZ KLIENTA'; CheckUpdates = 'SPRAWDŹ AKTUALIZACJE'; CollectLogs = 'ZBIERZ / WYŚLIJ LOGI'; Diagnostics = 'DIAGNOSTYKA'; OpenLog = 'OTWÓRZ LOG'; LogFolder = 'FOLDER LOGÓW'
+        BotCount = 'LICZBA BOTÓW (0–1500)'; ImportDb = 'IMPORTUJ BAZĘ'; RepairDb = 'NAPRAW DOSTĘP DO BAZY'; Footer = '„Zatrzymaj i zapisz” nie usuwa postaci ani postępu botów. Nigdy nie używa docker compose down -v.'
+        SelectClientTitle = 'Wybierz plik uruchamiający klienta Metin2'; SelectClientMissing = 'Nie wybrano klienta. Użyj przycisku „Wybierz klienta”.'; StartClientErrorTitle = 'Nie udało się uruchomić klienta'
+        BotDialogTitle = 'Liczba grających botów'; BotDialogInfo = "Ilu botów ma grać jednocześnie?`r`nEfektywny limit to liczba botów w Twoim świecie (kanoniczna paczka ma 350).`r`nZmiana wymaga restartu serwera."; Bots = 'Boty'; Apply = 'Zastosuj'; Cancel = 'Anuluj'
+        Wait = 'Poczekaj na zakończenie bieżącej operacji.'; LauncherWorking = 'Launcher pracuje'; PackageMissing = 'Paczka jest niekompletna. Rozpakuj ponownie całe archiwum RAR.'; MissingFiles = 'Brak plików'
+        VersionCurrent = 'Aktualna wersja'; VersionLatest = 'Najnowsza wersja'; Unknown = 'nieznana (przebudowa w toku)'; CheckFailed = 'nie udało się sprawdzić'; Checking = 'sprawdzanie...'
+        LanguageRestart = 'Launcher zostanie uruchomiony ponownie po wybraniu nowego języka.'
+    }
+    en = @{
+        DockerNotInstalled = 'Docker: NOT INSTALLED'; DockerReady = 'Docker: READY'; DockerStarting = 'Docker: STARTING / NEEDS REPAIR'; DockerStopped = 'Docker: STOPPED'
+        ServerRunning = 'Server: RUNNING'; ServerStopped = 'Server: STOPPED'; Ready = 'Ready.'; Running = 'Running'; Done = 'Done'; Error = 'Error'
+        Language = 'Language'; English = 'English'; Polish = 'Polski'; RestartLanguage = 'Restart the launcher to apply the language.'
+        Subtitle = 'Simple launcher: Docker, server, client, updates, and diagnostics in one place.'
+        Install = '1. INSTALL / PREPARE'; Play = '2. PLAY (SERVER + CLIENT)'; StartDocker = 'START DOCKER'; Stop = 'STOP AND SAVE'; WebPanel = 'OPEN WEB PANEL'
+        ChooseClient = 'SELECT CLIENT'; CheckUpdates = 'CHECK FOR UPDATES'; CollectLogs = 'COLLECT / SEND LOGS'; Diagnostics = 'DIAGNOSTICS'; OpenLog = 'OPEN LOG'; LogFolder = 'LOG FOLDER'
+        BotCount = 'BOT COUNT (0–1500)'; ImportDb = 'IMPORT DATABASE'; RepairDb = 'REPAIR DATABASE ACCESS'; Footer = '“Stop and save” does not delete characters or bot progress. It never uses docker compose down -v.'
+        SelectClientTitle = 'Select the Metin2 client executable'; SelectClientMissing = 'No client selected. Use the “Select client” button.'; StartClientErrorTitle = 'Could not start the client'
+        BotDialogTitle = 'Number of active bots'; BotDialogInfo = "How many bots should play at the same time?`r`nThe effective limit is the number of bots in your world (the standard package has 350).`r`nChanging this requires a server restart."; Bots = 'Bots'; Apply = 'Apply'; Cancel = 'Cancel'
+        Wait = 'Wait for the current operation to finish.'; LauncherWorking = 'Launcher is busy'; PackageMissing = 'The package is incomplete. Extract the full RAR archive again.'; MissingFiles = 'Missing files'
+        VersionCurrent = 'Current version'; VersionLatest = 'Latest version'; Unknown = 'unknown (rebuild in progress)'; CheckFailed = 'check failed'; Checking = 'checking...'
+        LanguageRestart = 'The launcher will restart after you choose a new language.'
+    }
+}
+
+function Get-M2GuiText {
+    param([Parameter(Mandatory = $true)][string]$Key)
+    return [string]$script:m2Texts[$script:m2Language][$Key]
+}
+
+function Set-M2GuiLanguage {
+    param([Parameter(Mandatory = $true)][ValidateSet('pl', 'en')][string]$Language)
+    $config = Get-M2LauncherConfig -ServerRoot $root -ConfigPath $configPath
+    $config.language = $Language
+    Save-M2LauncherConfig -Config $config -ConfigPath $configPath
+    $script:m2Language = $Language
+    [Windows.Forms.MessageBox]::Show((Get-M2GuiText -Key 'LanguageRestart'), (Get-M2GuiText -Key 'Language'), 'OK', 'Information') | Out-Null
+}
+
 if ($SelfTest) {
     $cliErrors = $null
     $guiErrors = $null
@@ -144,7 +191,7 @@ function Save-ClientExecutable {
 function Select-ClientExecutable {
     $config = Get-LauncherConfig
     $dialog = [Windows.Forms.OpenFileDialog]::new()
-    $dialog.Title = 'Wybierz plik uruchamiający klienta Metin2'
+    $dialog.Title = Get-M2GuiText 'SelectClientTitle'
     $dialog.Filter = 'Program klienta Metin2 (*.exe)|*.exe|Wszystkie pliki (*.*)|*.*'
     $dialog.CheckFileExists = $true
     if ($config.clientRoot -and (Test-Path -LiteralPath $config.clientRoot -PathType Container)) {
@@ -179,7 +226,7 @@ function Start-ConfiguredClient {
     if (-not $executable) { $executable = Select-ClientExecutable }
     if (-not $executable) {
         [Windows.Forms.MessageBox]::Show(
-            'Nie wybrano klienta. Użyj przycisku „Wybierz klienta”.',
+            (Get-M2GuiText 'SelectClientMissing'),
             'Metin2 Playerbots', 'OK', 'Information') | Out-Null
         return
     }
@@ -189,7 +236,7 @@ function Start-ConfiguredClient {
     }
     catch {
         Write-LocalLog "BŁĄD uruchamiania klienta: $($_.Exception.Message)"
-        [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Nie udało się uruchomić klienta', 'OK', 'Error') | Out-Null
+        [Windows.Forms.MessageBox]::Show($_.Exception.Message, (Get-M2GuiText 'StartClientErrorTitle'), 'OK', 'Error') | Out-Null
     }
 }
 
@@ -220,14 +267,14 @@ function Refresh-Status {
     $dockerInstalled = $null -ne (Get-Command docker -ErrorAction SilentlyContinue)
     $dockerProcessesRunning = @(Get-Process -Name 'Docker Desktop', 'com.docker.backend' -ErrorAction SilentlyContinue).Count -gt 0
     $dockerEngineReady = $false
-    if ($dockerInstalled) {
-        $engineResult = Invoke-QuickProcess -FileName 'docker.exe' -Arguments 'info --format "{{.ServerVersion}}"' -TimeoutMs 2500
-        $dockerEngineReady = $engineResult.ExitCode -eq 0
-    }
-    $script:dockerStatus.Text = if (-not $dockerInstalled) { 'Docker: NIEZAINSTALOWANY' }
-        elseif ($dockerEngineReady) { 'Docker: GOTOWY' }
-        elseif ($dockerProcessesRunning) { 'Docker: STARTUJE / WYMAGA NAPRAWY' }
-        else { 'Docker: ZATRZYMANY' }
+        if ($dockerInstalled) {
+            $engineResult = Invoke-QuickProcess -FileName 'docker.exe' -Arguments 'info --format "{{.ServerVersion}}"' -TimeoutMs 2500
+            $dockerEngineReady = $engineResult.ExitCode -eq 0
+        }
+        $script:dockerStatus.Text = if (-not $dockerInstalled) { Get-M2GuiText 'DockerNotInstalled' }
+            elseif ($dockerEngineReady) { Get-M2GuiText 'DockerReady' }
+            elseif ($dockerProcessesRunning) { Get-M2GuiText 'DockerStarting' }
+            else { Get-M2GuiText 'DockerStopped' }
     $script:dockerStatus.ForeColor = if ($dockerEngineReady) { [Drawing.Color]::LightGreen }
         elseif ($dockerInstalled) { [Drawing.Color]::Gold }
         else { [Drawing.Color]::Tomato }
@@ -302,7 +349,7 @@ function Update-ActionPhase {
 function Update-ActionStatusText {
     if (-not $script:activeProcess -or -not $script:actionStatus) { return }
     $elapsed = (Get-Date) - $script:activeStarted
-    $text = 'Trwa: {0}...  {1:mm\:ss}' -f $script:activeAction, $elapsed
+    $text = '{0}: {1}...  {2:mm\:ss}' -f (Get-M2GuiText 'Running'), $script:activeAction, $elapsed
     if ($script:activePhaseTotal -gt 0) {
         $pct = [int](100 * $script:activePhaseStep / $script:activePhaseTotal)
         $pct = [Math]::Max(0, [Math]::Min(100, $pct))
@@ -380,7 +427,7 @@ function Complete-LauncherAction {
     $script:openContactAfterAction = ''
     $script:progress.Style = 'Blocks'
     $script:progress.Value = 0
-    $script:actionStatus.Text = if ($exitCode -eq 0) { "Gotowe: $action" } else { "Błąd: $action (kod $exitCode)" }
+    $script:actionStatus.Text = if ($exitCode -eq 0) { "$(Get-M2GuiText 'Done'): $action" } else { "$(Get-M2GuiText 'Error'): $action (code $exitCode)" }
     $script:actionStatus.ForeColor = if ($exitCode -eq 0) { [Drawing.Color]::LightGreen } else { [Drawing.Color]::Tomato }
     Write-LocalLog "Zakończono akcję $action, kod $exitCode."
     Refresh-Status
@@ -503,7 +550,7 @@ function Show-BotCountDialog {
     # can actually spawn depends on its registry, which is often smaller.
     param([int]$Current = 350)
     $dialog = [Windows.Forms.Form]::new()
-    $dialog.Text = 'Liczba grających botów'
+    $dialog.Text = Get-M2GuiText 'BotDialogTitle'
     $dialog.Size = [Drawing.Size]::new(480, 260)
     $dialog.StartPosition = 'CenterParent'
     $dialog.FormBorderStyle = 'FixedDialog'
@@ -511,7 +558,7 @@ function Show-BotCountDialog {
     $dialog.MinimizeBox = $false
 
     $info = [Windows.Forms.Label]::new()
-    $info.Text = "Ilu botów ma grać jednocześnie?`r`nEfektywny limit to liczba botów w Twoim świecie (kanoniczna paczka ma 350).`r`nZmiana wymaga restartu serwera."
+    $info.Text = Get-M2GuiText 'BotDialogInfo'
     $info.Location = [Drawing.Point]::new(14, 12)
     $info.Size = [Drawing.Size]::new(440, 54)
     $dialog.Controls.Add($info)
@@ -534,25 +581,25 @@ function Show-BotCountDialog {
     $bar.Size = [Drawing.Size]::new(442, 45)
     $bar.Value = [Math]::Max(0, [Math]::Min(1500, $Current))
     $dialog.Controls.Add($bar)
-    $valueLabel.Text = "Boty: $($bar.Value)"
+    $valueLabel.Text = "$(Get-M2GuiText 'Bots'): $($bar.Value)"
     # $this/FindForm keeps the handler independent of captured locals.
     $bar.Add_ValueChanged({
             $form = $this.FindForm()
             if ($form) {
                 $label = $form.Controls['valueLabel']
-                if ($label) { $label.Text = "Boty: $($this.Value)" }
+                if ($label) { $label.Text = "$(Get-M2GuiText 'Bots'): $($this.Value)" }
             }
         })
 
     $okButton = [Windows.Forms.Button]::new()
-    $okButton.Text = 'Zastosuj'
+    $okButton.Text = Get-M2GuiText 'Apply'
     $okButton.Location = [Drawing.Point]::new(252, 168)
     $okButton.Size = [Drawing.Size]::new(100, 32)
     $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
     $dialog.Controls.Add($okButton)
 
     $cancelButton = [Windows.Forms.Button]::new()
-    $cancelButton.Text = 'Anuluj'
+    $cancelButton.Text = Get-M2GuiText 'Cancel'
     $cancelButton.Location = [Drawing.Point]::new(358, 168)
     $cancelButton.Size = [Drawing.Size]::new(96, 32)
     $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
@@ -698,11 +745,31 @@ $title.Size = [Drawing.Size]::new(710, 38)
 $script:form.Controls.Add($title)
 
 $subtitle = [Windows.Forms.Label]::new()
-$subtitle.Text = 'Prosty launcher: Docker, serwer, klient, aktualizacje i diagnostyka w jednym miejscu.'
+$subtitle.Text = Get-M2GuiText 'Subtitle'
 $subtitle.Location = [Drawing.Point]::new(27, 58)
-$subtitle.Size = [Drawing.Size]::new(700, 24)
+$subtitle.Size = [Drawing.Size]::new(510, 24)
 $subtitle.ForeColor = [Drawing.Color]::Silver
 $script:form.Controls.Add($subtitle)
+
+$languageLabel = [Windows.Forms.Label]::new()
+$languageLabel.Text = "$(Get-M2GuiText 'Language'):"
+$languageLabel.Location = [Drawing.Point]::new(548, 59)
+$languageLabel.Size = [Drawing.Size]::new(78, 22)
+$languageLabel.ForeColor = [Drawing.Color]::Silver
+$script:form.Controls.Add($languageLabel)
+
+$languageBox = [Windows.Forms.ComboBox]::new()
+$languageBox.DropDownStyle = 'DropDownList'
+$languageBox.Items.Add((Get-M2GuiText 'Polish')) | Out-Null
+$languageBox.Items.Add((Get-M2GuiText 'English')) | Out-Null
+$languageBox.SelectedIndex = if ($script:m2Language -eq 'en') { 1 } else { 0 }
+$languageBox.Location = [Drawing.Point]::new(628, 55)
+$languageBox.Size = [Drawing.Size]::new(98, 24)
+$languageBox.Add_SelectedIndexChanged({
+        $selectedLanguage = if ($this.SelectedIndex -eq 1) { 'en' } else { 'pl' }
+        if ($selectedLanguage -ne $script:m2Language) { Set-M2GuiLanguage -Language $selectedLanguage }
+    })
+$script:form.Controls.Add($languageBox)
 
 $script:dockerStatus = [Windows.Forms.Label]::new()
 $script:dockerStatus.Location = [Drawing.Point]::new(28, 92)
@@ -716,27 +783,27 @@ $script:serverStatus.Size = [Drawing.Size]::new(300, 25)
 $script:serverStatus.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
 $script:form.Controls.Add($script:serverStatus)
 
-$installButton = New-Button '1. ZAINSTALUJ / PRZYGOTUJ' 28 128 338 58 ([Drawing.Color]::FromArgb(88, 82, 160))
-$playButton = New-Button '2. GRAJ (SERWER + KLIENT)' 388 128 338 58 ([Drawing.Color]::FromArgb(27, 150, 88))
-$dockerButton = New-Button 'URUCHOM DOCKER' 28 202 218 50
-$stopButton = New-Button 'ZATRZYMAJ I ZAPISZ' 268 202 218 50 ([Drawing.Color]::FromArgb(180, 75, 55))
-$panelButton = New-Button 'OTWÓRZ PANEL WWW' 508 202 218 50 ([Drawing.Color]::FromArgb(180, 125, 35))
-$clientButton = New-Button 'WYBIERZ KLIENTA' 28 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
-$updateButton = New-Button 'SPRAWDŹ AKTUALIZACJE' 268 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
-$bundleButton = New-Button 'ZBIERZ / WYŚLIJ LOGI' 508 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
-$diagnosticsButton = New-Button 'DIAGNOSTYKA' 28 328 218 45 ([Drawing.Color]::FromArgb(45, 110, 190))
-$openLogButton = New-Button 'OTWÓRZ LOG' 262 328 218 45 ([Drawing.Color]::FromArgb(58, 62, 72))
-$folderButton = New-Button 'FOLDER LOGÓW' 496 328 230 45 ([Drawing.Color]::FromArgb(58, 62, 72))
-$botCountButton = New-Button 'LICZBA BOTÓW (0–1500)' 28 380 218 32 ([Drawing.Color]::FromArgb(120, 95, 40))
-$importDbButton = New-Button 'IMPORTUJ BAZĘ' 262 380 218 32 ([Drawing.Color]::FromArgb(70, 120, 90))
-$repairDbButton = New-Button 'NAPRAW DOSTĘP DO BAZY' 496 380 230 32 ([Drawing.Color]::FromArgb(150, 90, 55))
+$installButton = New-Button (Get-M2GuiText 'Install') 28 128 338 58 ([Drawing.Color]::FromArgb(88, 82, 160))
+$playButton = New-Button (Get-M2GuiText 'Play') 388 128 338 58 ([Drawing.Color]::FromArgb(27, 150, 88))
+$dockerButton = New-Button (Get-M2GuiText 'StartDocker') 28 202 218 50
+$stopButton = New-Button (Get-M2GuiText 'Stop') 268 202 218 50 ([Drawing.Color]::FromArgb(180, 75, 55))
+$panelButton = New-Button (Get-M2GuiText 'WebPanel') 508 202 218 50 ([Drawing.Color]::FromArgb(180, 125, 35))
+$clientButton = New-Button (Get-M2GuiText 'ChooseClient') 28 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
+$updateButton = New-Button (Get-M2GuiText 'CheckUpdates') 268 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
+$bundleButton = New-Button (Get-M2GuiText 'CollectLogs') 508 266 218 48 ([Drawing.Color]::FromArgb(75, 90, 120))
+$diagnosticsButton = New-Button (Get-M2GuiText 'Diagnostics') 28 328 218 45 ([Drawing.Color]::FromArgb(45, 110, 190))
+$openLogButton = New-Button (Get-M2GuiText 'OpenLog') 262 328 218 45 ([Drawing.Color]::FromArgb(58, 62, 72))
+$folderButton = New-Button (Get-M2GuiText 'LogFolder') 496 328 230 45 ([Drawing.Color]::FromArgb(58, 62, 72))
+$botCountButton = New-Button (Get-M2GuiText 'BotCount') 28 380 218 32 ([Drawing.Color]::FromArgb(120, 95, 40))
+$importDbButton = New-Button (Get-M2GuiText 'ImportDb') 262 380 218 32 ([Drawing.Color]::FromArgb(70, 120, 90))
+$repairDbButton = New-Button (Get-M2GuiText 'RepairDb') 496 380 230 32 ([Drawing.Color]::FromArgb(150, 90, 55))
 
 foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton)) {
     $script:form.Controls.Add($button)
 }
 
 $script:actionStatus = [Windows.Forms.Label]::new()
-$script:actionStatus.Text = 'Gotowy.'
+$script:actionStatus.Text = Get-M2GuiText 'Ready'
 $script:actionStatus.Location = [Drawing.Point]::new(28, 434)
 $script:actionStatus.Size = [Drawing.Size]::new(690, 24)
 $script:actionStatus.Font = [Drawing.Font]::new('Segoe UI Semibold', 9)
@@ -759,7 +826,7 @@ $script:logBox.Font = [Drawing.Font]::new('Consolas', 8.5)
 $script:form.Controls.Add($script:logBox)
 
 $footer = [Windows.Forms.Label]::new()
-$footer.Text = '„Zatrzymaj i zapisz” nie usuwa postaci ani postępu botów. Nigdy nie używa docker compose down -v.'
+$footer.Text = Get-M2GuiText 'Footer'
 $footer.Location = [Drawing.Point]::new(28, 650)
 $footer.Size = [Drawing.Size]::new(700, 25)
 $footer.ForeColor = [Drawing.Color]::DarkGray
@@ -781,11 +848,11 @@ function Update-VersionFooter {
     # once per session and whenever the player asks for a check - never on the
     # 8-second status timer, which would spend that budget for nothing.
     $installed = Get-InstalledServerVersion
-    $installedText = if ($installed -and $installed -ne 'unknown') { $installed } else { 'nieznana (przebudowa w toku)' }
+    $installedText = if ($installed -and $installed -ne 'unknown') { $installed } else { Get-M2GuiText 'Unknown' }
     $latestText = if ($script:latestServerVersion) { $script:latestServerVersion }
-        elseif ($script:latestVersionChecked) { 'nie udalo sie sprawdzic' }
-        else { 'sprawdzanie...' }
-    $script:versionLabel.Text = "Aktualna wersja: $installedText     |     Najnowsza wersja: $latestText"
+        elseif ($script:latestVersionChecked) { Get-M2GuiText 'CheckFailed' }
+        else { Get-M2GuiText 'Checking' }
+    $script:versionLabel.Text = "$(Get-M2GuiText 'VersionCurrent'): $installedText     |     $(Get-M2GuiText 'VersionLatest'): $latestText"
     $upToDate = $script:latestServerVersion -and $installed -and $installed -ne 'unknown' -and
         $installed.Equals($script:latestServerVersion, [StringComparison]::OrdinalIgnoreCase)
     $script:versionLabel.ForeColor = if ($upToDate) { [Drawing.Color]::LightGreen }
