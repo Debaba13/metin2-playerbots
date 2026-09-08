@@ -1,0 +1,44 @@
+name: Sync upstream changes
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Merge upstream main
+        env:
+          UPSTREAM_REPOSITORY: TieruYT/metin2-playerbots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main
+          git switch -c sync/upstream-main
+          git merge --no-edit --no-ff upstream/main
+
+      - name: Open sync pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: sync/upstream-main
+          delete-branch: true
+          title: "chore: sync upstream main"
+          commit-message: "chore: sync upstream main"
+          body: |
+            Automated sync from `TieruYT/metin2-playerbots:main`.
+
+            This pull request preserves the fork's commits and lets conflicts be resolved before updating `main`.
+          labels: upstream-sync
