@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "publishedAt": "2026-09-07T23:04:00Z",
+  "statusMessage": "Aktualizacja 1.30.16. Aury i zaklecia wchodza od razu zamiast po jednym co piec sekund, obszarowki nie leca juz w kamien Metin, perly kosztuja jak perly, a stragany staja wreszcie takze w Joan. Pierwszy start po aktualizacji kompiluje gre na nowo, kilka minut dluzej.",
+  "server": {
+    "version": "1.30.16",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.30.16/metin2-server-update-1.30.16.zip",
+    "sha256": "2505D1010F6B95122C53A38E891FDFE51374B5B01ED27EC548C2CE8E95BFAC14"
+  },
+  "support": {
+    "contactUrl": "https://discord.gg/pt5tvnrN6",
+    "uploadUrl": ""
+  }
+}
