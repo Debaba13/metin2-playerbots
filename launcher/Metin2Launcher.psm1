@@ -9,6 +9,7 @@ function Get-M2DefaultLauncherConfig {
 
     [pscustomobject]@{
         schema = 1
+        language = 'pl'
         manifestUrl = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
         clientRoot = ''
         clientExecutable = ''
@@ -29,6 +30,9 @@ function Get-M2LauncherConfig {
     }
 
     $loaded = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($loaded.PSObject.Properties['language'] -and [string]$loaded.language -in @('pl', 'en')) {
+        $defaults.language = [string]$loaded.language
+    }
     foreach ($name in @('manifestUrl', 'clientRoot', 'clientExecutable', 'supportUploadUrl')) {
         if ($null -ne $loaded.PSObject.Properties[$name]) {
             $defaults.$name = [string]$loaded.$name
@@ -43,7 +47,7 @@ function Save-M2LauncherConfig {
         [Parameter(Mandatory = $true)][string]$ConfigPath
     )
 
-    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl |
+    $Config | Select-Object schema, language, manifestUrl, clientRoot, clientExecutable, supportUploadUrl |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 }
 
