@@ -6,7 +6,7 @@
   const filters = document.querySelector('.live-filters');
   const mode = document.createElement('select');
   mode.id = 'live-mode';
-  mode.innerHTML = '<option value="live">Pozycje botów na żywo</option><option value="deaths">Mapa cieplna: zgony botów</option><option value="metins">Mapa cieplna: rozbite Metiny</option><option value="bosses">Mapa cieplna: zabite bossy</option>';
+  mode.innerHTML = '<option value="live">Pozycje botów na żywo</option><option value="deaths">Mapa cieplna: zgony botów</option><option value="metins">Mapa cieplna: rozbite Metiny</option>';
   filters.insertBefore(mode, search);
   const autoplay = document.createElement('label');
   autoplay.className = 'map-autoplay';
@@ -16,7 +16,7 @@
   restartInfo.id = 'last-restart';
   document.querySelector('.live-shell header > div').appendChild(restartInfo);
   [...document.querySelectorAll('.live-shell footer span')].filter(node => node.textContent.includes('Podkład graficzny')).forEach(node => node.remove());
-  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Łatwy Loch Małp',61:'Góra Sohan',64:'Dolina Orków',63:'Pustynia Yongbi',104:'Loch Pająków V1',108:'Loch Małp Normalny',109:'Loch Małp Trudny'};
+  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Łatwy Loch Małp',64:'Dolina Orków',63:'Pustynia Yongbi'};
   Object.entries(mapLabels).forEach(([id,label]) => {
     const option = select.querySelector(`option[value="${id}"]`);
     if (option) option.textContent = label;
@@ -31,7 +31,7 @@
   }
   function renderOverviewMaps() {
     if (!overviewMaps) return;
-    const counts = snapshot.reduce((all, bot) => { all[bot.map_index] = (all[bot.map_index] || 0) + 1; return all; }, Object.fromEntries(Object.keys(mapLabels).map(id => [id, 0])));
+    const counts = snapshot.reduce((all, bot) => { all[bot.map_index] = (all[bot.map_index] || 0) + 1; return all; }, {});
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     overviewMaps.innerHTML = '<h4>🗺 Boty na mapach</h4>' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Mapa #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Brak botów online.</div>');
   }
@@ -97,7 +97,7 @@
       map.dataset.mapIndex = String(mapId);
       map.querySelectorAll('.bot-point,.heat-point').forEach(node => node.remove());
       events.forEach(event => { const dot=document.createElement('i'); dot.className='heat-point'; dot.style.left=`${Math.max(1,Math.min(99,(event.x-bound[0])/bound[2]*100))}%`; dot.style.top=`${Math.max(1,Math.min(99,(event.y-bound[1])/bound[3]*100))}%`; dot.title=`${event.name||'Zdarzenie'} · ${event.time}`; map.appendChild(dot); });
-    const label = ({deaths:'zgonów botów',metins:'rozbitych Metinów',bosses:'zabitych bossów'})[mode.value] || 'zdarzeń';
+      const label = mode.value === 'deaths' ? 'zgonów botów' : 'rozbitych Metinów';
       $('live-count').textContent = `${events.length} ${label} / 24 h`;
       $('map-caption').textContent = `${select.options[select.selectedIndex].text} · ${label}`;
       $('stat-visible').textContent = events.length; $('stat-pt').textContent = '—'; $('stat-avg').textContent = '24 h'; $('stat-max').textContent = '●';

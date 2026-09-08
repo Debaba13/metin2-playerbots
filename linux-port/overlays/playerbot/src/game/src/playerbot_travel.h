@@ -521,16 +521,6 @@ namespace
 		sys_log(0, "PLAYERBOT_WORLD: transitioned pid=%u name=%s from=%ld to=%ld pos=(%ld,%ld) reason=%s",
 				ch->GetPlayerID(), ch->GetName(), oldMap, targetMap, targetX, targetY,
 				reason ? reason : "?");
-		// How long the bot stayed in town after its errand was done. Asked for
-		// by name: "sam spadek liczby atakow nie dowodzi naprawy".
-		if (oldMap == PLAYERBOT_MAP_CHUNJO_M2 && state.dwErrandDoneTime != 0 &&
-				ch->GetLevel() >= 40)
-		{
-			sys_log(0, "PLAYERBOT_M2: left after errand pid=%u name=%s level=%u waited_ms=%u to=%ld reason=%s",
-					ch->GetPlayerID(), ch->GetName(), ch->GetLevel(),
-					dwNow - state.dwErrandDoneTime, targetMap, reason ? reason : "?");
-			state.dwErrandDoneTime = 0;
-		}
 		return true;
 	}
 

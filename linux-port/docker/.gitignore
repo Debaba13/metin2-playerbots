@@ -6,7 +6,6 @@ game/mob_drop_item.m3.append.txt
 client-builder/pack/pack.sh
 panel/app/
 panel/schema/
-seban-panel/VERSION
 mariadb/initdb.d/dumps/
 # Staged from the tracked Playerbot overlay by prepare-context.sh.
 mariadb/playerbot/playerbots_seed.sql

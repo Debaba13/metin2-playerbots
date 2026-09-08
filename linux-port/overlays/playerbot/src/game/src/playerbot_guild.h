@@ -100,51 +100,19 @@ namespace
 
 	// ----------------------------------------------------------------- guilds
 
-	// 2010 TR Metin2 Bayrak Loncalari (Maksimum 12 karakter engine sinirina tam uyumlu)
+	// Two names per empire. Twelve characters is the engine's limit
+	// (GUILD_NAME_MAX_LEN); "KrwawiRycerze" was thirteen and would have been
+	// refused had a Shinsoo bot ever founded a guild, which none does.
 	const char* GetPlayerBotGuildName(BYTE bEmpire, size_t index)
 	{
-		// Chunjo (Sari Bayrak)
-		static const char* kChunjo[] = {
-			"Bozkurtlar",
-			"Sancaktar",
-			"AltinOrdu",
-			"Gokturkler",
-			"Yeniceri",
-			"Dirilis",
-			"Sonsuzluk",
-			"PadiSah"
-		};
-
-		// Shinsoo (Kirmizi Bayrak)
-		static const char* kShinsoo[] = {
-			"SonOsmanli",
-			"Karakalem",
-			"Akincilar",
-			"KizilTug",
-			"Alaturka",
-			"Cehennem",
-			"Intikam",
-			"KirmiziKurt"
-		};
-
-		// Jinno (Mavi Bayrak)
-		static const char* kJinno[] = {
-			"MaviFirtina",
-			"GokBoru",
-			"MaviKral",
-			"SogukAtes",
-			"BordoBereli",
-			"TekYurek",
-			"Kuzgunlar",
-			"BizBize"
-		};
-
+		static const char* kChunjo[] = { "BialyLotos", "CichyOrszak" };
+		static const char* kShinsoo[] = { "CzerwSmoki", "KrwawyRycerz" };
+		static const char* kJinno[] = { "NiebWilki", "SrebrnaStal" };
 		const char** pool = kChunjo;
 		if (bEmpire == 1)
 			pool = kShinsoo;
 		else if (bEmpire == 3)
 			pool = kJinno;
-
 		return index < PLAYERBOT_GUILD_NAMES_PER_EMPIRE ? pool[index] : NULL;
 	}
 

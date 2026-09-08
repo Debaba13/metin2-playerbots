@@ -160,10 +160,7 @@ namespace
 
 		if (dwNow >= state.dwNextRecoveryProtectionTime)
 		{
-			// The same five seconds do_restart gives a player. Ten made the bot
-			// disappear for twice as long as anybody else does after standing up,
-			// which is the half of dying that did not look like a player's.
-			ch->ReviveInvisible(5);
+			ch->ReviveInvisible(10);
 			state.dwNextRecoveryProtectionTime = dwNow + PLAYERBOT_RECOVERY_PROTECTION_INTERVAL;
 		}
 
@@ -243,10 +240,7 @@ namespace
 						: 0;
 				if (ch->GetHP() < safeInitialHP)
 					ch->PointChange(POINT_HP, safeInitialHP - ch->GetHP());
-				// The same five seconds do_restart gives a player. Ten made the bot
-			// disappear for twice as long as anybody else does after standing up,
-			// which is the half of dying that did not look like a player's.
-			ch->ReviveInvisible(5);
+				ch->ReviveInvisible(10);
 				sys_log(0, "PLAYERBOT_AI: revived at same position pid=%u name=%s hp=%d/%d",
 						ch->GetPlayerID(), ch->GetName(), ch->GetHP(), ch->GetMaxHP());
 				state.dwDeathDetectedTime = 0;

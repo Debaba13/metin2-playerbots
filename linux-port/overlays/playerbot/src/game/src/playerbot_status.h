@@ -3,10 +3,24 @@
 
 // What a bot shows above its head, and the words for it.
 //
-// 2010 Turkish Metin2 Style overhead messages and status texts (Pure ASCII).
+// This is the only place a bot is described in a player's language rather than
+// in the code's. Strings here are Polish and ASCII-only: the client renders
+// them in a font that has no diacritics, so an accented character comes out as
+// a box.
+//
+// The text is recomputed only when something it depends on actually changed -
+// several hundred bots re-broadcasting an identical line every tick is a lot of
+// packets for no new information.
+//
+// An implementation fragment in the sense playerbot_types.h describes: it
+// defines objects, relies on the engine headers playerbot_manager.cpp includes
+// above it, and reopens the same anonymous namespace. Include it exactly once.
 
 namespace
 {
+	// Whether a real player is close enough for any of this to be seen. The
+	// overhead text exists for them, so with nobody watching there is nothing
+	// to broadcast.
 	class CCheckNearbyHumanPlayer
 	{
 		public:
@@ -21,7 +35,7 @@ namespace
 					if (DISTANCE_APPROX(m_owner->GetX() - ch->GetX(), m_owner->GetY() - ch->GetY()) <= m_maxDist)
 					{
 						m_bFound = true;
-						return false;
+						return false; // Stop search
 					}
 				}
 				return true;
@@ -35,19 +49,19 @@ namespace
 	{
 		switch (goal)
 		{
-			case BOT_GOAL_SURVIVE: return "hayatta kalma";
-			case BOT_GOAL_CHOOSE_PROFESSION: return "beceri secimi";
-			case BOT_GOAL_GET_EQUIPMENT: return "ekipman dizme";
-			case BOT_GOAL_RESTOCK: return "pot stogu";
-			case BOT_GOAL_REFINE: return "arti basma";
-			case BOT_GOAL_MASTER_SKILL: return "bk okuma";
-			case BOT_GOAL_HUNT_METIN: return "metin kesme";
-			case BOT_GOAL_PARTY_CHALLENGE: return "grup ile kasilma";
-			case BOT_GOAL_BIOLOGIST: return "biyolog gorevi";
-			case BOT_GOAL_HUNTING: return "av gorevi";
-			case BOT_GOAL_HORSE: return "at gelistirme";
-			case BOT_GOAL_FISHING: return "balik tutma";
-			default: return "level kasma";
+			case BOT_GOAL_SURVIVE: return "regeneracja";
+			case BOT_GOAL_CHOOSE_PROFESSION: return "profesja";
+			case BOT_GOAL_GET_EQUIPMENT: return "ekwipunek";
+			case BOT_GOAL_RESTOCK: return "zapasy";
+			case BOT_GOAL_REFINE: return "ulepszanie";
+			case BOT_GOAL_MASTER_SKILL: return "rozwoj skilla";
+			case BOT_GOAL_HUNT_METIN: return "Metiny";
+			case BOT_GOAL_PARTY_CHALLENGE: return "silne moby PT";
+			case BOT_GOAL_BIOLOGIST: return "Biolog";
+			case BOT_GOAL_HUNTING: return "Polowanie";
+			case BOT_GOAL_HORSE: return "rozwoj konia";
+			case BOT_GOAL_FISHING: return "lowienie ryb";
+			default: return "poziom";
 		}
 	}
 
@@ -55,21 +69,21 @@ namespace
 	{
 		switch (action)
 		{
-			case BOT_ACTION_TRAVEL: return "yuruyor";
-			case BOT_ACTION_FIGHT: return "dovusuyor";
-			case BOT_ACTION_LOOT: return "topluyor";
-			case BOT_ACTION_RECOVER: return "dinleniyor";
-			case BOT_ACTION_TRAIN: return "egitim aliyor";
-			case BOT_ACTION_SHOP: return "ticaret yapiyor";
-			case BOT_ACTION_REFINE: return "arti basiyor";
-			case BOT_ACTION_READ_BOOK: return "bk okuyor";
-			case BOT_ACTION_SOCKET_STONE: return "tas basiyor";
-			case BOT_ACTION_PARTY_ASSEMBLE: return "pt topluyor";
-			case BOT_ACTION_BIOLOGIST: return "biyolog teslim ediyor";
-			case BOT_ACTION_STABLE: return "seyise gidiyor";
-			case BOT_ACTION_STALL: return "pazar tutuyor";
-			case BOT_ACTION_MARKET: return "pazarlari geziyor";
-			default: return "bekliyor";
+			case BOT_ACTION_TRAVEL: return "ide";
+			case BOT_ACTION_FIGHT: return "walcze";
+			case BOT_ACTION_LOOT: return "zbieram";
+			case BOT_ACTION_RECOVER: return "odpoczywam";
+			case BOT_ACTION_TRAIN: return "wybieram profesje";
+			case BOT_ACTION_SHOP: return "handluje";
+			case BOT_ACTION_REFINE: return "ulepszam";
+			case BOT_ACTION_READ_BOOK: return "czytam KU";
+			case BOT_ACTION_SOCKET_STONE: return "wkladam KD";
+			case BOT_ACTION_PARTY_ASSEMBLE: return "zbieram PT";
+			case BOT_ACTION_BIOLOGIST: return "robie misje Biologa";
+			case BOT_ACTION_STABLE: return "odwiedzam Stajennego";
+			case BOT_ACTION_STALL: return "prowadze stragan";
+			case BOT_ACTION_MARKET: return "jestem na zakupach";
+			default: return "mysle";
 		}
 	}
 
@@ -84,6 +98,9 @@ namespace
 			return;
 		if (len >= (int)sizeof(chatbuf))
 			len = sizeof(chatbuf) - 1;
+		// The regular talking packet contains its trailing NUL.  Keeping the packet
+		// identical to a real player's chat is what makes every native/wasm client
+		// render it as a text tail above the bot without a client fork.
 		++len;
 
 		TPacketGCChat pack_chat;
@@ -103,21 +120,21 @@ namespace
 	{
 		switch (state.bTownVisitPhase)
 		{
-			case BOT_TOWN_PHASE_TRAINER: return "Skilleri almaya gidiyom";
-			case BOT_TOWN_PHASE_TRAINER_WAIT: return "Beceri seciyom bekle";
-			case BOT_TOWN_PHASE_WEAPON_MERCHANT: return "Silahciya gidiyom";
-			case BOT_TOWN_PHASE_WEAPON_WAIT: return "Silahciya bakiyom";
-			case BOT_TOWN_PHASE_ARMOR_MERCHANT: return "Zirhciya gidiyom";
-			case BOT_TOWN_PHASE_ARMOR_WAIT: return "Zirh bakiyom";
-			case BOT_TOWN_PHASE_MISC_MERCHANT: return "Saticiya gidiyom";
-			case BOT_TOWN_PHASE_MISC_WAIT: return "Kirmizi pot aliyom copleri satiyom";
-			case BOT_TOWN_PHASE_BLACKSMITH: return "Demirciye gidiyom dua edin";
-			case BOT_TOWN_PHASE_BLACKSMITH_WAIT: return "Demircide arti basiyom";
+			case BOT_TOWN_PHASE_TRAINER: return "Ide po profesje";
+			case BOT_TOWN_PHASE_TRAINER_WAIT: return "Wybieram profesje";
+			case BOT_TOWN_PHASE_WEAPON_MERCHANT: return "Ide do handlarza bronia";
+			case BOT_TOWN_PHASE_WEAPON_WAIT: return "Handluje bronia";
+			case BOT_TOWN_PHASE_ARMOR_MERCHANT: return "Ide do handlarza zbroja";
+			case BOT_TOWN_PHASE_ARMOR_WAIT: return "Handluje zbroja";
+			case BOT_TOWN_PHASE_MISC_MERCHANT: return "Ide do handlarki roznosci";
+			case BOT_TOWN_PHASE_MISC_WAIT: return "Kupuje potki i sprzedaje lup";
+			case BOT_TOWN_PHASE_BLACKSMITH: return "Ide do kowala";
+			case BOT_TOWN_PHASE_BLACKSMITH_WAIT: return "Ulepszam ekwipunek";
 			case BOT_TOWN_PHASE_GATE_IN:
-			case BOT_TOWN_PHASE_GATE_CROSS_IN: return "Koye giriyom";
+			case BOT_TOWN_PHASE_GATE_CROSS_IN: return "Ide do miasta";
 			case BOT_TOWN_PHASE_GATE_OUT:
-			case BOT_TOWN_PHASE_GATE_CROSS_OUT: return "Kasilmaya geri donuyom";
-			default: return "Koyde islerimi hallediyom";
+			case BOT_TOWN_PHASE_GATE_CROSS_OUT: return "Wracam na exp";
+			default: return "Zalatwiam sprawy w miescie";
 		}
 	}
 
@@ -131,47 +148,19 @@ namespace
 		const char* goal = GetPlayerBotGoalLabel(state.bLongTermGoal);
 		if (state.bVisitingShop)
 		{
-			snprintf(status, statusSize, "%s%s (Hedef: %s)", prefix,
+			snprintf(status, statusSize, "%s%s (cel: %s)", prefix,
 					GetPlayerBotTownStatusLabel(state), goal);
 			return;
 		}
 
 		if (state.bTacticalRetreat)
 		{
-			snprintf(status, statusSize, "%sKaciyom can cok azaldi", prefix);
+			snprintf(status, statusSize, "%sUciekam - mam malo HP", prefix);
 			return;
-		}
-		// The luring course says which stage it is in, because "walking away
-		// from the party" and "bringing nine monsters back to it" look the same
-		// from outside and are not the same thing at all.
-		if (state.bLureStage != LURE_STAGE_NONE)
-		{
-			switch (state.bLureStage)
-			{
-				case LURE_STAGE_PLAN:
-					snprintf(status, statusSize, "%sSzykuje lur dla druzyny", prefix);
-					return;
-				case LURE_STAGE_RETURN:
-					snprintf(status, statusSize, "%sWracam do druzyny: prowadze %d mobow",
-							prefix, state.iLureChasing);
-					return;
-				case LURE_STAGE_HANDOFF:
-					snprintf(status, statusSize, "%sPrzekazuje moby: %d przyprowadzonych, %d nadal za mna",
-							prefix, state.iLureDelivered, state.iLureChasing);
-					return;
-				case LURE_STAGE_RECOVER:
-					snprintf(status, statusSize, "%sWstrzymuje lur: druzyna jeszcze walczy", prefix);
-					return;
-				default:
-					snprintf(status, statusSize, "%sLuruje dla PT: %u/%u grupy, sciga mnie %d",
-							prefix, (unsigned int)state.bLureGroupsTagged,
-							(unsigned int)state.bLureGroupsPlanned, state.iLureChasing);
-					return;
-			}
 		}
 		if (state.bRecoveringAfterDeath)
 		{
-			snprintf(status, statusSize, "%sYerdeyiz yine kalkiyom bekle", prefix);
+			snprintf(status, statusSize, "%sOdpoczywam po smierci", prefix);
 			return;
 		}
 
@@ -181,7 +170,7 @@ namespace
 		{
 			case BOT_ACTION_FIGHT:
 				if (target && target->IsStone())
-					snprintf(status, statusSize, "%s%s kesiyom ks atmayin", prefix, target->GetName());
+					snprintf(status, statusSize, "%sRozbijam %s", prefix, target->GetName());
 				else if (target && target->IsMonster())
 				{
 					int huntingRemaining = 0;
@@ -189,7 +178,7 @@ namespace
 							ch, &huntingRemaining);
 					if (huntingMob != 0 && target->GetRaceNum() == huntingMob)
 					{
-						snprintf(status, statusSize, "%sAv gorevi: %s (kalan %d)",
+						snprintf(status, statusSize, "%sPolowanie: %s (zostalo %d)",
 								prefix, target->GetName(), huntingRemaining);
 						break;
 					}
@@ -200,104 +189,109 @@ namespace
 					const int distance = DISTANCE_APPROX(
 							ch->GetX() - target->GetX(), ch->GetY() - target->GetY());
 					if (distance > range)
-						snprintf(status, statusSize, "%sKacma gel buraya %s", prefix, target->GetName());
+						snprintf(status, statusSize, "%sGonie %s", prefix, target->GetName());
 					else
-						snprintf(status, statusSize, "%sDaliyorum: %s", prefix, target->GetName());
+						snprintf(status, statusSize, "%sWalcze z %s", prefix, target->GetName());
 				}
 				else
-					snprintf(status, statusSize, "%sTemiz slot ariyorum", prefix);
+					snprintf(status, statusSize, "%sSzukam przeciwnika", prefix);
 				break;
 			case BOT_ACTION_LOOT:
-				snprintf(status, statusSize, "%sYere duseni topluyom", prefix);
+				snprintf(status, statusSize, "%sPodnosze lup", prefix);
 				break;
 			case BOT_ACTION_RECOVER:
-				snprintf(status, statusSize, "%sPot basiyom can dolsun", prefix);
+				snprintf(status, statusSize, "%sRegeneruje HP", prefix);
 				break;
 			case BOT_ACTION_TRAIN:
-				snprintf(status, statusSize, "%sHocalardan skil seciyom", prefix);
+				snprintf(status, statusSize, "%sWybieram profesje", prefix);
 				break;
 			case BOT_ACTION_SHOP:
-				snprintf(status, statusSize, "%sPazarlik yapiyom", prefix);
+				snprintf(status, statusSize, "%sHandluje", prefix);
 				break;
 			case BOT_ACTION_REFINE:
-				snprintf(status, statusSize, "%sDemircide item basiyom", prefix);
+				snprintf(status, statusSize, "%sUlepszam ekwipunek", prefix);
 				break;
 			case BOT_ACTION_READ_BOOK:
-				snprintf(status, statusSize, "%sBK okuyom ins gecer", prefix);
+				snprintf(status, statusSize, "%sCzytam ksiege umiejetnosci", prefix);
 				break;
 			case BOT_ACTION_SOCKET_STONE:
-				snprintf(status, statusSize, "%sTas basiyom kirilmaz ins", prefix);
+				snprintf(status, statusSize, "%sWkladam kamien duszy", prefix);
 				break;
 			case BOT_ACTION_PARTY_ASSEMBLE:
-				snprintf(status, statusSize, "%sPartiye adam ariyorum", prefix);
+				snprintf(status, statusSize, "%sSzukam celu dla grupy", prefix);
 				break;
 			case BOT_ACTION_BIOLOGIST:
 			{
 				const TPlayerBotBiologistMission* mission =
 						GetActivePlayerBotBiologistMission(ch);
 				if (!mission)
-					snprintf(status, statusSize, "%sBiyologdan donuyom", prefix);
+					snprintf(status, statusSize, "%sWracam od Biologa", prefix);
 				else if (state.bVisitingBiologist &&
 						DISTANCE_APPROX(ch->GetX() - PLAYERBOT_BIOLOGIST_X,
 								ch->GetY() - PLAYERBOT_BIOLOGIST_Y) > 850)
-					snprintf(status, statusSize, "%sBiyologa goturuyom: %s", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sIde do Biologa z: %s", prefix, mission->itemLabel);
 				else if (state.bVisitingBiologist)
-					snprintf(status, statusSize, "%sBiyologa teslim ediom: %s", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sOddaje Biologowi: %s", prefix, mission->itemLabel);
 				else
-					snprintf(status, statusSize, "%sBiyolog icin %s topluyom", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sZbieram dla Biologa: %s", prefix, mission->itemLabel);
 				break;
 			}
 			case BOT_ACTION_STABLE:
 				if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_STABLE_BOY_X,
 						ch->GetY() - PLAYERBOT_STABLE_BOY_Y) > 850)
-					snprintf(status, statusSize, "%sSeyise gidiyom madalyon vermeye", prefix);
+					snprintf(status, statusSize, "%sIde do Stajennego z medalem", prefix);
 				else
-					snprintf(status, statusSize, "%sMadalyon teslim ediom (%u/21)", prefix,
+					snprintf(status, statusSize, "%sOddaje medal konny (%u/21)", prefix,
 							(unsigned int)ch->GetHorseLevel());
 				break;
 			case BOT_ACTION_FISHING:
 				if (ch->CountSpecifyItem(PLAYERBOT_FISHING_BAIT_VNUM) <
 						PLAYERBOT_FISHING_BAIT_RESTOCK)
-					snprintf(status, statusSize, "%sBalikciya solucan almaya gidiyom", prefix);
+					snprintf(status, statusSize, "%sIde do Rybaka po przynete", prefix);
 				else if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_FISHING_BANK_X,
 						ch->GetY() - PLAYERBOT_FISHING_BANK_Y) > 850)
-					snprintf(status, statusSize, "%sKiyiya balik tutmaya gidiyom", prefix);
+					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
 				else if (state.bIsFishing)
-					snprintf(status, statusSize, "%sOltayi attim balik bekliyom", prefix);
+					snprintf(status, statusSize, "%sLowie ryby - czekam na branie", prefix);
 				else
-					snprintf(status, statusSize, "%sOltaya yem takiyom", prefix);
+					snprintf(status, statusSize, "%sZakladam przynete na wedke", prefix);
 				break;
 			case BOT_ACTION_MARKET:
 				if (state.dwMarketStallVID != 0)
-					snprintf(status, statusSize, "%sPazara bakiyom ne var ne yok", prefix);
+					snprintf(status, statusSize, "%sOgladam stragan", prefix);
 				else
-					snprintf(status, statusSize, "%sPazarlari geziyom ucuz item var mi", prefix);
+					snprintf(status, statusSize, "%sSzukam czegos na straganach", prefix);
 				break;
 			case BOT_ACTION_TRAVEL:
 				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sM2 ye geciyom madalyon lazim", prefix);
+					snprintf(status, statusSize, "%sIde przez portal do M2 po Medal Konny", prefix);
 				else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
 						ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) == 0 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sMaymun Zindanina gidiyom madalyon kasmaya", prefix);
+					snprintf(status, statusSize, "%sIde do Lochu Malp po Medal Konny", prefix);
 				else if (ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) > 0)
-					snprintf(status, statusSize, "%sMadalyon dustu seyise goturuyom", prefix);
+					snprintf(status, statusSize, "%sIde do najblizszego Stajennego z Medalem", prefix);
 				else if (IsPlayerBotMonkeyMap(ch->GetMapIndex()))
-					snprintf(status, statusSize, "%sZindandan cikiyom artik", prefix);
+					snprintf(status, statusSize, "%sWychodze z Lochu Malp", prefix);
 				else
-					snprintf(status, statusSize, "%sSlotluk yer ariyorum (hedef: %s)", prefix, goal);
+					snprintf(status, statusSize, "%sSzukam miejsca do expa (cel: %s)", prefix, goal);
 				break;
 			default:
-				snprintf(status, statusSize, "%sPlan: %s", prefix, goal);
+				snprintf(status, statusSize, "%sPlanuje: %s", prefix, goal);
 				break;
 		}
 	}
 
 	void ManagePlayerBotStatusOverhead(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
+		// A keeper's head already carries its shop sign. Writing the status line
+		// over it replaces the one label a passing player actually needs - the
+		// name of the stall they are deciding whether to open.
 		if (ch && ch->GetMyShop())
 			return;
+		// The operator's switch in the panel. The status text still goes to the
+		// panel's snapshot; only the line over the head is silenced.
 		if (!IsPlayerBotOverheadChatEnabled())
 			return;
 		if (!ch)
@@ -326,6 +320,9 @@ namespace
 			return;
 		}
 
+		// Do not make 350 bots fill the chat window or spend time formatting text
+		// nobody can see. A player entering the area gets the current state within
+		// three seconds; state changes are otherwise published immediately.
 		CCheckNearbyHumanPlayer humanChecker(ch, 2500);
 		if (ch->GetSectree())
 			ch->GetSectree()->ForEachAround(humanChecker);

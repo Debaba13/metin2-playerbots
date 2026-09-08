@@ -16,70 +16,10 @@
 
 namespace
 {
-	// Demirci basarisi duyurusu (2010 TR Metin2 usulu bagirma)
-	void BroadcastPlayerBotRefineSuccess(LPCHARACTER ch, LPITEM item, int newPlus)
-	{
-		if (!ch || !item || newPlus < 7)
-			return;
-		if (ch->GetMyShop())
-			return;
-
-		static DWORD s_dwLastShoutTime = 0;
-		const DWORD dwNow = get_dword_time();
-		if (s_dwLastShoutTime != 0 && dwNow < s_dwLastShoutTime + 180000)
-			return;
-		if (number(1, 100) > 45)
-			return;
-
-		static const char* kPlus7[] = {
-			"%s +7 oldu sonunda, demirci bu sefer yakmadi",
-			"hadi bakalim %s +7 gecti, fena durmadi",
-			"%s tekte +7 gecti sansa bak",
-			"demirci acimadi bugun: %s +7",
-			"%s +7 oldu beyler gideri var mi",
-			"+7 ye salladim gecti: %s"
-		};
-		static const char* kPlus8[] = {
-			"%s +8 OLDU! elim ayagim titriyor valla",
-			"yuregim agzima geldi ama %s +8 gecti!",
-			"%s +8 oldu beyler, +9 denesem mi yakar mi",
-			"helal be demirciye guvendik: %s +8!",
-			"%s +8 temiz gecti, sirada ne var",
-			"sans benden yana bugun, %s +8 hayirli olsun"
-		};
-		static const char* kPlus9[] = {
-			"%s +9 BASILDI LAN OHA GECMEZ DIYODUM!!!",
-			"%s +9 BEYLER TEKLIFLERI ALAYIM PM ATIN!",
-			"ANANI AVRADINI %s +9 OLDU LAN WTT VAR MI?!",
-			"koy agladi be %s +9 gecti, kurban olayim demirciye!",
-			"%s +9 OLDU OYUNU BIRAKMIYORUM DEVAM!",
-			"ALLAAAH %s +9! SERVERIN EN IYISI GEL PM",
-			"%s +9 gecti ulan helal be, artik rahat uyurum!"
-		};
-
-		const char** pool = kPlus7;
-		size_t poolSize = sizeof(kPlus7) / sizeof(kPlus7[0]);
-		if (newPlus >= 9)
-		{
-			pool = kPlus9;
-			poolSize = sizeof(kPlus9) / sizeof(kPlus9[0]);
-		}
-		else if (newPlus == 8)
-		{
-			pool = kPlus8;
-			poolSize = sizeof(kPlus8) / sizeof(kPlus8[0]);
-		}
-
-		char msg[CHAT_MAX_LEN + 1];
-		char body[CHAT_MAX_LEN + 1];
-		snprintf(body, sizeof(body), pool[number(0, (int)poolSize - 1)], item->GetName());
-		snprintf(msg, sizeof(msg), "%s : %s", ch->GetName(), body);
-
-		s_dwLastShoutTime = dwNow;
-		SendShout(msg, ch->GetEmpire());
-		sys_log(0, "PLAYERBOT_SHOUT: pid=%u plus=%d text=%s",
-				ch->GetPlayerID(), newPlus, msg);
-	}
+	// Defined with the market-stall code, which comes later because it needs
+	// the town. Refining announces a good result the moment it happens, so it
+	// cannot wait for that file.
+	void BroadcastPlayerBotRefineSuccess(LPCHARACTER ch, LPITEM item, int newPlus);
 
 	PIXEL_POSITION GetPlayerBotGeneralStorePos(long mapIndex)
 	{
@@ -125,6 +65,11 @@ namespace
 		return false;
 	}
 
+	// Everything this bot wears or carries that is still below its refine target,
+	// against what those refines actually consume. A materialVnum of zero asks
+	// the looser question - short of anything at all - which is what decides
+	// whether walking to the market is worth the trip; a real vnum asks about the
+	// one thing on the counter in front of it.
 	bool PlayerBotIsShortOfRefineMaterial(LPCHARACTER ch, DWORD materialVnum)
 	{
 		if (!ch)
@@ -179,6 +124,10 @@ namespace
 		return PlayerBotIsShortOfRefineMaterial(ch, 0);
 	}
 
+	// Every material this bot is short of, in one set. The same walk as the
+	// question above, asked once per target scan instead of once per monster:
+	// a scan looks at dozens of candidates a second and each answer costs a
+	// pass over the bag.
 	void CollectPlayerBotWantedMaterials(LPCHARACTER ch, std::set<DWORD>& out)
 	{
 		out.clear();
@@ -219,6 +168,11 @@ namespace
 		}
 	}
 
+	// Every material any recipe in the game consumes, collected once. There is
+	// no iterator over the recipe table, so the ids are walked; what comes back
+	// is the only list worth trading, because a counter slot spent on something
+	// no anvil asks for is a slot the market cannot use. Eighty-four of them in
+	// this world, against two hundred and forty items of type ITEM_MATERIAL.
 	const std::set<DWORD>& GetPlayerBotRefineMaterialVnums()
 	{
 		static std::set<DWORD> s_materials;
@@ -242,12 +196,21 @@ namespace
 		return s_materials;
 	}
 
+	// The fisherman's keepsakes: kept whatever else is true, because they are
+	// the entire point of a fishing trip and the road to +7 and beyond. They are
+	// counted here so the stock cap below does not spend its eight cells on them.
 	bool IsPlayerBotFishingKeepsake(DWORD vnum)
 	{
 		return vnum == PLAYERBOT_SHELLFISH_VNUM ||
 				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM);
 	}
 
+	// A refine material is whatever a recipe consumes, whatever type the proto
+	// gives it. The first version asked for ITEM_MATERIAL as well, and eight of
+	// the eighty-four are not: the fishbone is ITEM_RESOURCE, the shellfish and
+	// the blessing scroll are ITEM_USE, the three pearls are ITEM_RESOURCE. The
+	// fishbone alone is in thirteen recipes and was being sold as "the angler's
+	// pocket money".
 	bool IsPlayerBotTradeableMaterial(LPITEM item)
 	{
 		if (!item)
@@ -256,11 +219,30 @@ namespace
 		return materials.find(item->GetVnum()) != materials.end();
 	}
 
+	// Junk goes to the general-goods merchant on the next town visit, and for a
+	// refine material that was the end of it. Five hundred and twenty-six bots
+	// on this world are short of one; the top of that list is three hundred and
+	// seventeen bots wanting fourteen hundred Orc Amulets between them, against
+	// five in existence. A material its finder did not personally need was being
+	// destroyed at the rate it dropped, which is why a counter carried one only
+	// when somebody happened to have a spare, and why an evening's whole market
+	// saw four material purchases.
+	//
+	// So a spare is kept and put on the counter instead, where the bot that
+	// needs it walks up and buys it. Nothing is added to any NPC: the supply is
+	// what the world already drops, and the trade is between bots.
+	//
+	// Bounded, or a bag would fill - there are ninety cells and no shortage of
+	// materials to find. The cap counts every material cell, the ones held for
+	// this bot's own anvil included, because those are already spoken for above:
+	// a material on the wishlist never reaches this test.
 	bool IsPlayerBotSurplusMaterial(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item || !IsPlayerBotTradeableMaterial(item))
 			return true;
 
+		// Cell order decides, so the same spares stay put from one town visit
+		// to the next rather than the bag reshuffling itself every trip.
 		size_t ahead = 0;
 		const WORD ownCell = item->GetCell();
 		for (WORD cell = 0; cell < ownCell && cell < INVENTORY_MAX_NUM; ++cell)
@@ -283,6 +265,8 @@ namespace
 		return free;
 	}
 
+	// Books of one skill in the cells before this one. Cell order decides, so
+	// the same books stay put from one town visit to the next.
 	int CountPlayerBotSkillBooksAhead(LPCHARACTER ch, LPITEM item, DWORD skillVnum)
 	{
 		int ahead = 0;
@@ -297,6 +281,7 @@ namespace
 		return ahead;
 	}
 
+	// A key whose lock matches this chest, anywhere in the bag.
 	bool PlayerBotHasTreasureKeyFor(LPCHARACTER ch, LPITEM box)
 	{
 		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
@@ -318,44 +303,72 @@ namespace
 
 		const DWORD vnum = item->GetVnum();
 
+		// Level-30 weapons with average/skill damage are strategic market assets.
+		// Never vendor them: this also applies when the current owner is below level
+		// 30 or belongs to another class. They remain available for future playerbot
+		// trading/private shops instead of disappearing for a trivial NPC price.
 		if (IsPlayerBotSpecialLevel30Weapon(item))
 			return false;
 
+		// Whatever else it is, a +7 or better is not something to hand an NPC for
+		// a fifth of the shop price. The reserve rule below keeps one spare per
+		// slot and sold the rest; that is how a Riba +9 went to a merchant
+		// because the same bot was carrying an axe +9. These go on a stall.
 		if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE)
 			return false;
 
+		// A scrap keeper's low refines are its stock, not its junk - until the
+		// bag runs short, and then the merchant gets them like anyone else's.
 		if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
 				IsPlayerBotScrapKeeper(ch->GetPlayerID()) &&
 				CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_SCRAP_KEEP_FREE_CELLS)
 			return false;
 
+		// Quest progress must survive every merchant visit. In particular, Horse
+		// Medals used to look like ordinary miscellaneous loot and could be sold
+		// before the world-travel state machine returned the bot to the Stable Boy.
+		//
+		// And so must what the progress was for. The battle horse scroll is the
+		// end of that whole chain - twenty-one medals, a hundred kills in the
+		// desert and 500 000 yang at the stable keeper - and it is a miscellaneous
+		// item like any other to the junk rule, which says "junk" unless told
+		// otherwise. The first bot ever to finish the trial sold it three minutes
+		// later, for its share of 1020 gold, and left the world with no battle
+		// horse in it at all.
 		if (vnum == PLAYERBOT_HORSE_MEDAL_VNUM ||
 				vnum == PLAYERBOT_BATTLE_HORSE_BOOK_VNUM ||
 				(vnum >= 50701 && vnum <= 50706) ||
 				vnum == PLAYERBOT_ORC_TOOTH_VNUM || vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM)
 			return false;
-
+		// A chest is opened on the next pass, not sold; the bonus scrolls, boosters
+		// and big potions it holds carry ANTI_SELL and never reach this rule.
 		if (vnum == PLAYERBOT_MOONLIGHT_CHEST_VNUM)
 			return false;
-
+		// A treasure chest waits for its key, a key for its chest, and a
+		// Forgetting Scroll for a skill stuck at seventeen - this bot's or, across
+		// a counter, another's.
+		// A chest without its key is kept while there is room for it. Keys are
+		// rare and chests are not: a bag under pressure lets the merchant have
+		// the chests, so the loot and the Moonlight chests that open by
+		// themselves still have somewhere to land.
 		if (item->GetType() == ITEM_TREASURE_BOX)
 			return CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS &&
 					!PlayerBotHasTreasureKeyFor(ch, item);
 		if (item->GetType() == ITEM_TREASURE_KEY ||
 				item->GetType() == ITEM_GIFTBOX || vnum == PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
 			return false;
-
+		// A soul stone is somebody's socket: this bot's, or across a counter
+		// another's. The merchant paid one yang for a Potwora +4.
 		if (item->GetType() == ITEM_METIN)
 			return false;
 
+		// Fishing tackle and the catch worth keeping. Pearls are the entire point
+		// of a fishing trip -- they are what carries equipment to +7/+8/+9 -- and a
+		// vendored rod would simply have to be bought again for the next session.
+		// Ordinary fish and bones stay sellable: that is the angler's pocket money.
 		if (item->GetType() == ITEM_ROD || vnum == PLAYERBOT_FISHING_BAIT_VNUM ||
 				vnum == PLAYERBOT_SHELLFISH_VNUM || vnum == PLAYERBOT_CAMPFIRE_VNUM ||
 				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM))
-			return false;
-		// Hair dye. The merchant pays nothing for it and a player will: it is
-		// the only way to change a character's colour for good, and the anglers
-		// pull it out of the water by the handful.
-		if (IsPlayerBotHairDye(vnum))
 			return false;
 		// A dead fish waits for the campfire at the end of the next session, as
 		// long as the bot has the wood for one; a grilled fish is a potion.
@@ -365,6 +378,10 @@ namespace
 		if (vnum >= PLAYERBOT_GRILLED_FISH_FIRST_VNUM && vnum <= PLAYERBOT_GRILLED_FISH_LAST_VNUM)
 			return false;
 
+		// Arrows are ammunition, not a primary weapon/equipment candidate. Keep all
+		// spare stacks for an Archer (including a Ninja which is about to choose the
+		// deterministic Bow profession), while other classes may sell accidental
+		// arrow drops at the Weapon Merchant.
 		if (item->GetType() == ITEM_WEAPON && item->GetSubType() == WEAPON_ARROW)
 		{
 			const bool isOrWillBeArcher = ch->GetJob() == JOB_ASSASSIN &&
@@ -375,33 +392,53 @@ namespace
 
 		if (item->GetType() == ITEM_SKILLBOOK)
 		{
+			// The Metin dropper keeps every book: the ones it cannot read are what
+			// it puts on the counter.
 			if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER)
 				return false;
+			// Keep books for the selected build (also before profession selection).
+			// Books for another class/build may first be handed to a party member;
+			// if nobody needs them they become normal miscellaneous loot.
 			if (ch->GetSkillGroup() == 0)
 				return false;
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
 			if (!IsPlayerBotOwnSkill(ch, skillVnum))
 				return true;
+			// Its own, and only so many of them - see PLAYERBOT_BOOK_KEEP_PER_SKILL.
 			return CountPlayerBotSkillBooksAhead(ch, item, skillVnum) >= PLAYERBOT_BOOK_KEEP_PER_SKILL;
 		}
 
+		// Preserve health, mana, green and purple speed potions
 		if (vnum == 27051 || vnum == 27001 || vnum == 27002 || vnum == 27003 ||
 			vnum == 27052 || vnum == 27004 || vnum == 27005 || vnum == 27006 ||
 			(vnum >= 27100 && vnum <= 27105) || vnum == 27053 || vnum == 27054)
 			return false;
 
+		// Preserve every Apprentice Chest until the bot can open it. Class-specific
+		// first chests use 50212/50213, while later progression boxes use 50187-50196.
 		if (vnum == GetStarterChestVnum(ch->GetJob()) ||
 				(vnum >= 50187 && vnum <= 50196))
 			return false;
 
+		// What this bot is about to refine with stays in its bag. A spare that
+		// some recipe wants stays too, as stock for its own counter - see
+		// IsPlayerBotSurplusMaterial for why that is worth eight cells. Judged by
+		// the recipe table, not by item type: that is what brings the fishbone
+		// and the blessing scroll in.
 		if (IsPlayerBotTradeableMaterial(item))
 			return !PlayerBotNeedsRefineMaterial(ch, vnum) &&
 					IsPlayerBotSurplusMaterial(ch, item);
+		// The rest of the 30000 block is eight gift boxes and two quest items.
+		// No counter would carry those, so there junk still means junk.
 		if (vnum >= 30000 && vnum <= 30200)
 			return !PlayerBotNeedsRefineMaterial(ch, vnum);
 		if (vnum >= 70038 && vnum <= 70060)
 			return false;
 
+		// Keep at most one immediately usable upgrade for each wear slot.  The old
+		// test kept every item that scored above the currently worn one; at high
+		// drop rates that meant dozens of near-identical weapons and armours could
+		// never become junk even though only the best one would ever be equipped.
 		if (IsPlayerBotEquipmentCandidate(ch, item))
 		{
 			const int wearCell = item->FindEquipCell(ch);
@@ -431,6 +468,10 @@ namespace
 					return false;
 				}
 
+				// A well-refined item replaced by genuinely stronger progression gear is
+				// still valuable to another bot.  Keep only the single best +6-or-higher
+				// reserve for this wear slot; the nearby sharing pass will hand the real
+				// item (including sockets/attributes) to a lower-level compatible build.
 				if (item->GetRefineLevel() >= PLAYERBOT_RESERVE_GEAR_MIN_REFINE)
 				{
 					for (WORD otherCell = 0; otherCell < INVENTORY_MAX_NUM; ++otherCell)
@@ -553,6 +594,7 @@ namespace
 
 		state.dwNextRefineCheckTime = dwNow + PLAYERBOT_REFINE_INTERVAL;
 
+		// Collect all upgradable worn items and inventory candidates
 		struct TRefineCandidate
 		{
 			BYTE wearCell;
@@ -586,6 +628,7 @@ namespace
 			candidates.push_back(cand);
 		}
 
+		// Also collect candidate gear in inventory
 		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
@@ -608,6 +651,8 @@ namespace
 		if (candidates.empty())
 			return false;
 
+		// Core level-appropriate weapon/body gear comes first. Within the same
+		// priority, raise the lowest plus level so both essentials progress evenly.
 		for (size_t i = 0; i < candidates.size(); ++i)
 		{
 			for (size_t j = i + 1; j < candidates.size(); ++j)
@@ -634,6 +679,8 @@ namespace
 			const DWORD nextVnum = item->GetRefinedVnum();
 			const BYTE plusLevel = candidates[i].plusLevel;
 
+			// What comes off the anvil must still fit. See IsPlayerBotWearableAtLevel
+			// for why the engine will not stop this on its own.
 			if (!IsPlayerBotWearableAtLevel(ch, nextVnum))
 			{
 				PlayerBotLogThrottled("refine_outgrows", dwNow,
@@ -654,6 +701,9 @@ namespace
 			if (plusLevel == 4 && !hasBackup && number(1, 100) > 75)
 				continue;
 
+			// Equipment management after an earlier attempt may have equipped another
+			// queued candidate, so inspect its live position instead of trusting the
+			// location captured when the list was built.
 			if (item->IsEquipped())
 			{
 				int emptyCell = ch->GetEmptyInventory(item->GetSize());
@@ -663,7 +713,15 @@ namespace
 					continue;
 			}
 
+			// DoRefine(false) is the regular blacksmith path: it reads refine_proto,
+			// charges the exact fee, consumes every required material and applies the
+			// normal success/failure roll.  The return value only says that an attempt
+			// was performed, so compare the result item count to log its real outcome.
 			const int resultCountBefore = ch->CountSpecifyItem(nextVnum);
+			// With a Blessing Scroll in the bag and a level worth protecting, go
+			// the scroll's way: the engine reads the scroll from the cell set by
+			// SetRefineMode, spends it, and on failure hands back the item one
+			// level down rather than nothing.
 			int scrollCell = -1;
 			if (plusLevel >= PLAYERBOT_SCROLL_REFINE_MIN_PLUS)
 			{
@@ -686,8 +744,7 @@ namespace
 			if (attempted)
 			{
 				const bool success = ch->CountSpecifyItem(nextVnum) > resultCountBefore;
-				if (success)
-					BroadcastPlayerBotRefineSuccess(ch, item, (int)plusLevel + 1);
+				BroadcastPlayerBotRefineSuccess(ch, item, (int)plusLevel + 1);
 				sys_log(0, "PLAYERBOT_AI: refine %s pid=%u name=%s old_vnum=%u new_vnum=%u plus=%u scroll=%d",
 						success ? "SUCCESS" : (scrollCell >= 0 ? "FAILED_DOWNGRADED" : "FAILED_BURNED"),
 						ch->GetPlayerID(), ch->GetName(), oldVnum, nextVnum, plusLevel + 1, scrollCell >= 0 ? 1 : 0);
@@ -698,11 +755,21 @@ namespace
 				sys_log(0, "PLAYERBOT_AI: refine SKIPPED pid=%u name=%s vnum=%u plus=%u (requirements/state)",
 						ch->GetPlayerID(), ch->GetName(), oldVnum, plusLevel);
 			}
+
+			// Do not equip the result again between consecutive + levels.  Keep it
+			// visibly in the inventory for the complete blacksmith session and let
+			// the town state equip the final/best result once refining is finished.
 		}
 
 		return refinedCount > 0;
 	}
 
+	// The Blessing Scroll works from the bag, wherever the bot stands - a
+	// player uses one in the field, not at the anvil - so a bot carrying one
+	// does not wait for its next town visit to put it to use. In a quiet
+	// moment it takes the lowest worn piece at +6 or better, pays the table's
+	// fee and materials, and refines it under the scroll: on failure the piece
+	// comes back one level down instead of not at all.
 	bool ManagePlayerBotScrollRefine(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->IsItemLoaded() || dwNow < state.dwNextScrollRefineTime)
@@ -759,6 +826,8 @@ namespace
 		if (!best)
 			return false;
 
+		// Off, refined, and back on: the engine will not touch a worn piece, and
+		// the result is a new item in the same cell whatever the outcome.
 		if (ch->GetEmptyInventory(best->GetSize()) < 0)
 			return false;
 		const DWORD oldVnum = best->GetVnum();
@@ -794,6 +863,7 @@ namespace
 		CompactPlayerBotPotionStacks(ch);
 		SellPlayerBotExcessPotions(ch);
 
+		// Count red and blue potions
 		size_t redCount = 0;
 		size_t blueCount = 0;
 		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
@@ -809,8 +879,12 @@ namespace
 				blueCount += item->GetCount();
 		}
 
+		// Miscellaneous loot belongs to Handlarka. Weapons and wearable equipment
+		// are deliberately left for their own specialist merchants.
 		SellPlayerBotJunkAtMerchant(ch, BOT_MERCHANT_MISC, "misc_merchant");
 
+		// Economical potion purchase at Handlarka.  Refining is intentionally
+		// performed in the separate blacksmith phase after the bot walks there.
 		const bool isMage = (ch->GetJob() == JOB_SHAMAN || ch->GetJob() == JOB_SURA);
 		const BYTE botLvl = ch->GetLevel();
 
@@ -819,21 +893,27 @@ namespace
 			if (redCount < 30 && ch->GetGold() >= 300)
 			{
 				ch->PointChange(POINT_GOLD, -240);
-				ch->AutoGiveItem(27001, 30);
+				ch->AutoGiveItem(27001, 30); // Red Potion (S) 30x
 			}
 			if (isMage && blueCount < 20 && ch->GetGold() >= 400)
 			{
 				ch->PointChange(POINT_GOLD, -360);
-				ch->AutoGiveItem(27004, 15);
+				ch->AutoGiveItem(27004, 15); // Blue Potion (S) 15x
 			}
 		}
 		else
 		{
+			// Unit prices are the ones the old fixed purchases implied: 20 yang for
+			// a Red Potion (M), 32 for a Blue Potion (M).
 			const DWORD RED_TARGET = 800;
 			const DWORD BLUE_TARGET = 600;
 			const DWORD RED_UNIT = 20;
 			const DWORD BLUE_UNIT = 32;
-
+			// Standing at the merchant already: fill the belt right up whatever the
+			// level, because this costs nothing extra. The decision to make the
+			// trip at all lives in NeedsPlayerBotPotions and is far stricter.
+			// Never spend more than half the purse, so shopping can't leave the
+			// bot unable to afford a refine.
 			if (redCount < RED_TARGET && ch->GetGold() >= 1200)
 			{
 				const DWORD want = (DWORD)(RED_TARGET - redCount);
@@ -845,6 +925,8 @@ namespace
 					ch->AutoGiveItem(27002, buy);
 				}
 			}
+			// Skills spend SP continuously, so a warrior wants a reserve too. It
+			// simply must never be the thing that forbids travelling.
 			if (blueCount < BLUE_TARGET && ch->GetGold() >= 1200)
 			{
 				const DWORD want = (DWORD)(BLUE_TARGET - blueCount);
@@ -858,6 +940,8 @@ namespace
 			}
 		}
 
+		// Even the level-one shoes add movement speed. Missing footwear is therefore
+		// a progression problem, not cosmetic equipment.
 		if (NeedsPlayerBotProgressionBoots(ch))
 			BuyPlayerBotProgressionGear(ch,
 					GetPlayerBotProgressionBootsVnum(ch), "boots");
@@ -873,6 +957,10 @@ namespace
 				ch, BOT_MERCHANT_WEAPON, "weapon_merchant");
 		bool bought = false;
 		const bool isArcher = ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2;
+		// A missing weapon is essential, so restore the cheap functional weapon
+		// first. With a bow already equipped, ammunition takes priority over a
+		// level-tier upgrade: buying a better bow and leaving zero Yang for arrows
+		// merely creates a better-equipped idle bot.
 		if (!ch->GetWear(WEAR_WEAPON))
 			bought = BuyPlayerBotEmergencyWeapon(ch) || bought;
 		if (isArcher)
@@ -899,6 +987,10 @@ namespace
 		if (NeedsPlayerBotProgressionHelmet(ch))
 			bought = BuyPlayerBotProgressionGear(ch,
 					GetPlayerBotProgressionHelmetVnum(ch), "helmet") || bought;
+		// The three slots nothing ever filled. A bot wore a bracelet, a necklace
+		// or an earring only when one happened to drop for it, because no ladder
+		// asked for them - so most of them went their whole lives with three
+		// empty slots on the character sheet.
 		if (NeedsPlayerBotProgressionWrist(ch))
 			bought = BuyPlayerBotProgressionGear(ch,
 					GetPlayerBotProgressionWristVnum(ch), "wrist") || bought;
@@ -962,6 +1054,9 @@ namespace
 		if (!ch || !ch->IsItemLoaded())
 			return false;
 
+		// Cross-map blacksmith trips are reserved for currently worn essentials.
+		// A routine accessory or spare can wait until the next normal M1 visit, but
+		// a weapon/body/shield/helmet/boots upgrade should not sit unused in M2/M3.
 		const BYTE coreWearSlots[] = {
 			WEAR_WEAPON, WEAR_BODY, WEAR_SHIELD, WEAR_HEAD, WEAR_FOOTS
 		};

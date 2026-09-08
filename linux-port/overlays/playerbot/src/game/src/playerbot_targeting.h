@@ -467,286 +467,6 @@ namespace
 		}
 	};
 
-	// The monster this bot's own errands want it to kill, if any. One
-	// definition, because the collector and the re-check below must not
-	// disagree about what counts as an active hunt.
-	DWORD GetPlayerBotDesiredQuestMobVnum(LPCHARACTER ch,
-			const TPlayerBotAIState& state, DWORD dwNow)
-	{
-		if (!ch)
-			return 0;
-		DWORD desiredBiologistMobVnum = 0;
-		size_t biologistIndex = 0;
-		const TPlayerBotBiologistMission* biologistMission =
-				GetActivePlayerBotBiologistMission(ch, &biologistIndex);
-		if (biologistMission && !state.bVisitingBiologist)
-		{
-			const int accepted = std::max(0, ch->GetQuestFlag(
-					GetPlayerBotBiologistFlag(*biologistMission, "collect_count")));
-			const int remaining = std::max(0,
-					(int)biologistMission->requiredCount - accepted);
-			if (IsPlayerBotBiologistKeyPhase(ch, biologistIndex))
-				desiredBiologistMobVnum = PLAYERBOT_ELITE_ORC_VNUM;
-			else if (ch->CountSpecifyItem(biologistMission->itemVnum) < remaining)
-				desiredBiologistMobVnum = biologistMission->mobVnum;
-		}
-		const DWORD desiredHuntingMobVnum = GetActivePlayerBotHuntingMobVnum(ch);
-		DWORD desiredQuestMobVnum = desiredBiologistMobVnum;
-		if (desiredHuntingMobVnum != 0)
-		{
-			// When both activities are open, rotate small deterministic cohorts every
-			// two minutes. The world then looks like independent players choosing
-			// goals, not one synchronized swarm finishing Biologist first.
-			if (desiredQuestMobVnum == 0 ||
-					((ch->GetPlayerID() + dwNow / 120000) % 3) == 0)
-				desiredQuestMobVnum = desiredHuntingMobVnum;
-		}
-		return desiredQuestMobVnum;
-	}
-
-	// The one place a combat Context is built.
-	//
-	// playerbot_combat_value_policy.h decides whether an ordinary monster is
-	// worth fighting; everything that has to ask the engine is here, so the
-	// collector, the manager's re-check and the party and multi-pull selectors
-	// all get the same answer to the same question. Duplicating "what counts as
-	// an active hunt" or "which drop is wanted" in each of those was how a bot
-	// came to be refused a monster in one place and handed it in another.
-	//
-	// Ordinary monsters only. A Metin stone keeps its own rules and its own
-	// reservation, and nothing here is asked about players.
-	playerbot_combat_value::Context BuildPlayerBotCombatContext(
-			LPCHARACTER ch, LPCHARACTER candidate, const TPlayerBotAIState& state,
-			bool baseEligible, DWORD desiredMobVnum, bool huntM2Bestials,
-			const std::set<DWORD>* wantedDrops, DWORD dwNow)
-	{
-		playerbot_combat_value::Context context;
-		if (!ch || !candidate)
-			return context;
-		context.baseEligible = baseEligible;
-
-		// Retreating outranks every errand; a bot breaking off a losing fight
-		// does not get to pick a new one on the way out.
-		if (state.bTacticalRetreat || state.bRecoveringAfterDeath)
-			context.mode = playerbot_combat_value::RETREAT;
-		// "Committed" means the errand has actually begun, not that the goal
-		// says so: a bot carrying BOT_GOAL_RESTOCK that never started a visit is
-		// simply standing about, and the audit was explicit that the goal string
-		// is not the proof.
-		else if (state.bVisitingShop || state.bVisitingBiologist ||
-				state.bVisitingStable || state.bMarketTrip || state.bFishingSession)
-			context.mode = playerbot_combat_value::COMMITTED_TRAVEL;
-		else
-			context.mode = playerbot_combat_value::OBJECTIVES;
-
-		// One defence episode per bot, not one per attacker.
-		//
-		// The first draft let a different attacker start a fresh episode
-		// whenever the previous one expired, so two monsters taking turns kept
-		// the exception alive for ever - the bound existed on paper only. The
-		// episode now belongs to the bot: while one is running, any attacker is
-		// answered within its time and its leash; once it has run out, no new
-		// one begins until the fighting has actually stopped for
-		// PLAYERBOT_DEFENCE_QUIET_TIME (cleared in the tick). A bot still being
-		// hit after that does not stand and take it - breaking off is the
-		// survival pass's job, and RETREAT outranks every exception here.
-		//
-		// Party defence lives inside the same episode, so it is bounded in time
-		// as well as in distance.
-		const bool onTheLeash = state.dwDefenceEpisodeStart == 0 ||
-				DISTANCE_APPROX(ch->GetX() - state.lDefenceAnchorX,
-						ch->GetY() - state.lDefenceAnchorY) <= PLAYERBOT_DEFENCE_LEASH;
-		const bool episodeLive = state.dwDefenceEpisodeStart != 0 && onTheLeash &&
-				dwNow - state.dwDefenceEpisodeStart <= PLAYERBOT_DEFENCE_EPISODE_TIME;
-		const bool mayDefend = episodeLive || state.dwDefenceEpisodeStart == 0;
-
-		// Hitting back at whatever is hitting you is not a choice, and it is not
-		// bounded by a clock. The episode's job is to stop "it hit me first"
-		// becoming a licence to work a map: what does that is the leash - the
-		// bot answers where it stands and does not get walked across the world
-		// by a chain of attackers. Ten seconds of it was a different rule
-		// altogether, and it showed: nine strong monsters dropped next to a
-		// group of bots killed all of them, because after ten seconds every one
-		// of those monsters was refused as a target while it was still killing
-		// its bot. Breaking off a fight it cannot win is the survival pass's
-		// decision, and RETREAT still outranks everything here.
-		if (onTheLeash && candidate->GetVictim() == ch)
-			context.boundedSelfDefense = true;
-
-		// A party member actually under attack, near enough to help. Being the
-		// party's focus is not the same thing and does not count - and helping
-		// is optional in a way defending yourself is not, so this one keeps the
-		// episode's clock.
-		if (mayDefend && !context.boundedSelfDefense && ch->GetParty())
-		{
-			LPCHARACTER victim = candidate->GetVictim();
-			if (victim && victim != ch && victim->IsPC() && !victim->IsDead() &&
-					victim->GetMapIndex() == ch->GetMapIndex() &&
-					ch->GetParty()->IsMember(victim->GetPlayerID()) &&
-					DISTANCE_APPROX(ch->GetX() - victim->GetX(),
-							ch->GetY() - victim->GetY()) <= PLAYERBOT_PARTY_DEFENCE_RANGE)
-				context.boundedPartyDefense = true;
-		}
-
-		if (desiredMobVnum != 0 && candidate->IsMonster() &&
-				candidate->GetRaceNum() == desiredMobVnum)
-			context.activeQuestTarget = true;
-
-		// A material the bot is actually short of. CollectPlayerBotWantedMaterials
-		// builds that set from real shortages, and GetMobDropItemVnum is the
-		// designated etc-drop this monster carries - not a model of every drop
-		// table, so a false answer here means "not known to drop it", never "it
-		// cannot".
-		//
-		// CollectPlayerBotWantedMaterials only puts a material in that set for a
-		// piece below its refine target whose recipe needs more than the bot is
-		// carrying, so the shortage is real and the exception ends when the
-		// stock is filled. What that function cannot know is whether this
-		// particular monster can still yield it: CreateDropItem multiplies every
-		// drop by the same PERCENT_LVDELTA as experience, so fifteen levels
-		// above leaves one percent of the chance. A need is not a reason to farm
-		// something that will effectively never drop it.
-		if (wantedDrops && !wantedDrops->empty() && candidate->IsMonster() &&
-				PERCENT_LVDELTA(ch->GetLevel(), candidate->GetLevel()) >=
-					PLAYERBOT_MATERIAL_MIN_DROP_PERCENT)
-		{
-			const DWORD drop = candidate->GetMobDropItemVnum();
-			if (drop != 0 && wantedDrops->find(drop) != wantedDrops->end())
-				context.activeMaterialTarget = true;
-		}
-
-		if (huntM2Bestials && candidate->IsMonster() &&
-				(candidate->GetRaceNum() == 533 || candidate->GetRaceNum() == 534))
-			context.activeEquipmentTarget = true;
-
-		// The engine's own level table, read with the engine's own argument
-		// order: PERCENT_LVDELTA(me, victim) in constants.h, 1 at fifteen levels
-		// above the monster and 100 at parity. This is the share of the base
-		// experience that survives the level difference - not a prediction of
-		// the experience actually granted, which party sharing and rounding
-		// still act on.
-		if (candidate->IsMonster())
-		{
-			context.expEvidenceKnown = true;
-			context.levelExpPercent =
-					PERCENT_LVDELTA(ch->GetLevel(), candidate->GetLevel());
-			context.canReceiveExp = candidate->GetMobTable().dwExp > 0;
-		}
-		return context;
-	}
-
-	playerbot_combat_value::Decision DecidePlayerBotCombatValue(
-			LPCHARACTER ch, LPCHARACTER candidate, const TPlayerBotAIState& state,
-			bool baseEligible, DWORD desiredMobVnum, bool huntM2Bestials,
-			const std::set<DWORD>* wantedDrops, DWORD dwNow)
-	{
-		playerbot_combat_value::Policy policy;
-		policy.minLevelExpPercent = PLAYERBOT_COMBAT_MIN_EXP_PERCENT;
-		return playerbot_combat_value::Evaluate(
-				BuildPlayerBotCombatContext(ch, candidate, state, baseEligible,
-						desiredMobVnum, huntM2Bestials, wantedDrops, dwNow),
-				policy);
-	}
-
-	// Stamp the episode when an attacker is accepted as a target, so the clock
-	// and the leash below have somewhere to start from. Called once per new
-	// attacker, never per tick: renewing it is what the bound is against.
-	void NotePlayerBotDefenceEpisode(LPCHARACTER ch, TPlayerBotAIState& state,
-			LPCHARACTER target, DWORD dwNow)
-	{
-		if (!ch || !target || target->GetVictim() != ch)
-			return;
-		// Only when no episode is running. Stamping again - for another
-		// attacker, or for the same one on the next tick - is the renewal this
-		// bound exists to prevent.
-		if (state.dwDefenceEpisodeStart != 0)
-			return;
-		state.dwDefenceTargetVID = (DWORD)target->GetVID();
-		state.dwDefenceEpisodeStart = dwNow;
-		state.lDefenceAnchorX = ch->GetX();
-		state.lDefenceAnchorY = ch->GetY();
-	}
-
-	// Is the monster this bot is already fighting still worth fighting?
-	//
-	// Filtering only new candidates would leave the old loophole open: a bot
-	// that picked something up before its errand changed, or before the last
-	// unit of a material was collected, would keep swinging at it for as long
-	// as it lived. Asked on a clock rather than every tick, because the answer
-	// needs the bot's material shortages and those cost a walk of the bag.
-	// Stones are not asked: they keep their own worth rule and reservation.
-	bool IsPlayerBotTargetWorthNow(LPCHARACTER ch, LPCHARACTER target,
-			const TPlayerBotAIState& state, DWORD dwNow)
-	{
-		if (!ch || !target || !target->IsMonster() || target->IsStone())
-			return true;
-		std::set<DWORD> wantedDrops;
-		CollectPlayerBotWantedMaterials(ch, wantedDrops);
-		const bool huntBestials = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
-				ShouldPlayerBotHuntM2Bestials(ch);
-		const playerbot_combat_value::Decision decision =
-				DecidePlayerBotCombatValue(ch, target, state, true,
-						GetPlayerBotDesiredQuestMobVnum(ch, state, dwNow),
-						huntBestials, &wantedDrops, dwNow);
-		if (!decision.allowed)
-			PlayerBotLogThrottled("combat_dropped", dwNow,
-					"PLAYERBOT_COMBAT: refused target pid=%u name=%s target=%s target_level=%u reason=%s",
-					ch->GetPlayerID(), ch->GetName(), target->GetName(),
-					target->GetLevel(), playerbot_combat_value::ReasonName(decision.reason));
-		return decision.allowed;
-	}
-
-	// Why is this bot still standing in Bokjung?
-	//
-	// A count of level-40 bots on the map says nothing on its own - buying,
-	// hunting a real mission, passing through and having nothing to do all look
-	// identical from outside. These are the reasons, in the order that decides:
-	// what the bot is actually doing beats what it might be planning.
-	const char* ClassifyPlayerBotTownStay(LPCHARACTER ch,
-			const TPlayerBotAIState& state, DWORD dwNow)
-	{
-		if (!ch)
-			return "none";
-		if (state.bTacticalRetreat || state.bRecoveringAfterDeath)
-			return "retreat";
-		if (state.dwDefenceEpisodeStart != 0 &&
-				dwNow - state.dwDefenceEpisodeStart <= PLAYERBOT_DEFENCE_EPISODE_TIME)
-			return "defence";
-		if (state.bVisitingShop)
-			return "visit";
-		if (state.bVisitingBiologist || state.bVisitingStable)
-			return "errand";
-		if (state.bMarketTrip)
-			return "market";
-		if (state.bFishingSession)
-			return "fishing";
-		if (ch->GetMyShop())
-			return "stall";
-		if (GetPlayerBotDesiredQuestMobVnum(ch, state, dwNow) != 0)
-			return "quest";
-		{
-			std::set<DWORD> wantedDrops;
-			CollectPlayerBotWantedMaterials(ch, wantedDrops);
-			if (!wantedDrops.empty())
-				return "material";
-		}
-		if (!state.vecRoute.empty() && state.uRouteIndex < state.vecRoute.size())
-			return "travel";
-		return "no_plan";
-	}
-
-	// The same question on a clock, for the monster a bot is already fighting.
-	bool IsPlayerBotHeldTargetStillWorth(LPCHARACTER ch, LPCHARACTER target,
-			TPlayerBotAIState& state, DWORD dwNow)
-	{
-		if (!ch || !target || !target->IsMonster() || target->IsStone())
-			return true;
-		if (dwNow < state.dwNextCombatRecheckTime)
-			return true;
-		state.dwNextCombatRecheckTime = dwNow + PLAYERBOT_COMBAT_RECHECK_INTERVAL;
-		return IsPlayerBotTargetWorthNow(ch, target, state, dwNow);
-	}
-
 	class CCollectPlayerBotTargets
 	{
 		public:
@@ -770,7 +490,6 @@ namespace
 				m_huntM2Bestials(owner && owner->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
 						ShouldPlayerBotHuntM2Bestials(owner)),
 				m_pWantedDrops(NULL),
-				m_pState(NULL),
 				m_iMonstersNear(0),
 				m_iMonsterLevelSum(0)
 			{
@@ -778,7 +497,6 @@ namespace
 
 			// The materials the owner is short of, computed once by the caller.
 			void SetWantedDrops(const std::set<DWORD>* pWanted) { m_pWantedDrops = pWanted; }
-			void SetState(const TPlayerBotAIState* pState) { m_pState = pState; }
 			// Monsters within reach when this ran, whatever their level: what the
 			// spot memory learns a place by.
 			int MonstersNear() const { return m_iMonstersNear; }
@@ -860,31 +578,13 @@ namespace
 						m_huntM2Bestials &&
 						(candidate->GetRaceNum() == 533 || candidate->GetRaceNum() == 534);
 
-				// Is this monster worth fighting at all?
-				//
-				// This used to be "do not cross a field for obsolete prey, but
-				// kill a weaker mob already on the route" - which let any very
-				// weak monster inside PLAYERBOT_LOCAL_CHAIN_RANGE into the
-				// ranking, because standing nearby is not evidence of being
-				// worth killing. Worse, the test ran before the drop this
-				// monster carries was even looked at, so a genuine material
-				// target could be thrown out before anything recognised it as
-				// one.
-				//
-				// Both are now the policy's business: it asks for a reason -
-				// bounded defence, an active hunt, a material or piece the bot
-				// actually needs, or enough of the base experience surviving the
-				// level difference - and the wanted drop is worked out first, so
-				// it can be that reason. Stones keep their own rules entirely.
-				if (candidate->IsMonster() && m_pState)
-				{
-					const playerbot_combat_value::Decision decision =
-							DecidePlayerBotCombatValue(m_owner, candidate, *m_pState,
-									true, m_desiredMobVnum, m_huntM2Bestials,
-									m_pWantedDrops, m_dwNow);
-					if (!decision.allowed)
-						return false;
-				}
+				// Do not cross a hunting field for obsolete prey, but kill a weaker mob
+				// which is already on the route. This makes local grinding look like a
+				// player holding Space instead of visibly walking past living packs.
+				if (candidate->IsMonster() && !isQuestTarget && botLevel >= 6 &&
+						levelDelta <= -3 && candidate->GetVictim() != m_owner &&
+						distance > PLAYERBOT_LOCAL_CHAIN_RANGE)
+					return false;
 
 				// Component reachability lets the bot route around a wall while still
 				// rejecting monsters on disconnected islands or terrain components.
@@ -1013,10 +713,6 @@ namespace
 			DWORD m_dwNow;
 			bool m_huntM2Bestials;
 			const std::set<DWORD>* m_pWantedDrops;
-			// The bot's own state, for the combat value policy: whether it is
-			// retreating, whether an errand is actually under way, and the
-			// bounds of any self-defence episode.
-			const TPlayerBotAIState* m_pState;
 			std::vector<TTargetCandidate> m_targets;
 			int m_iMonstersNear;
 			int m_iMonsterLevelSum;
@@ -1194,8 +890,32 @@ namespace
 			maxLevel = std::max(1, ch->GetLevel() - 1);
 		}
 
-		const DWORD desiredQuestMobVnum =
-				GetPlayerBotDesiredQuestMobVnum(ch, state, dwNow);
+		DWORD desiredBiologistMobVnum = 0;
+		size_t biologistIndex = 0;
+		const TPlayerBotBiologistMission* biologistMission =
+				GetActivePlayerBotBiologistMission(ch, &biologistIndex);
+		if (biologistMission && !state.bVisitingBiologist)
+		{
+			const int accepted = std::max(0, ch->GetQuestFlag(
+					GetPlayerBotBiologistFlag(*biologistMission, "collect_count")));
+			const int remaining = std::max(0,
+					(int)biologistMission->requiredCount - accepted);
+			if (IsPlayerBotBiologistKeyPhase(ch, biologistIndex))
+				desiredBiologistMobVnum = PLAYERBOT_ELITE_ORC_VNUM;
+			else if (ch->CountSpecifyItem(biologistMission->itemVnum) < remaining)
+				desiredBiologistMobVnum = biologistMission->mobVnum;
+		}
+		const DWORD desiredHuntingMobVnum = GetActivePlayerBotHuntingMobVnum(ch);
+		DWORD desiredQuestMobVnum = desiredBiologistMobVnum;
+		if (desiredHuntingMobVnum != 0)
+		{
+			// When both activities are open, rotate small deterministic cohorts every
+			// two minutes. The world then looks like independent players choosing
+			// goals, not one synchronized swarm finishing Biologist first.
+			if (desiredQuestMobVnum == 0 ||
+					((ch->GetPlayerID() + dwNow / 120000) % 3) == 0)
+				desiredQuestMobVnum = desiredHuntingMobVnum;
+		}
 
 		const int targetSearchRange = ch->GetParty()
 				? PLAYERBOT_PARTY_COHESION_RADIUS : PLAYERBOT_SEARCH_RANGE;
@@ -1206,7 +926,6 @@ namespace
 		std::set<DWORD> wantedDrops;
 		CollectPlayerBotWantedMaterials(ch, wantedDrops);
 		collector.SetWantedDrops(&wantedDrops);
-		collector.SetState(&state);
 		ch->GetSectree()->ForEachAround(collector);
 		collector.Sort();
 		RememberPlayerBotSpotSighting(ch->GetMapIndex(), ch->GetX(), ch->GetY(),
@@ -1315,20 +1034,14 @@ namespace
 
 		// Prefer a target no other bot has claimed. Randomizing inside a bounded
 		// nearest-candidate window spreads bots without sending them across the map.
-		//
-		// An empty pool now means there is nothing here worth fighting, and that
-		// is an answer. It used to fall back to the unfiltered list - which
-		// handed back exactly the monsters the filter had just refused, and
-		// would have made the policy above decorative. The caller has somewhere
-		// to go with "no target": the wandering pass moves the bot on, and the
-		// travel pass reconsiders the map.
-		if (availableTargets.empty())
-			return NULL;
-		const size_t choiceCount = std::min(availableTargets.size(),
-				PLAYERBOT_TARGET_CHOICE_WINDOW);
+		const size_t poolSize = availableTargets.empty() ? targets.size() : availableTargets.size();
+		const size_t choiceCount = std::min(poolSize, PLAYERBOT_TARGET_CHOICE_WINDOW);
 		const size_t choiceIndex = (size_t)number(0, (int)choiceCount - 1);
+		const DWORD targetVID = availableTargets.empty()
+			? targets[choiceIndex].dwVID
+			: availableTargets[choiceIndex];
 
-		return CHARACTER_MANAGER::instance().Find(availableTargets[choiceIndex]);
+		return CHARACTER_MANAGER::instance().Find(targetVID);
 	}
 
 	class CCollectPlayerBotMeleeTargets
@@ -1802,7 +1515,6 @@ namespace
 			state.iMultiPullStartHPPercent = hpPercent;
 			state.dwMultiPullTargetVID = first->GetVID();
 			state.dwTargetVID = first->GetVID();
-			NotePlayerBotDefenceEpisode(ch, state, first, dwNow);
 			state.vecMultiPullCenters.clear();
 			ClearPlayerBotRoute(state, true);
 			sys_log(0, "PLAYERBOT_PULL: started pid=%u name=%s level=%u desired_groups=%u hp=%d/%d natural_tank=%d",
@@ -1840,11 +1552,6 @@ namespace
 				(target->GetVictim() != NULL && target->GetVictim() != ch))
 		{
 			target = FindPlayerBotPullTarget(ch, state.vecMultiPullCenters);
-			// A pull is a fresh fight like any other, so it answers to the same
-			// policy: a group nobody needs is not pulled just because the bot is
-			// already in the middle of pulling.
-			if (target && !IsPlayerBotTargetWorthNow(ch, target, state, dwNow))
-				target = NULL;
 			state.dwMultiPullTargetVID = target ? target->GetVID() : 0;
 			state.dwTargetVID = state.dwMultiPullTargetVID;
 			ClearPlayerBotRoute(state, true);
