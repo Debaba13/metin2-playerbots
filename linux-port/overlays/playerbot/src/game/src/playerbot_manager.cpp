@@ -73,6 +73,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_travel.h"
 #include "playerbot_planner.h"
 #include "playerbot_guild.h"
+#include "playerbot_llm_shop.h"
 #include "playerbot_town.h"
 #include "playerbot_market.h"
 #include "playerbot_language.h"
@@ -1398,6 +1399,7 @@ void CPlayerBotManager::Update()
 	RefreshPlayerBotWeights(dwNow);
 	ManagePlayerBotNight(dwNow);
 	UpdatePlayerBotLLMBridge(dwNow);
+	PrunePlayerBotPendingTrades(dwNow);
 
 	static DWORD s_dwTick = 0;
 	++s_dwTick;

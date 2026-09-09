@@ -98,13 +98,14 @@ namespace
 	struct TPlayerBotPendingTrade
 	{
 		LPCHARACTER bot;
+		DWORD botPID;
 		WORD cell;
 		DWORD price;
 		DWORD expires;
 		bool botBuys;
 		bool confirmed;
 		TPlayerBotPendingTrade()
-			: bot(NULL), cell(0), price(0), expires(0), botBuys(false), confirmed(false) {}
+			: bot(NULL), botPID(0), cell(0), price(0), expires(0), botBuys(false), confirmed(false) {}
 	};
 	std::map<DWORD, TPlayerBotPendingTrade> s_mapPlayerBotPendingTrades;
 	std::string DescribePlayerBotItem(LPITEM item);
@@ -145,6 +146,7 @@ namespace
 			return;
 		TPlayerBotPendingTrade pending;
 		pending.bot = bot;
+		pending.botPID = bot->GetPlayerID();
 		pending.price = RoundPlayerBotTradePrice(price);
 		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = true;
@@ -692,6 +694,7 @@ namespace
 						(unsigned long long)unitPrice * 110ULL / 100ULL));
 		TPlayerBotPendingTrade pending;
 		pending.bot = bestSeller;
+		pending.botPID = bestSeller->GetPlayerID();
 		pending.cell = bestCell;
 		pending.price = RoundPlayerBotTradePrice((DWORD)totalPrice);
 		pending.expires = get_dword_time() + 120000;
@@ -772,6 +775,7 @@ namespace
 			return false;
 		TPlayerBotPendingTrade pending;
 		pending.bot = bestKeeper;
+		pending.botPID = bestKeeper->GetPlayerID();
 		pending.cell = inventoryCell;
 		pending.price = RoundPlayerBotTradePrice(std::max<DWORD>(1, bestOffer->dwPrice));
 		pending.expires = get_dword_time() + 120000;
@@ -1212,6 +1216,7 @@ namespace
 								(unsigned long long)basePrice * 110ULL / 100ULL));
 				TPlayerBotPendingTrade pending;
 				pending.bot = bot;
+				pending.botPID = bot->GetPlayerID();
 				pending.cell = cell;
 				pending.price = RoundPlayerBotTradePrice((DWORD)totalPrice);
 				pending.expires = get_dword_time() + 120000;
@@ -1253,6 +1258,35 @@ namespace
 
 	bool OpenPlayerBotPendingTrade(LPCHARACTER player);
 
+	void PrunePlayerBotPendingTrades(DWORD dwNow)
+	{
+		for (std::map<DWORD, TPlayerBotPendingTrade>::iterator it =
+				s_mapPlayerBotPendingTrades.begin();
+				it != s_mapPlayerBotPendingTrades.end();)
+		{
+			TPlayerBotPendingTrade& pending = it->second;
+			LPCHARACTER player = CHARACTER_MANAGER::instance().FindByPID(it->first);
+			LPCHARACTER bot = pending.botPID != 0
+					? CHARACTER_MANAGER::instance().FindByPID(pending.botPID) : NULL;
+			const bool playerGone = !player || !player->GetDesc();
+			const bool botGone = !bot || !bot->GetDesc();
+			const bool itemGone = !pending.botBuys &&
+					(!bot || !bot->GetInventoryItem(pending.cell) ||
+					bot->GetInventoryItem(pending.cell)->IsEquipped());
+			if (pending.expires <= dwNow || playerGone || botGone || itemGone)
+			{
+				sys_log(0, "PLAYERBOT_TRADE: pending removed player_pid=%u bot_pid=%u reason=%s",
+						it->first, pending.botPID,
+						pending.expires <= dwNow ? "expired" :
+						playerGone ? "player_gone" :
+						botGone ? "bot_gone" : "item_changed");
+				it = s_mapPlayerBotPendingTrades.erase(it);
+			}
+			else
+				++it;
+		}
+	}
+
 	bool CompletePlayerBotDeferredTradeConfirmation(LPCHARACTER bot)
 	{
 		if (!bot)
@@ -1289,6 +1323,8 @@ namespace
 			return false;
 		}
 		TPlayerBotPendingTrade pending = it->second;
+		pending.bot = pending.botPID != 0
+				? CHARACTER_MANAGER::instance().FindByPID(pending.botPID) : NULL;
 		if (!pending.bot)
 		{
 			sys_log(0, "PLAYERBOT_TRADE: exchange start failed player=%s bot=? botBuys=%d",

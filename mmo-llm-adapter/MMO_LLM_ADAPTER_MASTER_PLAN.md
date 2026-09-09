@@ -306,6 +306,26 @@ inmesine sebep oldu. Artık: Auto Accept devre dışı bırakıldı, çalışma 
 Bu bölüm sonraki tüm uygulama oturumlarında öncelik sırası olarak kullanılmalıdır.
 Her faz, bir önceki fazın test kapısı geçmeden başlatılmamalıdır.
 
+### 11.0. Plug-and-play / upstream conflict kuralı
+
+LLM ve Turkce fork davranisi upstream'in aktif gelistirdigi buyuk
+`playerbot_*.h` dosyalarinin govdesine gomulmemelidir. Upstream pull sonrasi
+otomatik merge'i korumak icin:
+
+- Ozel mantik yeni `playerbot_llm_*.h` adapter fragmentlerine tasinir.
+- Upstream dosyasinda yalnizca include ve sabit imzali tek hook cagrisi kalir.
+- Pazar tabelasi metinleri bu nedenle `playerbot_llm_shop.h` icindedir;
+  `playerbot_town.h` yalnizca `BuildPlayerBotTurkishShopSign(...)` cagirir.
+- `playerbot_status.h` ve `playerbot_chat_trade.h` seam wrapper olarak kalir.
+- Yeni adapter dosyalari `playerbot_*.h` wildcard'i ile staged game context'e
+  otomatik kopyalanir; ayri dosya listesi eklenmez.
+- Upstream dosyasinda davranis degisikligi gerekiyorsa once adapter seam'i
+  tasarla; dogrudan upstream fonksiyonuna uzun bir hunk ekleme.
+
+Bu kural, upstream merge conflict'ini tamamen teorik olarak yok etmez; ancak
+aktif upstream dosyasindaki degisiklik alanini include/hook satirlarina indirir.
+Adapter mantigi ve dil sabitleri upstream'de bulunmayan yeni dosyalarda tutulur.
+
 ### 11.1. Tamamlanan ve korunacak temel sistemler
 
 | Durum | Sistem | Uygulanan yüzeyler | Kabul kriteri |
