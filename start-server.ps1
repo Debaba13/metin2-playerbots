@@ -710,6 +710,86 @@ if ((Test-Path -LiteralPath $overlaySource -PathType Container) -and
     }
 }
 
+# The game image is built from linux-port/docker/game/src, and that tree is put
+# there once by fetch-sources.sh at install time out of the operator's own
+# r40250 package. It is not ours to ship, so an update never restores it - and
+# an update *does* write linux-port/docker/game/src/server/game/src, because
+# that is where the playerbot sources belong. On an install whose staged tree
+# has gone missing that combination is quietly misleading: src/server/game
+# exists, everything beside it does not, and `docker compose' answers with a
+# dozen "failed to calculate checksum ... not found" lines naming paths the
+# operator never touched. Reported from the Discord with a 1.61 MB build
+# context, where a complete one is hundreds of megabytes.
+#
+# So say it here, once, in words, before Docker gets a chance to say it badly.
+$gameContext = Join-Path $PSScriptRoot 'linux-port\docker\game\src'
+$requiredContext = @(
+    'build-deps-40250.sh',
+    'extern',
+    'server\common', 'server\db', 'server\game', 'server\libgame',
+    'server\liblua', 'server\libpoly', 'server\libserverkey',
+    'server\libsql', 'server\libthecore',
+    'serverfiles\share\conf', 'serverfiles\share\data',
+    'serverfiles\share\locale', 'serverfiles\share\package',
+    'serverfiles\mark-default'
+)
+$missingContext = @()
+foreach ($entry in $requiredContext) {
+    if (-not (Test-Path -LiteralPath (Join-Path $gameContext $entry))) {
+        $missingContext += $entry
+    }
+}
+# And the database's half of the context. The dumps are only read on the very
+# first start of an empty volume, so an install whose database already exists
+# is not held up by them; a fresh one without them would come up with an empty
+# MariaDB that reports healthy while playerbot-migrate waits thirty minutes.
+$dumpDir = Join-Path $PSScriptRoot 'linux-port\docker\mariadb\initdb.d\dumps'
+$missingDumps = @()
+foreach ($db in @('account', 'common', 'player', 'log', 'hotbackup')) {
+    $f = Join-Path $dumpDir "$db.sql"
+    if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { $missingDumps += "$db.sql" }
+    elseif ($db -ne 'hotbackup' -and (Get-Item -LiteralPath $f).Length -eq 0) { $missingDumps += "$db.sql (pusty)" }
+}
+if ($missingDumps.Count -gt 0) {
+    $dbVolumeInitialized = $false
+    $envFile = Join-Path $PSScriptRoot 'linux-port\docker\.env'
+    if (Test-Path -LiteralPath $envFile -PathType Leaf) {
+        $projectMatch = [Regex]::Match([IO.File]::ReadAllText($envFile), '(?m)^M2_COMPOSE_PROJECT_NAME=([a-z0-9][a-z0-9_-]+)\s*$')
+        if ($projectMatch.Success) {
+            $dbVolume = $projectMatch.Groups[1].Value + '_db-data'
+            $previousEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            try {
+                & docker volume inspect $dbVolume 1>$null 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    & docker run --rm --entrypoint sh -v "${dbVolume}:/v:ro" mariadb:10.11 -c 'test -d /v/mysql' 1>$null 2>$null
+                    $dbVolumeInitialized = ($LASTEXITCODE -eq 0)
+                }
+            } finally { $ErrorActionPreference = $previousEap }
+        }
+    }
+    if (-not $dbVolumeInitialized) {
+        throw ("Brakuje zrzutow bazy danych w " + $dumpDir + ".`n" +
+               "Brakuje: " + ($missingDumps -join ', ') + "`n`n" +
+               "Bez nich MariaDB uruchomi sie pusta (i zglosi 'healthy'), a playerbot-migrate " +
+               "bedzie czekal 30 minut na schemat, ktory nigdy nie powstanie. Zrzuty pochodza " +
+               "z Twojej paczki serwera r40250 (Server\metin2_mysql_dump.zip) i wystawia je " +
+               "instalator - aktualizacja ich nie przywraca.`n" +
+               "Uruchom ponownie instalator (installer\install.ps1), wskazujac paczke przez " +
+               "`$env:M2_SRC_ARCHIVE, albo rozpakuj metin2_mysql_dump.zip do tego katalogu " +
+               "(account.sql, common.sql, player.sql, log.sql, hotbackup.sql) i kliknij GRAJ jeszcze raz.")
+    }
+}
+if ($missingContext.Count -gt 0) {
+    throw ("Niekompletne zrodla gry w " + $gameContext + ".`n" +
+           "Brakuje: " + ($missingContext -join ', ') + "`n`n" +
+           "To nie jest blad Dockera ani aktualizacji. Te pliki pochodza z Twojej " +
+           "wlasnej paczki serwera r40250 i sa rozpakowywane raz, przy instalacji - " +
+           "aktualizacja ich nie przywraca, bo nie wolno nam ich rozpowszechniac.`n" +
+           "Uruchom ponownie instalator (installer\install.ps1), ktory pobierze " +
+           "zrodla i odtworzy kontekst budowy. Twoja baza, postacie i ustawienia " +
+           "zostaja nietkniete.")
+}
+
 Write-Host 'Starting Metin2 services...' -ForegroundColor Cyan
 Push-Location $composeDirectory
 try {

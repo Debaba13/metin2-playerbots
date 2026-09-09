@@ -61,6 +61,19 @@ namespace
 	// variable overrides it for a build that puts the spool somewhere else.
 	const char* const PLAYERBOT_WEIGHT_DEFAULT_PATH = "/opt/m2spool/playerbot_weights.tsv";
 
+	// Night on the server. The engine has no day cycle of its own; what it has
+	// is the Christmas event flag "xmas_snow", which the client answers with
+	// the night sky (and the snow) - a GM turns it on by hand with /xmas_snow.
+	// The NIGHT switch in the weights file does that on a clock instead:
+	// between these hours of the container's local time (M2_TZ) the flag is
+	// raised, outside them it is lowered. The flag goes through the DB core
+	// and comes back as a broadcast to every client, so a change is asked
+	// for at most once a minute and only when the flag disagrees.
+	const int PLAYERBOT_NIGHT_START_HOUR = 22;
+	const int PLAYERBOT_NIGHT_END_HOUR = 6;
+	const DWORD PLAYERBOT_NIGHT_CHECK_INTERVAL = 60000;
+	const char* const PLAYERBOT_NIGHT_EVENT_FLAG = "xmas_snow";
+
 	struct TPlayerBotWeightName
 	{
 		const char* szName;
@@ -94,6 +107,15 @@ namespace
 	// books were rotting in the bags of bots that could not read them yet.
 	bool s_bPlayerBotFastBooks = true;
 	bool s_bPlayerBotFastBooksReported = true;
+	// Whether the night clock runs. On by default: asked for by the players,
+	// and the switch in the panel is for the ones who would rather not.
+	bool s_bPlayerBotNight = true;
+	bool s_bPlayerBotNightReported = true;
+	// What the clock last asked the DB core for, so a request is not repeated
+	// every minute while the round trip is still in flight, and so switching
+	// the clock off in the middle of a night lowers the flag it raised.
+	int s_iPlayerBotNightRequested = -1;
+	DWORD s_dwPlayerBotNightNextCheck = 0;
 	// What CONFIG said before the file ever overrode it, so a file that stops
 	// mentioning the chests hands the numbers back to CONFIG.
 	int s_iPlayerBotChestConfigPermille = -1;
@@ -120,6 +142,7 @@ namespace
 		s_bPlayerBotOverheadChat = true;
 		s_iPlayerBotScrapPercent = 0;
 		s_bPlayerBotFastBooks = true;
+		s_bPlayerBotNight = true;
 		if (s_iPlayerBotChestConfigPermille < 0)
 		{
 			s_iPlayerBotChestConfigPermille = g_iMoonlightChestPermille;
@@ -181,6 +204,17 @@ namespace
 				s_bPlayerBotFastBooksReported = enabled;
 			}
 			s_bPlayerBotFastBooks = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "NIGHT"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotNightReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: night clock %s", enabled ? "on" : "off");
+				s_bPlayerBotNightReported = enabled;
+			}
+			s_bPlayerBotNight = enabled;
 			return;
 		}
 		if (PlayerBotWeightNameEquals(szKey, "CHEST") || PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))
@@ -325,6 +359,53 @@ namespace
 		if (!s_bPlayerBotWeightsInitialised)
 			ResetPlayerBotWeights();
 		return s_bPlayerBotFastBooks;
+	}
+
+	bool IsPlayerBotNightHour(int hour)
+	{
+		return hour >= PLAYERBOT_NIGHT_START_HOUR || hour < PLAYERBOT_NIGHT_END_HOUR;
+	}
+
+	// The night clock: once a minute, compare what the hour wants with what
+	// the event flag says, and ask the DB core to move the flag when they
+	// disagree. With the clock off nothing is touched - a GM's own
+	// /xmas_snow stays as set - except a night this clock itself raised,
+	// which is lowered once so that turning the switch off ends the night.
+	void ManagePlayerBotNight(DWORD dwNow)
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		if (dwNow < s_dwPlayerBotNightNextCheck)
+			return;
+		s_dwPlayerBotNightNextCheck = dwNow + PLAYERBOT_NIGHT_CHECK_INTERVAL;
+
+		const int current = quest::CQuestManager::instance().GetEventFlag(PLAYERBOT_NIGHT_EVENT_FLAG) ? 1 : 0;
+		int wanted;
+		if (s_bPlayerBotNight)
+		{
+			time_t now = time(NULL);
+			struct tm local;
+			localtime_r(&now, &local);
+			wanted = IsPlayerBotNightHour(local.tm_hour) ? 1 : 0;
+		}
+		else if (s_iPlayerBotNightRequested == 1)
+			wanted = 0;
+		else
+		{
+			s_iPlayerBotNightRequested = -1;
+			return;
+		}
+
+		if (current == wanted)
+		{
+			s_iPlayerBotNightRequested = wanted;
+			return;
+		}
+		if (s_iPlayerBotNightRequested != wanted)
+			sys_log(0, "PLAYERBOT_CONFIG: night clock asks %s=%d (flag=%d)",
+					PLAYERBOT_NIGHT_EVENT_FLAG, wanted, current);
+		s_iPlayerBotNightRequested = wanted;
+		quest::CQuestManager::instance().RequestSetEventFlag(PLAYERBOT_NIGHT_EVENT_FLAG, wanted);
 	}
 
 	int GetPlayerBotWeight(BYTE bWeight)

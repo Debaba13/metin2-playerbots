@@ -87,7 +87,21 @@ while :; do
         exit 1
     fi
     if [ $((attempt % 30)) -eq 0 ]; then
-        echo "[playerbot-migrate] still waiting for the database ($((attempt * 2))s) - a large world can take a while to recover"
+        # Three different waits look the same from outside; say which this is.
+        # "answering, with none of the eight tables" is not a slow import - it
+        # is a MariaDB that initialised without the dumps, and no amount of
+        # waiting changes it. One operator watched this for thirty minutes.
+        if [ ! -s "$probe_err" ] && [ "${ready:-0}" = "0" ] && [ "$attempt" -ge 90 ]; then
+            echo "[playerbot-migrate] MariaDB is answering but holds NONE of the r40250 tables ($((attempt * 2))s)." >&2
+            echo "[playerbot-migrate] The database initialised without the SQL dumps: mariadb/initdb.d/dumps" >&2
+            echo "[playerbot-migrate] was missing or empty on the very first start, and initdb.d never runs again." >&2
+            echo "[playerbot-migrate] Waiting will not fix this. Stage the five dumps (the launcher and the" >&2
+            echo "[playerbot-migrate] installer now check for them) and re-create the database volume." >&2
+        elif [ ! -s "$probe_err" ] && [ "${ready:-0}" != "0" ]; then
+            echo "[playerbot-migrate] still waiting for the schema ($((attempt * 2))s): ${ready}/8 tables so far - the first-run import is in progress"
+        else
+            echo "[playerbot-migrate] still waiting for the database ($((attempt * 2))s) - a large world can take a while to recover"
+        fi
     fi
     sleep 2
 done

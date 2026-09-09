@@ -73,6 +73,15 @@ class FormTests(unittest.TestCase):
         cur = self.db.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
         self.assertFalse(any('INSERT' in c.args[0] for c in cur.execute.call_args_list))
 
+    def test_candidates_only_select_playerbots(self):
+        cur = MagicMock()
+        cur.fetchall.return_value = []
+        grants.candidates(cur, 50823, {'min_level': 10, 'min_horse': 2}, True)
+        query, params = cur.execute.call_args.args
+        self.assertIn("LEFT JOIN account.account", query)
+        self.assertIn("LEFT(a.login,10)='playerbot_' OR p.name LIKE 'bot%%'", query)
+        self.assertEqual(params, [10, 2, 50823])
+
 
 if __name__ == '__main__':
     unittest.main()

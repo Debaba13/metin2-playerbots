@@ -822,12 +822,27 @@ function Test-ComposeOverrideSupported {
 #  Step 3 -- get the server onto this PC
 # =============================================================================
 
+function Get-MissingContextDumps {
+    # The five dumps by name, not the directory: a directory that exists and
+    # holds nothing passed the old test, MariaDB initialised an empty world
+    # behind a green healthcheck, and playerbot-migrate waited thirty minutes
+    # for tables that were never going to appear.
+    param([string]$Dir)
+    $missing = @()
+    foreach ($db in @('account', 'common', 'player', 'log', 'hotbackup')) {
+        $f = Join-Path $Dir "mariadb\initdb.d\dumps\$db.sql"
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { $missing += "mariadb\initdb.d\dumps\$db.sql" }
+        elseif ($db -ne 'hotbackup' -and (Get-Item -LiteralPath $f).Length -eq 0) { $missing += "mariadb\initdb.d\dumps\$db.sql (empty)" }
+    }
+    return $missing
+}
+
 function Test-ContextComplete {
     param([string]$Dir)
     (Test-Path -LiteralPath (Join-Path $Dir 'docker-compose.yml')) -and
     (Test-Path -LiteralPath (Join-Path $Dir 'game\src\server')) -and
     (Test-Path -LiteralPath (Join-Path $Dir 'panel\app\admin_panel.py')) -and
-    (Test-Path -LiteralPath (Join-Path $Dir 'mariadb\initdb.d\dumps')) -and
+    (@(Get-MissingContextDumps -Dir $Dir).Count -eq 0) -and
     (Test-Path -LiteralPath (Join-Path $Dir 'mariadb\playerbot\apply.sh') -PathType Leaf) -and
     ((Get-Item -LiteralPath (Join-Path $Dir 'mariadb\playerbot\apply.sh')).Length -gt 0) -and
     (Test-Path -LiteralPath (Join-Path $Dir 'mariadb\playerbot\playerbots_seed.sql') -PathType Leaf) -and
@@ -836,6 +851,11 @@ function Test-ContextComplete {
 
 function Stop-IncompleteContext {
     param([string]$Dir)
+    $missingList = @()
+    if (-not (Test-Path -LiteralPath (Join-Path $Dir 'game\src\server'))) { $missingList += 'game\src\server' }
+    $missingList += @(Get-MissingContextDumps -Dir $Dir)
+    if (-not (Test-Path -LiteralPath (Join-Path $Dir 'mariadb\playerbot\playerbots_seed.sql') -PathType Leaf)) { $missingList += 'mariadb\playerbot\playerbots_seed.sql' }
+    $missingText = if ($missingList.Count -gt 0) { "`nMissing:`n    " + ($missingList -join "`n    ") + "`n" } else { '' }
     Stop-Friendly @"
 The Docker build context in
 
@@ -843,6 +863,7 @@ The Docker build context in
 
 is not complete: the game source, database dumps, or Playerbot seed are missing
 from it.
+$missingText
 
 That is exactly what a bare checkout of the project looks like. The project
 contains the Linux port and nothing else -- the game itself is not ours to

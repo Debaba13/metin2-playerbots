@@ -53,6 +53,20 @@ namespace
 
 	// The Orc Tooth quest has a second half: the teeth are in, and the quest
 	// waits in key_item for Jinunggyi's Soul Stone from the Elite Orcs.
+	// A specimen the bot has no mission left for: the row that wants it is
+	// handed in. Those used to stay in the bag for good ("niech dadza sklepik
+	// z zebami jesli maja nadmiar"); now they are goods. The soul stone is
+	// never surplus - it is the key to the second half of the Orc Tooth row.
+	bool IsPlayerBotBiologistSpecimenSurplus(LPCHARACTER ch, DWORD vnum)
+	{
+		if (!ch || vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM)
+			return false;
+		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
+			if (PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum == vnum)
+				return IsPlayerBotBiologistMissionComplete(ch, i);
+		return false;
+	}
+
 	bool IsPlayerBotBiologistKeyPhase(LPCHARACTER ch, size_t missionIndex)
 	{
 		if (!ch || missionIndex != PLAYERBOT_BIOLOGIST_ORC_TOOTH_INDEX)
@@ -117,7 +131,19 @@ namespace
 				first = (int)i;
 			int required = 0;
 			const DWORD wanted = GetPlayerBotBiologistWantedItem(ch, i, &required);
-			if (carrying < 0 && ch->CountSpecifyItem(wanted) > 0)
+			// "Carrying" outranks everything, so it has to mean carrying enough.
+			// It used to mean one: a single Gango Root picked up on a fishing
+			// trip to Joan pinned a bot of forty to the level-fifteen row for
+			// good - the row is outgrown, so it never hunts the monster, so it
+			// never reaches the five it needs, so the panel read "Korzen Gango
+			// 0/5" beside a bot hitting Orcs. Measured: thirty-eight bots of
+			// twenty-six and up held the root, thirty-six of them with one to
+			// four, and that is the "wszystkie maja 4/7 Korzen Gango" from the
+			// Discord. An outgrown row is taken only when the bag already holds
+			// the whole hand-in; a row the bot has not outgrown keeps the old
+			// rule, because there it will hunt the rest.
+			const int held = ch->CountSpecifyItem(wanted);
+			if (carrying < 0 && held > 0 && (!outgrown || held >= required))
 				carrying = (int)i;
 			if (here < 0 && !outgrown &&
 					IsPlayerBotHuntingMobHosted(mission.mobVnum, ch->GetMapIndex()))

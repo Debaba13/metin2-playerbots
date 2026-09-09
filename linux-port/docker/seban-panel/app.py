@@ -1,10 +1,14 @@
 import json
 import os
+import hmac
 import socket
 import time
 import re
+import uuid
 from pathlib import Path
 from urllib.parse import quote
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -14,22 +18,28 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SEBAN_SESSION_SECRET", "change-this-before-public-use")
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+    # Cookies are scoped to the host, not the port. A dedicated name prevents
+    # the classic Tieru panel on :7788 from overwriting this panel on :7789.
+    SESSION_COOKIE_NAME=os.environ.get("SEBAN_SESSION_COOKIE_NAME", "seban_panel_session"),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 
 MAP_NAMES = {
     1: "Shinsoo M1", 3: "Shinsoo M2", 21: "Chunjo M1", 23: "Chunjo M2",
     24: "Chunjo M3", 25: "Łatwy Loch Małp", 41: "Jinno M1", 43: "Jinno M2",
     61: "Góra Sohan", 63: "Pustynia Yongbi", 64: "Dolina Orków", 104: "Loch Pająków V1",
-    108: "Loch Małp Normalny", 109: "Loch Małp Trudny",
     65: "Świątynia Hwang",
+    108: "Loch Małp Normalny", 109: "Loch Małp Trudny",
 }
 MAP_BOUNDS = {
     21: (0, 102400, 102400, 128000), 23: (102400, 204800, 102400, 102400),
     24: (179200, 0, 51200, 51200), 25: (844800, 435200, 76800, 76800),
     61: (358400, 153600, 153600, 153600), 63: (204800, 486400, 153600, 153600),
     64: (256000, 665600, 153600, 153600), 104: (51200, 486400, 76800, 76800),
-    108: (128000, 640000, 76800, 76800), 109: (128000, 716800, 76800, 76800),
     65: (537600, 51200, 102400, 102400),
+    108: (128000, 640000, 76800, 76800), 109: (128000, 716800, 76800, 76800),
 }
 TRACKED_MAP_OPTIONS = tuple((index, MAP_NAMES[index]) for index in MAP_BOUNDS)
 MAP_RESPAWN_OPTIONS = (
@@ -43,6 +53,13 @@ MAP_RESPAWN_OPTIONS = (
 MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {25, 104, 108, 109})
 STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv"),)
 RATES_SPOOL = Path("/opt/m2spool")
+UPDATE_SPOOL = Path("/opt/m2update")
+UPDATE_WATCHER_MAX_AGE_SECONDS = 90
+PLAYERBOTS_RELEASE_URL = "https://api.github.com/repos/TieruYT/metin2-playerbots/releases/latest"
+PLAYERBOTS_RELEASE_CACHE_SECONDS = 900
+_playerbots_release_cache = {"checked_at": 0.0, "latest": None, "error": None}
+SERVER_SETTINGS_READY_MAX_AGE_SECONDS = 20
+SERVER_SETTINGS_STALE_SECONDS = 600
 GAME_HOST = os.environ.get("PLAYERBOTS_GAME_HOST", "metin2-game")
 GAME_LOGIN_PORT = int(os.environ.get("PLAYERBOTS_LOGIN_PORT", "11000"))
 GAME_WORLD_PORT = int(os.environ.get("PLAYERBOTS_WORLD_PORT", "13000"))
@@ -59,7 +76,7 @@ AI_WEIGHT_KEYS = (
 AI_WEIGHT_MIN, AI_WEIGHT_MAX, AI_WEIGHT_NEUTRAL = 25, 250, 100
 # These values share the live weight file with goal weights, but the core treats
 # them as switches or direct settings rather than 25–250% goal weights.
-AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "SCRAP": 0, "CHEST": None, "CHEST_STONE": None}
+AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "NIGHT": 1, "SCRAP": 0, "CHEST": None, "CHEST_STONE": None}
 AI_SPECIAL_WEIGHT_KEYS = frozenset(AI_LIVE_DEFAULTS)
 BIOLOGIST_COMPLETE_STATE = 557528158
 # Tieru 1.29.10 adds the Orc Tooth task after the six classic Biologist
@@ -71,6 +88,9 @@ BIOLOGIST_FALLBACK_MISSIONS = (
     "make_herb_lv20", "make_herb_lv25", "collect_quest_lv30",
 )
 PANEL_VERSION_FILE = Path(__file__).parent / "VERSION"
+GM_JOB_OPTIONS = ((0, "Wojownik"), (1, "Ninja"), (2, "Sura"), (3, "Szaman"))
+GM_JOB_STARTS = {0: (6, 4, 3, 3, 600, 200), 1: (4, 3, 6, 3, 650, 200), 2: (5, 3, 3, 6, 650, 200), 3: (3, 5, 3, 5, 700, 200)}
+GM_EMPIRE_STARTS = {1: (469300, 964200, 1), 2: (55700, 157900, 21), 3: (969600, 278400, 41)}
 try:
     PANEL_VERSION = os.environ.get("SEBAN_PANEL_VERSION") or PANEL_VERSION_FILE.read_text(encoding="utf-8").strip()
 except OSError:
@@ -96,10 +116,14 @@ ITEM_TYPE_NAMES = (
     "ITEM_SPECIAL_DS", "ITEM_EXTRACT", "ITEM_SECONDARY_COIN", "ITEM_RING", "ITEM_BELT", "ITEM_PET", "ITEM_MEDIUM", "ITEM_GACHA", "ITEM_SOUL", "ITEM_PASSIVE",
 )
 APPLY_LABELS = {
-    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Średnie obrażenia", "%"), 72: ("Obrażenia umiejętności", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%")}
-# W tej kompilacji serwera Playerbots pola 71/72 są odwrotne względem
-# standardowego enumu klienta.  Ten override dotyczy tooltipów przedmiotów.
-APPLY_LABELS.update({71: ("Obrażenia umiejętności", "%"), 72: ("Średnie obrażenia", "%")})
+    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Obrażenia umiejętności", "%"), 72: ("Średnie obrażenia", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%")}
+# 71 i 72 są w tablicy powyżej, we właściwej kolejności: common/length.h
+# niesie numery we własnych komentarzach - APPLY_SKILL_DAMAGE_BONUS to 71,
+# APPLY_NORMAL_HIT_DAMAGE_BONUS to 72. Stała tu wcześniej poprawka
+# nadpisująca błędną tablicę i tłumacząca ją tym, że "w tej kompilacji pola
+# są odwrotne" - nic ich nie odwraca. Uzasadnienie było nieprawdziwe, a samo
+# nadpisanie sięgało tylko opisów przedmiotów, więc ranking - który bierze
+# dane z osobnego zapytania - pokazywał je zamienione jeszcze długo potem.
 JOB_NAMES = ("Wojownik", "Ninja", "Sura", "Szaman")
 SKILLS = {
     # Exact vnum/name pairs from Tieru's current panel. The old mapping put
@@ -156,6 +180,14 @@ def game_text(value):
                 pass
         return value.decode("cp1250", "replace")
     return value or ""
+
+
+def cp1250_hex_text(value):
+    """Decode a Polish item name without trusting the log table's charset."""
+    try:
+        return bytes.fromhex(str(value or "")).decode("cp1250")
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return ""
 
 
 def map_name(index):
@@ -315,6 +347,7 @@ def parse_skills(raw, job, group):
 
 
 SKILL_NAMES = {vnum: name for skill_set in SKILLS.values() for vnum, name in skill_set}
+_season_cache = {"at": 0.0, "weekly": [], "records": {}}
 
 
 def news_feed_events():
@@ -322,8 +355,11 @@ def news_feed_events():
     # Filter in SQL before the limit.  A busy server produces thousands of
     # ordinary +0–+3 refines per minute; taking its newest 900 rows first made
     # rare achievements disappear from the feed altogether.
-    raw = rows("""SELECT l.time,l.how,l.hint,l.what,l.who,p.name
+    raw = rows("""SELECT l.time,l.how,l.hint,l.what,l.who,p.name,
+        HEX(proto.locale_name) AS item_name_hex
       FROM log.log l JOIN player.player p ON p.id=l.who
+      LEFT JOIN player.item i ON i.id=l.what
+      LEFT JOIN player.item_proto proto ON proto.vnum=i.vnum
       WHERE l.time >= NOW() - INTERVAL 12 HOUR
         AND (
           (l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7%%' OR l.hint LIKE '%%+8%%' OR l.hint LIKE '%%+9%%'))
@@ -341,7 +377,8 @@ def news_feed_events():
         if how == "REFINE SUCCESS":
             match = re.search(r"\+([789])(?:\s|$)", hint)
             if match:
-                message = f"{name} ulepszył {hint.strip()}"
+                item_name = cp1250_hex_text(row.get("item_name_hex")) or hint.strip()
+                message = f"{name} ulepszył {item_name}"
         elif how == "SKILLUP":
             match = re.search(r"SkillUp:\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)", hint)
             if match:
@@ -353,7 +390,7 @@ def news_feed_events():
             message = f"{name} znalazł Małż podczas połowu"
         if message:
             seen.add(key)
-            events.append({"key": key, "time": row["time"].strftime("%H:%M") if hasattr(row.get("time"), "strftime") else str(row.get("time"))[11:16], "message": message})
+            events.append({"key": key, "time": row["time"].strftime("%H:%M") if hasattr(row.get("time"), "strftime") else str(row.get("time"))[11:16], "message": message, "refine_tier": int(match.group(1)) if how == "REFINE SUCCESS" and match else 0})
     return list(reversed(events[-30:]))
 
 
@@ -466,6 +503,125 @@ def read_map_regen_status():
     return result
 
 
+def read_spool_values(path):
+    """Read a small key=value status file written by a fixed helper."""
+    result = {}
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                result[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return result
+
+
+def update_status():
+    """State exposed by Tieru's isolated updater through its tiny spool."""
+    result = read_spool_values(UPDATE_SPOOL / "update.status")
+    try:
+        age = max(0, int(time.time() - (UPDATE_SPOOL / "watcher").stat().st_mtime))
+    except OSError:
+        age = None
+    result["watcher_age"] = age
+    result["watcher_ready"] = age is not None and age < UPDATE_WATCHER_MAX_AGE_SECONDS
+    result["state"] = result.get("state", "idle")
+    try:
+        step, steps = int(result.get("step", 0)), int(result.get("steps", 5))
+        result["percent"] = max(0, min(100, round(step * 100 / max(steps, 1))))
+    except ValueError:
+        result["percent"] = 0
+    if result["state"] == "running":
+        result["percent"] = max(5, result["percent"])
+    result["message"] = result.get("message", "Aktualizator czeka na zlecenie." if result["watcher_ready"] else "Aktualizator nie jest uruchomiony.")
+    try:
+        result["log"] = (UPDATE_SPOOL / "update.log").read_text(encoding="utf-8", errors="replace").splitlines()[-18:]
+    except OSError:
+        result["log"] = []
+    return result
+
+
+def installed_playerbots_version():
+    """Prefer the version confirmed by the updater, then the configured baseline."""
+    current = update_status()
+    if current.get("state") == "ok":
+        match = re.search(r"version ([0-9]+(?:\.[0-9]+)+)", current.get("message", ""))
+        if match:
+            return match.group(1)
+    return os.environ.get("PLAYERBOTS_VERSION", "nieustawiona")
+
+
+def version_key(value):
+    match = re.fullmatch(r"v?([0-9]+(?:\.[0-9]+)+)", str(value or "").strip(), re.I)
+    return tuple(int(part) for part in match.group(1).split(".")) if match else None
+
+
+def latest_playerbots_release():
+    """Read GitHub's latest release, cached so page loads never hammer the API."""
+    now = time.time()
+    if now - _playerbots_release_cache["checked_at"] < PLAYERBOTS_RELEASE_CACHE_SECONDS:
+        return dict(_playerbots_release_cache)
+    result = {"checked_at": now, "latest": None, "error": None}
+    try:
+        request_github = Request(PLAYERBOTS_RELEASE_URL, headers={"Accept": "application/vnd.github+json", "User-Agent": "Metin2-Singleplayer-Panel"})
+        with urlopen(request_github, timeout=3) as response:
+            payload = json.load(response)
+        tag = str(payload.get("tag_name") or "").strip()
+        if not version_key(tag):
+            raise ValueError("GitHub nie zwrócił poprawnego numeru wydania.")
+        result["latest"] = tag.lstrip("vV")
+    except (OSError, ValueError, HTTPError, URLError, json.JSONDecodeError) as exc:
+        result["error"] = str(exc)[:120] or "Nie udało się połączyć z GitHub."
+    _playerbots_release_cache.clear()
+    _playerbots_release_cache.update(result)
+    return dict(result)
+
+
+def playerbots_release_status():
+    installed = installed_playerbots_version().strip()
+    latest_info = latest_playerbots_release()
+    latest = latest_info.get("latest")
+    installed_key, latest_key = version_key(installed), version_key(latest)
+    if installed_key and latest_key:
+        behind = installed_key < latest_key
+        return {"installed": installed, "latest": latest, "behind": behind,
+                "tone": "outdated" if behind else "current",
+                "label": f"Dostępna {latest}" if behind else "Aktualna"}
+    return {"installed": installed, "latest": latest, "behind": False, "tone": "unknown",
+            "label": "Nie sprawdzono GitHub" if latest_info.get("error") else "Brak wersji lokalnej"}
+
+
+def update_csrf_token():
+    token = session.get("seban_update_csrf")
+    if not token:
+        token = uuid.uuid4().hex
+        session["seban_update_csrf"] = token
+    return token
+
+
+def queue_tieru_update():
+    """Request only the updater's fixed sequence; no command, URL or path crosses this boundary."""
+    current = update_status()
+    if not current["watcher_ready"]:
+        raise RuntimeError("Aktualizator nie jest gotowy. Administrator musi uruchomić usługę updater.")
+    if current.get("state") == "running":
+        raise RuntimeError("Aktualizacja już trwa. Poczekaj na jej zakończenie.")
+    version = installed_playerbots_version().strip()
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
+        version = "0"
+    request_id = "seban-" + uuid.uuid4().hex
+    UPDATE_SPOOL.mkdir(parents=True, exist_ok=True)
+    temporary = UPDATE_SPOOL / (request_id + ".new")
+    try:
+        temporary.write_text(f"id={request_id}\nversion={version}\ntime={int(time.time())}\n", encoding="utf-8")
+        temporary.chmod(0o660)
+        # replace is atomic. The worker records the id before doing work, so a
+        # completed request never runs twice after a container recreation.
+        os.replace(temporary, UPDATE_SPOOL / "request")
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def read_ai_weights():
     """Read Tieru's live Playerbots goal weights; absent entries are neutral."""
     values = {key: AI_WEIGHT_NEUTRAL for key, _, _ in AI_WEIGHT_KEYS}
@@ -476,7 +632,7 @@ def read_ai_weights():
             if len(fields) >= 2 and fields[0].upper() in values:
                 try:
                     key, raw_value = fields[0].upper(), fields[1]
-                    if key in ("CHAT", "BOOKS"):
+                    if key in ("CHAT", "BOOKS", "NIGHT"):
                         values[key] = 0 if raw_value.lower() in ("0", "off", "no") else 1
                     elif key == "SCRAP":
                         values[key] = max(0, min(100, int(raw_value)))
@@ -519,6 +675,7 @@ def write_ai_weights(values):
     content.extend(f"{key}\t{values[key]}" for key, _, _ in AI_WEIGHT_KEYS)
     content.append(f"CHAT\t{1 if values.get('CHAT', 1) else 0}")
     content.append(f"BOOKS\t{1 if values.get('BOOKS', 1) else 0}")
+    content.append(f"NIGHT\t{1 if values.get('NIGHT', 1) else 0}")
     content.append(f"SCRAP\t{max(0, min(100, int(values.get('SCRAP', 0))))}")
     for key in ("CHEST", "CHEST_STONE"):
         if values.get(key) is not None:
@@ -586,9 +743,31 @@ def queue_rate_restart(values):
         (int(time.time()), values["exp"], values["drop"], values["yang"]), encoding="utf-8")
 
 
-# A restart that has been asked for and not yet reported finished. Bounded,
-# because a game container that never answers must not jam the console for
-# ever - which is exactly what the previous exclusive lock did.
+def server_settings_status():
+    """Report whether the game-side restart helper is alive, not just queued."""
+    ready = read_spool_values(RATES_SPOOL / "server-settings.ready")
+    request = RATES_SPOOL / "server-settings.request"
+    status = read_spool_values(RATES_SPOOL / "server-settings.status")
+    try:
+        ready_age = max(0, int(time.time() - (RATES_SPOOL / "server-settings.ready").stat().st_mtime))
+    except OSError:
+        ready_age = None
+    try:
+        request_age = max(0, int(time.time() - request.stat().st_mtime))
+    except OSError:
+        request_age = None
+    worker_ready = ready.get("capability") == "server-settings" and ready_age is not None and ready_age <= SERVER_SETTINGS_READY_MAX_AGE_SECONDS
+    result = {"ready": worker_ready, "ready_age": ready_age, "pending": request.exists(), "request_age": request_age,
+              "can_clear": bool(request_age is not None and request_age >= SERVER_SETTINGS_STALE_SECONDS and not worker_ready)}
+    if worker_ready:
+        result["message"] = "Helper ustawień serwera jest gotowy."
+    elif result["pending"]:
+        result["message"] = "Zlecenie nie jest odbierane przez helper gry. Sprawdź instalację integracji; po 10 minutach można usunąć wyłącznie zaległe zlecenie."
+    else:
+        result["message"] = "Brak sygnału helpera gry. Zainstaluj integrację `m2-server-settings` i `m2-supervise` przed zmianą respawnów lub rat."
+    return result
+
+
 RESTART_STALE_SECONDS = 600
 
 
@@ -604,24 +783,39 @@ def restart_in_flight():
 
 
 def queue_server_settings(action, values=None, changes=None):
-    """Ask the game container for a restart, through the spool it watches.
-
-    This used to publish a file of its own, ``server-settings.request``.
-    Nothing on the game side has ever read that name - the container watches
-    ``request`` and only ``request``, see m2-rates in the game image - and
-    nothing ever deleted it either, so the first click left it lying there and
-    every click after it was refused as "a previous request is still running".
-    Both buttons of the restart console were therefore silent for good, which
-    is how the console came to be reported sitting at "last completed restart:
-    no data recorded" however often it was pressed.
-
-    A restart with nothing to change is that same file carrying the rates the
-    server already has: the game stages them, finds them identical, and
-    restarts the cores, which is the whole point of the button.
-    """
-    if restart_in_flight():
-        raise FileExistsError("a restart is already under way")
-    queue_rate_restart(values if action == "apply" and values else read_rates())
+    """Publish a complete request only while the game-side helper is present."""
+    support = server_settings_status()
+    if not support["ready"]:
+        # The settings helper (integration/m2-server-settings) is not part of
+        # this image, so the map respawn half of the console has nothing to
+        # carry it out and is refused with the message above. A plain restart,
+        # and a rates-only apply, never needed it: the game container has
+        # always watched the rates spool, and that is the path both buttons
+        # took before 1.38 - refusing them here would put the dead restart
+        # button of 1.30.19 back on every install without the helper.
+        # An empty respawn field arrives as "reset", for every map, from a
+        # form nobody touched - so "no respawn change" is "nothing but resets".
+        respawn_changes = {key: value for key, value in (changes or {}).items() if value != "reset"}
+        if action == "restart" or (action == "apply" and values and not respawn_changes):
+            if restart_in_flight():
+                raise FileExistsError("a restart is already under way")
+            queue_rate_restart(values if action == "apply" else read_rates())
+            return
+        raise RuntimeError(support["message"])
+    RATES_SPOOL.mkdir(parents=True, exist_ok=True)
+    request_id = "seban-" + uuid.uuid4().hex
+    lines = [f"id={request_id}", f"action={action}", "source=panel"]
+    if action == "apply":
+        lines.extend(f"{key}={values[key]}" for key in RATE_NAMES)
+        lines.extend(f"map_{key}={value}" for key, value in (changes or {}).items())
+    temporary = RATES_SPOOL / (request_id + ".new")
+    try:
+        temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        temporary.chmod(0o660)
+        # A hard link is an atomic, exclusive publication on the shared volume.
+        os.link(temporary, RATES_SPOOL / "server-settings.request")
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def queue_map_regen_changes(changes):
@@ -676,21 +870,20 @@ def bot_ranking(kind, sort_by="avg"):
             ORDER BY MOD(COALESCE(i.vnum,0),10) DESC,i.vnum DESC,p.level DESC LIMIT 100""")
     if kind == "weapon30":
         weapon30_order = {
-            "avg": "skill_damage DESC, avg_damage DESC, p.level DESC",
-            "skill": "avg_damage DESC, skill_damage DESC, p.level DESC",
-            "upgrade": "MOD(i.vnum,10) DESC, skill_damage DESC, avg_damage DESC, p.level DESC",
-        }.get(sort_by, "skill_damage DESC, avg_damage DESC, p.level DESC")
+            "avg": "avg_damage DESC, skill_damage DESC, p.level DESC",
+            "skill": "skill_damage DESC, avg_damage DESC, p.level DESC",
+            "upgrade": "MOD(i.vnum,10) DESC, avg_damage DESC, skill_damage DESC, p.level DESC",
+        }.get(sort_by, "avg_damage DESC, skill_damage DESC, p.level DESC")
         result = rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS item_name,
             IF(GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)) AS skill_damage,
             IF(GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)) AS avg_damage
             FROM player.item i JOIN player.player p ON p.id=i.owner_id LEFT JOIN player.item_proto ip ON ip.vnum=i.vnum
             WHERE {base} AND ((i.vnum BETWEEN 290 AND 299) OR (i.vnum BETWEEN 1170 AND 1179) OR (i.vnum BETWEEN 2150 AND 2159) OR (i.vnum BETWEEN 3210 AND 3219) OR (i.vnum BETWEEN 5110 AND 5119) OR (i.vnum BETWEEN 7160 AND 7169))
             ORDER BY {weapon30_order} LIMIT 100""")
-        # The database's custom Playerbots build stores type 71 as skill
-        # damage and type 72 as average damage.  The query above remains
-        # legible; normalize the public field names here before sorting/UI.
-        for row in result:
-            row["avg_damage"], row["skill_damage"] = row["skill_damage"], row["avg_damage"]
+        # 71 is APPLY_SKILL_DAMAGE_BONUS and 72 is APPLY_NORMAL_HIT_DAMAGE_BONUS in
+        # common/length.h, and the query names them so. A swap used to live
+        # here, justified by "this build stores them the other way round" -
+        # it does not, and the ranking showed the two columns exchanged.
         return sorted(
             result,
             key=lambda row: (
@@ -790,6 +983,7 @@ def login():
         if password_hash and check_password_hash(password_hash, request.form.get("password", "")):
             session.clear()
             session["seban_admin"] = True
+            session.permanent = True
             return redirect(request.args.get("next") or url_for("dashboard"))
         flash("Nieprawidłowe hasło.", "error")
     return render_template("login.html")
@@ -860,6 +1054,7 @@ def dashboard():
         restart_label = datetime.fromtimestamp(int(restart_time)).strftime("%d.%m.%Y, %H:%M:%S")
     except (TypeError, ValueError, OSError):
         restart_label = "Brak danych"
+    release_status = playerbots_release_status()
     world_summary = {
         "bots": len(live_roster),
         "average_level": round(sum(int(bot.get("level") or 0) for bot in live_roster) / len(live_roster), 1) if live_roster else 0,
@@ -869,7 +1064,8 @@ def dashboard():
         "horse_max": max((int(bot.get("horse_level") or 0) for bot in live_roster), default=0),
         "guilds": bot_guilds,
         "last_restart": restart_label,
-        "version": os.environ.get("PLAYERBOTS_VERSION", "nieustawiona"),
+        "version": release_status["installed"],
+        "release": release_status,
         "rates": read_rates(),
     }
     for bot in top:
@@ -1105,23 +1301,47 @@ def accounts():
         authority = request.form.get("authority", "PLAYER")
         gm_name = request.form.get("gm_name", "").strip()
         deletion_code = request.form.get("deletion_code", "").strip()
+        try:
+            gm_job = int(request.form.get("gm_job", 0) or 0)
+        except ValueError:
+            gm_job = -1
         if not (3 <= len(login) <= 30 and login.replace("_", "").isalnum() and len(password) >= 6 and authority in authorities):
             flash("Login ma mieć 3–30 znaków (litery, cyfry, _), a hasło minimum 6 znaków.", "error")
         elif not (deletion_code.isdigit() and len(deletion_code) == 7):
             flash("Kod usunięcia postaci ma zawierać dokładnie 7 cyfr.", "error")
-        elif authority != "PLAYER" and not gm_name:
-            flash("Dla konta GM wpisz docelowy nick postaci.", "error")
+        elif authority != "PLAYER" and not re.fullmatch(r"[A-Za-z0-9_]{2,24}", gm_name):
+            flash("Nick postaci GM ma mieć 2–24 znaki: litery, cyfry lub _.", "error")
+        elif authority != "PLAYER" and gm_job not in dict(GM_JOB_OPTIONS):
+            flash("Wybierz poprawną klasę postaci GM.", "error")
         else:
             try:
                 with db() as con:
                     with con.cursor() as cur:
+                        if authority != "PLAYER":
+                            cur.execute("SELECT id FROM player.player WHERE name=%s LIMIT 1", (gm_name,))
+                            if cur.fetchone():
+                                raise ValueError("Taki nick postaci już istnieje.")
+                        con.begin()
                         cur.execute("INSERT INTO account.account (login,password,social_id,email,status,empire) VALUES (%s,PASSWORD(%s),%s,%s,'OK',%s)", (login, password, deletion_code, email, empire if authority != "PLAYER" else 0))
                         if authority != "PLAYER":
+                            account_id = cur.lastrowid
+                            x, y, map_index = GM_EMPIRE_STARTS[empire]
+                            st, ht, dx, iq, hp, mp = GM_JOB_STARTS[gm_job]
+                            cur.execute("""INSERT INTO player.player
+                              (account_id,name,job,dir,x,y,map_index,exit_x,exit_y,exit_map_index,hp,mp,stamina,random_hp,random_sp,level,st,ht,dx,iq,stat_point,skill_point,sub_skill_point,part_main,part_base,part_hair,skill_group,horse_hp,horse_stamina,horse_level,horse_hp_droptime,horse_riding,horse_skill_point,bank_value)
+                              VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,%s,1000,0,0,1,%s,%s,%s,%s,0,0,0,0,0,0,0,0,0,0,0,0,0,0)""",
+                              (account_id, gm_name, gm_job, x, y, map_index, x, y, map_index, hp, mp, st, ht, dx, iq))
                             cur.execute("INSERT INTO common.gmlist (mAccount,mName,mContactIP,mServerIP,mAuthority) VALUES (%s,%s,'','ALL',%s)", (login, gm_name, authority))
-                flash("Konto utworzone. Uprawnienia GM staną się aktywne po restarcie usług gry.")
+                        con.commit()
+                if authority != "PLAYER":
+                    flash(f"Utworzono konto i postać GM „{gm_name}”. Postać jest dostępna od razu; uprawnienia GM staną się aktywne po restarcie usług gry.")
+                else:
+                    flash("Konto utworzone.")
                 return redirect(url_for("accounts"))
-            except pymysql.MySQLError as exc:
-                flash(f"Nie utworzono konta: {exc.args[1] if len(exc.args)>1 else exc}", "error")
+            except (pymysql.MySQLError, ValueError) as exc:
+                try: con.rollback()
+                except Exception: pass
+                flash(f"Nie utworzono konta: {exc.args[1] if isinstance(exc, pymysql.MySQLError) and len(exc.args)>1 else exc}", "error")
     account_query = request.args.get("q", "").strip()[:60]
     display = request.args.get("display", "100")
     if display not in ("100", "1000", "all"):
@@ -1138,7 +1358,7 @@ def accounts():
         query_sql += " LIMIT %s"
         params.append(int(display))
     recent = rows(query_sql, params)
-    return render_template("accounts.html", accounts=recent, authorities=authorities, account_query=account_query, display=display)
+    return render_template("accounts.html", accounts=recent, authorities=authorities, jobs=GM_JOB_OPTIONS, account_query=account_query, display=display)
 
 
 @app.route("/maps")
@@ -1149,12 +1369,18 @@ def maps():
       FROM player.web_seban_map_snapshot
       WHERE captured_at >= NOW() - INTERVAL 24 HOUR ORDER BY captured_at ASC
     """)
-    labels, series = [], {name: {} for _index, name in TRACKED_MAP_OPTIONS}
+    labels, series = [], {index: {} for index, _name in TRACKED_MAP_OPTIONS}
     for row in raw:
+        index = int(row["map_index"] or 0)
+        if index not in series:
+            continue
         if row["label"] not in labels:
             labels.append(row["label"])
-        series.setdefault(map_name := MAP_NAMES.get(int(row["map_index"] or 0), f"Mapa #{row['map_index']}"), {})[row["label"]] = row["character_count"]
-    chart = {"labels": labels, "series": [{"name": key, "data": [values.get(label, 0) for label in labels]} for key, values in sorted(series.items())]}
+        series[index][row["label"]] = int(row["character_count"] or 0)
+    chart = {"labels": labels, "series": [
+        {"id": index, "name": name, "data": [values.get(label, 0) for label in labels]}
+        for index, name in TRACKED_MAP_OPTIONS for values in (series[index],)
+    ]}
     current = {int(row["map_index"]): row["character_count"] for row in live_map_counts()}
     latest = [{"map_index": index, "character_count": current.get(index, 0)} for index, _name in TRACKED_MAP_OPTIONS]
     return render_template("maps.html", chart=chart, latest=latest)
@@ -1229,22 +1455,28 @@ def rankings():
 
 @app.route("/season")
 def season():
-    """Public weekly season, calculated from existing server logs."""
+    """Weekly season from the three indexed event types only."""
+    if time.time() - _season_cache["at"] < 600:
+        return render_template("season.html", weekly=_season_cache["weekly"], records=_season_cache["records"])
     weekly = rows("""SELECT p.id,p.name,p.level,
         SUM(l.how='STONE_KILL') AS metins,
-        SUM(l.how LIKE '%%BOSS%%') AS bosses,
-        SUM(l.how='REFINE_SUCCESS' AND CAST(l.hint AS UNSIGNED)>=7) AS refine7
+        SUM(l.how='BOSS_KILL') AS bosses,
+        SUM(l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7' OR l.hint LIKE '%%+8' OR l.hint LIKE '%%+9')) AS refine7
         FROM log.log l JOIN player.player p ON p.id=l.who
         WHERE l.time>=NOW()-INTERVAL 7 DAY AND p.name LIKE 'bot%%'
-        GROUP BY p.id ORDER BY (SUM(l.how='STONE_KILL')*150+SUM(l.how LIKE '%%BOSS%%')*500+SUM(l.how='REFINE_SUCCESS' AND CAST(l.hint AS UNSIGNED)>=7)*200) DESC,p.level DESC LIMIT 30""")
+          AND l.how IN ('STONE_KILL','BOSS_KILL','REFINE SUCCESS')
+        GROUP BY p.id ORDER BY (SUM(l.how='STONE_KILL')*150+SUM(l.how='BOSS_KILL')*500+SUM(l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7' OR l.hint LIKE '%%+8' OR l.hint LIKE '%%+9'))*200) DESC,p.level DESC LIMIT 30""")
     for row in weekly:
         row["points"] = int(row.get("metins") or 0)*150 + int(row.get("bosses") or 0)*500 + int(row.get("refine7") or 0)*200
     records = one("""SELECT
-        (SELECT COUNT(*) FROM log.log WHERE how='STONE_KILL') AS metins,
-        (SELECT COUNT(*) FROM log.log WHERE how LIKE '%%BOSS%%') AS bosses,
-        (SELECT COUNT(*) FROM log.log WHERE how='REFINE_SUCCESS' AND CAST(hint AS UNSIGNED)>=7) AS refine7,
+        SUM(l.how='STONE_KILL') AS metins,
+        SUM(l.how='BOSS_KILL') AS bosses,
+        SUM(l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7' OR l.hint LIKE '%%+8' OR l.hint LIKE '%%+9')) AS refine7,
         (SELECT MAX(level) FROM player.player) AS level
-    """)
+        FROM log.log l
+        WHERE l.time>=NOW()-INTERVAL 7 DAY
+          AND l.how IN ('STONE_KILL','BOSS_KILL','REFINE SUCCESS')""")
+    _season_cache.update(at=time.time(), weekly=weekly, records=records)
     return render_template("season.html", weekly=weekly, records=records)
 
 
@@ -1252,7 +1484,30 @@ def season():
 @login_required
 def manage():
     map_counts = live_map_counts()
-    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=settings(), map_counts=map_counts, bot_count=len(live_bots()), map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status())
+    current_settings = settings()
+    updater = update_status()
+    updater["protected"] = current_settings.get("auth_enabled") == "1" and bool(session.get("seban_admin"))
+    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=current_settings, map_counts=map_counts, bot_count=len(live_bots()), map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status(), server_settings=server_settings_status(), updater=updater, playerbots_release=playerbots_release_status(), update_csrf=update_csrf_token())
+
+
+@app.post("/manage/update")
+@login_required
+def manage_update():
+    current = settings()
+    if current.get("auth_enabled") != "1" or not session.get("seban_admin"):
+        flash("Aktualizacje z panelu wymagają włączonej ochrony hasłem.", "error")
+        return redirect(url_for("manage"))
+    supplied = request.form.get("update_csrf", "")
+    expected = session.get("seban_update_csrf", "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        abort(403)
+    try:
+        queue_tieru_update()
+    except (OSError, RuntimeError) as exc:
+        flash(str(exc), "error")
+    else:
+        flash("Pobrano zlecenie aktualizacji. Serwer zostanie przebudowany przez odizolowany updater; postęp jest widoczny poniżej.")
+    return redirect(url_for("manage"))
 
 
 @app.post("/manage/settings")
@@ -1313,19 +1568,33 @@ def manage_restart_config():
         queue_server_settings(action, values, changes)
     except ValueError as exc:
         flash(str(exc) if "invalid literal" not in str(exc) else "Wpisz całkowite wartości liczbowe.", "error")
+    except RuntimeError as exc:
+        flash(str(exc), "error")
     except FileExistsError:
         flash("Poprzednie zlecenie nadal trwa. Poczekaj na zakończenie restartu.", "error")
     except OSError:
         flash("Nie udało się zapisać zlecenia do kolejki gry.", "error")
     else:
-        if action != "apply":
-            flash("Zlecono restart rdzeni. Odśwież tę stronę za chwilę, aby zobaczyć wynik.")
-        elif changes:
-            flash("Mnożniki zapisane i zlecony restart. Zmiany respawnu nie zostały "
-                  "zlecone: ten serwer nie ma jeszcze modułu, który zapisuje pliki "
-                  "regen.txt w kontenerze gry.", "error")
-        else:
-            flash("Mnożniki zapisane i zlecony restart. Odśwież tę stronę za chwilę.")
+        flash("Zestaw zapisany do kolejki: jeden restart zastosuje raty i respawn." if action == "apply"
+              else "Zlecono restart bez zapisywania zmian w formularzu.")
+    return redirect(url_for("manage"))
+
+
+@app.post("/manage/restart-clear-stale")
+@login_required
+def manage_restart_clear_stale():
+    support = server_settings_status()
+    if not support["can_clear"]:
+        flash("Nie można usunąć zlecenia: helper może jeszcze je przetwarzać albo zlecenie nie jest wystarczająco stare.", "error")
+        return redirect(url_for("manage"))
+    try:
+        (RATES_SPOOL / "server-settings.request").unlink()
+        (RATES_SPOOL / "server-settings.status").write_text(
+            "state=failed\npercent=0\nmessage=Usunięto zaległe zlecenie bez aktywnego helpera gry.\ntime=%s\n" % int(time.time()), encoding="utf-8")
+    except OSError:
+        flash("Nie udało się usunąć zaległego zlecenia z kolejki.", "error")
+    else:
+        flash("Usunięto zaległe zlecenie. Zainstaluj integrację gry, zanim zlecisz kolejną zmianę.")
     return redirect(url_for("manage"))
 
 
@@ -1371,6 +1640,7 @@ def manage_behavior():
     values["CHAT"] = 1 if "1" in request.form.getlist("CHAT") else 0
     # Preserve the existing switch for a form opened before this field existed.
     values["BOOKS"] = 1 if "BOOKS" not in request.form else (1 if "1" in request.form.getlist("BOOKS") else 0)
+    values["NIGHT"] = values.get("NIGHT", 1) if "NIGHT" not in request.form else (1 if "1" in request.form.getlist("NIGHT") else 0)
     try:
         values["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", values.get("SCRAP", 0)))))
     except (TypeError, ValueError):
@@ -1408,7 +1678,9 @@ def manage_restart():
 @login_required
 def api_manage_status():
     status = read_rate_status()
-    return {"ok": True, "restart": restart_progress(), "rates": read_rates(), "bots": len(live_bots()), "maps": live_map_counts()}
+    updater = update_status()
+    updater["protected"] = settings().get("auth_enabled") == "1" and bool(session.get("seban_admin"))
+    return {"ok": True, "restart": restart_progress(), "server_settings": server_settings_status(), "updater": updater, "rates": read_rates(), "bots": len(live_bots()), "maps": live_map_counts()}
 
 
 @app.route("/api/heat-events")

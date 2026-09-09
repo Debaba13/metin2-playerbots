@@ -95,11 +95,15 @@ def grantable_item(item):
 
 def candidates(cur, vnum, criteria, only_missing, player_id=None):
     conditions, params = where_for(criteria)
+    # The tool is explicitly for Playerbots.  A level/horse filter alone can
+    # also match an administrator or an ordinary player's character.
+    conditions.append("(LEFT(a.login,10)='playerbot_' OR p.name LIKE 'bot%%')")
     if only_missing:
         sql, item_params = has_item_sql(vnum); conditions.append("NOT " + sql); params += item_params
     if player_id is not None: conditions.append("p.id=%s"); params.append(player_id)
     query = """SELECT p.id,p.name,p.level,p.horse_level,p.playtime,MOD(p.job,4) AS job,
-      ORD(SUBSTRING(p.skill_level,782,1)) AS riding FROM player.player p"""
+      ORD(SUBSTRING(p.skill_level,782,1)) AS riding FROM player.player p
+      LEFT JOIN account.account a ON a.id=p.account_id"""
     if conditions: query += " WHERE " + " AND ".join(conditions)
     cur.execute(query + " ORDER BY p.id", params)
     return cur.fetchall()

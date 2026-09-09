@@ -31,6 +31,18 @@ BIOLOGIST_MISSIONS = (
     ("make_herb_lv25", 25, "Grzyb Tue", 10),
     ("collect_quest_lv30", 30, "Ząb Orka", 10),
 )
+# The specimen each row wants, and how far past a row the game stops hunting
+# it. Both mirror playerbot_missions.h: a row the bot has outgrown by
+# BIOLOGIST_OUTGROWN_LEVELS is stepped over unless the bag already holds the
+# whole hand-in - so the label here says what the bot is actually doing,
+# instead of naming the first unfinished row and calling a level-41 archer a
+# Gango Root collector for the rest of its life.
+BIOLOGIST_ITEM_VNUMS = {
+    "make_herb_lv4": 50701, "make_herb_lv7": 50702, "make_herb_lv10": 50703,
+    "make_herb_lv15": 50704, "make_herb_lv20": 50705, "make_herb_lv25": 50706,
+    "collect_quest_lv30": 30006,
+}
+BIOLOGIST_OUTGROWN_LEVELS = 10
 
 # The official ``special.levelup_quest`` choices for the M1/M2 stage.  The
 # game server writes progress to quest ``levelup``; the panel only interprets
@@ -877,6 +889,7 @@ def read_ai_weights():
     vals = {k: AI_W_NEUTRAL for k, _ in AI_WEIGHT_KEYS}
     vals["CHAT"] = 1
     vals["BOOKS"] = 1
+    vals["NIGHT"] = 1
     vals["SCRAP"] = 0
     # The chest event's two figures. None until the file says: the panel does
     # not know what CONFIG holds, and must not write a guess over it.
@@ -897,6 +910,9 @@ def read_ai_weights():
                     continue
                 if name == "BOOKS":
                     vals["BOOKS"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                    continue
+                if name == "NIGHT":
+                    vals["NIGHT"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
                     continue
                 if name == "SCRAP":
                     try:
@@ -939,6 +955,9 @@ def write_ai_weights(vals):
     # Not a weight: whether a bot reads its skill books without the engine's
     # day between two reads of the same skill.
     body.append("BOOKS\t%d" % (1 if vals.get("BOOKS", 1) else 0))
+    # Not a weight: whether the core raises the night flag (xmas_snow) between
+    # 22:00 and 05:59 of the server's local time.
+    body.append("NIGHT\t%d" % (1 if vals.get("NIGHT", 1) else 0))
     # Percent of stall keepers that sell scrap gear; 0 is off.
     body.append("SCRAP\t%d" % max(0, min(100, int(vals.get("SCRAP", 0)))))
     # The Moonlight chest: thousandths per kill and per Metin. Written only once
@@ -2680,6 +2699,12 @@ T.update({
                   "de":"Das Spiel lässt zwischen zwei Lesungen derselben Fertigkeit etwa einen Tag warten, also braucht ein Bot einen Monat, um eine Fertigkeit von M1 auf G1 zu lesen, und die Bücher stapeln sich derweil. An: der Bot liest nach einer halben Stunde erneut, wie ein Spieler mit Exorzismus-Rollen. Aus: das Tempo des Spiels.",
                   "tr":"Oyun aynı becerinin iki okuması arasında yaklaşık bir gün bekletir; bot bir beceriyi M1'den G1'e çıkarmak için bir ay kitap okur ve kitaplar bu arada çantada birikir. Açık: bot yarım saat sonra tekrar okur, Ayin Parşömeni kullanan bir oyuncu gibi. Kapalı: oyunun kendi temposu."},
  "ai_books_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_night":     {"en":"Night on the server","pl":"Noc na serwerze","de":"Nacht auf dem Server","tr":"Sunucuda gece"},
+ "ai_night_help":{"en":"Between 22:00 and 05:59 of the server's clock (M2_TZ) the core raises the night flag - the same one a GM sets with /xmas_snow 1 - and lowers it in the morning. The client shows the night sky and, as the flag is the Christmas one, snow.",
+                  "pl":"Między 22:00 a 05:59 czasu serwera (M2_TZ) rdzeń podnosi flagę nocy - tę samą, którą GM ustawia komendą /xmas_snow 1 - a rano ją opuszcza. Klient pokazuje nocne niebo i, bo to flaga świąteczna, śnieg.",
+                  "de":"Zwischen 22:00 und 05:59 Serverzeit (M2_TZ) setzt der Kern die Nacht-Flagge - dieselbe, die ein GM mit /xmas_snow 1 setzt - und nimmt sie morgens zurück. Der Client zeigt den Nachthimmel und, weil es die Weihnachtsflagge ist, Schnee.",
+                  "tr":"Sunucu saatine göre (M2_TZ) 22:00-05:59 arasında çekirdek gece bayrağını kaldırır - GM'in /xmas_snow 1 ile ayarladığı bayrağın aynısı - ve sabah indirir. İstemci gece gökyüzünü ve, bayrak Noel bayrağı olduğu için, kar gösterir."},
+ "ai_night_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
  "ai_scrap":     {"en":"Scrap keepers","pl":"Boty złomiarze","de":"Schrotthändler-Bots","tr":"Hurdacı botlar"},
  "ai_scrap_help":{"en":"The share of stall keepers that put their low refines (+0 to +3) on the counter, cheaply, instead of vendoring them - fodder for burning at the blacksmith, the way the hard servers play. Off by default.",
                   "pl":"Udział straganiarzy, którzy wystawiają na ladę swoje słabe ulepszenia (+0 do +3) za grosze zamiast sprzedawać je NPC - złom do palenia u kowala, jak na serwerach hard. Domyślnie wyłączone.",
@@ -4263,6 +4288,11 @@ TPL_AI = BASE.replace("__BODY__", """
   <label><input type="checkbox" name="BOOKS" value="1" {% if cur.get('BOOKS', 1) %}checked{% endif %}> {{t('ai_books_on')}}</label>
 </div>
 <div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">🌙 {{t('ai_night')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_night_help')}}</p>
+  <label><input type="checkbox" name="NIGHT" value="1" {% if cur.get('NIGHT', 1) %}checked{% endif %}> {{t('ai_night_on')}}</label>
+</div>
+<div style="margin-bottom:18px">
   <h3 style="margin:0 0 2px">♻️ {{t('ai_scrap')}}
       <span class="badge" id="v_SCRAP">{{cur.get('SCRAP', 0)}}%</span></h3>
   <p class="muted" style="margin:0 0 6px">{{t('ai_scrap_help')}}</p>
@@ -4328,6 +4358,7 @@ MAP_I18N = {
   "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.",
   "unspent_skills":"Nierozdane: {n} pkt umiejętności","equipped":"Założony ekwipunek (EQ)","weapon":"Broń","armor":"Zbroja","helmet":"Hełm","shield":"Tarcza","bracelet":"Bransoleta",
   "boots":"Buty","necklace":"Naszyjnik","earrings":"Kolczyki","empty":"Puste","inventory":"Zawartość ekwipunku","items_count":"przedmiotów","inventory_empty":"Ekwipunek jest pusty.","quantity":"Ilość",
+  "gear_history":"Historia ekwipunku","gear_history_hint":"Ulepszenia, spalenia, założenia, prezenty, sprzedaż, magazyn — z log.log","gear_history_loading":"Ładowanie historii...","gear_history_empty":"Brak wpisów o ekwipunku tej postaci.","gear_history_more":"Pokaż starsze",
   "event_log":"Dziennik zdarzeń bota (logi na żywo)","track_live":"Śledź na żywo","copy_logs":"Kopiuj logi","loading_logs":"Ładowanie logów postaci","no_logs":"Brak najświeższych wpisów w logach dla tej postaci.",
   "log_error":"Błąd odczytu logów","network_error":"Błąd sieci","teleporting":"Teleportowanie Twojej postaci w grze...","teleported":"Przeteleportowano {name} do bota w grze!","you":"Cię","failure":"Niepowodzenie",
   "copied":"Skopiowano","paste":"wklej w grze [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo — zdobywanie doświadczenia","party_exp":"[PT] Zdobywanie doświadczenia w grupie","metin_hunt":"Polowanie na Metiny",
@@ -4347,6 +4378,7 @@ MAP_I18N = {
   "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.",
   "unspent_skills":"Unspent: {n} skill points","equipped":"Equipped items","weapon":"Weapon","armor":"Armour","helmet":"Helmet","shield":"Shield","bracelet":"Bracelet",
   "boots":"Boots","necklace":"Necklace","earrings":"Earrings","empty":"Empty","inventory":"Inventory contents","items_count":"items","inventory_empty":"The inventory is empty.","quantity":"Quantity",
+  "gear_history":"Equipment history","gear_history_hint":"Refines, burns, equips, gifts, sales, safebox — from log.log","gear_history_loading":"Loading history...","gear_history_empty":"No equipment entries for this character.","gear_history_more":"Show older",
   "event_log":"Bot event log (live)","track_live":"Track live","copy_logs":"Copy logs","loading_logs":"Loading logs for","no_logs":"No recent log entries for this character.",
   "log_error":"Log read error","network_error":"Network error","teleporting":"Teleporting your in-game character...","teleported":"Teleported {name} to the bot in game!","you":"you","failure":"Failure",
   "copied":"Copied","paste":"paste in game [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo levelling","party_exp":"[PT] Party levelling","metin_hunt":"Hunting Metins",
@@ -5912,6 +5944,19 @@ function openBotModal(pid) {
       html += '<div class="muted" style="font-size:10px;margin-top:7px">' +
               I18N.unspent_skills.replace('{n}', p.skill_point || 0) + '</div></div></div>';
 
+      // Equipment history: what this bot refined, burned, put on, gave away,
+      // sold and stored - read out of log.log, where the engine and the core
+      // both write it. Filled on open, like the live log below.
+      html += '<div style="margin-top:14px;border-top:1px solid #332814;padding-top:10px">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+              '<h4 style="margin:0;color:var(--gold);font-size:13px">📖 ' + I18N.gear_history + '</h4>' +
+              '<button type="button" onclick="loadBotGearHistory(' + p.id + ', true)" style="padding:2px 8px;font-size:11px;background:#334155;color:#fff;border:none;border-radius:4px;cursor:pointer">' + I18N.gear_history_more + '</button>' +
+              '</div>' +
+              '<div class="muted" style="font-size:10px;margin-bottom:6px">' + I18N.gear_history_hint + '</div>' +
+              '<div id="botGearHistory" style="background:#09090b;border:1px solid #27272a;border-radius:6px;padding:6px 8px;max-height:220px;overflow-y:auto;font-size:11px;line-height:1.5">' +
+              I18N.gear_history_loading + '</div>' +
+              '</div>';
+
       // Live Bot Logs section
       html += '<div style="margin-top:14px;border-top:1px solid #332814;padding-top:10px">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
@@ -6008,6 +6053,7 @@ function openBotModal(pid) {
       content.innerHTML = html;
       renderInventoryGrid(inv);
       startLogTracking(p.name);
+      loadBotGearHistory(p.id, false);
     })
     .catch(function(err) {
       content.innerHTML = '<p style="color:#ef4444;text-align:center">' + I18N.network_error + ': ' + err + '</p>';
@@ -6018,6 +6064,35 @@ var g_activeLogBot = null;
 var g_logInterval = null;
 var g_collectedLogs = [];
 var g_seenLogsSet = {};
+
+function loadBotGearHistory(pid, older) {
+  var box = document.getElementById('botGearHistory');
+  if (!box) return;
+  var limit = older ? 400 : 60;
+  fetch('/api/bot_gear_history/' + pid + '?limit=' + limit)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!box) return;
+      if (!data || !data.ok || !data.rows || data.rows.length === 0) {
+        box.textContent = (data && data.error) ? data.error : I18N.gear_history_empty;
+        return;
+      }
+      var colors = { refine_ok: '#4ade80', refine_fail: '#f87171', burned: '#f87171', equip: '#60a5fa',
+                     gift_out: '#fbbf24', gift_in: '#fbbf24', stall_sold: '#a78bfa', bought: '#a78bfa',
+                     vendor: '#94a3b8', bonus: '#f472b6', safebox: '#38bdf8', get: '#94a3b8', other: '#94a3b8' };
+      var html = '';
+      data.rows.forEach(function(r) {
+        var c = colors[r.kind] || colors.other;
+        html += '<div style="display:flex;gap:8px;border-bottom:1px solid #1f1f23;padding:2px 0">' +
+                '<span style="color:#71717a;white-space:nowrap">' + r.time + '</span>' +
+                '<span style="color:' + c + ';white-space:nowrap;min-width:110px">' + r.label + '</span>' +
+                '<span style="color:#e4e4e7">' + r.item + (r.detail ? ' <span style="color:#a1a1aa">' + r.detail + '</span>' : '') + '</span>' +
+                '</div>';
+      });
+      box.innerHTML = html;
+    })
+    .catch(function() { if (box) box.textContent = I18N.gear_history_empty; });
+}
 
 function fetchBotLogs(botName) {
   var consoleEl = document.getElementById('botLogsConsole');
@@ -6251,6 +6326,97 @@ def api_admin_warp_me():
         return jsonify({"ok": True, "status": st, "name": gm_name, "x": target_x, "y": target_y})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+# What log.log says about one bot's equipment. The engine writes the refines
+# (REFINE SUCCESS / REFINE FAIL, and REMOVE (REFINE FAIL) for a piece that
+# burned), the stall purchases (SHOP_BUY), the merchant sales the core makes
+# through RemoveItem (PLAYERBOT_SHOP_SELL), the stone a bonus reroll consumes
+# (PLAYERBOT_BONUS) and the Moonlight chest; the core adds the swap into a
+# wear slot (PLAYERBOT_EQUIP), both ends of a gift, the keeper's side of a
+# stall sale and the storekeeper deposit. Asked for by a player who wanted to
+# know why his top Sura "suddenly flies without her +8".
+GEAR_HISTORY_HOWS = {
+    "REFINE SUCCESS":        ("refine_ok",   {"pl": "Ulepszenie udane",   "en": "Refine succeeded"}),
+    "REFINE FAIL":           ("refine_fail", {"pl": "Ulepszenie nieudane", "en": "Refine failed"}),
+    "REMOVE (REFINE FAIL)":  ("burned",      {"pl": "Spalone przy ulepszaniu", "en": "Burned in refine"}),
+    "REFINE FISH_ROD SUCCESS": ("refine_ok", {"pl": "Wędka ulepszona",    "en": "Rod refined"}),
+    "REFINE FISH_ROD FAIL":  ("refine_fail", {"pl": "Wędka nieulepszona", "en": "Rod refine failed"}),
+    "PLAYERBOT_EQUIP":       ("equip",       {"pl": "Założone",           "en": "Equipped"}),
+    "PLAYERBOT_GIFT_OUT":    ("gift_out",    {"pl": "Podarowane",         "en": "Given away"}),
+    "PLAYERBOT_GIFT_IN":     ("gift_in",     {"pl": "Dostane w prezencie", "en": "Received as gift"}),
+    "PLAYERBOT_STALL_SOLD":  ("stall_sold",  {"pl": "Sprzedane na straganie", "en": "Sold at the stall"}),
+    "SHOP_BUY":              ("bought",      {"pl": "Kupione na straganie", "en": "Bought at a stall"}),
+    "PLAYERBOT_SHOP_SELL":   ("vendor",      {"pl": "Sprzedane handlarzowi", "en": "Sold to merchant"}),
+    "PLAYERBOT_BONUS":       ("bonus",       {"pl": "Zużyte na przemianę bonusów", "en": "Used for a bonus reroll"}),
+    "SAFEBOX PUT":           ("safebox",     {"pl": "Do magazynu",        "en": "Into the safebox"}),
+    "SAFEBOX GET":           ("safebox",     {"pl": "Z magazynu",         "en": "Out of the safebox"}),
+    "MOONLIGHT_GET":         ("get",         {"pl": "Ze Szkatułki Blasku", "en": "From a Moonlight chest"}),
+    "EXCHANGE_TAKE":         ("gift_in",     {"pl": "Z wymiany",          "en": "From a trade"}),
+    "EXCHANGE_GIVE":         ("gift_out",    {"pl": "Oddane w wymianie",  "en": "Given in a trade"}),
+}
+
+
+@app.route("/api/bot_gear_history/<int:pid>")
+def api_bot_gear_history(pid):
+    language = lang()
+    lang_key = "pl" if language == "pl" else "en"
+    try:
+        limit = max(10, min(400, int(request.args.get("limit", 60))))
+    except (TypeError, ValueError):
+        limit = 60
+    hows = list(GEAR_HISTORY_HOWS.keys())
+    marks = ",".join(["%s"] * len(hows))
+    try:
+        with db() as c, c.cursor() as cur:
+            # `who` is indexed; the IN list keeps the loot noise (GET, SET_SOCKET,
+            # GET_GOLD - millions of rows) out of the scan.
+            cur.execute(
+                "SELECT time, how, hint, vnum FROM log.log "
+                "WHERE who = %s AND how IN (" + marks + ") "
+                "ORDER BY time DESC LIMIT %s",
+                tuple([pid] + hows + [limit]),
+            )
+            rows = []
+            for r in cur.fetchall():
+                how = r.get("how") or ""
+                kind, labels = GEAR_HISTORY_HOWS.get(how, ("other", {"pl": how, "en": how}))
+                vnum = int(r.get("vnum") or 0)
+                item = localized_item_name(vnum, language) if vnum else ""
+                hint = (r.get("hint") or "").strip()
+                detail = ""
+                if how in ("PLAYERBOT_GIFT_OUT",):
+                    detail = ("→ " if lang_key == "en" else "→ ") + hint
+                elif how in ("PLAYERBOT_GIFT_IN",):
+                    detail = ("← " if lang_key == "en" else "← ") + hint
+                elif how == "PLAYERBOT_STALL_SOLD":
+                    # "vnum xCOUNT za PRICE"
+                    parts = hint.split()
+                    if len(parts) >= 4:
+                        detail = parts[1] + (" for " if lang_key == "en" else " za ") + "{:,}".format(int(parts[3])).replace(",", " ") + " yang"
+                elif how == "PLAYERBOT_EQUIP":
+                    parts = hint.split()
+                    if len(parts) >= 4 and parts[3].isdigit() and int(parts[3]) > 0:
+                        detail = ("instead of " if lang_key == "en" else "zamiast ") + localized_item_name(int(parts[3]), language)
+                elif how.startswith("REFINE") or how.startswith("REMOVE"):
+                    # The engine's hint is the item's own name with its grade,
+                    # which the item column already shows.
+                    detail = ""
+                elif how in ("SAFEBOX PUT", "SAFEBOX GET"):
+                    parts = hint.rsplit(" ", 1)
+                    if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > 1:
+                        detail = "x" + parts[1]
+                t = r.get("time")
+                rows.append({
+                    "time": t.strftime("%d.%m %H:%M") if hasattr(t, "strftime") else str(t),
+                    "kind": kind,
+                    "label": labels.get(lang_key, labels["en"]),
+                    "item": item or ("#%d" % vnum if vnum else ""),
+                    "detail": detail,
+                })
+        return jsonify({"ok": True, "pid": pid, "rows": rows})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "rows": []})
+
 
 @app.route("/api/bot_logs/<string:bot_name>")
 def api_bot_logs(bot_name):
@@ -8187,6 +8353,14 @@ def api_bot_positions():
     messages = map_i18n(language)
     live_status = read_playerbot_live_status()
     map_bounds = PLAYERBOT_MAP_BOUNDS
+    # Every map the panel can draw, not a list written when there were six.
+    # This filter is on the SAVED map - where a bot last wrote itself to the
+    # database - and it dropped a bot whose saved map was a dungeon before the
+    # live status was consulted at all. The Spider Dungeon was showing "0
+    # visible" over forty live bots because of it. The live entry still decides
+    # where a bot is drawn; this only stops the roster query throwing away rows
+    # for maps that were added after the list was.
+    map_list = ", ".join(str(m) for m in sorted(map_bounds))
     try:
         with db() as c, c.cursor() as cur:
             # A bot is defined by its canonical account (playerbot_NNN), not by
@@ -8198,9 +8372,9 @@ def api_bot_positions():
                 FROM player.player p
                 LEFT JOIN account.account a ON a.id = p.account_id
                 WHERE (LEFT(a.login, 10) = 'playerbot_' OR <<BOT_P_1>>)
-                  AND p.map_index IN (21, 23, 24, 25, 63, 64)
+                  AND p.map_index IN ({map_list})
                 ORDER BY p.level DESC, p.id ASC
-            """))
+            """.replace("{map_list}", map_list)))
             rows = cur.fetchall()
             bots = []
             # The map is the live world, not the roster. Only a fraction of the
@@ -8318,23 +8492,46 @@ def api_bot_inventory(pid):
                 (row["szName"], row["szState"]): int(row.get("lValue") or 0)
                 for row in quest_rows
             }
+            # What the bot carries of each specimen: the one thing that lets an
+            # outgrown row still be the right answer.
+            vnum_list = tuple(BIOLOGIST_ITEM_VNUMS.values())
+            cur.execute(
+                "SELECT vnum, COALESCE(SUM(count),0) AS n FROM player.item "
+                "WHERE owner_id = %s AND vnum IN ({}) GROUP BY vnum".format(
+                    ",".join(["%s"] * len(vnum_list))),
+                (pid,) + vnum_list)
+            held = {int(r["vnum"]): int(r.get("n") or 0) for r in cur.fetchall()}
+            bot_level = int(player.get("level") or 1)
             completed = 0
             biologist_label = messages["bio_not_started"]
+            chosen = None
+            fallback = None
             for quest_name, required_level, item_name, required_count in BIOLOGIST_MISSIONS:
                 item_name = localized_biologist_name(quest_name, item_name, language)
                 if quest_flags.get((quest_name, "__status")) == BIOLOGIST_COMPLETE_STATE:
                     completed += 1
                     biologist_label = messages["bio_completed"].format(name=item_name)
                     continue
-                if int(player.get("level") or 1) >= required_level:
-                    accepted = quest_flags.get((quest_name, "collect_count"), 0)
-                    biologist_label = "%s: %d/%d" % (item_name, accepted, required_count)
-                else:
-                    biologist_label = messages["bio_next"].format(
-                        level=required_level, name=item_name)
-                break
-            else:
+                if bot_level < required_level:
+                    if chosen is None and fallback is None:
+                        chosen = ("next", quest_name, required_level, item_name, required_count)
+                    break
+                outgrown = bot_level > required_level + BIOLOGIST_OUTGROWN_LEVELS
+                carries_all = held.get(BIOLOGIST_ITEM_VNUMS.get(quest_name, 0), 0) >= required_count
+                # The highest row left is what the game falls back to when
+                # every row still open has been outgrown.
+                fallback = ("row", quest_name, required_level, item_name, required_count)
+                if chosen is None and (not outgrown or carries_all):
+                    chosen = fallback
+            if chosen is None:
+                chosen = fallback
+            if chosen is None:
                 biologist_label = messages["bio_all"]
+            elif chosen[0] == "next":
+                biologist_label = messages["bio_next"].format(level=chosen[2], name=chosen[3])
+            else:
+                accepted = quest_flags.get((chosen[1], "collect_count"), 0)
+                biologist_label = "%s: %d/%d" % (chosen[3], accepted, chosen[4])
             player["biologist_completed"] = completed
             player["biologist_label"] = biologist_label
 
@@ -8809,6 +9006,7 @@ def ai_weights():
             vals[name] = max(AI_W_MIN, min(AI_W_MAX, v))
         vals["CHAT"] = 1 if request.form.get("CHAT") else 0
         vals["BOOKS"] = 1 if request.form.get("BOOKS") else 0
+        vals["NIGHT"] = 1 if request.form.get("NIGHT") else 0
         try:
             vals["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", 0))))
         except (TypeError, ValueError):

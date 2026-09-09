@@ -17,6 +17,7 @@
 #include "input.h"
 #include "item.h"
 #include "item_manager.h"
+#include "log.h"
 #include "config.h"
 #include "constants.h"
 #include "battle.h"
@@ -24,6 +25,7 @@
 #include "motion.h"
 #include "party.h"
 #include "questmanager.h"
+#include "safebox.h"
 #include "questpc.h"
 #include "refine.h"
 #include "sectree.h"
@@ -173,6 +175,26 @@ namespace
 				? PLAYERBOT_ORC_VALLEY_PARTY_MAX : PLAYERBOT_PARTY_DESIRED_MAX;
 	}
 
+	// Does this party already have somebody to cast Blessing?
+	bool PlayerBotPartyHasShaman(LPPARTY party)
+	{
+		if (!party)
+			return false;
+		struct FFindShaman
+		{
+			FFindShaman() : m_bFound(false) {}
+			void operator()(LPCHARACTER member)
+			{
+				if (member && member->GetJob() == JOB_SHAMAN)
+					m_bFound = true;
+			}
+			bool m_bFound;
+		};
+		FFindShaman finder;
+		party->ForEachOnlineMember(finder);
+		return finder.m_bFound;
+	}
+
 	bool ArePlayerBotsGuildMates(LPCHARACTER a, LPCHARACTER b)
 	{
 		return a && b && a->GetGuild() != NULL && a->GetGuild() == b->GetGuild();
@@ -248,8 +270,10 @@ namespace
 			return;
 		}
 
-		// 25% chance for a bot to prefer playing solo for a while
-		if (number(1, 100) <= 25)
+		// A stretch of hunting alone, less often where a party is the point.
+		const int soloPercent = IsPlayerBotFrontierMapIndex(ch->GetMapIndex())
+				? PLAYERBOT_PARTY_SOLO_PERCENT_FRONTIER : PLAYERBOT_PARTY_SOLO_PERCENT;
+		if (number(1, 100) <= soloPercent)
 		{
 			state.dwNextPartyCheckTime = dwNow + number(60000, 180000);
 			return;
@@ -260,7 +284,8 @@ namespace
 		{
 			TPartyFinder(LPCHARACTER me, const TPlayerBotAIState& st)
 				: m_me(me), m_state(st), m_pTargetParty(NULL),
-				  m_pSoloCandidate(NULL), m_iSoloAffinity(-1), m_bTargetPartyGuild(false) {}
+				  m_pSoloCandidate(NULL), m_iSoloAffinity(-1),
+				  m_bTargetPartyGuild(false), m_bTargetPartyShaman(false) {}
 			bool operator()(LPENTITY ent)
 			{
 				if (!ent || !ent->IsType(ENTITY_CHARACTER))
@@ -301,11 +326,21 @@ namespace
 							{
 								// A guild mate's party is taken at once; any other is
 								// kept in hand while the sweep looks for a guild mate's.
+								// Out on the frontier a party with a Shaman in it
+								// outranks one without, for the same reason a Shaman
+								// is worth pairing with in the first place - it is
+								// the one job that keeps the others standing.
 								const bool bGuild = ArePlayerBotsGuildMates(m_me, leader);
-								if (bGuild || !m_pTargetParty)
+								const bool bWantsShaman =
+										m_me->GetJob() != JOB_SHAMAN &&
+										IsPlayerBotFrontierMapIndex(m_me->GetMapIndex());
+								const bool bShamanParty = bWantsShaman && PlayerBotPartyHasShaman(cp);
+								if (bGuild || !m_pTargetParty ||
+										(bShamanParty && !m_bTargetPartyShaman && !m_bTargetPartyGuild))
 								{
 									m_pTargetParty = cp;
 									m_bTargetPartyGuild = bGuild;
+									m_bTargetPartyShaman = bShamanParty;
 								}
 								return !bGuild;
 							}
@@ -316,9 +351,17 @@ namespace
 						// Whoever it has got on with best, rather than whoever the
 						// sector happened to hand over first. A bot that has hunted
 						// with somebody before will look for them again.
+						// One Shaman in the pair, not two: the buffs land on the
+						// party whoever casts them, so a second Shaman adds
+						// nothing a first has not already given.
+						const bool bPairHasShaman =
+								(m_me->GetJob() == JOB_SHAMAN) != (candidate->GetJob() == JOB_SHAMAN);
 						const int affinity = GetPlayerBotAffinity(
 								m_state, candidate->GetPlayerID()) +
-								(ArePlayerBotsGuildMates(m_me, candidate) ? PLAYERBOT_GUILD_PARTY_POINTS : 0);
+								(ArePlayerBotsGuildMates(m_me, candidate) ? PLAYERBOT_GUILD_PARTY_POINTS : 0) +
+								((bPairHasShaman &&
+									IsPlayerBotFrontierMapIndex(m_me->GetMapIndex()))
+									? PLAYERBOT_PARTY_SHAMAN_POINTS : 0);
 						if (affinity > m_iSoloAffinity)
 						{
 							m_iSoloAffinity = affinity;
@@ -334,6 +377,7 @@ namespace
 			LPCHARACTER m_pSoloCandidate;
 			int m_iSoloAffinity;
 			bool m_bTargetPartyGuild;
+			bool m_bTargetPartyShaman;
 		};
 
 		TPartyFinder finder(ch, state);
@@ -746,13 +790,16 @@ namespace
 			return false;
 
 		++s_uPlayerBotLoadWatchdog;
-		sys_err("PLAYERBOT_WATCHDOG: resetting inactive bot pid=%u name=%s pos=(%ld,%ld) action=%u goal=%u target=%u shop=%d phase=%u bio=%d stable=%d route=%u/%u",
+		sys_err("PLAYERBOT_WATCHDOG: resetting inactive bot pid=%u name=%s pos=(%ld,%ld) action=%u goal=%u target=%u shop=%d phase=%u bio=%d stable=%d route=%u/%u equip_pending=%d service=%d riding=%d nav_out=%u wander_in=%d",
 				ch->GetPlayerID(), ch->GetName(), ch->GetX(), ch->GetY(),
 				(unsigned int)state.bCurrentAction, (unsigned int)state.bLongTermGoal,
 				state.dwTargetVID, state.bVisitingShop ? 1 : 0,
 				(unsigned int)state.bTownVisitPhase, state.bVisitingBiologist ? 1 : 0,
 				state.bVisitingStable ? 1 : 0, (unsigned int)state.uRouteIndex,
-				(unsigned int)state.vecRoute.size());
+				(unsigned int)state.vecRoute.size(), state.bEquipPending ? 1 : 0,
+				state.bServicePending ? 1 : 0, ch->IsRiding() ? 1 : 0,
+				(unsigned int)state.bLastNavOutcome,
+				state.dwNextWanderTime > dwNow ? (int)(state.dwNextWanderTime - dwNow) : 0);
 
 		// The errand survives the reset. FinishPlayerBotTownVisit clears the
 		// phase and the stuck route - which is what the watchdog is for - but
@@ -885,6 +932,16 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 	if (!d)
 		return false;
 
+	// The descriptor's account: what the safebox, the login log and the
+	// account-keyed packets read. Zero here meant one safebox for every bot.
+	TPlayerBotAccountMap::const_iterator account = m_mapBotAccounts.find(dwPlayerID);
+	if (account != m_mapBotAccounts.end())
+	{
+		TAccountTable& table = d->GetAccountTable();
+		table.id = account->second.dwID;
+		strlcpy(table.login, account->second.strLogin.c_str(), sizeof(table.login));
+	}
+
 	m_mapBots.insert(TPlayerBotMap::value_type(dwPlayerID, d));
 	m_mapHandles.insert(THandleToPlayerMap::value_type(d->GetHandle(), dwPlayerID));
 
@@ -908,9 +965,10 @@ bool CPlayerBotManager::LoadRegisteredBots()
 	m_bRegistryLoaded = true;
 	m_bRegistryAvailable = false;
 	m_setRegisteredBots.clear();
+	m_mapBotAccounts.clear();
 
 	const char* query =
-			"SELECT l.pid "
+			"SELECT l.pid, a.id, a.login "
 			"FROM common.playerbot_seed_state AS l "
 			"JOIN player.player AS p ON p.id=l.pid "
 			"JOIN account.account AS a ON a.id=p.account_id "
@@ -928,7 +986,21 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			"LPAD(l.pid-3,GREATEST(3,LENGTH(l.pid-3)),'0')) "
 			"AND BINARY a.social_id=BINARY CONCAT('9',LPAD(l.pid-3,12,'0')) "
 			"AND pi.pid1=l.pid AND pi.pid2=0 AND pi.pid3=0 AND pi.pid4=0 "
-			"AND pi.empire=2 ORDER BY l.pid";
+			// Who comes first when the slider asks for more than are playing.
+			//
+			// By PID alone, "add a hundred and twenty bots" added the hundred and
+			// twenty benched veterans with the lowest PIDs - measured: PIDs 4 to
+			// 301, fifty-two of them between 5 and 30 and sixty-eight past 31 -
+			// while the hundred and sixty-two characters that had never played
+			// (level 1 to 4, PIDs 1342 to 1503) sat at the end of the queue and
+			// could not be reached by any slider. Three tiers instead: the cohort
+			// that has played within the week keeps its place, so a restart
+			// brings back the same world; newcomers come next, so growing the
+			// slider is how fresh characters enter it; the benched veterans
+			// last. A fresh install is one tier and unchanged.
+			"AND pi.empire=2 ORDER BY "
+			"CASE WHEN p.level>4 AND p.last_play>NOW()-INTERVAL 7 DAY THEN 0 "
+			"WHEN p.level<=4 THEN 1 ELSE 2 END, l.pid";
 
 	std::unique_ptr<SQLMsg> msg(AccountDB::instance().DirectQuery(query));
 	if (!msg.get() || msg->uiSQLErrno != 0 || !msg->Get() ||
@@ -945,7 +1017,16 @@ bool CPlayerBotManager::LoadRegisteredBots()
 		if (row[0])
 			str_to_number(pid, row[0]);
 		if (pid != 0)
+		{
 			m_setRegisteredBots.insert(pid);
+			TPlayerBotAccount account;
+			account.dwID = 0;
+			if (row[1])
+				str_to_number(account.dwID, row[1]);
+			if (row[2])
+				account.strLogin = row[2];
+			m_mapBotAccounts[pid] = account;
+		}
 	}
 
 	m_bRegistryAvailable = !m_setRegisteredBots.empty();
@@ -1280,6 +1361,7 @@ void CPlayerBotManager::Update()
 	// Once for the whole population: the panel may have moved a weight since
 	// the last tick, and every bot planned below must see the same numbers.
 	RefreshPlayerBotWeights(dwNow);
+	ManagePlayerBotNight(dwNow);
 
 	static DWORD s_dwTick = 0;
 	++s_dwTick;
@@ -1319,6 +1401,16 @@ void CPlayerBotManager::Update()
 	if (s_bPlayerBotM2CensusPass)
 		s_dwPlayerBotM2CensusTime = dwNow;
 	RefreshPlayerBotMarketLedger(dwNow);
+
+	// The per-map census the raid cap reads (GetPlayerBotsOnMap), one pass
+	// over the descriptors before the tick proper; nothing else counts them.
+	s_mapPlayerBotsOnMap.clear();
+	for (TPlayerBotMap::iterator it = m_mapBots.begin(); it != m_mapBots.end(); ++it)
+	{
+		LPCHARACTER c = it->second ? it->second->GetCharacter() : NULL;
+		if (c && !c->IsDead())
+			++s_mapPlayerBotsOnMap[c->GetMapIndex()];
+	}
 
 	for (TPlayerBotMap::iterator it = m_mapBots.begin(); it != m_mapBots.end(); ++it)
 	{
@@ -1537,6 +1629,7 @@ void CPlayerBotManager::Update()
 		// deep, and opened 190 in an hour between them. Their bags were not the
 		// problem: 29 cells of 90 in use on average, none above 84.
 		ManagePlayerBotChests(ch, state, dwNow);
+		ManagePlayerBotStackMerge(ch, state, dwNow);
 		// The catch, wherever the bot happens to be standing. It used to be
 		// opened only between casts, so an angler that walked away from the bank
 		// carried its fish around instead - and a live fish does not stack, so a
@@ -1710,14 +1803,27 @@ void CPlayerBotManager::Update()
 		if (HandlePlayerBotTownVisit(ch, state, dwNow))
 			continue;
 
-		// A normal horse is for transport only, so it goes before target
-		// selection, buffs and combat: a level-1 horse must never produce a
-		// mounted attack. A battle horse is a different animal and stays - this
-		// line used to dismount it too, which is why a rider was seen hacking a
-		// metin on foot with its horse standing beside it. Whether it actually
-		// fights from the saddle is then the target's business, decided where
-		// the target is known.
+		// A normal horse is for transport only, so it comes off before buffs
+		// and combat: a level-1 horse must never produce a mounted attack. A
+		// battle horse is a different animal and stays - this line used to
+		// dismount it too, which is why a rider was seen hacking a metin on
+		// foot with its horse standing beside it. Whether it actually fights
+		// from the saddle is then the target's business, decided where the
+		// target is known.
+		//
+		// Only when there is a fight to get off for. The wander pass at the
+		// bottom of the tick mounts for a long leg, and taking the horse away
+		// here at the top of the next one, unconditionally, ran every hunting
+		// map through a loop: mounted, dismounted, mounted - each of them
+		// clearing the route - 133 000 times in twenty-eight minutes across
+		// 261 bots, and not one step of the leg walked. That is how 1.30.28
+		// came to strand its raiders among the trash ("heading for boss" every
+		// few minutes, nobody within three kilometres of the Spider Queen).
+		// A rider with no target keeps the saddle; the target section below
+		// climbs down the moment it picks one, and the buff and multi-pull
+		// passes stay out of the saddle themselves.
 		if (ch->IsRiding() && !CanPlayerBotEverFightOnHorse(ch) &&
+				(state.dwTargetVID != 0 || ch->GetVictim() != NULL) &&
 				SetPlayerBotRidingForTravel(ch, state, false, dwNow, "combat_ready"))
 			continue;
 
@@ -1735,11 +1841,23 @@ void CPlayerBotManager::Update()
 				SetPlayerBotGoal(ch, state, BOT_GOAL_GET_EQUIPMENT, dwNow);
 				ManagePlayerBotWandering(ch, state, dwNow);
 			}
-			else
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ||
+					ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
 			{
 				state.dwEmergencyScavengeUntil = 0;
 				StartPlayerBotTownVisit(ch, state, dwNow);
 				ch->Stop();
+			}
+			else
+			{
+				// No merchant on this map, so a town visit cannot start here and
+				// "start it and stop" was a bot standing at an arrival point for
+				// as long as the map lasted. The world travel knows the way to
+				// town (BlocksPlayerBotTravel names the empty bow), and failing
+				// that the wander at least walks.
+				state.dwEmergencyScavengeUntil = 0;
+				if (!ManagePlayerBotWorldTravel(ch, state, dwNow))
+					ManagePlayerBotWandering(ch, state, dwNow);
 			}
 			continue;
 		}
@@ -1751,7 +1869,21 @@ void CPlayerBotManager::Update()
 		ManagePlayerBotScrollRefine(ch, state, dwNow);
 		// This also catches a bot loaded from the database at critically low HP
 		// after a server restart.  Do not let it immediately reacquire a target.
+		// One exception to walking away, and it is about what the target is
+		// rather than about how much health is left: a Metin stone within a
+		// sliver of breaking. See PLAYERBOT_STONE_FINISH_STONE_HP_PERCENT.
+		bool bFinishingStone = false;
 		if (!state.bRecoveringAfterDeath && ch->GetMaxHP() > 0 &&
+				ch->GetHP() * 100 > ch->GetMaxHP() * PLAYERBOT_STONE_FINISH_OWN_HP_PERCENT)
+		{
+			LPCHARACTER stoneTarget = state.dwTargetVID != 0
+					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
+			bFinishingStone = stoneTarget && stoneTarget->IsStone() &&
+					!stoneTarget->IsDead() && stoneTarget->GetMaxHP() > 0 &&
+					stoneTarget->GetHP() * 100 <=
+						stoneTarget->GetMaxHP() * PLAYERBOT_STONE_FINISH_STONE_HP_PERCENT;
+		}
+		if (!bFinishingStone && !state.bRecoveringAfterDeath && ch->GetMaxHP() > 0 &&
 				ch->GetHP() * 100 <= ch->GetMaxHP() * PLAYERBOT_RECOVERY_INITIAL_HP_PERCENT)
 		{
 			state.bRecoveringAfterDeath = true;
@@ -1779,8 +1911,14 @@ void CPlayerBotManager::Update()
 		if (HandlePlayerBotTacticalRetreat(ch, state, dwNow))
 			continue;
 
+		// A shield slot is not a core slot for a bow or a two-handed weapon: the
+		// engine never fills it, and counting it kept every archer "missing a
+		// core slot" for life - which is what armed the pause below for the
+		// twelve archers found standing at arrival points, silent, for twenty
+		// minutes at a time.
 		const bool bMissingCoreWearSlot = ch->GetWear(WEAR_WEAPON) == NULL ||
-				ch->GetWear(WEAR_BODY) == NULL || ch->GetWear(WEAR_SHIELD) == NULL ||
+				ch->GetWear(WEAR_BODY) == NULL ||
+				(PlayerBotWantsShield(ch) && ch->GetWear(WEAR_SHIELD) == NULL) ||
 				ch->GetWear(WEAR_HEAD) == NULL || ch->GetWear(WEAR_FOOTS) == NULL;
 		if (ManagePlayerBotEquipment(ch, state, dwNow))
 			continue;
@@ -1788,12 +1926,31 @@ void CPlayerBotManager::Update()
 		{
 			// A continuous attack cadence never left the 1.7 s native equipment
 			// window open. Pause only when a usable item for a missing core slot is
-			// already waiting in the inventory, then equip it on the next update.
-			state.dwTargetVID = 0;
-			ch->SetVictim(NULL);
-			ch->Stop();
-			continue;
+			// already waiting in the inventory, then equip it on the next update -
+			// and never for longer than PLAYERBOT_EQUIP_PENDING_MAX_MS: a pause
+			// that claims the tick without a bound is a bot that stands for good.
+			if (state.dwEquipPendingSince == 0)
+				state.dwEquipPendingSince = dwNow;
+			if (dwNow - state.dwEquipPendingSince > PLAYERBOT_EQUIP_PENDING_MAX_MS)
+			{
+				PlayerBotLogThrottled("equip_pending_abandoned", dwNow,
+						"PLAYERBOT_GEAR: equip window never came pid=%u name=%s map=%ld pos=(%ld,%ld) waited_ms=%u last_attack_ms=%u",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY(),
+						dwNow - state.dwEquipPendingSince, dwNow - ch->GetLastAttackTime());
+				state.bEquipPending = false;
+				state.dwEquipPendingSince = 0;
+				state.dwNextEquipmentCheckTime = dwNow + PLAYERBOT_EQUIPMENT_CHECK_INTERVAL;
+			}
+			else
+			{
+				state.dwTargetVID = 0;
+				ch->SetVictim(NULL);
+				ch->Stop();
+				continue;
+			}
 		}
+		else
+			state.dwEquipPendingSince = 0;
 
 		// A buff is a complete action for this AI update.  Continuing into the
 		// attack code used to emit a second skill packet in the very same tick.
@@ -1952,6 +2109,12 @@ void CPlayerBotManager::Update()
 				SetPlayerBotRidingForTravel(ch, state, wantsSaddle, dwNow,
 						wantsSaddle ? "mounted_combat" : "dismount_for_target");
 		}
+		// A transport horse is left here, on the tick the target is chosen,
+		// and the swing waits for the next one - the way the old top-of-tick
+		// dismount spaced them. Never a mounted attack from a level-1 horse.
+		else if (ch->IsRiding() &&
+				SetPlayerBotRidingForTravel(ch, state, false, dwNow, "dismount_for_target"))
+			continue;
 
 		ch->SetVictim(target);
 		SetPlayerBotAction(state, BOT_ACTION_FIGHT, dwNow);

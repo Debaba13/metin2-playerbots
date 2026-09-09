@@ -157,6 +157,12 @@ namespace
 				state.bRecoveringAfterDeath || state.bTacticalRetreat ||
 				state.bMultiPullActive || state.bFishingSession)
 			return false;
+		// Nor from the saddle of a transport horse: CHARACTER::UseSkill refuses
+		// every non-horse skill while riding one, and a rider on a long leg
+		// now keeps its horse until it has a target. The aura goes up on the
+		// tick after it climbs down.
+		if (ch->IsRiding() && !CanPlayerBotEverFightOnHorse(ch))
+			return false;
 		// A bot minding its own stall is not hunting. Casting does not close a
 		// private shop - the engine only does that on stun, death and leaving the
 		// world - but a keeper standing at its counter throwing auras is burning

@@ -947,6 +947,28 @@ namespace
 			return false;
 		navigation.ClampWorld(destX, destY);
 
+		// Step off first, if the ground underfoot is ground nothing can leave.
+		// Every route out of such a cell is refused at its first segment, so
+		// this has to happen before the route is even considered - and it is a
+		// direct Goto rather than a planned one, because planning is exactly
+		// what does not work from here.
+		long escapeX = 0, escapeY = 0;
+		if (navigation.FindEscapeFromBlockedCell(ch->GetX(), ch->GetY(), escapeX, escapeY))
+		{
+			PlayerBotLogThrottled("nav_escape_blocked", dwNow,
+					"PLAYERBOT_NAV: standing on blocked ground pid=%u name=%s map=%ld pos=(%ld,%ld) step_to=(%ld,%ld) dest=(%ld,%ld)",
+					ch->GetPlayerID(), ch->GetName(), mapIndex,
+					ch->GetX(), ch->GetY(), escapeX, escapeY, destX, destY);
+			ClearPlayerBotRoute(state, false);
+			state.dwNextNavPlanTime = 0;
+			state.bStuckCounter = 0;
+			ch->Goto(escapeX, escapeY);
+			ch->SendMovePacket(FUNC_MOVE, 0, escapeX, escapeY,
+					ch->GetCurrentMoveDuration(), dwNow);
+			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ESCAPED;
+			return true;
+		}
+
 		bool redirectedToMonkeyPortal = false;
 		if (IsPlayerBotMonkeyMap(mapIndex) &&
 				!navigation.CanReach(ch->GetX(), ch->GetY(), destX, destY))
@@ -1009,6 +1031,7 @@ namespace
 			{
 				if (ch->IsStateMove())
 					ch->Stop();
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_BACKOFF;
 				return true;
 			}
 
@@ -1051,6 +1074,7 @@ namespace
 							(PlayerBotNavHash(ch->GetPlayerID()) % 1251U);
 					if (ch->IsStateMove())
 						ch->Stop();
+					state.bLastNavOutcome = PLAYERBOT_NAV_OUT_DEFERRED;
 					return true;
 				}
 				if (planResult == PLAYERBOT_NAV_PLAN_UNREACHABLE)
@@ -1065,6 +1089,7 @@ namespace
 								state.bStuckCounter);
 					if (ch->IsStateMove())
 						ch->Stop();
+					state.bLastNavOutcome = PLAYERBOT_NAV_OUT_UNREACHABLE;
 					return false;
 				}
 			}
@@ -1092,7 +1117,17 @@ namespace
 			// is still obstructed from the character's exact interpolated point.
 			// Moving those few centimetres to the cell centre is what makes the
 			// next corner safe; skipping it caused route=0/0 retry loops.
-			if (state.uRouteIndex + 1 < state.vecRoute.size())
+			//
+			// Unless the character is already standing on it. Then there is
+			// nothing left to move by: Goto refuses a destination equal to the
+			// position, the walk reported that as "moved" because the waypoint
+			// was within arrival distance, and the bot stood on its own first
+			// waypoint for good - sixteen of eighteen watchdog resets in an
+			// afternoon were nav_out=11 at route=0/2 on a cell centre. Consumed,
+			// the obstructed segment goes through the blocked-segment branch
+			// below, which has the rescues and counts the failure.
+			if (state.uRouteIndex + 1 < state.vecRoute.size() &&
+					(ch->GetX() != waypoint.x || ch->GetY() != waypoint.y))
 			{
 				const PIXEL_POSITION& nextWaypoint = state.vecRoute[state.uRouteIndex + 1];
 				if (!navigation.SegmentClearWorld(ch->GetX(), ch->GetY(),
@@ -1110,6 +1145,7 @@ namespace
 		if (state.uRouteIndex >= state.vecRoute.size())
 		{
 			ch->Stop();
+			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ARRIVED;
 			return true;
 		}
 
@@ -1148,6 +1184,7 @@ namespace
 				ClearPlayerBotRoute(state, false);
 				state.dwNextNavPlanTime = dwNow + 200;
 				ch->Stop();
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_NO_PROGRESS;
 				return false;
 			}
 		}
@@ -1157,15 +1194,124 @@ namespace
 		{
 			if (state.bStuckCounter < 255)
 				++state.bStuckCounter;
+			// And say so. This branch threw a route away and replanned two
+			// hundred milliseconds later without a word, so a bot whose
+			// planner keeps producing a first step the live world refuses
+			// looped here for ever in complete silence: no route, no
+			// movement, nothing in any log, and a stuck counter of forty-two
+			// that only the portal diagnostic ever showed. The unreachable
+			// branch beside it speaks at one and three and then goes quiet,
+			// which is the same mistake in a milder form.
+			// Two rescues before the route is thrown away, because throwing it
+			// away and planning the identical one again is exactly what these
+			// bots did: forty-two refusals in twenty seconds at four different
+			// portals on three maps, no movement and no log line.
+			//
+			// The planner strings its corners straight and works cell centre to
+			// cell centre on the static grid. The walk tests the real segment
+			// from wherever the character is standing, with a supercover
+			// traversal that counts a cell grazed by a millimetre of corner. The
+			// two disagree precisely at a pulled corner, and the disagreement is
+			// permanent - the same plan comes back every time it is asked for.
+			//
+			// First rescue: step to the middle of the cell the character is in,
+			// which is the point the route was planned from. The waypoint
+			// consumption loop above already relies on this - "moving those few
+			// centimetres to the cell centre is what makes the next corner
+			// safe" - it simply was not applied to the blocked case.
+			// Both ends, because either can be the one that grazes: the
+			// character stands wherever movement left it, and a waypoint that
+			// came straight from a caller's constant - a portal, an NPC - is a
+			// raw world point and not the middle of anything.
+			long alignX = 0, alignY = 0;
+			long targetX = 0, targetY = 0;
+			navigation.CellCentreWorld(ch->GetX(), ch->GetY(), alignX, alignY);
+			navigation.CellCentreWorld(waypoint.x, waypoint.y, targetX, targetY);
+			const bool movedTarget = targetX != waypoint.x || targetY != waypoint.y;
+			const bool movedSelf = alignX != ch->GetX() || alignY != ch->GetY();
+			if (movedTarget &&
+					navigation.SegmentClearWorld(ch->GetX(), ch->GetY(), targetX, targetY))
+			{
+				ch->SetRotationToXY(targetX, targetY);
+				if (ch->Goto(targetX, targetY))
+					ch->SendMovePacket(FUNC_MOVE, 0, targetX, targetY,
+							ch->GetCurrentMoveDuration(), dwNow);
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ALIGNED;
+				return true;
+			}
+			if (movedSelf &&
+					(navigation.SegmentClearWorld(alignX, alignY, waypoint.x, waypoint.y) ||
+					 (movedTarget && navigation.SegmentClearWorld(alignX, alignY, targetX, targetY))))
+			{
+				ch->SetRotationToXY(alignX, alignY);
+				if (ch->Goto(alignX, alignY))
+					ch->SendMovePacket(FUNC_MOVE, 0, alignX, alignY,
+							ch->GetCurrentMoveDuration(), dwNow);
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ALIGNED;
+				return true;
+			}
+			// Second rescue: take the corner as a corner. If the waypoint after
+			// this one is reachable in a straight line, the grazed corner was
+			// the only thing in the way and the route itself is sound.
+			if (state.uRouteIndex + 1 < state.vecRoute.size())
+			{
+				const PIXEL_POSITION& afterWaypoint = state.vecRoute[state.uRouteIndex + 1];
+				if (navigation.SegmentClearWorld(ch->GetX(), ch->GetY(),
+						afterWaypoint.x, afterWaypoint.y))
+				{
+					++state.uRouteIndex;
+					state.lIssuedWaypointX = 0;
+					state.lIssuedWaypointY = 0;
+					state.iNavLastWaypointDistance = -1;
+					state.bLastNavOutcome = PLAYERBOT_NAV_OUT_CORNERED;
+					return true;
+				}
+			}
+			// Third rescue: both ends are cell centres already, so neither
+			// alignment can change the answer, and the corner after this one is
+			// not in reach either. The static grid planned this segment; the
+			// live supercover test disagrees at a grazed corner, and it will
+			// disagree identically on every replan. Walk it: the server moves a
+			// bot along a straight line with no collision, so the worst case is
+			// a shoulder through a decorative corner - the alternative, measured
+			// at the Monkey Dungeon exit, was a bot stopping short of the portal
+			// and turning back for good.
+			if (!movedSelf && !movedTarget)
+			{
+				ch->SetRotationToXY(waypoint.x, waypoint.y);
+				if (ch->Goto(waypoint.x, waypoint.y))
+				{
+					ch->SendMovePacket(FUNC_MOVE, 0, waypoint.x, waypoint.y,
+							ch->GetCurrentMoveDuration(), dwNow);
+					state.lIssuedWaypointX = waypoint.x;
+					state.lIssuedWaypointY = waypoint.y;
+					state.bLastNavOutcome = PLAYERBOT_NAV_OUT_FORCED;
+					PlayerBotLogThrottled("nav_forced_corner", dwNow,
+							"PLAYERBOT_NAV: forced through a grazed corner pid=%u name=%s map=%ld pos=(%ld,%ld) waypoint=(%ld,%ld) dest=(%ld,%ld)",
+							ch->GetPlayerID(), ch->GetName(), mapIndex,
+							ch->GetX(), ch->GetY(), waypoint.x, waypoint.y, destX, destY);
+					return true;
+				}
+			}
+			if (state.bStuckCounter == 4 || (state.bStuckCounter % 32) == 0)
+				PlayerBotLogThrottled("nav_segment_blocked", dwNow,
+						"PLAYERBOT_NAV: waypoint blocked by the live world pid=%u name=%s map=%ld pos=(%ld,%ld) waypoint=(%ld,%ld) dest=(%ld,%ld) failures=%u",
+						ch->GetPlayerID(), ch->GetName(), mapIndex,
+						ch->GetX(), ch->GetY(), waypoint.x, waypoint.y,
+						destX, destY, (unsigned int)state.bStuckCounter);
 			ClearPlayerBotRoute(state, false);
 			state.dwNextNavPlanTime = dwNow + 200;
 			ch->Stop();
+			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_SEGMENT;
 			return false;
 		}
 
 		ch->SetRotationToXY(waypoint.x, waypoint.y);
 		if (state.lIssuedWaypointX == waypoint.x && state.lIssuedWaypointY == waypoint.y && ch->IsStateMove())
+		{
+			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_MOVED;
 			return true;
+		}
 
 		const bool wasMoving = ch->IsStateMove();
 		const bool commandAccepted = ch->Goto(waypoint.x, waypoint.y);
@@ -1174,10 +1320,12 @@ namespace
 		if (commandAccepted || (!wasMoving && ch->IsStateMove()))
 		{
 			ch->SendMovePacket(FUNC_MOVE, 0, waypoint.x, waypoint.y, ch->GetCurrentMoveDuration(), dwNow);
+			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_MOVED;
 			return true;
 		}
 
 		// Goto(false) also means that this exact destination is already active.
+		state.bLastNavOutcome = PLAYERBOT_NAV_OUT_REFUSED;
 		return ch->IsStateMove() || waypointDistance <= PLAYERBOT_NAV_ARRIVAL_DISTANCE;
 	}
 

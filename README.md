@@ -77,6 +77,28 @@ Skonfiguruj klienta z tego samego kompatybilnego zestawu r40250 na adres `127.0.
 
 ---
 
+## 🗄️ Dostęp do bazy danych (Navicat, HeidiSQL, DBeaver)
+
+Baza serwera to MariaDB w kontenerze, wystawiona **tylko na tym komputerze**
+(`127.0.0.1`, port `3306` — albo inny, jeśli w `.env` ustawiono `M2_DB_PUBLISH_PORT`).
+Nowe połączenie w kliencie bazy: typ MySQL/MariaDB, host `127.0.0.1`, port `3306`.
+
+| Konto | Do czego | Hasło |
+|---|---|---|
+| `root` | wszystko | `M2_DB_ROOT_PASSWORD` w `linux-port\docker\.env` |
+| `metin2` | tylko bazy gry (`account`, `player`, `log`, `common`, `hotbackup`) | `M2_DB_PASSWORD` w tym samym pliku |
+
+Najszybciej: w launcherze GUI przycisk **DANE DO BAZY (NAVICAT)** pokazuje
+host, port i oba hasła w polach do skopiowania (w konsoli: akcja `DbAccess`,
+pozycja 16 menu). Hasła są losowane przy pierwszym uruchomieniu i nie ma
+żadnego „domyślnego” — nie wklejaj ich na Discordzie.
+
+Jeśli klient odpowiada `1045 - Access denied for user 'root'@'172.18.0.1'`,
+baza została zainicjalizowana pod innym hasłem niż to, które jest teraz w `.env`.
+Kliknij **NAPRAW DOSTĘP DO BAZY** (akcja `RepairDb`): zatrzymuje serwer i
+ustawia konta `metin2` i `root` na hasła z `.env`; postacie, przedmioty i boty
+zostają nietknięte. Potem GRAJ i zaloguj się jeszcze raz.
+
 ## 🎮 Komendy w grze (GM Commands)
 
 Zarządzanie botami bezpośrednio z poziomu czatu w grze (dla konta GM / Administratora):

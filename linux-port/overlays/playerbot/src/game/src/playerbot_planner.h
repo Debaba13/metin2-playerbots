@@ -93,6 +93,14 @@ namespace
 				PlayerBotNavHash(ch->GetPlayerID() ^ 0x4d455850U) % 600000U;
 		if (state.dwMetinExpeditionUntil != 0 || ch->GetLevel() < PLAYERBOT_METIN_EXPEDITION_MIN_LEVEL)
 			return;
+		// No expedition from, or towards, a map without stones: the frontier
+		// draw sends a third of the bots past fifty-two to the Spider Dungeon,
+		// and an expedition there had them travelling for half an hour to
+		// find nothing. They roll again next hour, from wherever they stand.
+		const long frontier = GetPlayerBotFrontierMapForLevel(ch);
+		if (!PlayerBotMapHasMetinStones(ch->GetMapIndex()) ||
+				(frontier != 0 && !PlayerBotMapHasMetinStones(frontier)))
+			return;
 		// A battle horse is what a player raises for the stones, so its rider
 		// goes out for them twice as often.
 		const int chance = PLAYERBOT_METIN_EXPEDITION_CHANCE_PERCENT *
@@ -134,6 +142,15 @@ namespace
 		{
 			SetPlayerBotGoal(ch, state,
 					state.bVisitingStable ? BOT_GOAL_HORSE : BOT_GOAL_REFINE, dwNow);
+			return;
+		}
+		// A fishing session owns the tick, and so it owns the goal: the session
+		// stamped FISHING every tick and this planner answered RESTOCK every
+		// five seconds - forty-three anglers, six thousand goal lines in twelve
+		// minutes, and "zapasy" over the head of a bot that was fishing.
+		if (state.bFishingSession)
+		{
+			SetPlayerBotGoal(ch, state, BOT_GOAL_FISHING, dwNow);
 			return;
 		}
 

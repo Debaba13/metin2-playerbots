@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'ImportDb', 'RepairDb')]
+    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'ImportDb', 'RepairDb', 'DbAccess')]
     [string]$Action = 'Menu',
     [string]$Manifest = '',
     [int]$BotCount = -1,
@@ -243,6 +243,71 @@ function Rebuild-Server {
     if ($patched -gt 0) {
         Write-Host "Nalozono $patched latek silnika." -ForegroundColor DarkGray
     }
+    # And the sources the image is actually built from.
+    #
+    # This check exists in start-server.ps1 too, and that was not enough: this
+    # path calls start-server.ps1 with -IdentityOnly, which returns after
+    # writing the .env and never reaches it, then builds here. So a player
+    # clicking GRAJ went straight to `docker compose --build' with an
+    # incomplete context and got fifteen "failed to calculate checksum ... not
+    # found" lines. Reported from the Discord twice, the second time against a
+    # version that was supposed to have fixed it - because the fix was in the
+    # half of the code that click does not run.
+    #
+    # linux-port/docker/game/src holds the r40250 tree, put there once by
+    # fetch-sources.sh during installation. It is the operator's own package and
+    # never travels in an update; what an update does put there is
+    # src/server/game, because that is where the bot sources belong - which is
+    # why a broken install still shows a plausible src/server/game and a build
+    # context of about 1.6 MB where a complete one is hundreds of megabytes.
+    $gameContext = Join-Path $serverRoot 'linux-port\docker\game\src'
+    $requiredContext = @(
+        'build-deps-40250.sh', 'extern',
+        'server\common', 'server\db', 'server\game', 'server\libgame',
+        'server\liblua', 'server\libpoly', 'server\libserverkey',
+        'server\libsql', 'server\libthecore',
+        'serverfiles\share\conf', 'serverfiles\share\data',
+        'serverfiles\share\locale', 'serverfiles\share\package',
+        'serverfiles\mark-default'
+    )
+    $missingContext = @()
+    foreach ($entry in $requiredContext) {
+        if (-not (Test-Path -LiteralPath (Join-Path $gameContext $entry))) {
+            $missingContext += $entry
+        }
+    }
+    # The dumps, the same way (see start-server.ps1 for why an initialised
+    # database is exempt): this is the half of the code that click runs.
+    $missingDumps = @(Get-M2MissingSqlDumps -ServerRoot $serverRoot)
+    if ($missingDumps.Count -gt 0) {
+        $dbVolume = Get-CurrentInstallTargetVolume
+        $dbReady = $false
+        if ($dbVolume) { $dbReady = Test-M2VolumeInitialized -Volume $dbVolume }
+        if (-not $dbReady) {
+            throw ("Brakuje zrzutow bazy danych, wiec pierwsza baza powstalaby pusta.`n`n" +
+                   "Katalog: " + (Join-Path $serverRoot 'linux-port\docker\mariadb\initdb.d\dumps') + "`n" +
+                   "Brakuje: " + ($missingDumps -join ', ') + "`n`n" +
+                   "MariaDB wystartowalaby bez schematu gry (i zglosila 'healthy'), a playerbot-migrate " +
+                   "czekalby 30 minut na tabele, ktore nigdy nie powstana. Zrzuty pochodza z Twojej " +
+                   "paczki serwera r40250 (Server\metin2_mysql_dump.zip) i wystawia je wylacznie " +
+                   "instalator - zadna aktualizacja ich nie przywroci.`n`n" +
+                   "Uruchom ponownie instalator (installer\install.ps1) ze wskazana paczka " +
+                   "(`$env:M2_SRC_ARCHIVE), albo rozpakuj metin2_mysql_dump.zip do tego katalogu " +
+                   "i kliknij GRAJ jeszcze raz.")
+        }
+    }
+    if ($missingContext.Count -gt 0) {
+        throw ("Brakuje zrodel gry, wiec nie ma z czego zbudowac serwera.`n`n" +
+               "Katalog: " + $gameContext + "`n" +
+               "Brakuje: " + ($missingContext -join ', ') + "`n`n" +
+               "To nie jest blad Dockera, WSL ani tej aktualizacji. Te pliki pochodza " +
+               "z Twojej wlasnej paczki serwera r40250 i sa rozpakowywane raz, podczas " +
+               "instalacji - zadna aktualizacja ich nie przywroci, bo nie wolno nam ich " +
+               "rozpowszechniac.`n`n" +
+               "Uruchom ponownie instalator (installer\install.ps1). Pobierze zrodla i " +
+               "odtworzy kontekst budowania. Baza, postacie i ustawienia zostaja nietkniete.")
+    }
+
     # See Stop-Server: compose progress on stderr must not be treated as failure
     # under $ErrorActionPreference='Stop' in Windows PowerShell 5.1.
     $previousPreference = $ErrorActionPreference
@@ -534,16 +599,53 @@ function Import-DatabaseAction {
 }
 
 function Get-InstallDbCredentials {
-    $result = [pscustomobject]@{ User = 'metin2'; Password = '' }
+    # Everything a database client needs, straight from .env: the port the
+    # compose file publishes on 127.0.0.1, the game account and root. The root
+    # password is what MariaDB was initialised with, and what Repair-DatabaseAction
+    # puts back on root@'%' when the two have drifted apart.
+    $result = [pscustomobject]@{ User = 'metin2'; Password = ''; RootPassword = ''; Port = '3306'; EnvPath = '' }
     $envPath = Join-Path $serverRoot 'linux-port\docker\.env'
     if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+        $result.EnvPath = $envPath
         $text = [IO.File]::ReadAllText($envPath)
         $userMatch = [Regex]::Match($text, '(?m)^M2_DB_USER=(.+?)\s*$')
         if ($userMatch.Success) { $result.User = $userMatch.Groups[1].Value }
         $passMatch = [Regex]::Match($text, '(?m)^M2_DB_PASSWORD=(.+?)\s*$')
         if ($passMatch.Success) { $result.Password = $passMatch.Groups[1].Value }
+        $rootMatch = [Regex]::Match($text, '(?m)^M2_DB_ROOT_PASSWORD=(.+?)\s*$')
+        if ($rootMatch.Success) { $result.RootPassword = $rootMatch.Groups[1].Value }
+        $portMatch = [Regex]::Match($text, '(?m)^M2_DB_PUBLISH_PORT=(\d+)\s*$')
+        if ($portMatch.Success) { $result.Port = $portMatch.Groups[1].Value }
     }
     return $result
+}
+
+function Show-DatabaseAccessAction {
+    # Where a database client (Navicat, HeidiSQL, DBeaver) connects, and with
+    # which accounts. The passwords are not printed: this output lands in the
+    # launcher log, and the launcher log lands in support bundles that get
+    # posted on the Discord. The GUI shows them in a dialog of its own; here
+    # the .env is opened in Notepad instead.
+    $creds = Get-InstallDbCredentials
+    if (-not $creds.EnvPath) {
+        Write-Host 'Brak pliku linux-port\docker\.env — uruchom najpierw serwer (GRAJ), launcher go utworzy.' -ForegroundColor Yellow
+        return
+    }
+    Write-Host 'Dane do połączenia z bazą (Navicat, HeidiSQL, DBeaver — typ MySQL/MariaDB):' -ForegroundColor Cyan
+    Write-Host '  Host:      127.0.0.1'
+    Write-Host "  Port:      $($creds.Port)"
+    Write-Host '  Konto 1:   root        — pełny dostęp; hasło: M2_DB_ROOT_PASSWORD w pliku .env'
+    Write-Host "  Konto 2:   $($creds.User)      — tylko bazy gry; hasło: M2_DB_PASSWORD w pliku .env"
+    Write-Host "  Plik .env: $($creds.EnvPath)"
+    Write-Host ''
+    Write-Host 'Baza słucha tylko na tym komputerze (127.0.0.1), więc klient musi działać na nim.' -ForegroundColor Gray
+    Write-Host 'Jeśli baza odrzuca hasło z .env („Access denied"), użyj akcji RepairDb (przycisk' -ForegroundColor Gray
+    Write-Host '„NAPRAW DOSTĘP DO BAZY"): ustawia konta root i metin2 na hasła z tego pliku.' -ForegroundColor Gray
+    Write-Host 'Nie wklejaj haseł z .env na Discordzie ani do paczki z logami.' -ForegroundColor Yellow
+    if (-not $Yes) {
+        $answer = Read-Host 'Otworzyć plik .env w Notatniku, żeby skopiować hasła? [t/N]'
+        if ($answer -match '^[tTyY]') { Start-Process notepad.exe -ArgumentList ('"' + $creds.EnvPath + '"') }
+    }
 }
 
 function Repair-DatabaseAction {
@@ -563,12 +665,16 @@ function Repair-DatabaseAction {
         Write-Host 'Brak M2_DB_PASSWORD w linux-port\docker\.env — nie mam czego przywrócić.' -ForegroundColor Red
         return
     }
-    Write-Host "Naprawiam konto techniczne bazy dla instalacji: $target" -ForegroundColor Cyan
-    Write-Host 'To odtwarza wyłącznie użytkownika i uprawnienia bazy. Postacie, przedmioty i boty pozostają bez zmian.' -ForegroundColor Gray
+    Write-Host "Naprawiam konta bazy dla instalacji: $target" -ForegroundColor Cyan
+    Write-Host 'To odtwarza wyłącznie użytkowników i uprawnienia bazy — konto gry i root — z hasłami z pliku .env. Postacie, przedmioty i boty pozostają bez zmian.' -ForegroundColor Gray
+    if (-not $creds.RootPassword) {
+        Write-Host 'Brak M2_DB_ROOT_PASSWORD w .env — konto root zostanie pominięte.' -ForegroundColor Yellow
+    }
     Write-Host 'Zatrzymuję serwer, aby zwolnić bazę...' -ForegroundColor Cyan
     Stop-Server
-    if (Repair-M2GameDbUser -Volume $target -DbUser $creds.User -DbPassword $creds.Password) {
-        Write-Host 'Gotowe. Konto i uprawnienia bazy odtworzone. Kliknij GRAJ, aby uruchomić serwer.' -ForegroundColor Green
+    if (Repair-M2GameDbUser -Volume $target -DbUser $creds.User -DbPassword $creds.Password -RootPassword $creds.RootPassword) {
+        Write-Host 'Gotowe. Konta i uprawnienia bazy odtworzone. Kliknij GRAJ, aby uruchomić serwer.' -ForegroundColor Green
+        Write-Host "Do Navicat: host 127.0.0.1, port $($creds.Port), root albo $($creds.User) — hasła z .env (akcja DbAccess pokaże szczegóły)." -ForegroundColor Gray
     }
     else {
         Write-Host 'Naprawa nie powiodła się. Zbierz logi (ZIP) i zgłoś problem.' -ForegroundColor Red
@@ -641,6 +747,7 @@ function Invoke-Action {
         'SetBots' { Set-BotCountAction }
         'ImportDb' { Import-DatabaseAction }
         'RepairDb' { Repair-DatabaseAction }
+        'DbAccess' { Show-DatabaseAccessAction }
         default { throw "Nieznana akcja: $SelectedAction" }
     }
 }
@@ -662,7 +769,8 @@ function Show-Menu {
         Write-Host ' 12. Konfiguracja launchera'
         Write-Host ' 13. Ustaw liczbę grających botów (0-1500)'
         Write-Host ' 14. Importuj bazę z innej instalacji (wyższe postacie)'
-        Write-Host ' 15. Napraw dostęp do bazy (gdy migrate/serwer nie startuje)'
+        Write-Host ' 15. Napraw dostęp do bazy (gdy migrate/serwer nie startuje albo Navicat odrzuca hasło)'
+        Write-Host ' 16. Dane do połączenia z bazą (Navicat, HeidiSQL)'
         Write-Host '  0. Wyjście'
         Write-Host ''
         $choice = Read-Host 'Wybierz opcję'
@@ -673,6 +781,7 @@ function Show-Menu {
             '13' { 'SetBots' }
             '14' { 'ImportDb' }
             '15' { 'RepairDb' }
+            '16' { 'DbAccess' }
             '0' { return }
             default { '' }
         }

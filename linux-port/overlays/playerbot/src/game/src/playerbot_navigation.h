@@ -67,6 +67,11 @@ namespace
 	// Switch segments with a modest look-ahead and tolerate small drift of a
 	// moving target; SegmentClearWorld still validates every new segment.
 	const int PLAYERBOT_NAV_ARRIVAL_DISTANCE = 100;
+	// How far to look for ground a character stuck inside scenery can step onto.
+	// Three cells is a hundred and fifty units - wide enough for the doorway,
+	// the plinth and the shop awning bots were found welded to, and narrow
+	// enough that the step is a step and not a teleport.
+	const int PLAYERBOT_NAV_ESCAPE_CELLS = 3;
 	const int PLAYERBOT_NAV_GOAL_REPLAN_DISTANCE = 400;
 	// A parked route is worth keeping from this many waypoints left, and is
 	// resumed from a waypoint within this reach of where the fight ended.
@@ -379,6 +384,67 @@ namespace
 			bool IsBlockedCell(int gx, int gy) const
 			{
 				return !IsInsideCell(gx, gy) || m_blocked[Index(gx, gy)] != 0;
+			}
+
+			// Is the character standing somewhere no step can be taken from?
+			//
+			// SegmentClearWorld tests the character's own cell before anything
+			// else and gives up on it, so a bot whose cell the live world calls
+			// blocked cannot walk anywhere at all: the planner reads the static
+			// grid, plans a route out perfectly happily, and the first waypoint
+			// is refused. The route is dropped and replanned two hundred
+			// milliseconds later, identically, for as long as the bot lives.
+			// Measured at four different portals on three maps: forty-two
+			// refusals in twenty seconds, no movement, and not one line in any
+			// log. The two grids disagree wherever something was placed after
+			// the static one was built, and near a portal that is common -
+			// portals stand against scenery.
+			//
+			// Returns a nearby cell that both grids call free, so the caller can
+			// step off before asking for a route again.
+			bool FindEscapeFromBlockedCell(long x, long y, long& outX, long& outY) const
+			{
+				if (!m_initialized || !IsInsideWorld(x, y))
+					return false;
+				int gx, gy;
+				WorldToCell(x, y, gx, gy);
+				if (!IsLiveBlockedCell(gx, gy))
+					return false;
+
+				for (int radius = 1; radius <= PLAYERBOT_NAV_ESCAPE_CELLS; ++radius)
+				{
+					for (int dy = -radius; dy <= radius; ++dy)
+					{
+						for (int dx = -radius; dx <= radius; ++dx)
+						{
+							if (std::max(abs(dx), abs(dy)) != radius)
+								continue;
+							const int cx = gx + dx;
+							const int cy = gy + dy;
+							if (!IsInsideCell(cx, cy) || IsBlockedCell(cx, cy) ||
+									IsLiveBlockedCell(cx, cy))
+								continue;
+							int wx = 0, wy = 0;
+							CellToWorld(cx, cy, wx, wy);
+							outX = wx;
+							outY = wy;
+							return true;
+						}
+					}
+				}
+				return false;
+			}
+
+			// The middle of the cell a point falls in - the point the planner
+			// actually planned from and to.
+			void CellCentreWorld(long x, long y, long& outX, long& outY) const
+			{
+				int gx = 0, gy = 0;
+				WorldToCell(x, y, gx, gy);
+				int wx = 0, wy = 0;
+				CellToWorld(gx, gy, wx, wy);
+				outX = wx;
+				outY = wy;
 			}
 
 			bool SegmentClearWorld(long x0, long y0, long x1, long y1) const

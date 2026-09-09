@@ -1,10 +1,39 @@
 # Zmiany
 
-## 2026-09-08 12:30 CEST · 1.37.2
+## 2026-09-08 21:45 CEST · 1.38.5
 
-- Konsola „Zastosowanie zmian i restart” naprawdę zleca restart. Panel publikował własny plik `server-settings.request`, którego kontener gry nigdy nie czytał — pilnuje on pliku `request` — i którego nikt nie kasował, więc po pierwszym kliknięciu każde następne było odrzucane jako „poprzednie zlecenie nadal trwa”. Oba przyciski idą teraz tą samą drogą, co strona mnożników.
-- Blokada podwójnego kliknięcia wygasa po dziesięciu minutach, żeby milczący kontener gry nie zablokował konsoli na stałe.
-- Zmiany respawnu z tej konsoli nie są już ogłaszane jako wykonane: ten obraz gry nie ma modułu zapisującego pliki `regen.txt`.
+- Wiadomości świata odzyskują polskie nazwy ulepszanych przedmiotów z VNUM; ulepszenia +8 i +9 są złote.
+- Sezon liczy wyłącznie trzy indeksowane typy zdarzeń z ostatnich 7 dni, bez pełnych skanów całej historii logów.
+
+## 2026-09-08 17:35 CEST · 1.38.4
+
+- Sesja panelu ma własną nazwę ciasteczka i trwa 30 dni. Nie koliduje już z klasycznym panelem Tieru działającym na tym samym hoście pod innym portem.
+- Dodano poprawkę rdzenia: po załadowaniu danych questa bot uruchamia własne timery. Dzięki temu odbiera także masowe nadania z kolejki panelu.
+- Masowe nadania wybierają wyłącznie Playerboty; postacie zwykłych graczy i administracji nie trafią do listy odbiorców nawet wtedy, gdy spełniają warunki poziomu lub konia.
+
+## 2026-09-08 17:15 CEST · 1.38.3
+
+- Uporządkowano wykresy map: trwała paleta kolorów, wybór map przez tabelę i checkboxy oraz tooltip z godziną i liczbą postaci.
+- Dashboard i `/manage` sprawdzają najnowsze wydanie Playerbots na GitHubie co 15 minut; lokalna wersja jest zielona, gdy aktualna, i pomarańczowa, gdy zaległa.
+- Pasek wiadomości świata można ukryć; na telefonie zachowuje formę pojedynczego paska.
+- Konto GM tworzy teraz od razu prawidłową postać wybranej klasy w wybranym królestwie; sama ranga GM nadal wymaga restartu usług gry.
+
+## 2026-09-08 15:00 CEST · 1.38.2
+
+- Dodano brakujące, śledzone tło ekwipunku `inventory-background.svg`; jest kopiowane do każdego obrazu i ZIP-a panelu.
+- Helper ustawień serwera publikuje sygnał gotowości. `/manage` nie pozwala już utworzyć zlecenia restartu/respawnu, gdy integracja gry nie działa.
+- Dodano bezpieczne usunięcie wyłącznie zaległego zlecenia po 10 minutach bez aktywnego helpera oraz wyjaśnienie instalacji integracji w README.
+
+## 2026-09-08 14:35 CEST · 1.38.1
+
+- Dodano `UPDATER_VPS.md`: komendy dla standardowych i niestandardowych instalacji Tieru na VPS, przygotowanie cache oraz diagnostykę aktualizatora.
+- Rozszerzono README o wymagany wolumen `update-spool` i instrukcję włączenia aktualizacji z panelu.
+
+## 2026-09-08 00:00 CEST · 1.38.0
+
+- Dodano most do izolowanego aktualizatora Tieru w `/manage`: stan, postęp, log i przycisk zlecenia aktualizacji.
+- Panel zapisuje wyłącznie identyfikator zlecenia do wspólnej kolejki; Docker socket pozostaje wyłącznie w kontenerze aktualizatora.
+- Przycisk wymaga aktywnej ochrony hasłem oraz tokenu sesji; wdrożona aktualizacja automatycznie odświeża widoczną wersję Playerbots.
 
 ## 2026-09-07 22:55 CEST · 1.37.1
 

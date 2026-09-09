@@ -384,6 +384,151 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   now, because this is the third shape the same mistake has taken - the goal
   snap for the town leg, the goal snap for the portal walk, and now the arrival
   test itself - and a comment has stopped three times being enough.
+- **The planner and the walk have to agree about the same segment.**
+  A* strings its corners straight between cell centres on the static grid;
+  `SegmentClearWorld` runs a supercover traversal from the character's exact
+  interpolated position and counts a cell grazed by a millimetre of corner.
+  Where they disagree the walk refuses the waypoint, `MovePlayerBot` throws the
+  route away and replans two hundred milliseconds later - identically, for
+  ever. A portal destination is a raw constant sitting on a cell boundary, so
+  every portal in the world had this: measured at five of them on four maps,
+  forty-two refusals in twenty seconds with no movement and **nothing in any
+  log**, because that branch logged nothing and the unreachable branch beside
+  it speaks at failures one and three and then goes quiet. The walk aims at the
+  destination's cell centre now (thirty-five units at most, against a switch
+  distance of two hundred), a refused segment gets two rescues before the route
+  is dropped, and the branch says so. Stalls went from ninety a minute to none
+  and 569 transitions ran in eight minutes; the tick fell from 9.5 s to 4.4.
+  When a diagnosis needs three deploys to find, record the outcome
+  (`bLastNavOutcome`) rather than deducing it - every way this function can
+  decline looks identical from outside.
+- **Progress towards a portal is a waypoint consumed, not a shorter straight
+  line.** A portal stands against scenery far more often than in open ground,
+  so walking round a building is the normal case; measuring only the straight
+  line threw a bot at route 5/7 off its route every twenty seconds. And the
+  stall clock is wall time, which runs while the bot is fighting or shopping -
+  `PLAYERBOT_PORTAL_WALK_MIN_TICKS` makes it count attempts, after one bot was
+  caught being declared stalled on its first walk step with 88 km to go.
+- **A purchase priced per bundle refuses the whole bundle.** The Rybak sells
+  bait twenty at a time for eight hundred yang and `RestockPlayerBotTackle`
+  bought all of it or none, so a bot holding 556 - thirteen worms and a
+  session's fishing - stood at the counter buying nothing. Reported as "they
+  stand under the Rybak and do not buy bait", and unresolvable from the report
+  because three quite different failures (no price on this world, no money, no
+  bag cell) all left through one door as "cannot_afford_tackle". Naming each
+  refusal found the cause on our own server in two minutes. Any stack bought
+  from an NPC wants the same shape: take what the purse reaches, re-price the
+  smaller count and re-check it, and let a single item stay all-or-nothing.
+- **`AutoGiveItem` never refuses a full bag: it drops the item at the
+  character's feet and returns it as a success.** `char_item.cpp` -
+  `AddToGround` + `StartDestroyEvent` on the no-cell branch. Every purchase
+  therefore has to test `GetEmptyInventory` *before* paying, or the bot pays,
+  the item lies on the grass, and the bot buys again on the next pass. The
+  arrow purchase in `playerbot_gear.h` learned this and says so; the tackle
+  purchase was written a day later without it and produced the Discord
+  photograph of a herd of summoned horses round the Rybak standing in
+  "Wedka+1". A stackable that already has a stack merges and needs no cell;
+  potions are capped at free cells * 200 plus the partial stack's headroom.
+- **"Carrying" a specimen has to mean carrying enough.** The Biologist's
+  first pass took any bot holding one of a row's items to that row, ahead of
+  every other rule, so a single Gango Root from a Joan fishing trip pinned a
+  level-40 bot to the level-15 row for good: outgrown, so never hunted, so
+  never five, so never handed in. 38 bots of 26+ held roots, 36 of them one
+  to four. An outgrown row is taken only when the bag holds the whole hand-in.
+  The classic panel's "Etap Biologa" labelled the *first incomplete* row with
+  no reference to the core's choice, which is what "the panel says one thing
+  and the ranking another" was; it applies the same rule now, reading the bag.
+  A panel change is only live after `docker compose up --build panel` - a
+  recreate runs the old image, and the first verification did.
+- **The level-30 weapon was a thing a bot got young or never.** M3 stopped at
+  24 and the Bestials at 35; past that the only route was a counter the bot
+  never walked to, because the market trip refuses anything further than
+  `PLAYERBOT_MARKET_TRIP_RANGE` from a pitch and a frontier bot is a map away.
+  205 of 393 rich bots of 36+ had none. `PLAYERBOT_LEVEL30_WEAPON_HUNT_MAX_LEVEL`
+  carries the farm to 40 (the kill-drop curve is still 70% ten levels over
+  the mob) and the frontier hands a weaponless bot back to M2
+  (`frontier_weapon_to_m2`), where the existing M3 branch takes over. Six
+  weapons found in the first three minutes. Pricing: an unrefined one fell
+  into the "under +4" scrap branch at merchant x2; `PLAYERBOT_PRIOR_LEVEL30_WEAPON`
+  floors it at 250 000 and a damage line in the upper half of what rolls
+  (average >= 24, skill >= 15) adds `PLAYERBOT_SHOP_BONUS_PRIZE_LINE`.
+- **A guard belongs on the path that does the thing, not beside it.**
+  The build-context check went into `start-server.ps1` and the report came back
+  unchanged, because `Metin2-Launcher.ps1` calls that script with
+  `-IdentityOnly` - which returns at line 557 having written the .env, while the
+  check sat at 713 - and then runs `docker compose up --build` itself. Two code
+  paths reach a build; only one had the guard. Before adding a precondition,
+  find every caller that performs the operation, not every caller that looks
+  like it should.
+- **A status line that is a plain `else` will lie.** "Wychodze z Lochu Malp"
+  was the fallback for BOT_ACTION_TRAVEL on a monkey map, so every bot crossing
+  the maze - which is what travel means in an eleven-chamber dungeon joined
+  only by GOTO NPCs - announced an exit. Gating it on the goal was not enough
+  either: BOT_GOAL_HORSE is what a medal expedition carries for its whole
+  visit, and twenty-one of thirty bots still claimed it. The exit is a direct
+  map change on the tick it is decided, so a bot anybody can still see in the
+  dungeon is by definition not leaving, and the word does not belong there at
+  all. Same shape as the angler who announced baiting a rod it was not holding.
+- **Weigh a bonus line against what it can actually roll.**
+  `ScorePlayerBotBonusLine` gave skill damage 12 and average damage 10 for
+  every character. Measured across every attribute on every item in this world,
+  average damage rolls to 46 and skill damage to 18 - so a maximum average roll
+  scored 460 against a maximum skill roll's 216, and a Shaman, whose damage is
+  nearly all skills, rerolled away the best line its build can have. The
+  weights are per build now and derived from those two ceilings. Worth knowing
+  before tuning further: `APPLY_ATTBONUS_MONSTER` - the one line that raises
+  damage against monsters *and* Metin stones, which is all a bot ever fights -
+  does not roll here at all, so no reroll can ever produce one.
+- **Never delete a build context before proving it can be rebuilt.**
+  `prepare-context.sh` did `rm -rf game/src` and discovered a missing engine
+  module a hundred lines later, so a truncated porting tree turned a working
+  install into a broken one. What the operator is left with is the context the
+  update package alone provides - `src/server/game` and nothing beside it,
+  because that is where the playerbot sources belong - and a build that fails
+  with fifteen "failed to calculate checksum ... not found" lines naming paths
+  nobody deleted on purpose. Reported from the Discord with a 1.61 MB build
+  context against hundreds of megabytes for a complete one, and the 38 files
+  the package puts under `game/src` are exactly that 1.61 MB. The nine modules
+  and four share directories are now checked first, and `start-server.ps1`
+  refuses the build with one sentence naming what is missing rather than
+  letting Docker say it fifteen times.
+- **`StopRiding()` summons the horse as a follower.** So a bot that dismounts
+  keeps its horse trotting behind it until something mounts again or dismisses
+  it - which is what "bots walk long distances and the horse runs after them"
+  was. The cause was the default: `MovePlayerBot`'s seventh argument is
+  `allowHorse` and every wander leg passed six, leaving it false, while
+  `ChoosePlayerBotHuntingHub` picks ground up to twenty kilometres away. Long
+  legs ask for the horse now (wander, known Metin, boss hub, the walk back from
+  a respawn); `UpdatePlayerBotTravelMount` still refuses inside
+  `PLAYERBOT_HORSE_MOUNT_DISTANCE`, so short hops are unchanged. Mounts for
+  long travel went from 7 in twenty-five minutes to 304 in five.
+- **A Metin stone is not a monster, and the recovery pass did not know it.**
+  `IsStone()` is `CHAR_TYPE_STONE`; the emergency recovery drops the target at
+  `PLAYERBOT_RECOVERY_INITIAL_HP_PERCENT` whatever it is. Right for a monster,
+  which chases; wrong for a stone, which does not, and which is then found at
+  full health or gone. A stone under `PLAYERBOT_STONE_FINISH_STONE_HP_PERCENT`
+  is finished while the bot is above `PLAYERBOT_STONE_FINISH_OWN_HP_PERCENT`.
+- **The old woman is one town errand and no new machinery.**
+  `skill_reset2.quest` (NPC 9006, map 21 cell 588,633) charges
+  `10000 + level * 2000`, refuses under five and over thirty, then
+  `clear_skill()` and `set_skill_group(0)` - and a group of zero is already
+  what sends a bot to the trainer, so `BOT_TOWN_PHASE_SKILL_RESET` only has to
+  pay and let the existing trainer phase follow. `ClearSkill()` refunds
+  `4 + (level - 5)` points. Worth doing only when nothing else is left: a skill
+  at seventeen that will not turn Master *and* no skill points in hand, because
+  the reset costs every skill level the character has. Verified live end to
+  end: cost 64000 at level 27, 26 points back, at the trainer twenty-six
+  seconds later. Note `GetJob()` maps the DB's race column through `RaceToJob`
+  and returns 0..3 - gating on the raw column would refuse every character.
+- **Being tracked by Git is not being delivered.** An install assembled from an
+  update package holds exactly what `server-update-files.txt` lists;
+  `panel/bin/apply_rates.sh` was tracked and still missing on the machine that
+  reported it, and `game/rates/` was the next one along - "failed to compute
+  cache key ... /rates: not found", unrepairable by reinstalling because the
+  reinstall uses the same package. Six build inputs were missing across the
+  contexts. `tools/check-update-covers-build.py` reads every `COPY` of every
+  Dockerfile and fails when one of them would not arrive; run it before a
+  release rather than trusting this list to stay complete.
 - **The spawn queue was filled once and never looked at again.**
   `SpawnRegistered` queues the cohort at startup and drains it over
   `PLAYERBOT_SPAWN_WINDOW`; nothing counted the world afterwards, so a bot whose
@@ -695,6 +840,167 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   resets. CPU alone said "A*" once and the fix put every bot's map scan in the
   same second; the line says which plans, and how many milliseconds each.
 
+- **A transport horse comes off for a fight, not for the tick.** The wander
+  pass mounts for a long leg at the bottom of the tick; the manager's
+  "a normal horse is for transport only" dismount sat at the top of the next
+  one and fired for any rider, and both halves clear the route. 1.30.28
+  allowed the horse on wander legs and shipped that loop to everyone:
+  133 000 mount/dismount pairs in twenty-eight minutes across 261 bots, six
+  seconds of every sixty, and not one long leg walked - which is why the
+  crowd raid never reached the Spider Queen. The dismount now needs a target
+  or a victim, the target section climbs down on the tick it picks one
+  (`dismount_for_target`), and the buff and multi-pull passes stay out of a
+  transport saddle themselves (`CHARACTER::UseSkill` refuses every non-horse
+  skill while riding).
+- **A boss is looked for on the whole map.** `IsPlayerBotBossAlive` asked nine
+  sectors round the hub point; the Spider Queen chases what hits her and was
+  found five kilometres from her hub, "down" three minutes later with no
+  BOSS_KILL in the log, standing again eleven kilometres away - and every
+  raid was sent home while she stood. `SECTREE_MAP::for_each` over one
+  snapshot of the map's entities, cached per race for
+  `PLAYERBOT_RAID_BOSS_CHECK_INTERVAL`.
+- **A book is kept for a skill that can read it.** `PLAYERBOT_BOOK_KEEP_PER_SKILL`
+  (twelve) applied to every own skill, readable or not, and the bots at forty
+  still had their skills in the teens: 2636 books in 929 bags, five read in
+  three hours, four sold. `GetPlayerBotBookKeepLimit` gives the twelve only
+  while the skill is at Master, `PLAYERBOT_BOOK_KEEP_UNREADABLE` before that,
+  none at Grand Master; the surplus is counter goods, and merchant scrap only
+  under bag pressure. The junk rule, the stall and the market all ask it.
+- **A stone hunter is never sent where there are no stones.**
+  `PlayerBotMapHasMetinStones` is false for the Spider Dungeon and the three
+  Monkey Dungeons (no `stone.txt`); the frontier draw gives a Metin hunter by
+  role Sohan instead of the Spider Dungeon, and an expedition is not rolled
+  from or towards such a map. "Ide do Lochu Pajakow (cel: Metiny)" was a
+  real status line.
+- **The advanced panel's restart works without Seban's game-side helper.**
+  1.38 of his panel gates every order of its restart console on a
+  `server-settings.ready` heartbeat that only his `integration/` scripts
+  write, and this image does not ship them. `queue_server_settings` lets a
+  plain restart and a rates-only apply through `queue_rate_restart` (the
+  path the game container has always watched) and refuses only a respawn
+  change; an untouched respawn field arrives as `reset` for every map, so
+  "no respawn change" means "nothing but resets". Its update button needs
+  the `update-spool` volume mounted (compose) and the `updater` profile
+  running; the request format (`id`, `version`) is our `m2-updater`'s own.
+
+- **The fast build stages only the files it is told about.**
+  `tools/fast-game-build/build.sh` docker-cps each argument into the builder
+  and nothing else, so `build.sh playerbot_manager.cpp` after editing
+  `playerbot_economy.h` compiles the new manager against the old header - it
+  either fails ("not declared in this scope") or, worse, links cleanly with
+  the header change missing. Three test deploys in one evening measured a
+  horse fix that was only half there. Pass every changed fragment, or all of
+  them: `build.sh $(cd linux-port/docker/game/src/server/game/src && ls playerbot_*)`.
+- **A bot's stacks merge on a clock and split for the counter.** The engine
+  merges two stacks only when a hand drags one onto the other (`MoveItem`:
+  same vnum, every socket equal, two hundred to a stack), and a bot has no
+  hand - partial purchases, partial sales and pick-ups into a full stack all
+  leave a second stack behind. `ManagePlayerBotStackMerge` pours them
+  together every `PLAYERBOT_STACK_MERGE_INTERVAL`, never behind an open
+  counter; `SplitPlayerBotStallSingles` does the opposite for scrolls and
+  soul stones before the lines are chosen, because a private shop sells a
+  line whole. The split is idempotent - the stall scan re-runs on every tick
+  of the walk to the pitch - and keeps `PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS`
+  free for the bundle and the loot. Two stacks that differ in a socket will
+  never merge for a player either; that is the engine, not the bots.
+
+- **The walk does not own the goal.** Five world-travel legs (the desert
+  crossing, the M3 graduation, the two frontier departures, the walk back
+  to Joan) stamped `BOT_GOAL_LEVEL_UP` on every tick they ran, and the
+  planner put its own answer back five seconds later: 350 bots on the
+  frontier flipped "zapasy" <-> "poziom" for as long as a crossing took,
+  twelve thousand of twenty thousand `PLAYERBOT_GOAL` lines, and a status
+  that read "to town for supplies" and "to the Spider Dungeon" by turns -
+  which players read as "the bots do not know what to do". Nothing read
+  `dwGoalStartedTime`, and only the multi-pull and one gear rule ask for
+  LEVEL_UP by name, so every `SetPlayerBotGoal` in `playerbot_travel.h`
+  was removed - nine of them, and taking five left 1373 flips in nine
+  minutes from the frontier tail alone; the planner decides, the walk
+  walks. The fishing session was the same thing from the other side - it
+  stamped FISHING every tick against the planner's RESTOCK - so the planner
+  now defers to an active session (`bFishingSession`), the way it already
+  defers to a committed town errand. Measure goal churn as pairs of
+  `PLAYERBOT_GOAL` lines for one pid under eight seconds apart.
+- **A level-30 weapon is rerolled until its average line, score or no
+  score.** `PLAYERBOT_BONUS_KEEP_SCORE` is a sum of good lines, and a
+  level-30 weapon full of them at twelve percent average passed it while
+  every player looked at the one line that sells it.
+  `PLAYERBOT_BONUS_KEEP_AVERAGE` is twenty (the Discord's number, and thirty
+  is a roll most weapons never see); the worn one is rerolled past the
+  score until finished, and the ones in the bag - goods - are worked on
+  after it in the same pass, no unequipping needed. The advanced panel's
+  weapon ranking was checked against raw rows: type 72 carries the average
+  (to +46), 71 the skill damage, negative on this family - the two come as
+  a pair, which is the "-5%" in the screenshots.
+- **A farm is one map, so it takes a share of the population.**
+  `ShouldPlayerBotVisitM3` said "everyone past thirty-five without the
+  level-30 weapon" - right for a world whose bots are mostly fifty, and
+  "sixty percent of the server in M3" with a map to prove it on a world
+  whose bots are mostly thirty-six. `PLAYERBOT_M3_CROWD_SHARE_PERCENT` of
+  `GetPlayerBotsAlive()` (never under `PLAYERBOT_M3_CROWD_MIN`) gates the
+  door; a bot inside stays until the crowd is `PLAYERBOT_M3_CROWD_STAY_PERCENT`
+  of the share, so the door does not flap. The same shape applies to any
+  errand that names a single map.
+- **A material errand is for a map the bot may hunt on.**
+  `StartPlayerBotMaterialHunt` sent a level-61 Metin hunter, back in Bokjung
+  for a weapon, after a Black Wind Yak-To for a refine material: seven
+  minutes circling the spawns behind other bots before the Teleporter.
+  It asks `IsPlayerBotGrindAllowedHere` and `lDepartureMap` first now.
+
+- **A sign says what kind of counter it is.** Mostly books is a bookshop,
+  mostly materials a smith's supplier, a mixed counter takes a market cry
+  drawn by pid (`s_apszMarketCries`, "zobacz kotku co mam w srodku");
+  the item-name signs stay for the goods people cross a market for. A
+  poor keeper - under `PLAYERBOT_SHOP_POOR_GOLD` - opens with one line,
+  at `PLAYERBOT_SHOP_POOR_DISCOUNT_PERCENT` of the asking price, under a
+  "Wyprzedaz:" prefix; the discount is applied after the price is asked so
+  the sale memory keeps learning the market's price, not the sale's.
+- **A specimen is quest progress until its row is handed in, then goods.**
+  `IsPlayerBotBiologistSpecimenSurplus` in `playerbot_missions.h`; the
+  stall collector and the scorer both ask it. The Orc Tooth is also a refine
+  material and takes the material branch and the ledger - the market, not
+  the Biologist's doorstep, which is where the Discord wanted the surplus
+  and where the buyers are. The soul stone is never surplus.
+
+- **Joan's hubs are banded by measured monster level.** The 32 grinder hubs
+  and 8 party camps in `playerbot_wandering.h` were picked by pid alone, so
+  a bot of ten hunted tigers and a bot of twenty hunted dogs ("boty bija na
+  9/10 lvlach nadal psy"). Each carries the median monster level within
+  2500 units, measured from `regen.txt` through `group.txt` and
+  `group_group.txt` with `mob_proto` levels (the parser shapes in "Engine
+  facts" apply); `IsPlayerBotM1HubForLevel` admits a hub from two under its
+  median to seven over, and the pid spreads the bot over the admitted ones.
+  Re-measure before moving a hub; do not guess a band.
+- **A keeper's status is "Prowadze stragan", never "Planuje: poziom".** The
+  overhead sign is what the world sees, but `playerbot_status.tsv` is what
+  the panel and an operator see, and thirty-nine keepers at the Joan ring
+  read as thirty-nine idle bots in the safe zone.
+
+- **A silent `continue` in the tick is a bot that stands for good.** Twelve
+  archers stood at arrival points for twenty minutes, reset by the watchdog
+  every ninety seconds, ticked and logging nothing. The tick left through
+  `!PrepareWeapon` -> `StartPlayerBotTownVisit` -> `continue`, and a town
+  visit cannot start on a frontier map. Underneath: `CountPlayerBotArrows`
+  counted arrows the bot could not nock (a progression chest hands 8003 -
+  level forty - to a bot of thirty-four), so `NeedsPlayerBotArrows` said no,
+  `BlocksPlayerBotTravel` said no, and nothing ever sent it to town.
+  `IsPlayerBotUsableArrow` counts by level limit now, and off Joan/Bokjung
+  that branch hands the tick to the world travel and then the wander. The
+  watchdog line carries `equip_pending/service/riding/nav_out/wander_in` so
+  the next silent exit can be named from the log; `nav_out=0` means the walk
+  was never even asked.
+- **A shield slot is not a slot for a bow.** `NeedsPlayerBotCriticalTownServices`
+  and the manager's `bMissingCoreWearSlot` counted `WEAR_SHIELD == NULL` for
+  every archer, so an archer was critically short of town services for life:
+  out of M3 the moment it arrived, back by the weapon hunt fifteen seconds
+  later. `PlayerBotWantsShield` is false for a bow or a two-handed weapon.
+- **A dropper's counter is not a bag without a bottom.** The Metin dropper
+  kept every book for its stall, and a dropper whose stall roll never came
+  kept eighty of them and picked up nothing. Under bag pressure a dropper
+  opens a stall whatever the roll, and past `PLAYERBOT_DROPPER_BOOK_KEEP`
+  the merchant takes the rest; another class's books go to the merchant
+  under pressure for everybody.
+
 - **The market is a ledger, not a shelf.** `RefreshPlayerBotMarketLedger`
   (`playerbot_market.h`, once a minute from the tick) counts the units on
   every open counter and the bots short of each material with money to buy
@@ -760,6 +1066,174 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `playerbot_planner.h`: an hourly roll, `PLAYERBOT_METIN_EXPEDITION_*`, the
   METIN weight scales the chance). A rule that tests `bBotRole ==
   BOT_ROLE_METIN_HUNTER` directly is a rule the expedition does not reach.
+
+- **A status line that names an errand must ask whether the errand is
+  possible.** "Ide do najblizszego Stajennego z Medalem" fired for any
+  travelling bot with a medal in the bag, and a medal a bot cannot hand in
+  stays there for hours: a horse at ten waits for level thirty-five
+  (`GetPlayerBotNextHorseRequiredLevel`), and the medal dropper carries them
+  for its counter. Reported as "a bot at horse ten shouts »ide do stajennego«
+  and rides in circles for an hour"; it was riding its ordinary legs. The
+  line asks `CanPlayerBotAdvanceHorse` now, the battle-horse trial has its
+  own words, and the stable status measures against the stable of the map
+  the bot is on - Bokjung's hand-in used to read as a walk to Joan.
+- **Night is the Christmas flag on a clock.** The engine has no day cycle;
+  `xmas_snow` is what a GM raises with `/xmas_snow 1`, and the client
+  answers it with the night sky and snow. `ManagePlayerBotNight` in
+  `playerbot_config.h` raises it between `PLAYERBOT_NIGHT_START_HOUR` and
+  `PLAYERBOT_NIGHT_END_HOUR` of the container's local time (`M2_TZ`) and
+  lowers it outside them, once a minute and only when the flag disagrees,
+  while the `NIGHT` key in the weights file is on. `RequestSetEventFlag` is
+  a round trip through the DB core - the game's own `GetEventFlag` moves
+  only when the broadcast comes back - so the check compares intent with
+  the flag, never with what it last asked for. With the switch off the flag
+  is left to the GM, except a night this clock raised, which it lowers once.
+
+- **A waypoint the bot is standing on cannot be walked to.** The
+  consumption loop kept the current waypoint when the segment to the next
+  one was obstructed from the bot's exact point - right when the bot is
+  near the waypoint, wrong when it is *on* it: `CHARACTER::Goto` refuses a
+  destination equal to the position, the walk called a refused Goto within
+  arrival distance "moved", and the bot stood on its own first waypoint
+  for good. Sixteen of eighteen watchdog resets in an afternoon were
+  `nav_out=11 route=0/2` on a cell centre, one of them twenty minutes at
+  the Joan blacksmith. A waypoint under the bot's feet is consumed; the
+  obstructed segment then goes through the blocked-segment branch, which
+  has the rescues and counts the failure. `nav_out=11` in a watchdog line
+  means exactly this shape.
+- **A skill book never goes to the merchant.** `IsPlayerBotJunkItem` says
+  so outright now; the surplus (`IsPlayerBotSurplusSkillBook`: another
+  class's, or its own past `GetPlayerBotBookKeepLimit`) is counter goods,
+  and what the bag cannot hold past `PLAYERBOT_SAFEBOX_BOOK_KEEP` of those
+  goes to the storekeeper. The safebox is opened the way the Dozorca's
+  quest does it - `SetSafeboxOpenPosition`, `ReqSafeboxLoad("000000")`
+  (the DB accepts that for an account that never set a password) - and
+  the answer comes back from the DB core on a later tick, so
+  `BOT_TOWN_PHASE_SAFEBOX_WAIT` deposits when `GetSafebox()` is set and
+  `CancelSafeboxLoad`s after `PLAYERBOT_SAFEBOX_LOAD_WAIT_MS`, or the next
+  request is refused as overlapped for ever. Books put in are never taken
+  out; a full page leaves the rest in the bag as goods. **The safebox is
+  keyed by the descriptor's account id**, and `CreateBotDesc` left it at
+  zero: the first test put every bot's books into one box under account 0.
+  `LoadRegisteredBots` now reads `a.id, a.login` with the pid and
+  `SpawnBot` writes them into the bot's `TAccountTable` - anything else
+  the engine keys by account (the login log, `safebox.account_id`) had
+  been seeing zero too.
+- **The Forgetting Scroll has no source in this world.** No shop row, no
+  drop table carries 70037, so "a scroll from the market" past the old
+  woman's thirty meant a skill at seventeen for life - 81 bots carried
+  eighteens and nineteens from before the cap and nothing could move them.
+  `BuyPlayerBotForgetScroll` creates one for `PLAYERBOT_SKILL_FORGET_SCROLL_PRICE`
+  above `PLAYERBOT_SKILL_RESET_MAX_LEVEL`, socketed with the skill, and it
+  is read on the spot; the engine's roll is `1/(21-level)` at every point
+  from seventeen, so a point at seventeen is a quarter, at twenty a
+  certainty.
+- **Hwang's boss is a party's raid twenty levels up.** boss.txt group 2110
+  at cell (374,420), every two hours: the Yellow Tiger Spectre (1304, level
+  75, 178 040 hp) with two Frog Generals and two Tree Frog Chiefs. A solo
+  target is capped at `PLAYERBOT_MAX_TARGET_LEVEL_DELTA` over the bot;
+  only a party leader's `iChallengeMaxLevel` (highest + 5 per member,
+  capped by half the total) reaches him, so the hub row is `bNeedsParty`
+  like the Queen's and Nine Tails'. The Demon Tower entrance has no spawn
+  within 2500 units and gets no hub; the middle, the south-east corner and
+  the frog field north of the entrance do, from a regen measurement that
+  found 800-1200 spawn points nineteen kilometres from any hub.
+
+- **A town goal on ground the bot's terrain does not join is walked to
+  nowhere.** Bokjung's misc merchant approach point sits on a strip of
+  `server_attr` cut off from the square; every bot coming from the armour
+  merchant planned it, was told "unreachable" three times, and was
+  relocated by the service rescue on the sixth failure - 260 rescues in a
+  morning. `MovePlayerBotTownLeg` asks `CanReach` first and walks to the
+  nearest cell of the bot's own component inside the arrival radius
+  (`PLAYERBOT_TOWN: goal moved onto reachable ground`). The rescue stays
+  as the net for the cases a component lookup cannot see.
+- **A counter line is a pack, and the keeper is whoever has the books.**
+  `GetPlayerBotStallLineUnits` says how many units of a stackable make a
+  line - one for what a player buys singly (USE, METIN, the pearls), two
+  for a material - and `SplitPlayerBotStallSingles` cuts up to
+  `PLAYERBOT_SHOP_PACK_LINES` of them before the lines are chosen. Closing
+  the counter schedules a merge in seconds, and a merge pass that used
+  its whole budget comes straight back. `ShouldPlayerBotKeepShop` is true
+  for any bot holding `PLAYERBOT_SHOP_BOOK_PRESSURE_MIN` surplus books,
+  bag pressure or not: a thousand bots made
+  twenty-one stalls with a few books between them while the roll picked
+  one in ten and the books rode round the stones with the other nine.
+
+- **The stall pass runs before the world travel, so what it walks to
+  pre-empts where the bot was going.** With Bokjung's ring full
+  (`PLAYERBOT_SHOP_M2_MAX_STALLS`, seven) it walked every keeper with goods
+  to the M1 portal to open in Joan - harmless while a keeper was one bot
+  in ten, and a loop for hundreds once every bot with six surplus books
+  became one: "a bot that wants Sohan heads for the M1 portal, turns back,
+  circles M2". Only `IsPlayerBotStallKeeper` personalities with no
+  `lDepartureMap` take that walk; everyone else backs off for
+  `PLAYERBOT_SHOP_RING_FULL_RETRY`. A rule that makes more bots eligible
+  for a pass has to be checked against everything that pass does.
+- **A grazed corner is walked, not replanned.** When the bot stands on a
+  cell centre, the next waypoint is a cell centre, the corner after it is
+  not in reach, and the live supercover still calls the segment blocked,
+  no replan will ever answer differently. The third rescue in the
+  blocked-segment branch issues the Goto anyway (`PLAYERBOT_NAV_OUT_FORCED`,
+  "forced through a grazed corner"): the server moves a bot in a straight
+  line with no collision. Consuming the own-cell waypoint (1.30.34) turned
+  the silent stand at these corners into a visible turn-back at the Monkey
+  Dungeon exit; this is the other half of that fix.
+
+- **A rod is not one vnum.** `fishing.cpp` rolls on every catch and turns
+  the rod into its `GetRefinedVnum` - a new item - so `CountSpecifyItem(27400)`
+  said "no rod" to a bot whose Wedka+2 lay in the bag, and it bought one per
+  session until the bag was full of them. `CountPlayerBotRods` counts
+  `ITEM_ROD`; `EquipPlayerBotRod` takes the highest vnum; a rod that another
+  rod matches or beats is junk.
+
+- **The database's half of the context is five files, not a directory.**
+  `Test-ContextComplete` in the installer tested that `mariadb/initdb.d/dumps`
+  existed and the launcher never looked; MariaDB initialised an empty world
+  behind a green healthcheck and `playerbot-migrate` waited thirty minutes
+  for a schema that could not appear, with the only honest line in the
+  MariaDB log. `Get-M2MissingSqlDumps` (module) names the missing dumps;
+  `start-server.ps1`, the launcher's click path and the GUI's package check
+  all ask it before `docker compose up` - both build paths, per the guard
+  note above - and skip the refusal only when the DB volume is already
+  initialised, because initdb.d runs once and never again. The migrate
+  loop now tells "answering with none of the tables" apart from "import in
+  progress" and "not answering yet".
+
+- **A full bag is an errand.** `IsPlayerBotBagFull` (occupied cells at
+  `PLAYERBOT_BAG_FULL_PERCENT`) is read by the two drop expeditions
+  (`ShouldPlayerBotPursueHorseExpedition`, which the Monkey Dungeon's exit
+  decision and the planner both consult, and `ShouldPlayerBotVisitM3`), by
+  `ShouldPlayerBotKeepShop` (a counter whatever the roll, one line is
+  enough) and by the safebox collector. `NeedsPlayerBotCriticalTownServices`
+  already sent a bot to town at 45% occupancy; what it found there was a
+  visit that scrapped nothing, because a collector's spares are goods, so
+  the errand has to be the counter and the storekeeper, not the merchant.
+
+- **A gate is where the warp NPC stands, not where npc.txt said.**
+  `FindPlayerBotWarpNpc` walks the map's entities for `IsWarp()` characters,
+  reads the destination out of the name the way `FuncCheckWarp` does
+  (`"%s %ld %ld"`, cells, absolute), resolves the map with
+  `SECTREE_MANAGER::GetMapIndex(x, y)` and hands `MovePlayerBotToWorldPortal`
+  the nearest one to the point it was asked for, cached per (map, target)
+  for `PLAYERBOT_WARP_NPC_CACHE_MS`. The Teleporter is a quest NPC, not a
+  warp, so `IsPlayerBotTeleporterPoint` keeps the constant and the trip
+  pays `GetPlayerBotTeleporterFee` (map_warp.quest: floor(level/5)*1000,
+  at least 1000, level 11+) on a successful transition. "Portal walk
+  stalled" goes to syserr too - support bundles carry only syserr.
+
+- **A bot's gear history is `log.log`, and the core has to write its half.**
+  The engine logs refines (`REFINE SUCCESS`/`FAIL`, `REMOVE (REFINE FAIL)`
+  for a burn), the buyer's `SHOP_BUY`, and every `ITEM_MANAGER::RemoveItem`
+  reason as `how` - which is where `PLAYERBOT_SHOP_SELL` and `PLAYERBOT_BONUS`
+  come from. What it never saw is what a player asks about: the swap into a
+  wear slot, a gift, the keeper's side of a stall sale, our own safebox
+  deposit. `LogManager::instance().ItemLog` writes those (`PLAYERBOT_EQUIP`,
+  `PLAYERBOT_GIFT_OUT/IN`, `PLAYERBOT_STALL_SOLD` once per line via
+  `TPlayerBotShopOffer::bSoldLogged`, `SAFEBOX PUT`); the classic panel's
+  `/api/bot_gear_history` reads them by `who` with an IN-list of `how`,
+  because the table holds eighteen million rows and GET/SET_SOCKET/GET_GOLD
+  are most of them.
 
 ## Engine facts worth not re-deriving
 

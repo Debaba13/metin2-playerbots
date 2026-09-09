@@ -158,6 +158,11 @@ $script:Strings = @{
         botCount     = 'LICZBA BOTOW (0-1500)'
         importDb     = 'IMPORTUJ BAZE'
         repairDb     = 'NAPRAW DOSTEP DO BAZY'
+        dbAccess     = 'DANE DO BAZY (NAVICAT)'
+        dbAccessTitle = 'Dane do polaczenia z baza'
+        dbAccessHint = 'Wpisz te dane w Navicat, HeidiSQL albo DBeaver (typ MySQL/MariaDB, polaczenie TCP). Konto root widzi wszystko, konto gry tylko bazy gry. Baza slucha wylacznie na tym komputerze. Jesli baza odrzuca haslo, kliknij NAPRAW DOSTEP DO BAZY - ustawia oba konta na hasla z pliku .env. Nie wklejaj tych hasel na Discordzie.'
+        dbAccessOpenEnv = 'OTWORZ PLIK .ENV'
+        dbAccessNoEnv = 'Brak pliku linux-port\docker\.env - uruchom najpierw serwer (GRAJ), launcher go utworzy.'
         language     = 'JEZYK: POLSKI'
         ready        = 'Gotowy.'
         footer       = '"Zatrzymaj i zapisz" nie usuwa postaci ani postepu botow. Nigdy nie uzywa docker compose down -v.'
@@ -191,6 +196,11 @@ $script:Strings = @{
         botCount     = 'BOT COUNT (0-1500)'
         importDb     = 'IMPORT DATABASE'
         repairDb     = 'REPAIR DATABASE ACCESS'
+        dbAccess     = 'DATABASE LOGIN (NAVICAT)'
+        dbAccessTitle = 'Database connection details'
+        dbAccessHint = 'Enter these in Navicat, HeidiSQL or DBeaver (MySQL/MariaDB, TCP connection). root sees everything, the game account only the game databases. The database listens on this computer only. If it rejects the password, click REPAIR DATABASE ACCESS - it sets both accounts to the passwords in .env. Never paste these passwords on Discord.'
+        dbAccessOpenEnv = 'OPEN .ENV FILE'
+        dbAccessNoEnv = 'No linux-port\docker\.env yet - start the server (PLAY) once, the launcher creates it.'
         language     = 'LANGUAGE: ENGLISH'
         ready        = 'Ready.'
         footer       = '"Stop and save" never deletes characters or bot progress. It never uses docker compose down -v.'
@@ -761,6 +771,45 @@ function Install-Or-Prepare {
         return
     }
 
+    # This button prepares a package whose game sources are already on disk;
+    # it never fetches them, because they are the operator's own r40250 files
+    # and only installer\install.ps1 knows how to take them from that package.
+    # Until now it said "Paczka jest gotowa" regardless - and a player whose
+    # sources were missing pressed it, was told the package was ready, pressed
+    # GRAJ and got fifteen Docker errors. Reported from the Discord: "re-running
+    # the installer through Install in GUI did not restore the sources" - it
+    # could not have, this is not the installer. Say which it is.
+    $gameContext = Join-Path $root 'linux-port\docker\game\src'
+    $requiredContext = @(
+        'build-deps-40250.sh', 'extern',
+        'server\common', 'server\db', 'server\game', 'server\libgame',
+        'server\liblua', 'server\libpoly', 'server\libserverkey',
+        'server\libsql', 'server\libthecore',
+        'serverfiles\share\conf', 'serverfiles\share\data',
+        'serverfiles\share\locale', 'serverfiles\share\package',
+        'serverfiles\mark-default'
+    )
+    $missingContext = @($requiredContext | Where-Object { -not (Test-Path -LiteralPath (Join-Path $gameContext $_)) })
+    # The database dumps are the other half of what the installer takes out
+    # of the package, and the half nobody saw missing until MariaDB came up
+    # empty: name them here with the sources.
+    $missingContext += @(Get-M2MissingSqlDumps -ServerRoot $root | ForEach-Object { 'mariadb\initdb.d\dumps\' + $_ })
+    if ($missingContext.Count -gt 0) {
+        $installerPath = Join-Path $root 'installer\install.ps1'
+        Write-LocalLog ("Brak zrodel gry w " + $gameContext + ": " + ($missingContext -join ', '))
+        [Windows.Forms.MessageBox]::Show(
+            ("Ten przycisk przygotowuje paczke, ktora ma juz na dysku zrodla gry - a tu ich nie ma." + [Environment]::NewLine +
+             "Brakuje: " + ($missingContext -join ', ') + [Environment]::NewLine + [Environment]::NewLine +
+             "Zrodla pochodza z Twojej wlasnej paczki serwera r40250 i zaden przycisk launchera ani zadna aktualizacja ich nie pobiera - " +
+             "robi to wylacznie instalator, ktory wyciaga z tej paczki to, czego trzeba." + [Environment]::NewLine + [Environment]::NewLine +
+             "Uruchom w PowerShell jako administrator:" + [Environment]::NewLine +
+             "  `$env:M2_SRC_ARCHIVE = 'C:\sciezka\do\paczki-r40250.zip'" + [Environment]::NewLine +
+             "  & '" + $installerPath + "'" + [Environment]::NewLine + [Environment]::NewLine +
+             "Baza, postacie i ustawienia zostaja nietkniete."),
+            'Brak zrodel gry - potrzebny instalator', 'OK', 'Warning') | Out-Null
+        return
+    }
+
     if (-not (Find-ClientExecutable)) { [void](Select-ClientExecutable) }
     try {
         $desktop = [Environment]::GetFolderPath('Desktop')
@@ -831,31 +880,32 @@ $folderButton = New-Button (T 'logFolder') 496 328 230 45 ([Drawing.Color]::From
 $botCountButton = New-Button (T 'botCount') 28 380 218 32 ([Drawing.Color]::FromArgb(120, 95, 40))
 $importDbButton = New-Button (T 'importDb') 262 380 218 32 ([Drawing.Color]::FromArgb(70, 120, 90))
 $repairDbButton = New-Button (T 'repairDb') 496 380 230 32 ([Drawing.Color]::FromArgb(150, 90, 55))
+$dbAccessButton = New-Button (T 'dbAccess') 28 418 218 32 ([Drawing.Color]::FromArgb(70, 100, 130))
 
 # The language switch sits with the other small buttons rather than in a menu:
 # somebody who cannot read the window needs to find it without reading anything.
 $languageButton = New-Button (T 'language') 508 702 218 28 ([Drawing.Color]::FromArgb(60, 70, 95))
 $languageButton.Add_Click({ Switch-LauncherLanguage })
 
-foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $languageButton)) {
+foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $languageButton)) {
     $script:form.Controls.Add($button)
 }
 
 $script:actionStatus = [Windows.Forms.Label]::new()
 $script:actionStatus.Text = (T 'ready')
-$script:actionStatus.Location = [Drawing.Point]::new(28, 434)
+$script:actionStatus.Location = [Drawing.Point]::new(28, 462)
 $script:actionStatus.Size = [Drawing.Size]::new(690, 24)
 $script:actionStatus.Font = [Drawing.Font]::new('Segoe UI Semibold', 9)
 $script:form.Controls.Add($script:actionStatus)
 
 $script:progress = [Windows.Forms.ProgressBar]::new()
-$script:progress.Location = [Drawing.Point]::new(28, 462)
+$script:progress.Location = [Drawing.Point]::new(28, 490)
 $script:progress.Size = [Drawing.Size]::new(698, 12)
 $script:form.Controls.Add($script:progress)
 
 $script:logBox = [Windows.Forms.TextBox]::new()
-$script:logBox.Location = [Drawing.Point]::new(28, 490)
-$script:logBox.Size = [Drawing.Size]::new(698, 150)
+$script:logBox.Location = [Drawing.Point]::new(28, 518)
+$script:logBox.Size = [Drawing.Size]::new(698, 122)
 $script:logBox.Multiline = $true
 $script:logBox.ReadOnly = $true
 $script:logBox.ScrollBars = 'Vertical'
@@ -1164,10 +1214,75 @@ $importDbButton.Add_Click({
     if ($confirm -ne [Windows.Forms.DialogResult]::Yes) { return }
     Start-LauncherAction -Action 'ImportDb' -Yes -ExtraArgs @('-ImportSource', "$picked")
 })
+$dbAccessButton.Add_Click({
+    # In-process on purpose: an action would print through the log box and the
+    # launcher log, and the launcher log travels in support bundles. Read-only
+    # text boxes so the values can be selected and copied.
+    $envPath = Join-Path $root 'linux-port\docker\.env'
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
+        [Windows.Forms.MessageBox]::Show((T 'dbAccessNoEnv'), (T 'dbAccessTitle'), 'OK', 'Warning') | Out-Null
+        return
+    }
+    $envText = [IO.File]::ReadAllText($envPath)
+    $read = {
+        param($name, $default)
+        $m = [Regex]::Match($envText, "(?m)^$name=(.*?)\s*$")
+        if ($m.Success -and $m.Groups[1].Value) { $m.Groups[1].Value } else { $default }
+    }
+    $rows = @(
+        @('Host', '127.0.0.1'),
+        @('Port', (& $read 'M2_DB_PUBLISH_PORT' '3306')),
+        @('root', (& $read 'M2_DB_ROOT_PASSWORD' '')),
+        @((& $read 'M2_DB_USER' 'metin2'), (& $read 'M2_DB_PASSWORD' ''))
+    )
+    $dlg = [Windows.Forms.Form]::new()
+    $dlg.Text = (T 'dbAccessTitle')
+    $dlg.Size = [Drawing.Size]::new(560, 372)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $y = 18
+    foreach ($row in $rows) {
+        $label = [Windows.Forms.Label]::new()
+        $label.Text = $row[0]
+        $label.Location = [Drawing.Point]::new(18, $y + 4)
+        $label.Size = [Drawing.Size]::new(110, 22)
+        $dlg.Controls.Add($label)
+        $box = [Windows.Forms.TextBox]::new()
+        $box.Text = $row[1]
+        $box.ReadOnly = $true
+        $box.Location = [Drawing.Point]::new(132, $y)
+        $box.Size = [Drawing.Size]::new(396, 24)
+        $box.Font = [Drawing.Font]::new('Consolas', 9)
+        $dlg.Controls.Add($box)
+        $y += 34
+    }
+    $hint = [Windows.Forms.Label]::new()
+    $hint.Text = (T 'dbAccessHint')
+    $hint.Location = [Drawing.Point]::new(18, $y + 8)
+    $hint.Size = [Drawing.Size]::new(510, 120)
+    $dlg.Controls.Add($hint)
+    $openButton = [Windows.Forms.Button]::new()
+    $openButton.Text = (T 'dbAccessOpenEnv')
+    $openButton.Location = [Drawing.Point]::new(18, 290)
+    $openButton.Size = [Drawing.Size]::new(170, 32)
+    $openButton.Add_Click({ Start-Process notepad.exe -ArgumentList ('"' + $envPath + '"') }.GetNewClosure())
+    $dlg.Controls.Add($openButton)
+    $okButton = [Windows.Forms.Button]::new()
+    $okButton.Text = 'OK'
+    $okButton.Location = [Drawing.Point]::new(433, 290)
+    $okButton.Size = [Drawing.Size]::new(95, 32)
+    $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
+    $dlg.Controls.Add($okButton)
+    $dlg.AcceptButton = $okButton
+    $dlg.ShowDialog() | Out-Null
+    $dlg.Dispose()
+})
 $repairDbButton.Add_Click({
     if (-not (Confirm-DockerReady)) { return }
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Naprawić dostęp do bazy?`r`n`r`nUżyj tego, gdy po imporcie serwer nie startuje (playerbot-migrate kończy się błędem). Odtwarza tylko techniczne konto bazy — postacie, przedmioty i boty pozostają BEZ ZMIAN. Serwer zostanie zatrzymany na czas naprawy.",
+        "Naprawić dostęp do bazy?`r`n`r`nUżyj tego, gdy po imporcie serwer nie startuje (playerbot-migrate kończy się błędem) albo gdy Navicat/HeidiSQL odrzuca hasło z pliku .env. Odtwarza tylko techniczne konta bazy (gry i root) — postacie, przedmioty i boty pozostają BEZ ZMIAN. Serwer zostanie zatrzymany na czas naprawy.",
         'Napraw dostęp do bazy', 'YesNo', 'Question')
     if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
     Start-LauncherAction -Action 'RepairDb'

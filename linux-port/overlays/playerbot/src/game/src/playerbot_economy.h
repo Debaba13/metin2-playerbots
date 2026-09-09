@@ -65,6 +65,124 @@ namespace
 		return false;
 	}
 
+	// Every skill book in the bag, whatever the skill.
+	int CountPlayerBotSkillBooks(LPCHARACTER ch)
+	{
+		int books = 0;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (item && item->GetType() == ITEM_SKILLBOOK)
+				books += item->GetCount();
+		}
+		return books;
+	}
+
+	// Whether a book is beyond the bag's working stock: somebody else's skill,
+	// or one of its own past GetPlayerBotBookKeepLimit. What the counter
+	// sells, and what the safebox takes when the counter has not.
+	bool IsPlayerBotSurplusSkillBook(LPCHARACTER ch, LPITEM item);
+
+	// How many books of one of its own skills a bot keeps in the bag: the
+	// working stock while the skill is readable, a few before that, none once
+	// a book can do nothing more for it. Every rule that keeps, lists or buys
+	// a book asks this, so the bag, the counter and the market agree.
+	int GetPlayerBotBookKeepLimit(LPCHARACTER ch, DWORD skillVnum)
+	{
+		if (!ch || skillVnum == 0)
+			return 0;
+		if (ch->GetSkillMasterType(skillVnum) >= SKILL_GRAND_MASTER)
+			return 0;
+		const BYTE level = ch->GetSkillLevel(skillVnum);
+		if (ch->GetSkillMasterType(skillVnum) == SKILL_MASTER && level >= 20 && level < 30)
+			return PLAYERBOT_BOOK_KEEP_PER_SKILL;
+		return PLAYERBOT_BOOK_KEEP_UNREADABLE;
+	}
+
+	// The engine's stacking rule, asked of two bag items: MoveItem pours one
+	// into the other only for the same vnum with every socket equal.
+	bool PlayerBotStacksTogether(LPITEM item, LPITEM other)
+	{
+		if (!item || !other || item == other || item->GetVnum() != other->GetVnum())
+			return false;
+		if (!item->IsStackable() || IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK))
+			return false;
+		for (int s = 0; s < ITEM_SOCKET_MAX_NUM; ++s)
+			if (item->GetSocket(s) != other->GetSocket(s))
+				return false;
+		return true;
+	}
+
+	// Pour split stacks together, a few at a time. MoveItem with a count of
+	// zero moves as much of the source as the destination has room for and
+	// removes the source when it is emptied - the same thing a player's drag
+	// does, packets and item log included.
+	int MergePlayerBotStacks(LPCHARACTER ch, int maxMerges)
+	{
+		int merged = 0;
+		for (WORD i = 0; i < INVENTORY_MAX_NUM && merged < maxMerges; ++i)
+		{
+			LPITEM item = ch->GetInventoryItem(i);
+			if (!item || item->IsEquipped() || item->isLocked() ||
+					item->GetCount() >= PLAYERBOT_STACK_MAX)
+				continue;
+			for (WORD j = i + 1; j < INVENTORY_MAX_NUM && merged < maxMerges; ++j)
+			{
+				LPITEM other = ch->GetInventoryItem(j);
+				if (!other || other->IsEquipped() || other->isLocked() ||
+						!PlayerBotStacksTogether(item, other))
+					continue;
+				if (ch->MoveItem(TItemPos(INVENTORY, j), TItemPos(INVENTORY, i), 0))
+					++merged;
+				if (item->GetCount() >= PLAYERBOT_STACK_MAX)
+					break;
+			}
+		}
+		return merged;
+	}
+
+	void ManagePlayerBotStackMerge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch || dwNow < state.dwNextStackMergeTime)
+			return;
+		state.dwNextStackMergeTime = dwNow + PLAYERBOT_STACK_MERGE_INTERVAL +
+				PlayerBotNavHash(ch->GetPlayerID() ^ 0x53544b4dU) % 60000U;
+		// Not behind a counter: the singles there were split on purpose, and
+		// the shop table points at the cells they are in.
+		if (!ch->IsItemLoaded() || ch->GetMyShop())
+			return;
+		const int merged = MergePlayerBotStacks(ch, PLAYERBOT_STACK_MERGES_PER_PASS);
+		if (merged > 0)
+			sys_log(0, "PLAYERBOT_BAG: merged stacks pid=%u name=%s merges=%d",
+					ch->GetPlayerID(), ch->GetName(), merged);
+		// A pass that used its whole budget has more to do: back soon, not in
+		// five minutes - a closed counter leaves eight packs of one material.
+		if (merged >= PLAYERBOT_STACK_MERGES_PER_PASS)
+			state.dwNextStackMergeTime = dwNow + PLAYERBOT_STACK_MERGE_AFTER_SHOP_MS;
+	}
+
+	// How many units of a stackable go on one counter line. A private shop
+	// sells a line whole, so a stack of twenty scrolls on one line is twenty
+	// scrolls or nothing: what a player buys one at a time - potions,
+	// scrolls, stones, the shell and the pearls - is a single; a material is
+	// a pack of PLAYERBOT_SHOP_PACK_UNITS, small enough to buy for one refine
+	// and few enough lines to leave room on the counter. Zero for anything
+	// that does not stack.
+	int GetPlayerBotStallLineUnits(LPITEM item)
+	{
+		if (!item || !item->IsStackable() || IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK))
+			return 0;
+		if (item->GetType() == ITEM_USE || item->GetType() == ITEM_METIN ||
+				(item->GetVnum() >= 27992 && item->GetVnum() <= 27994))
+			return 1;
+		return PLAYERBOT_SHOP_PACK_UNITS;
+	}
+
+	bool IsPlayerBotSinglyTradedGoods(LPITEM item)
+	{
+		return GetPlayerBotStallLineUnits(item) == 1;
+	}
+
 	// Everything this bot wears or carries that is still below its refine target,
 	// against what those refines actually consume. A materialVnum of zero asks
 	// the looser question - short of anything at all - which is what decides
@@ -265,6 +383,16 @@ namespace
 		return free;
 	}
 
+	// Occupied cells against PLAYERBOT_BAG_FULL_PERCENT of the bag. Counted
+	// by cell rather than by item, so a weapon's three cells count as three.
+	bool IsPlayerBotBagFull(LPCHARACTER ch)
+	{
+		if (!ch || !ch->IsItemLoaded())
+			return false;
+		const int occupied = INVENTORY_MAX_NUM - CountPlayerBotFreeInventoryCells(ch);
+		return occupied * 100 >= INVENTORY_MAX_NUM * PLAYERBOT_BAG_FULL_PERCENT;
+	}
+
 	// Books of one skill in the cells before this one. Cell order decides, so
 	// the same books stay put from one town visit to the next.
 	int CountPlayerBotSkillBooksAhead(LPCHARACTER ch, LPITEM item, DWORD skillVnum)
@@ -366,7 +494,25 @@ namespace
 		// of a fishing trip -- they are what carries equipment to +7/+8/+9 -- and a
 		// vendored rod would simply have to be bought again for the next session.
 		// Ordinary fish and bones stay sellable: that is the angler's pocket money.
-		if (item->GetType() == ITEM_ROD || vnum == PLAYERBOT_FISHING_BAIT_VNUM ||
+		// One rod is tackle; a second one is scrap. The bots that bought a rod
+		// per session (see CountPlayerBotRods) are carrying fifteen, and the
+		// worst of them go to the merchant: a rod that another rod - worn or in
+		// the bag - matches or beats in grade.
+		if (item->GetType() == ITEM_ROD)
+		{
+			LPITEM worn = ch->GetWear(WEAR_WEAPON);
+			if (worn && worn != item && worn->GetType() == ITEM_ROD && worn->GetVnum() >= vnum)
+				return true;
+			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			{
+				LPITEM other = ch->GetInventoryItem(cell);
+				if (other && other != item && other->GetType() == ITEM_ROD &&
+						(other->GetVnum() > vnum || (other->GetVnum() == vnum && other->GetID() < item->GetID())))
+					return true;
+			}
+			return false;
+		}
+		if (vnum == PLAYERBOT_FISHING_BAIT_VNUM ||
 				vnum == PLAYERBOT_SHELLFISH_VNUM || vnum == PLAYERBOT_CAMPFIRE_VNUM ||
 				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM))
 			return false;
@@ -395,27 +541,16 @@ namespace
 			return !isOrWillBeArcher;
 		}
 
+		// A skill book never goes to the merchant. Its own working stock stays
+		// in the bag (GetPlayerBotBookKeepLimit), the surplus - somebody else's
+		// skill, or more of its own than it can read - is goods for the counter,
+		// and what the bag cannot hold beyond PLAYERBOT_SAFEBOX_BOOK_KEEP of
+		// those goes to the storekeeper's safebox on the next town visit
+		// (IsPlayerBotSafeboxBook). The merchant paid pennies for Aura Miecza
+		// while the warrior three stalls away would have paid a fortune, and
+		// "under bag pressure" turned out to be most of a dropper's life.
 		if (item->GetType() == ITEM_SKILLBOOK)
-		{
-			// The Metin dropper keeps every book: the ones it cannot read are what
-			// it puts on the counter.
-			if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER)
-				return false;
-			// Keep books for the selected build (also before profession selection).
-			// Books for another class/build may first be handed to a party member;
-			// if nobody needs them they become normal miscellaneous loot.
-			if (ch->GetSkillGroup() == 0)
-				return false;
-			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
-			// Somebody else's skill is not scrap. Aura Miecza found by a ninja
-			// was going to the merchant for a fraction of what the warrior three
-			// stalls away would pay for it - the stall pass takes these, and
-			// only a book nobody in the world could want is loot.
-			if (!IsPlayerBotOwnSkill(ch, skillVnum))
-				return skillVnum == 0;
-			// Its own, and only so many of them - see PLAYERBOT_BOOK_KEEP_PER_SKILL.
-			return CountPlayerBotSkillBooksAhead(ch, item, skillVnum) >= PLAYERBOT_BOOK_KEEP_PER_SKILL;
-		}
+			return false;
 
 		// Preserve health, mana, green and purple speed potions
 		if (vnum == 27051 || vnum == 27001 || vnum == 27002 || vnum == 27003 ||
@@ -896,6 +1031,11 @@ namespace
 		// performed in the separate blacksmith phase after the bot walks there.
 		const bool isMage = (ch->GetJob() == JOB_SHAMAN || ch->GetJob() == JOB_SURA);
 		const BYTE botLvl = ch->GetLevel();
+		// What this visit actually bought. The purchase used to be silent - the
+		// only line was "misc merchant visit" - so "do the bots really buy the
+		// big stock?" could only be answered by querying the database, which is
+		// not a question an operator should have to take that far.
+		DWORD boughtRed = 0, boughtBlue = 0;
 
 		if (botLvl <= 10)
 		{
@@ -903,11 +1043,13 @@ namespace
 			{
 				ch->PointChange(POINT_GOLD, -240);
 				ch->AutoGiveItem(27001, 30); // Red Potion (S) 30x
+				boughtRed += 30;
 			}
 			if (isMage && blueCount < 20 && ch->GetGold() >= 400)
 			{
 				ch->PointChange(POINT_GOLD, -360);
 				ch->AutoGiveItem(27004, 15); // Blue Potion (S) 15x
+				boughtBlue += 15;
 			}
 		}
 		else
@@ -916,8 +1058,26 @@ namespace
 			// a Red Potion (M), 32 for a Blue Potion (M).
 			const DWORD RED_TARGET = 800;
 			const DWORD BLUE_TARGET = 600;
-			const DWORD RED_UNIT = 20;
-			const DWORD BLUE_UNIT = 32;
+			// From forty the bot buys the big (D) potions, not the medium (S).
+			// A level-47 bot heals in the hundreds per hit and a medium potion
+			// is a sip; "na tych poziomach to juz duze potki u handlarki", as
+			// the Discord put it. The unit prices follow the same rule as the
+			// medium ones - what the old fixed purchases implied - scaled by the
+			// proto's sell-price ratio (160/96, 480/288) and rounded up.
+			const bool bBig = botLvl >= PLAYERBOT_BIG_POTION_MIN_LEVEL;
+			const DWORD RED_VNUM = bBig ? 27003 : 27002;
+			const DWORD BLUE_VNUM = bBig ? 27006 : 27005;
+			const DWORD RED_UNIT = bBig ? 40 : 20;
+			const DWORD BLUE_UNIT = bBig ? 64 : 32;
+			// And never more than the bag can hold, because AutoGiveItem does not
+			// refuse a full one - it fills whatever stack has room and puts the
+			// rest on the ground at the bot's feet, paid for. A stack is 200. The
+			// estimate below counts the headroom of one partial stack plus every
+			// free cell, which is at most what the engine will find, never more.
+			const int freeCells = std::max(0, ch->GetEmptyInventory(1) < 0 ? 0 :
+					CountPlayerBotFreeInventoryCells(ch));
+			const DWORD redRoom = (DWORD)freeCells * 200 + (200 - redCount % 200) % 200;
+			const DWORD blueRoom = (DWORD)freeCells * 200 + (200 - blueCount % 200) % 200;
 			// Standing at the merchant already: fill the belt right up whatever the
 			// level, because this costs nothing extra. The decision to make the
 			// trip at all lives in NeedsPlayerBotPotions and is far stricter.
@@ -927,11 +1087,14 @@ namespace
 			{
 				const DWORD want = (DWORD)(RED_TARGET - redCount);
 				const DWORD affordable = (DWORD)(ch->GetGold() / 2 / RED_UNIT);
-				const DWORD buy = want < affordable ? want : affordable;
+				DWORD buy = want < affordable ? want : affordable;
+				if (buy > redRoom)
+					buy = redRoom;
 				if (buy > 0)
 				{
 					ch->PointChange(POINT_GOLD, -(int)(buy * RED_UNIT));
-					ch->AutoGiveItem(27002, buy);
+					ch->AutoGiveItem(RED_VNUM, buy);
+					boughtRed += buy;
 				}
 			}
 			// Skills spend SP continuously, so a warrior wants a reserve too. It
@@ -940,14 +1103,25 @@ namespace
 			{
 				const DWORD want = (DWORD)(BLUE_TARGET - blueCount);
 				const DWORD affordable = (DWORD)(ch->GetGold() / 2 / BLUE_UNIT);
-				const DWORD buy = want < affordable ? want : affordable;
+				DWORD buy = want < affordable ? want : affordable;
+				if (buy > blueRoom)
+					buy = blueRoom;
 				if (buy > 0)
 				{
 					ch->PointChange(POINT_GOLD, -(int)(buy * BLUE_UNIT));
-					ch->AutoGiveItem(27005, buy);
+					ch->AutoGiveItem(BLUE_VNUM, buy);
+					boughtBlue += buy;
 				}
 			}
 		}
+
+		if (boughtRed != 0 || boughtBlue != 0)
+			sys_log(0, "PLAYERBOT_RESTOCK: bought pid=%u name=%s level=%u red=%u blue=%u "
+					"had_red=%u had_blue=%u gold_left=%d",
+					ch->GetPlayerID(), ch->GetName(), ch->GetLevel(),
+					(unsigned int)boughtRed, (unsigned int)boughtBlue,
+					(unsigned int)redCount, (unsigned int)blueCount,
+					(int)(ch->GetGold() / 1000));
 
 		// Even the level-one shoes add movement speed. Missing footwear is therefore
 		// a progression problem, not cosmetic equipment.

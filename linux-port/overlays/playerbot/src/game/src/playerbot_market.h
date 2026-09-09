@@ -86,6 +86,12 @@ namespace
 		// find the book yourself. What a bot wants is a small working stock of
 		// its own build's skills - two or three, not every book to Grand Master
 		// - and only while the skill can still be read up.
+		// A Forgetting Scroll on somebody's counter is what a bot past the old
+		// woman's thirty with a skill stuck at seventeen came to market for.
+		if (offer->GetVnum() == PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
+			return GetPlayerBotStuckSkill(ch) != 0 &&
+					ch->GetLevel() > PLAYERBOT_SKILL_RESET_MAX_LEVEL &&
+					ch->CountSpecifyItem(PLAYERBOT_SKILL_FORGET_SCROLL_VNUM) == 0;
 		if (offer->GetType() == ITEM_SKILLBOOK)
 		{
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(offer);
@@ -93,11 +99,11 @@ namespace
 					!IsPlayerBotOwnSkill(ch, skillVnum))
 				return false;
 			// Already at the grade a book stops helping, or already holding the
-			// working stock: somebody else needs it more.
-			if (ch->GetSkillMasterType(skillVnum) >= SKILL_GRAND_MASTER)
-				return false;
+			// working stock: somebody else needs it more. The limit is the
+			// bag's own (GetPlayerBotBookKeepLimit) - a few for a skill not yet
+			// readable, the full stock once it is.
 			return CountPlayerBotSkillBooksAhead(ch, offer, skillVnum) <
-					PLAYERBOT_BOOK_KEEP_PER_SKILL;
+					GetPlayerBotBookKeepLimit(ch, skillVnum);
 		}
 
 		// A horse medal, if this bot still has a horse to raise. Buying one is
@@ -178,6 +184,21 @@ namespace
 			return true;
 		// A socket open on a piece it keeps.
 		if (PlayerBotHasOpenSoulStoneSocket(ch))
+			return true;
+		// And a piece of gear for a slot that is empty or behind the ladder.
+		//
+		// This branch was missing, and it is the whole of why "I put +8 battle
+		// shields on a stall for one yang and the bots would not buy them"
+		// happens: WantsPlayerBotStallItem has always known how to compare an
+		// offered piece against what is worn, but nothing ever walked a bot to
+		// a counter to look. Gear was reachable only by accident, on a trip the
+		// bot made for a refine material. The question has to be answerable
+		// without reading a counter, and these predicates are exactly that -
+		// the same ones the tick uses to decide a merchant trip is due.
+		if (NeedsPlayerBotProgressionWeapon(ch) || NeedsPlayerBotProgressionArmor(ch) ||
+				NeedsPlayerBotProgressionShield(ch) || NeedsPlayerBotProgressionHelmet(ch) ||
+				NeedsPlayerBotProgressionBoots(ch) || NeedsPlayerBotProgressionWrist(ch) ||
+				NeedsPlayerBotProgressionNecklace(ch) || NeedsPlayerBotProgressionEarring(ch))
 			return true;
 		// And the level-30 weapon it would otherwise cross the world to farm.
 		return ch->GetLevel() >= 30 && !HasPlayerBotSpecialLevel30Weapon(ch, false);

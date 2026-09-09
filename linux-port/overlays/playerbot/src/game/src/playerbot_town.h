@@ -32,14 +32,111 @@ namespace
 		return BOT_TOWN_PHASE_NONE;
 	}
 
+	bool IsPlayerBotSurplusSkillBook(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || item->GetType() != ITEM_SKILLBOOK)
+			return false;
+		const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
+		if (skillVnum == 0 || ch->GetSkillGroup() == 0 || !IsPlayerBotOwnSkill(ch, skillVnum))
+			return true;
+		return CountPlayerBotSkillBooksAhead(ch, item, skillVnum) >=
+				GetPlayerBotBookKeepLimit(ch, skillVnum);
+	}
+
+	// The surplus books beyond what the bag keeps as counter goods, oldest
+	// cells first. Empty unless the bag is under pressure: a bag with room is
+	// a counter with stock.
+	void CollectPlayerBotSafeboxBooks(LPCHARACTER ch, std::vector<WORD>& cells)
+	{
+		cells.clear();
+		if (!ch || (!IsPlayerBotBagFull(ch) &&
+				CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_BAG_PRESSURE_FREE_CELLS))
+			return;
+		int keep = PLAYERBOT_SAFEBOX_BOOK_KEEP;
+		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER)
+			keep = PLAYERBOT_DROPPER_BOOK_KEEP;
+		int surplus = 0;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!IsPlayerBotSurplusSkillBook(ch, item))
+				continue;
+			surplus += item->GetCount();
+			if (surplus > keep)
+				cells.push_back(cell);
+		}
+	}
+
+	int CountPlayerBotSurplusSkillBooks(LPCHARACTER ch)
+	{
+		int surplus = 0;
+		for (WORD cell = 0; ch && cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (IsPlayerBotSurplusSkillBook(ch, item))
+				surplus += item->GetCount();
+		}
+		return surplus;
+	}
+
+	bool HasPlayerBotSafeboxDeposit(LPCHARACTER ch)
+	{
+		std::vector<WORD> cells;
+		CollectPlayerBotSafeboxBooks(ch, cells);
+		return !cells.empty();
+	}
+
+	// Into the open safebox, the way CInputMain::SafeboxCheckin does it: off the
+	// character, onto the first empty slot of the grid. Returns how many books
+	// went in; the rest stay in the bag as goods when the page is full.
+	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, CSafebox* box)
+	{
+		std::vector<WORD> cells;
+		CollectPlayerBotSafeboxBooks(ch, cells);
+		int deposited = 0;
+		for (size_t i = 0; i < cells.size(); ++i)
+		{
+			LPITEM item = ch->GetInventoryItem(cells[i]);
+			if (!item)
+				continue;
+			bool placed = false;
+			for (DWORD pos = 0; pos < SAFEBOX_MAX_NUM && !placed; ++pos)
+			{
+				if (!box->IsValidPosition(pos) || !box->IsEmpty(pos, item->GetSize()))
+					continue;
+				char szHint[128];
+				snprintf(szHint, sizeof(szHint), "%s %u", item->GetName(), (unsigned int)item->GetCount());
+				LogManager::instance().ItemLog(ch, item, "SAFEBOX PUT", szHint);
+				item->RemoveFromCharacter();
+				box->Add(pos, item);
+				placed = true;
+				deposited += item->GetCount();
+			}
+			if (!placed)
+			{
+				sys_log(0, "PLAYERBOT_TOWN: safebox full pid=%u name=%s deposited=%d left=%u",
+						ch->GetPlayerID(), ch->GetName(), deposited, (unsigned int)(cells.size() - i));
+				break;
+			}
+		}
+		return deposited;
+	}
+
 	BYTE GetPlayerBotFirstExteriorTownPhase(const TPlayerBotAIState& state)
 	{
+		// Before the trainer, because it is what creates the need for one: the
+		// reset leaves the skill group at zero and the trainer is where a group
+		// is chosen again.
+		if (state.bTownNeedSkillReset)
+			return BOT_TOWN_PHASE_SKILL_RESET;
 		if (state.bTownNeedTrainer)
 			return BOT_TOWN_PHASE_TRAINER;
 		if (state.bTownNeedWeaponMerchant)
 			return BOT_TOWN_PHASE_WEAPON_MERCHANT;
 		if (state.bTownNeedArmorMerchant)
 			return BOT_TOWN_PHASE_ARMOR_MERCHANT;
+		if (state.bTownNeedSafebox)
+			return BOT_TOWN_PHASE_SAFEBOX;
 		return BOT_TOWN_PHASE_NONE;
 	}
 
@@ -49,6 +146,8 @@ namespace
 			return BOT_TOWN_PHASE_WEAPON_MERCHANT;
 		if (state.bTownNeedArmorMerchant)
 			return BOT_TOWN_PHASE_ARMOR_MERCHANT;
+		if (state.bTownNeedSafebox)
+			return BOT_TOWN_PHASE_SAFEBOX;
 		if (state.bTownNeedMisc)
 			return BOT_TOWN_PHASE_MISC_MERCHANT;
 		if (state.bTownNeedBlacksmith)
@@ -66,6 +165,7 @@ namespace
 
 		state.bTownNeedTrainer = !inM2 && ch->GetLevel() >= 5 && ch->GetSkillGroup() == 0 &&
 				ch->GetJob() <= JOB_SHAMAN;
+		state.bTownNeedSkillReset = !inM2 && ShouldPlayerBotResetSkills(ch, state, dwNow);
 		state.bTownNeedMisc = HasPlayerBotJunkForMerchant(ch, BOT_MERCHANT_MISC) ||
 				NeedsPlayerBotPotions(ch) || HasPlayerBotExcessPotions(ch) ||
 				NeedsPlayerBotProgressionBoots(ch);
@@ -76,7 +176,9 @@ namespace
 				NeedsPlayerBotProgressionArmor(ch) || NeedsPlayerBotProgressionShield(ch) ||
 				NeedsPlayerBotProgressionHelmet(ch);
 		state.bTownNeedBlacksmith = HasPlayerBotRefineOpportunity(ch);
-		if (!state.bTownNeedTrainer && !state.bTownNeedMisc && !state.bTownNeedWeaponMerchant &&
+		state.bTownNeedSafebox = HasPlayerBotSafeboxDeposit(ch);
+		if (!state.bTownNeedTrainer && !state.bTownNeedSkillReset && !state.bTownNeedMisc &&
+				!state.bTownNeedWeaponMerchant && !state.bTownNeedSafebox &&
 				!state.bTownNeedArmorMerchant && !state.bTownNeedBlacksmith)
 		{
 			state.dwNextShopCheckTime = dwNow + number(60000, 120000);
@@ -355,6 +457,8 @@ namespace
 		state.bTownNeedArmorMerchant = false;
 		state.bTownNeedBlacksmith = false;
 		state.bTownNeedTrainer = false;
+		state.bTownNeedSkillReset = false;
+		state.bTownNeedSafebox = false;
 		state.bTownVisitPhase = BOT_TOWN_PHASE_NONE;
 		state.dwTownWaitUntil = 0;
 		state.dwNextShopCheckTime = dwNow +
@@ -443,18 +547,54 @@ namespace
 		return IsPlayerBotMerchant(state) || IsPlayerBotDropper(state.bPersonality);
 	}
 
+	// Too poor for its own potions: see PLAYERBOT_SHOP_POOR_MIN_LEVEL.
+	bool IsPlayerBotPoorKeeper(LPCHARACTER ch)
+	{
+		if (!ch || ch->GetLevel() < PLAYERBOT_SHOP_POOR_MIN_LEVEL)
+			return false;
+		const bool bBig = ch->GetLevel() >= PLAYERBOT_BIG_POTION_MIN_LEVEL;
+		const int tripCost = PLAYERBOT_POTION_TRIP_RED * (bBig ? 40 : 20) +
+				PLAYERBOT_POTION_TRIP_BLUE * (bBig ? 64 : 32);
+		if (ch->GetGold() >= tripCost)
+			return false;
+		return PlayerBotNavHash(ch->GetPlayerID() ^
+				(DWORD)(get_dword_time() / PLAYERBOT_SHOP_POOR_ROTATION_MS) ^ 0x504f4f52U) %
+				PLAYERBOT_SHOP_POOR_ROTATION_SHARE == 0;
+	}
+
 	bool ShouldPlayerBotKeepShop(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		if (!ch || ch->GetLevel() < PLAYERBOT_SHOP_MIN_LEVEL)
 			return false;
+		// A bot that cannot afford its potions sells what it has, whatever its
+		// personality rolled. So does one whose bag is full: the counter is
+		// where the spares a collector will not scrap can go.
+		if (IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch))
+			return true;
 		// A trader always has the stall open when it can. For everyone else it
 		// stays what it was: an occasional thing one bot in ten does with a spare.
 		if (IsPlayerBotMerchant(state))
 			return true;
+		// A stock of surplus books is a counter, whatever the personality
+		// rolled: a book never goes to the merchant, so the counter is the
+		// only way it leaves the bag - and the roll left nine bots in ten
+		// flying round the stones with bags of books. Not gated on bag
+		// pressure: on a world of full bags every keeper would qualify, and
+		// on one of half-empty bags none would, while the books sat either
+		// way.
+		if (CountPlayerBotSurplusSkillBooks(ch) >= PLAYERBOT_SHOP_BOOK_PRESSURE_MIN)
+			return true;
 		if (IsPlayerBotDropper(state.bPersonality))
+		{
+			// A dropper whose bag is under pressure sells whatever the roll said:
+			// the goods are the point of the personality, and a dropper that lost
+			// the roll carried eighty books and picked up nothing.
+			if (CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS)
+				return true;
 			return PlayerBotWeightedRoll(
 					PlayerBotNavHash(ch->GetPlayerID() ^ 0x44524f50U) % 1000U,
 					PLAYERBOT_DROPPER_SHOP_ROLL, PLAYERBOT_WEIGHT_TRADE);
+		}
 		// One bot in ten, stretched or shrunk by the TRADE weight. Drawn against a
 		// thousand rather than ten so that the weight has somewhere to move: the
 		// odds at the neutral 100 are the same one in ten as before, over a
@@ -505,11 +645,16 @@ namespace
 		const DWORD npcUnit = GetPlayerBotNpcSellUnitPrice(item);
 		// Scrap gear is priced as scrap: twice what the merchant pays, so the
 		// player burning it at the blacksmith is not paying market money for it.
-		if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
+		// Never scrap, whatever the refine: see PLAYERBOT_PRIOR_LEVEL30_WEAPON.
+		const bool bLevel30 = IsPlayerBotSpecialLevel30Weapon(item);
+		if (!bLevel30 &&
+				(item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
 				refine < PLAYERBOT_SHOP_MIN_GEAR_REFINE)
 			return ApplyPlayerBotBonusPremium(
 					std::max<DWORD>(1, npcUnit * PLAYERBOT_SCRAP_PRICE_MULT), bonusPercent);
 		DWORD unit = npcUnit * PLAYERBOT_SHOP_MATERIAL_MARKUP;
+		if (bLevel30)
+			unit = std::max(unit, PLAYERBOT_PRIOR_LEVEL30_WEAPON);
 		// The opening prices. Blended away by the sale memory below as real
 		// transactions accumulate - a prior is where a price starts, not where
 		// it stays.
@@ -530,6 +675,8 @@ namespace
 			unit = PLAYERBOT_PRIOR_PEARL_BLUE;
 		else if (item->GetVnum() == PLAYERBOT_PEARL_LAST_VNUM)
 			unit = PLAYERBOT_PRIOR_PEARL_RED;
+		else if (item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM)
+			unit = PLAYERBOT_PRIOR_SHELLFISH;
 		else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
 			unit = PLAYERBOT_PRIOR_HORSE_MEDAL;
 		// A soul stone has no merchant price: the counter asks by grade.
@@ -804,7 +951,8 @@ namespace
 			// used to carry the very book its keeper was waiting to read.
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
 			if (ch->GetSkillGroup() != 0 && IsPlayerBotOwnSkill(ch, skillVnum) &&
-					CountPlayerBotSkillBooksAhead(ch, item, skillVnum) < PLAYERBOT_BOOK_KEEP_PER_SKILL)
+					CountPlayerBotSkillBooksAhead(ch, item, skillVnum) <
+						GetPlayerBotBookKeepLimit(ch, skillVnum))
 				return -1;
 			return GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER
 					? 1800 : 400;
@@ -841,6 +989,11 @@ namespace
 		// is a gamble somebody might want, not a thing anybody came for.
 		if (IsPlayerBotSurplusChest(item))
 			return 350;
+		// A specimen of a mission already handed in. The Orc Tooth never gets
+		// here: it is a refine material and the material branch above priced
+		// it, ledger and all.
+		if (IsPlayerBotBiologistSpecimenSurplus(ch, item->GetVnum()))
+			return PLAYERBOT_SHOP_SPECIMEN_SCORE;
 
 		// Whatever is left is the bot's own business, not goods. A stall with two
 		// things worth buying beats one padded out to eight.
@@ -928,11 +1081,12 @@ namespace
 	// it - a level-30 weapon, a big bonus roll, anything at +6, a horse medal.
 	// The caller passes the best score it has, because that is exactly what
 	// ScorePlayerBotShopStock spent its time working out.
-	bool IsPlayerBotStallWorthOpening(size_t lines, int bestScore)
+	bool IsPlayerBotStallWorthOpening(size_t lines, int bestScore, bool poor = false)
 	{
 		if (lines == 0)
 			return false;
-		return lines >= PLAYERBOT_SHOP_MIN_ITEMS ||
+		// A clearance sale is worth a sign with one line on it.
+		return poor || lines >= PLAYERBOT_SHOP_MIN_ITEMS ||
 				bestScore >= PLAYERBOT_SHOP_PRIZE_SCORE;
 	}
 
@@ -970,8 +1124,9 @@ namespace
 			// Biologist specimens stay: they are quest progress, not goods. Horse
 			// medals used to be excluded here as well, which meant nobody could
 			// ever buy one; whether they are for sale is now the scoring's call.
-			if ((vnum >= 50701 && vnum <= 50706) || vnum == PLAYERBOT_ORC_TOOTH_VNUM ||
-					vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM)
+			if (((vnum >= 50701 && vnum <= 50706) || vnum == PLAYERBOT_ORC_TOOTH_VNUM ||
+					vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM) &&
+					!IsPlayerBotBiologistSpecimenSurplus(ch, vnum))
 				continue;
 			// Spare gear is the most interesting thing a stall can offer, but the
 			// bot must never put up the only weapon or armour it owns for a slot
@@ -1075,8 +1230,7 @@ namespace
 
 		char msg[CHAT_MAX_LEN + 1];
 		char body[CHAT_MAX_LEN + 1];
-		FormatPlayerBotText(body, sizeof(body), "", pool[number(0, 3)],
-				item->GetName());
+		snprintf(body, sizeof(body), pool[number(0, 3)], item->GetName());
 		snprintf(msg, sizeof(msg), "%s : %s", ch->GetName(), body);
 
 		s_dwLastShoutTime = dwNow;
@@ -1179,6 +1333,8 @@ namespace
 			state.dwNextShopSignClearTime = dwNow;
 			sys_log(0, "PLAYERBOT_SHOP: closed pid=%u name=%s reason=%s",
 					ch->GetPlayerID(), ch->GetName(), reason);
+			// The packs and singles were for the counter; pour them back.
+			state.dwNextStackMergeTime = dwNow + PLAYERBOT_STACK_MERGE_AFTER_SHOP_MS;
 		}
 	}
 
@@ -1186,6 +1342,51 @@ namespace
 	// searched the way CGrid::FindBlank does - row by row, left to right - or
 	// -1 when the counter is full. See TPlayerBotShopOffer::bSlot for why the
 	// line's index in the table is not its slot.
+	// Split lines off each stack that is going on the counter, into free
+	// cells: singles for what is bought one at a time, packs of
+	// PLAYERBOT_SHOP_PACK_UNITS for a material (GetPlayerBotStallLineUnits).
+	// Returns true when the bag changed and the scan has to run again.
+	bool SplitPlayerBotStallSingles(LPCHARACTER ch,
+			const std::vector<std::pair<int, WORD> >& scored, DWORD dwNow)
+	{
+		bool changed = false;
+		for (size_t i = 0; i < scored.size(); ++i)
+		{
+			LPITEM item = ch->GetInventoryItem(scored[i].second);
+			const int units = item ? GetPlayerBotStallLineUnits(item) : 0;
+			if (units <= 0 || (int)item->GetCount() <= units || item->isLocked())
+				continue;
+			const int wantLines = units == 1 ? PLAYERBOT_SHOP_SINGLE_UNITS : PLAYERBOT_SHOP_PACK_LINES;
+			int lines = 0;
+			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			{
+				LPITEM other = ch->GetInventoryItem(cell);
+				if (other && other != item && (int)other->GetCount() == units &&
+						PlayerBotStacksTogether(item, other))
+					++lines;
+			}
+			int split = 0;
+			while (lines < wantLines && (int)item->GetCount() > units &&
+					CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS)
+			{
+				const int to = ch->GetEmptyInventory(item->GetSize());
+				if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, item->GetCell()),
+						TItemPos(INVENTORY, (WORD)to), (BYTE)units))
+					break;
+				++lines;
+				++split;
+			}
+			if (split > 0)
+			{
+				changed = true;
+				sys_log(0, "PLAYERBOT_SHOP: split for the counter pid=%u name=%s vnum=%u units=%d lines=%d left=%u",
+						ch->GetPlayerID(), ch->GetName(), item->GetVnum(), units, lines,
+						(unsigned int)item->GetCount());
+			}
+		}
+		return changed;
+	}
+
 	int FindPlayerBotShopSlot(const bool* grid, int height)
 	{
 		for (int row = 0; row + height <= PLAYERBOT_SHOP_GRID_ROWS; ++row)
@@ -1280,10 +1481,27 @@ namespace
 		{
 			// Line by line, by item id - see TPlayerBotShopOffer::dwItemID. By
 			// vnum a counter whose every line had sold stayed open as long as
-			// the bag held a second stack of any of them.
-			for (size_t i = 0; i < state.vecShopOffers.size() && bSoldOut; ++i)
-				if (FindPlayerBotOfferItem(ch, state.vecShopOffers[i]))
+			// the bag held a second stack of any of them. A line that is gone
+			// is written to log.log once, as the keeper's sale: the panel's
+			// equipment history reads it there beside the engine's own rows.
+			for (size_t i = 0; i < state.vecShopOffers.size(); ++i)
+			{
+				TPlayerBotShopOffer& offer = state.vecShopOffers[i];
+				if (FindPlayerBotOfferItem(ch, offer))
+				{
 					bSoldOut = false;
+					continue;
+				}
+				if (!offer.bSoldLogged)
+				{
+					offer.bSoldLogged = true;
+					char szHint[64];
+					snprintf(szHint, sizeof(szHint), "%u x%u za %u", offer.dwVnum,
+							(unsigned int)offer.wCount, offer.dwPrice);
+					LogManager::instance().ItemLog(ch, (int)offer.dwItemID, (int)offer.dwVnum,
+							"PLAYERBOT_STALL_SOLD", szHint);
+				}
+			}
 		}
 
 		// Whatever else happens, a corpse or a bot that is no longer standing on
@@ -1367,10 +1585,20 @@ namespace
 		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
 				s_iPlayerBotStallsInM2 >= PLAYERBOT_SHOP_M2_MAX_STALLS)
 		{
+			// Only a keeper by personality, and only one with nowhere else to
+			// be. This pass runs ahead of the world travel, so a bot bound for
+			// the frontier was walked to the M1 portal instead - every tick,
+			// for as long as it held six surplus books.
+			if (!IsPlayerBotStallKeeper(state) || state.lDepartureMap != 0)
+			{
+				state.dwNextShopKeepTime = dwNow + PLAYERBOT_SHOP_RING_FULL_RETRY;
+				return false;
+			}
 			std::vector<std::pair<int, WORD> > worthTaking;
 			CollectPlayerBotShopItems(ch, worthTaking, IsPlayerBotStallKeeper(state));
 			if (!IsPlayerBotStallWorthOpening(worthTaking.size(),
-					worthTaking.empty() ? 0 : worthTaking[0].first))
+					worthTaking.empty() ? 0 : worthTaking[0].first,
+					IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch)))
 				return false;
 			PlayerBotLogThrottled("stall_overflow", dwNow,
 					"PLAYERBOT_SHOP: Bokjung full, taking the stall to Joan pid=%u name=%s stalls=%d lines=%u",
@@ -1394,8 +1622,18 @@ namespace
 		// Sorted best first, so the head of the list is the best score there is.
 		std::vector<std::pair<int, WORD> > scored;
 		CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state));
+		// Single units of the goods a player buys singly, split off before the
+		// lines are chosen. Idempotent - the scan runs again on every tick of
+		// the walk to the pitch - and bounded by the cells the shop bundle and
+		// the loot still need.
+		if (SplitPlayerBotStallSingles(ch, scored, dwNow))
+		{
+			scored.clear();
+			CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state));
+		}
 		if (!IsPlayerBotStallWorthOpening(scored.size(),
-				scored.empty() ? 0 : scored[0].first))
+				scored.empty() ? 0 : scored[0].first,
+				IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch)))
 		{
 			// Nothing worth a stall right now; look again after a hunt rather than
 			// re-scanning the whole inventory every tick. A bot that is merely a
@@ -1441,6 +1679,8 @@ namespace
 		// scan above and this point - a town errand happens in between.
 		TShopItemTable table[PLAYERBOT_SHOP_MERCHANT_ITEMS];
 		memset(table, 0, sizeof(table));
+		// Decided once, here: the prices below and the sign both read it.
+		const bool bPoor = IsPlayerBotPoorKeeper(ch);
 		std::vector<TPlayerBotShopOffer> offers;
 		const BYTE tableLimit = IsPlayerBotStallKeeper(state)
 				? PLAYERBOT_SHOP_MERCHANT_ITEMS : PLAYERBOT_SHOP_MAX_ITEMS;
@@ -1476,7 +1716,11 @@ namespace
 			if (slot < 0)
 				continue;
 			PutPlayerBotShopSlot(grid, slot, height);
-			const DWORD price = GetPlayerBotShopAskingPrice(item);
+			DWORD price = GetPlayerBotShopAskingPrice(item);
+			// The clearance discount. Applied to the price as asked, so the sale
+			// memory still learns the real price the market would have paid.
+			if (bPoor)
+				price = std::max<DWORD>(1, price * PLAYERBOT_SHOP_POOR_DISCOUNT_PERCENT / 100);
 			table[tableCount].vnum = item->GetVnum();
 			table[tableCount].count = item->GetCount();
 			table[tableCount].pos = TItemPos(INVENTORY, cell);
@@ -1489,6 +1733,7 @@ namespace
 			offer.bRefine = item->GetRefineLevel();
 			offer.wCount = item->GetCount();
 			offer.dwItemID = item->GetID();
+			offer.bSoldLogged = false;
 			offer.bSlot = (BYTE)slot;
 			offers.push_back(offer);
 			if (scored[i].first > bestScore)
@@ -1527,7 +1772,7 @@ namespace
 		// moves between the two - a town errand happens in between - and a stall
 		// that loses two of its three lines on the way to the pitch should stay
 		// packed up rather than open with what is left.
-		if (!IsPlayerBotStallWorthOpening(tableCount, bestScore))
+		if (!IsPlayerBotStallWorthOpening(tableCount, bestScore, bPoor || IsPlayerBotBagFull(ch)))
 		{
 			state.dwNextShopKeepTime = dwNow + (tableCount == 0
 					? number(300000, 600000) : number(120000, 240000));
@@ -1541,26 +1786,61 @@ namespace
 		// is; a short prefix by pid keeps neighbours from matching word for word.
 		char sign[SHOP_SIGN_MAX_LEN + 1];
 		{
-			static const char* const s_apszPrefixKeys[] = { "", "Tanio: ", "Okazja: ", "Sprzedam " };
-			const char* pszPrefix = s_apszPrefixKeys[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
+			// Named for what is on the counter, in words a player reads at a
+			// glance - "przejrzyste nazwy sklepow", the Discord's request. A
+			// counter that is mostly books is a bookshop and says so; mostly
+			// materials, a smith's supplier; a mixed one takes a market cry
+			// drawn by pid ("zobacz kotku co mam w srodku, aka 2009 gameplay").
+			// The item-name signs stay for the goods people cross a market for:
+			// a level-30 weapon, a big refine. A poor keeper's counter is a
+			// clearance sale and the sign says that first.
+			const DWORD draw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU);
+			static const char* const s_apszPrefixes[] = { "", "Tanio: ", "Okazja: ", "Sprzedam " };
+			static const char* const s_apszBookShops[] = {
+				"Ksiegi umiejetnosci", "KU dla kazdej klasy", "Biblioteka - ksiegi", "Ksiegi: %s i inne" };
+			static const char* const s_apszMaterialShops[] = {
+				"Ulepki z %s", "Materialy do kowala", "Skory, zeby i kly", "Ulepszacze, tanio" };
+			static const char* const s_apszMarketCries[] = {
+				"Zobacz kotku co mam w srodku", "Zaczynam gre, kup cos", "%s - najnizsze ceny",
+				"Wszystko za grosze", "Tanio jak barszcz", "Rozne rozczne, zapraszam",
+				"Czego szukasz, to mam", "Sprzedam, bez targow" };
+			const char* pszPrefix = bPoor ? "Wyprzedaz: "
+					: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
+			const char* pszTemplate = NULL;
+			const char* pszArg = "";
 			if (pszWeapon30)
-				FormatPlayerBotText(body, sizeof(body), "", "Bron 30: %s", pszWeapon30);
+				snprintf(body, sizeof(body), "Bron 30: %s", pszWeapon30);
 			else if (pszPrecious)
 				snprintf(body, sizeof(body), "%s", pszPrecious); // the name carries its +N
-			else if (iMaterials >= 2)
-				snprintf(body, sizeof(body), "%s, %s", apszMaterials[0], apszMaterials[1]);
-			else if (iBooks > 1 && iBooks >= tableCount / 2)
-				FormatPlayerBotText(body, sizeof(body), "", "Ksiegi: %s i inne", pszBook);
-			else if (iBooks == 1 && tableCount == 1)
-				FormatPlayerBotText(body, sizeof(body), "", "Ksiega: %s", pszBook);
-			else if (iScrap > 0 && iScrap >= tableCount / 2)
-				FormatPlayerBotText(body, sizeof(body), "", "Zlom do palenia +0..+3");
-			else if (pszBestName && tableCount > 1)
-				FormatPlayerBotText(body, sizeof(body), "", "%s i inne", pszBestName);
+			else if (iBooks > 0 && iBooks * 2 >= (int)tableCount)
+			{
+				pszTemplate = s_apszBookShops[draw % 4U];
+				pszArg = pszBook ? pszBook : "";
+			}
+			else if (iMaterials > 0 && iMaterials * 2 >= (int)tableCount)
+			{
+				pszTemplate = s_apszMaterialShops[draw % 4U];
+				pszArg = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ? "M1" : "M2";
+			}
+			else if (iScrap > 0 && iScrap >= (int)tableCount / 2)
+				snprintf(body, sizeof(body), "Zlom do palenia +0..+3");
+			else if (pszBestName && tableCount > 1 && (draw & 8U) != 0)
+				snprintf(body, sizeof(body), "%s i inne", pszBestName);
+			else if (tableCount > 1)
+			{
+				pszTemplate = s_apszMarketCries[draw % 8U];
+				pszArg = ch->GetName();
+			}
 			else
 				snprintf(body, sizeof(body), "%s", pszBestName ? pszBestName : ch->GetName());
-			pszPrefix = PlayerBotText(s_apszPrefixKeys[(ch->GetPlayerID() * 2654435761U >> 8) % 4U]);
+			if (pszTemplate)
+			{
+				if (strstr(pszTemplate, "%s"))
+					snprintf(body, sizeof(body), pszTemplate, pszArg);
+				else
+					snprintf(body, sizeof(body), "%s", pszTemplate);
+			}
 			// The prefix goes only where the whole line still fits: the goods are
 			// the point, the flourish is not.
 			if (strlen(pszPrefix) + strlen(body) <= SHOP_SIGN_MAX_LEN)
@@ -1584,6 +1864,19 @@ namespace
 			// in the drop-protection window while the bots ran about between them.
 			if (ch->GetEmptyInventory(1) < 0)
 			{
+				// First pour the split singles back together: the stall scan cut
+				// shellfish and bait into one-unit lines for a counter that then
+				// had no cell for its own bundle, and a bag of ninety carried
+				// twelve shells in twelve cells for good. A merge that frees a
+				// cell is retried at once.
+				const int merged = MergePlayerBotStacks(ch, PLAYERBOT_STACK_MERGES_PER_PASS * 2);
+				if (merged > 0 && ch->GetEmptyInventory(1) >= 0)
+				{
+					sys_log(0, "PLAYERBOT_SHOP: merged %d stacks to make room for the bundle pid=%u name=%s",
+							merged, ch->GetPlayerID(), ch->GetName());
+					state.dwNextShopKeepTime = dwNow + 2000;
+					return false;
+				}
 				// And back off. Returning without a clock left the keeper asking
 				// again on the very next tick: one log line a second per bot, and
 				// the bot itself pacing its pitch with a stall it could never
@@ -1691,7 +1984,43 @@ namespace
 		// n * 50 * sqrt(2) at the corners, so a tenth of the arrival distance in
 		// cells keeps the snapped goal comfortably inside it.
 		const int snapCells = std::max(2, std::min(16, arrivalDistance / 100));
-		const bool moveAccepted = MovePlayerBot(ch, goalX, goalY, dwNow,
+		// A goal on ground the bot's terrain does not join is not walked to at
+		// all: the planner answers "unreachable" three times, the service
+		// rescue relocates the bot on the sixth, and the misc merchant of
+		// Bokjung - whose approach point sits on a strip cut off from the
+		// square - cost 260 such rescues in a morning, six failed plans each.
+		// The nearest cell of the bot's own component inside the arrival
+		// radius is where the rescue would have put it; ask for it first.
+		long walkX = goalX, walkY = goalY;
+		{
+			CPlayerBotNavigation& navigation = CPlayerBotNavigation::instance(ch->GetMapIndex());
+			if (navigation.Init(ch->GetMapIndex()) &&
+					!navigation.CanReach(ch->GetX(), ch->GetY(), goalX, goalY))
+			{
+				const DWORD own = navigation.GetComponentAtWorld(ch->GetX(), ch->GetY());
+				const int radius = std::max(2, arrivalDistance / 50 - 2);
+				long bestDistance = -1;
+				for (int dy = -radius; dy <= radius && own != 0; ++dy)
+					for (int dx = -radius; dx <= radius; ++dx)
+					{
+						const long cx = goalX + dx * 50, cy = goalY + dy * 50;
+						const long distance = dx * dx + dy * dy;
+						if (bestDistance >= 0 && distance >= bestDistance)
+							continue;
+						if (navigation.GetComponentAtWorld(cx, cy, 0) != own)
+							continue;
+						bestDistance = distance;
+						walkX = cx;
+						walkY = cy;
+					}
+				if (bestDistance >= 0)
+					PlayerBotLogThrottled("town_goal_reachable", dwNow,
+							"PLAYERBOT_TOWN: goal moved onto reachable ground pid=%u name=%s phase=%u goal=(%ld,%ld) walk=(%ld,%ld)",
+							ch->GetPlayerID(), ch->GetName(), (unsigned int)state.bTownVisitPhase,
+							goalX, goalY, walkX, walkY);
+			}
+		}
+		const bool moveAccepted = MovePlayerBot(ch, walkX, walkY, dwNow,
 				snapCells, true, true);
 		if (!moveAccepted && state.bStuckCounter >= 6)
 		{
@@ -1778,14 +2107,17 @@ namespace
 		const long blacksmithNpcY = inM2 ? PLAYERBOT_M2_BLACKSMITH_Y : PLAYERBOT_BLACKSMITH_Y;
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER ||
-				state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER_WAIT)
+				state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER_WAIT ||
+				state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET ||
+				state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET_WAIT)
 			SetPlayerBotAction(state, BOT_ACTION_TRAIN, dwNow);
 		else if (state.bTownVisitPhase == BOT_TOWN_PHASE_BLACKSMITH ||
 				state.bTownVisitPhase == BOT_TOWN_PHASE_BLACKSMITH_WAIT)
 			SetPlayerBotAction(state, BOT_ACTION_REFINE, dwNow);
 		else if (state.bTownVisitPhase == BOT_TOWN_PHASE_WEAPON_WAIT ||
 				state.bTownVisitPhase == BOT_TOWN_PHASE_ARMOR_WAIT ||
-				state.bTownVisitPhase == BOT_TOWN_PHASE_MISC_WAIT)
+				state.bTownVisitPhase == BOT_TOWN_PHASE_MISC_WAIT ||
+				state.bTownVisitPhase == BOT_TOWN_PHASE_SAFEBOX_WAIT)
 			SetPlayerBotAction(state, BOT_ACTION_SHOP, dwNow);
 		else
 			SetPlayerBotAction(state, BOT_ACTION_TRAVEL, dwNow);
@@ -1820,6 +2152,48 @@ namespace
 		long trainerX = 0, trainerY = 0;
 		GetPlayerBotNpcApproach(ch->GetPlayerID(), trainerNpcX, trainerNpcY,
 				0x54524149U, trainerX, trainerY);
+
+		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET)
+		{
+			SetPlayerBotAction(state, BOT_ACTION_TRAIN, dwNow);
+			long resetX = 0, resetY = 0;
+			GetPlayerBotNpcApproach(ch->GetPlayerID(), PLAYERBOT_SKILL_RESET_NPC_X,
+					PLAYERBOT_SKILL_RESET_NPC_Y, 0x52534554U, resetX, resetY);
+			if (MovePlayerBotTownLeg(ch, state, dwNow, resetX, resetY, 550))
+			{
+				// Asked again on arrival rather than trusted from the walk: a
+				// level gained on the way, a purse spent at a merchant, or a
+				// Master that finally rolled all end the errand here instead of
+				// paying for nothing.
+				if (ShouldPlayerBotResetSkills(ch, state, dwNow) &&
+						PayPlayerBotSkillReset(ch, state, dwNow))
+					state.bTownNeedTrainer = true;
+				state.bTownNeedSkillReset = false;
+				state.dwTownWaitUntil = dwNow + number(
+						PLAYERBOT_TRAINER_WAIT_MIN, PLAYERBOT_TRAINER_WAIT_MAX);
+				state.bTownVisitPhase = BOT_TOWN_PHASE_SKILL_RESET_WAIT;
+			}
+			return true;
+		}
+
+		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET_WAIT)
+		{
+			SetPlayerBotAction(state, BOT_ACTION_TRAIN, dwNow);
+			ch->Stop();
+			ch->SetPosition(POS_STANDING);
+			if (dwNow >= state.dwTownWaitUntil)
+			{
+				state.dwTownWaitUntil = 0;
+				ClearPlayerBotRoute(state, true);
+				state.bTownVisitPhase = GetPlayerBotFirstExteriorTownPhase(state);
+				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE &&
+						(state.bTownNeedMisc || state.bTownNeedBlacksmith))
+					state.bTownVisitPhase = BOT_TOWN_PHASE_GATE_IN;
+				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+					FinishPlayerBotTownVisit(ch, state, dwNow, true);
+			}
+			return true;
+		}
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER)
 		{
@@ -1938,6 +2312,100 @@ namespace
 			ch->SetPosition(POS_STANDING);
 			if (dwNow >= state.dwTownWaitUntil)
 			{
+				state.bTownVisitPhase = inM2
+						? GetPlayerBotFirstDirectTownPhase(state)
+						: (state.bTownNeedSafebox ? BOT_TOWN_PHASE_SAFEBOX
+							: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
+								? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE));
+				state.dwTownWaitUntil = 0;
+				ClearPlayerBotRoute(state, true);
+				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+					FinishPlayerBotTownVisit(ch, state, dwNow, true);
+			}
+			return true;
+		}
+
+		// The storekeeper. The safebox is opened the way the Dozorca's quest
+		// opens it - SetSafeboxOpenPosition and a load request with the
+		// default password - and comes back from the DB core a moment later;
+		// the wait phase deposits into it when it does and closes it. An
+		// answer that never comes leaves m_bOpeningSafebox set, which would
+		// refuse the next request as "overlapped", so the wait cancels it.
+		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SAFEBOX)
+		{
+			const long keeperX = inM2 ? PLAYERBOT_M2_STOREKEEPER_X : PLAYERBOT_STOREKEEPER_X;
+			const long keeperY = inM2 ? PLAYERBOT_M2_STOREKEEPER_Y : PLAYERBOT_STOREKEEPER_Y;
+			long goalX = 0, goalY = 0;
+			GetPlayerBotNpcApproach(ch->GetPlayerID(), keeperX, keeperY, 0x53414645U, goalX, goalY);
+			if (MovePlayerBotTownLeg(ch, state, dwNow, goalX, goalY, 650))
+			{
+				// The first visit pays for the page the way a player does at
+				// the keeper's dialog: 500 yang, and the DB core opens a
+				// safebox row of one page for the account.
+				if (ch->GetQuestFlag(PLAYERBOT_SAFEBOX_PAID_FLAG) <= 0 && ch->GetDesc())
+				{
+					if (ch->GetGold() < PLAYERBOT_SAFEBOX_FEE)
+					{
+						sys_log(0, "PLAYERBOT_TOWN: safebox unaffordable pid=%u name=%s gold=%d",
+								ch->GetPlayerID(), ch->GetName(), ch->GetGold());
+						state.bTownNeedSafebox = false;
+						state.bTownVisitPhase = inM2
+								? GetPlayerBotFirstDirectTownPhase(state)
+								: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
+									? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE);
+						ClearPlayerBotRoute(state, true);
+						if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+							FinishPlayerBotTownVisit(ch, state, dwNow, true);
+						return true;
+					}
+					ch->PointChange(POINT_GOLD, -PLAYERBOT_SAFEBOX_FEE);
+					TSafeboxChangeSizePacket page;
+					page.dwID = ch->GetDesc()->GetAccountTable().id;
+					page.bSize = 1;
+					db_clientdesc->DBPacket(HEADER_GD_SAFEBOX_CHANGE_SIZE, ch->GetDesc()->GetHandle(),
+							&page, sizeof(page));
+					ch->SetSafeboxSize(SAFEBOX_PAGE_SIZE);
+					ch->SetQuestFlag(PLAYERBOT_SAFEBOX_PAID_FLAG, 1);
+					sys_log(0, "PLAYERBOT_TOWN: safebox paid pid=%u name=%s account=%u fee=%d gold_left=%d",
+							ch->GetPlayerID(), ch->GetName(), page.dwID, PLAYERBOT_SAFEBOX_FEE, ch->GetGold());
+				}
+				ch->CancelSafeboxLoad();
+				ch->SetSafeboxOpenPosition();
+				ch->ReqSafeboxLoad(PLAYERBOT_SAFEBOX_PASSWORD);
+				state.dwTownWaitUntil = dwNow + PLAYERBOT_SAFEBOX_LOAD_WAIT_MS;
+				state.bTownVisitPhase = BOT_TOWN_PHASE_SAFEBOX_WAIT;
+				sys_log(0, "PLAYERBOT_TOWN: safebox requested pid=%u name=%s map=%ld pos=(%ld,%ld) books=%d free_cells=%d",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY(),
+						CountPlayerBotSkillBooks(ch), CountPlayerBotFreeInventoryCells(ch));
+			}
+			return true;
+		}
+
+		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SAFEBOX_WAIT)
+		{
+			ch->Stop();
+			ch->SetPosition(POS_STANDING);
+			bool done = false;
+			CSafebox* box = ch->GetSafebox();
+			if (box)
+			{
+				const int deposited = DepositPlayerBotSafeboxBooks(ch, box);
+				ch->CloseSafebox();
+				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d books_left=%d free_cells=%d",
+						ch->GetPlayerID(), ch->GetName(), deposited, CountPlayerBotSkillBooks(ch),
+						CountPlayerBotFreeInventoryCells(ch));
+				done = true;
+			}
+			else if (dwNow >= state.dwTownWaitUntil)
+			{
+				ch->CancelSafeboxLoad();
+				sys_err("PLAYERBOT_TOWN: safebox never opened pid=%u name=%s map=%ld pos=(%ld,%ld)",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY());
+				done = true;
+			}
+			if (done)
+			{
+				state.bTownNeedSafebox = false;
 				state.bTownVisitPhase = inM2
 						? GetPlayerBotFirstDirectTownPhase(state)
 						: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)

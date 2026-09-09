@@ -2,6 +2,19 @@
   const list = document.getElementById('news-feed');
   if (!list) return;
   const storageKey = 'seban-panel-news-cache-v2';
+  const visibilityKey = 'seban-panel-news-hidden';
+  const ticker = list.closest('.news-ticker');
+  const toggle = document.getElementById('news-toggle');
+  function setHidden(hidden) {
+    ticker.classList.toggle('is-hidden', hidden);
+    toggle.textContent = hidden ? 'Wiadomości' : 'Ukryj';
+    toggle.setAttribute('aria-expanded', String(!hidden));
+    localStorage.setItem(visibilityKey, hidden ? '1' : '0');
+  }
+  if (toggle) {
+    setHidden(localStorage.getItem(visibilityKey) === '1');
+    toggle.addEventListener('click', () => setHidden(!ticker.classList.contains('is-hidden')));
+  }
   let cached = [];
   try {
     const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -14,7 +27,7 @@
       list.innerHTML = '<li class="muted">Oczekiwanie na nowe ważne wydarzenia ze świata…</li>';
       return;
     }
-    list.innerHTML = events.slice(-8).map(event => `<li><time>${escape(event.time)}</time><span>${escape(event.message)}</span></li>`).join('');
+    list.innerHTML = events.slice(-8).map(event => `<li${Number(event.refine_tier) >= 8 ? ' class="refine-rare"' : ''}><time>${escape(event.time)}</time><span>${escape(event.message)}</span></li>`).join('');
     list.dataset.loaded = '1';
   }
   render(cached);

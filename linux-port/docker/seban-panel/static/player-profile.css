@@ -1,7 +1,7 @@
 .storage-tabs{display:flex;gap:5px;margin:12px 0 9px}
 .storage-tabs button{padding:5px 8px;background:#203d63;font-size:12px}
 .storage-tabs button.active{background:#1f6fe5}
-.metin-inventory{position:relative;width:min(337px,100%);aspect-ratio:337/1140;background:url('/static/inventory-background.png') center/100% 100% no-repeat;isolation:isolate}
+.metin-inventory{position:relative;width:min(337px,100%);aspect-ratio:337/1140;background:#100e0b url('/static/inventory-background.svg') center/100% 100% no-repeat;isolation:isolate}
 .equipment-layer,.inventory-layer{position:absolute;inset:0;pointer-events:none}
 .equip-slot,.inv-slot{pointer-events:auto}
 .equipment-layer:has(.equip-slot:hover),.inventory-layer:has(.inv-slot:hover){z-index:4}

@@ -40,11 +40,35 @@ namespace
 
 		switch (type)
 		{
-			case APPLY_SKILL_DAMAGE_BONUS:      return value * 12;
-			case APPLY_NORMAL_HIT_DAMAGE_BONUS: return value * 10;
+			// The two damage lines are not the same line for every character,
+			// and weighting them alike had one class rerolling away the only
+			// bonus that does anything for it.
+			//
+			// Measured over every attribute on this world's items: average
+			// damage rolls up to 46 and skill damage only to 18. At twelve and
+			// ten a maximum average roll scored 460 against a maximum skill
+			// roll's 216, so average damage won by more than two to one - for
+			// everybody, a Shaman included, whose damage is very nearly all
+			// skills. A caster that rolled the best skill-damage line in the
+			// game would throw it away on the next pass.
+			//
+			// So the weights are per build, and chosen against those two
+			// ceilings rather than by feel: a caster's best skill roll (18 x 30
+			// = 540) beats its best average roll (46 x 6 = 276), and for
+			// everyone else the order stays as it was.
+			case APPLY_SKILL_DAMAGE_BONUS:
+				return IsPlayerBotCaster(ch) ? value * 30 : value * 12;
+			case APPLY_NORMAL_HIT_DAMAGE_BONUS:
+				return IsPlayerBotCaster(ch) ? value * 6 : value * 10;
 			case APPLY_CRITICAL_PCT:            return value * 10;
 			case APPLY_PENETRATE_PCT:           return value * 10;
-			case APPLY_ATTBONUS_MONSTER:        return value * 8;
+			// Worth having and worth nothing to chase: "Silny przeciwko
+			// Potworom" raises damage against every monster and against Metin
+			// stones, which is the whole of what a bot ever fights. But it does
+			// not roll here - not once across every attribute on every item in
+			// this world - so it is scored for the pieces that carry it built
+			// in, and no reroll will ever produce one.
+			case APPLY_ATTBONUS_MONSTER:        return value * 14;
 			case APPLY_ATT_SPEED:               return value * 8;
 			case APPLY_STEAL_HP:                return value * 6;
 			case APPLY_ATT_GRADE_BONUS:         return bOffensiveSlot ? value * 5 : value * 3;
@@ -167,6 +191,8 @@ namespace
 			return 0;
 		int lines = 0;
 		int top = 0;
+		int prize = 0;
+		const bool bLevel30 = IsPlayerBotSpecialLevel30Weapon(item);
 		const int count = item->GetAttributeCount();
 		for (int i = 0; i < count && i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 		{
@@ -177,12 +203,21 @@ namespace
 			++lines;
 			if (IsPlayerBotTopBonusLine(type, value))
 				++top;
+			// The roll a level-30 weapon is bought for. A top line is worth its
+			// eighty percent on anything; on this set, a damage line in the
+			// upper half of what can roll is the whole reason the piece changes
+			// hands, and the price says so. See PLAYERBOT_PRIZE_AVERAGE_DAMAGE.
+			if (bLevel30 &&
+					((type == APPLY_NORMAL_HIT_DAMAGE_BONUS && value >= PLAYERBOT_PRIZE_AVERAGE_DAMAGE) ||
+					 (type == APPLY_SKILL_DAMAGE_BONUS && value >= PLAYERBOT_PRIZE_SKILL_DAMAGE)))
+				++prize;
 		}
 		if (lines == 0)
 			return 0;
 		const int percent = lines * PLAYERBOT_SHOP_BONUS_PER_LINE +
 				(lines >= 4 ? PLAYERBOT_SHOP_BONUS_FOUR_PLUS : 0) +
-				top * PLAYERBOT_SHOP_BONUS_TOP_LINE;
+				top * PLAYERBOT_SHOP_BONUS_TOP_LINE +
+				prize * PLAYERBOT_SHOP_BONUS_PRIZE_LINE;
 		return std::min(percent, PLAYERBOT_SHOP_BONUS_MAX_PERCENT);
 	}
 
@@ -288,8 +323,13 @@ namespace
 			// An item that has landed the roll its slot is bought for is finished.
 			// It can still gain a line - that cannot lose what is already there -
 			// but it is never rerolled, whatever the score says.
+			// A level-30 weapon is rerolled until it lands its average line,
+			// whatever the score says: the score is a sum of good lines and a
+			// weapon full of them at twelve percent average was "good enough"
+			// to the score and not to anybody who looked at it.
 			const bool bWantChange = !bWantAdd && !HasPlayerBotFinishedBonus(item, wearCell) &&
-					score < PLAYERBOT_BONUS_KEEP_SCORE;
+					(score < PLAYERBOT_BONUS_KEEP_SCORE ||
+					 IsPlayerBotSpecialLevel30WeaponVnum(item->GetVnum()));
 			if (!bWantAdd && !bWantChange)
 				continue;
 
@@ -328,6 +368,38 @@ namespace
 					(int)(ch->GetGold() / 1000));
 		}
 
+		// The level-30 weapons in the bag are goods, and a level-30 weapon
+		// sells for its average line (PLAYERBOT_PRIZE_AVERAGE_DAMAGE). A stone
+		// costs a fortieth of what the finished piece asks, so the ones that
+		// have not rolled it yet are worked on here too - no unequipping, the
+		// engine only refuses a worn item.
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM &&
+				stonesUsed < PLAYERBOT_BONUS_STONES_PER_VISIT; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->IsEquipped() || !IsPlayerBotSpecialLevel30Weapon(item) ||
+					!CanPlayerBotRerollItem(item))
+				continue;
+			const int count = item->GetAttributeCount();
+			const bool bWantAdd = count < PLAYERBOT_BONUS_MAX_LINES;
+			if (!bWantAdd && HasPlayerBotFinishedBonus(item, WEAR_WEAPON))
+				continue;
+			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
+					: PLAYERBOT_BONUS_CHANGE_VNUM;
+			if (!BuyPlayerBotBonusStone(ch, stoneVnum))
+				break;
+			const int score = ScorePlayerBotItemBonuses(ch, item, WEAR_WEAPON);
+			if (bWantAdd)
+				item->AddAttribute();
+			else
+				item->ChangeAttribute();
+			ConsumePlayerBotBonusStone(ch, stoneVnum);
+			++stonesUsed;
+			sys_log(0, "PLAYERBOT_BONUS: %s goods pid=%u name=%s vnum=%u lines=%d->%d score=%d->%d gold=%d",
+					bWantAdd ? "added" : "rerolled", ch->GetPlayerID(), ch->GetName(),
+					item->GetVnum(), count, item->GetAttributeCount(), score,
+					ScorePlayerBotItemBonuses(ch, item, WEAR_WEAPON), (int)(ch->GetGold() / 1000));
+		}
 		return stonesUsed > 0;
 	}
 }

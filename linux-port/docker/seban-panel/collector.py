@@ -127,21 +127,14 @@ def collect(con, previous):
 
 def main():
     previous = None
-    snapshots = 0
     while True:
         try:
             with connect() as con:
                 previous = collect(con, previous)
-                snapshots += 1
                 print("[seban-collector] snapshot complete", flush=True)
         except Exception as exc:
             print(f"[seban-collector] {exc}", flush=True)
-        # The first snapshot creates the tables the panel reads. This container
-        # comes up alongside the database, which is still starting on a fresh
-        # or updated installation, so the first connect fails - and a five-minute
-        # wait after that left every visitor of the dashboard on "Internal
-        # Server Error" until the collector came round again.
-        time.sleep(INTERVAL if snapshots else min(INTERVAL, 15))
+        time.sleep(INTERVAL)
 
 
 if __name__ == "__main__":

@@ -92,6 +92,26 @@ linux-port/docker/webclient-fetcher/Dockerfile
 linux-port/docker/wsbridge/Dockerfile
 linux-port/docker/wsbridge/.dockerignore
 linux-port/docker/updater/Dockerfile
+# ...and everything those Dockerfiles COPY out of their own build context.
+# A Dockerfile that ships without what it reads fails the build at the COPY
+# instead of at the bake, which is what "failed to compute cache key ...
+# /rates: not found" means, and no amount of clicking PLAY can repair it.
+#
+# Being tracked by Git is not the same as being delivered: an install put
+# together from an update package has only what this file lists, and
+# panel/bin/apply_rates.sh was tracked and still missing on the machine that
+# reported it. Whatever a COPY names has to be here, or be written on the
+# player's machine by start-server.ps1 - there is no third way in.
+#
+# rates/ and pack/ carry only their README from us: the pack.sh beside it is
+# cut from the operator's own reference server files by prepare-context.sh and
+# is not ours to hand out. The README is enough to make the directory exist,
+# and both Dockerfiles already test for the script before using it.
+linux-port/docker/game/rates/*
+linux-port/docker/client-builder/pack/*
+linux-port/docker/client-builder/bin/*
+linux-port/docker/updater/bin/*
+linux-port/docker/wsbridge/bin/*
 # The chest table the Dockerfile COPYs, at the path the COPY reads it from.
 # The update builds the image the moment the files land, before start-server
 # gets to stage it, so the package puts it there itself.

@@ -943,6 +943,27 @@ function Get-M2DbDataVolumes {
     finally { $ErrorActionPreference = $previous }
 }
 
+function Get-M2MissingSqlDumps {
+    # The five SQL dumps MariaDB imports on its very first start. They come out
+    # of the operator's own r40250 package (Server/metin2_mysql_dump.zip) and
+    # are staged by the installer into mariadb/initdb.d/dumps; an update never
+    # touches them. Missing here, the database initialises empty, the migrate
+    # container waits thirty minutes for a schema that cannot appear, and the
+    # only honest error sits in the MariaDB log - reported by an operator who
+    # found it by reading container logs by hand. Returns the missing names.
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+    $dumpDir = Join-Path $ServerRoot 'linux-port\docker\mariadb\initdb.d\dumps'
+    $missing = @()
+    foreach ($db in @('account', 'common', 'player', 'log', 'hotbackup')) {
+        $f = Join-Path $dumpDir "$db.sql"
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { $missing += "$db.sql"; continue }
+        # hotbackup is legitimately empty (its Readme says so); the rest carry
+        # the schema and must not be zero-length copies of nothing.
+        if ($db -ne 'hotbackup' -and (Get-Item -LiteralPath $f).Length -eq 0) { $missing += "$db.sql (pusty)" }
+    }
+    return $missing
+}
+
 function Test-M2VolumeInitialized {
     # True only when the volume already exists AND holds an initialized MariaDB
     # data directory. Never creates anything: `docker volume inspect' does not
@@ -1067,10 +1088,18 @@ function Repair-M2GameDbUser {
     # For installs that swapped the world (import) before the graceful-shutdown
     # fix and were left with a MariaDB the migrator could not authenticate to.
     # Only mysql.* (the technical DB account) is touched; player data is not.
+    #
+    # root@'%' is put back on the .env password too when one is given. That
+    # account is what a database client on the host (Navicat, HeidiSQL) logs
+    # in with over the published port, and "Access denied for user
+    # 'root'@'172.18.0.1'" - the compose gateway - is the report when the
+    # volume was initialised under one password and .env carries another.
+    # root@'localhost' is left alone: nothing of ours uses it.
     param(
         [Parameter(Mandatory = $true)][string]$Volume,
         [Parameter(Mandatory = $true)][string]$DbUser,
-        [Parameter(Mandatory = $true)][string]$DbPassword
+        [Parameter(Mandatory = $true)][string]$DbPassword,
+        [string]$RootPassword = ''
     )
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $work = Join-Path ([IO.Path]::GetTempPath()) ('m2repair-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -1087,6 +1116,12 @@ function Repair-M2GameDbUser {
         [void]$gb.AppendLine("ALTER USER '$safeUser'@'%' IDENTIFIED BY '$pwEsc';")
         foreach ($db in $script:M2_DB_LIST) {
             [void]$gb.AppendLine("GRANT ALL PRIVILEGES ON $db.* TO '$safeUser'@'%';")
+        }
+        if ($RootPassword) {
+            $rootEsc = $RootPassword.Replace('\', '\\').Replace("'", "''")
+            [void]$gb.AppendLine("CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '$rootEsc';")
+            [void]$gb.AppendLine("ALTER USER 'root'@'%' IDENTIFIED BY '$rootEsc';")
+            [void]$gb.AppendLine("GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;")
         }
         [void]$gb.AppendLine('FLUSH PRIVILEGES;')
         $repairFile = Join-Path $work 'repair.sql'
@@ -1205,6 +1240,7 @@ Export-ModuleMember -Function @(
     'Invoke-M2DatabaseImport',
     'Repair-M2GameDbUser',
     'Test-M2VolumeInitialized',
+    'Get-M2MissingSqlDumps',
     'Test-M2DockerRunning',
     'Sync-M2PlayerbotOverlay',
     'Invoke-M2EnginePatches'

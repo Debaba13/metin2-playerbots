@@ -953,6 +953,15 @@ namespace
 					{
 						baseScore += 1200000 + mobLevel * 1000;
 					}
+					// A boss the raid has already set out for outranks the trash
+					// round her. Within the level delta she scored as any other
+					// far-off monster - delta twelve is the ten-thousand bucket -
+					// so the raiders who reached the Spider Queen fought her
+					// soldiers beside her. See PLAYERBOT_RAID_SWARM_MIN.
+					if (candidate->GetMobRank() >= MOB_RANK_BOSS &&
+							CountPlayerBotRaiders(candidate->GetRaceNum(), m_dwNow) >=
+								PLAYERBOT_RAID_SWARM_MIN)
+						baseScore += PLAYERBOT_RAID_SWARM_TARGET_BONUS;
 
 					// For dedicated Metin breakers, normal mobs get low score unless attacking
 					if (isMetinHunter && candidate->GetVictim() != m_owner)
@@ -1118,6 +1127,15 @@ namespace
 		if (dwNow < state.dwNextMaterialScanTime)
 			return false;
 		if (ch->GetParty() && ch->GetParty()->GetLeaderCharacter() != ch)
+			return false;
+		// Not on a map this bot has outgrown, and not while it is meant to be
+		// leaving: a level-61 Metin hunter back in Bokjung for a weapon spent
+		// seven minutes circling the spawns after a Black Wind Yak-To for a
+		// refine material before it walked to the Teleporter - "kolka po m2
+		// po spotach zbierajac itemy po innych botach". The material is still
+		// wanted; it is found where the bot is going to hunt, not on the way
+		// out of town.
+		if (!IsPlayerBotGrindAllowedHere(ch) || state.lDepartureMap != 0)
 			return false;
 
 		// Nothing wanted is the common case and costs a walk over the bag, not
@@ -1776,6 +1794,10 @@ namespace
 
 	bool HandlePlayerBotMultiPull(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
+		// A rider on a transport horse is on its way somewhere; the pack it
+		// would gather is the target section's to notice, which dismounts.
+		if (ch && ch->IsRiding() && !CanPlayerBotEverFightOnHorse(ch))
+			return false;
 		bool naturalTank = false;
 		const bool buildEligible = IsPlayerBotMultiPullBuild(ch, &naturalTank);
 		const bool goalEligible = state.bBotRole == BOT_ROLE_MOB_GRINDER &&

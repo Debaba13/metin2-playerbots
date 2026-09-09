@@ -136,6 +136,27 @@ python3 "$PLAYERBOT_SEED_GENERATOR" --check --output "$PLAYERBOT_SEED" \
   || die "Playerbot SQL snapshot is stale; regenerate it with $PLAYERBOT_SEED_GENERATOR"
 
 GAME_CTX="$HERE/game/src"
+
+# Everything the game context will be rebuilt from, checked before the working
+# one is thrown away.
+#
+# The old order deleted first and discovered a missing module a hundred lines
+# later, which turns a working install into a broken one: the checks above pass
+# on a $PORT_SRC/server that merely exists, so a truncated or half-fetched
+# porting tree took the build context with it. What the operator then has is an
+# install whose game context holds only what the update package puts there -
+# src/server/game and nothing else - and a build that fails with fifteen
+# "failed to calculate checksum ... not found" lines naming paths nobody
+# deleted on purpose. Reported from the Discord, with a 1.61 MB build context
+# where a complete one is measured in hundreds of megabytes.
+for m in common db game libgame liblua libpoly libserverkey libsql libthecore; do
+  [ -d "$PORT_SRC/server/$m" ]     || die "module $m missing from $PORT_SRC/server - the porting tree is incomplete, so the existing build context is being left alone; re-run fetch-sources.sh"
+done
+for d in conf data locale package; do
+  [ -d "$RUNTIME_SRC/share/$d" ]     || die "$RUNTIME_SRC/share/$d missing - the runtime tree is incomplete, so the existing build context is being left alone; re-run fetch-sources.sh"
+done
+[ -s "$DEPS_SCRIPT" ] || die "$DEPS_SCRIPT missing or empty"
+
 rm -rf "$GAME_CTX"
 mkdir -p "$GAME_CTX"
 
