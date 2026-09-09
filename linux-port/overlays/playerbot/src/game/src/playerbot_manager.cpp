@@ -31,6 +31,7 @@
 #include "sectree.h"
 #include "shop.h"
 #include "shop_manager.h"
+#include "exchange.h"
 #include "sectree_manager.h"
 #include "vector.h"
 #include "utils.h"
@@ -75,6 +76,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_town.h"
 #include "playerbot_market.h"
 #include "playerbot_chat_trade.h"
+#include "playerbot_llm_bridge.h"
 #include "playerbot_loot.h"
 #include "playerbot_survival.h"
 #include "playerbot_wandering.h"
@@ -1363,6 +1365,9 @@ void CPlayerBotManager::Update()
 	RefreshPlayerBotWeights(dwNow);
 	ManagePlayerBotNight(dwNow);
 
+	// Drain any completed cognitive LLM responses from mmo-llm-adapter
+	UpdatePlayerBotLLMBridge(dwNow);
+
 	static DWORD s_dwTick = 0;
 	++s_dwTick;
 
@@ -1429,6 +1434,11 @@ void CPlayerBotManager::Update()
 		// at most one second.
 		if (d->IsPhase(PHASE_GAME) && !ch->IsDead())
 			ManagePlayerBotStatusOverhead(ch, state, dwNow);
+		if (IsPlayerBotConversationHeld(it->first, dwNow))
+		{
+			ch->Stop();
+			continue;
+		}
 
 		// Keep expensive decisions staggered over two ticks, but let an already
 		// engaged bot continue its basic combo on the intervening tick.  This makes
@@ -2264,10 +2274,16 @@ size_t CPlayerBotManager::GetCount() const
 
 void CPlayerBotManager::OnPlayerShout(LPCHARACTER ch, const char* szText)
 {
+	if (!ch || !ch->GetDesc() || ch->GetDesc()->IsBot())
+		return;
+	if (IsPlayerBotTradeConfirmation(szText) && OpenPlayerBotPendingTrade(ch))
+		return;
 	HandlePlayerShoutForTrade(ch, szText);
 }
 
 void CPlayerBotManager::OnPlayerWhisper(LPCHARACTER from, LPCHARACTER bot, const char* szText)
 {
+	if (!from || !from->GetDesc() || from->GetDesc()->IsBot())
+		return;
 	HandlePlayerWhisperToBot(from, bot, szText);
 }

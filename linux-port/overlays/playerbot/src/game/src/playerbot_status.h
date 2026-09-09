@@ -78,13 +78,13 @@ namespace
 			case PLAYERBOT_MAP_CHUNJO_M1: return "do Joan";
 			case PLAYERBOT_MAP_CHUNJO_M2: return "do Bokjung";
 			case PLAYERBOT_MAP_CHUNJO_M3: return "do Pyungmoo";
-			case PLAYERBOT_MAP_MONKEY_EASY: return "do Lochu Malp";
-			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "do Lochu Malp II";
-			case PLAYERBOT_MAP_MONKEY_HARD: return "do Lochu Malp III";
+			case PLAYERBOT_MAP_MONKEY_EASY: return "Maymun Zindani";
+			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "Maymun Zindani II";
+			case PLAYERBOT_MAP_MONKEY_HARD: return "Maymun Zindani III";
 			case PLAYERBOT_MAP_DESERT: return "na Pustynie Yongbi";
 			case PLAYERBOT_MAP_ORC_VALLEY: return "do Doliny Orkow";
 			case PLAYERBOT_MAP_SOHAN: return "na Gore Sohan";
-			case PLAYERBOT_MAP_SPIDER_V1: return "do Lochu Pajakow";
+			case PLAYERBOT_MAP_SPIDER_V1: return "Orumcek Zindani";
 			case PLAYERBOT_MAP_HWANG: return "do Swiatyni Hwang";
 			default: return "";
 		}
@@ -147,22 +147,22 @@ namespace
 	{
 		switch (state.bTownVisitPhase)
 		{
-			case BOT_TOWN_PHASE_TRAINER: return "Ide po profesje";
-			case BOT_TOWN_PHASE_TRAINER_WAIT: return "Wybieram profesje";
-			case BOT_TOWN_PHASE_WEAPON_MERCHANT: return "Ide do handlarza bronia";
-			case BOT_TOWN_PHASE_WEAPON_WAIT: return "Handluje bronia";
-			case BOT_TOWN_PHASE_ARMOR_MERCHANT: return "Ide do handlarza zbroja";
-			case BOT_TOWN_PHASE_ARMOR_WAIT: return "Handluje zbroja";
-			case BOT_TOWN_PHASE_MISC_MERCHANT: return "Ide do handlarki roznosci";
-			case BOT_TOWN_PHASE_MISC_WAIT: return "Kupuje potki i sprzedaje lup";
-			case BOT_TOWN_PHASE_BLACKSMITH: return "Ide do kowala";
-			case BOT_TOWN_PHASE_BLACKSMITH_WAIT: return "Ulepszam ekwipunek";
-			case BOT_TOWN_PHASE_SAFEBOX: return "Ide do magazynu z ksiegami";
-			case BOT_TOWN_PHASE_SAFEBOX_WAIT: return "Oddaje ksiegi do magazynu";
+			case BOT_TOWN_PHASE_TRAINER: return "Meslekciye gidiyorum";
+			case BOT_TOWN_PHASE_TRAINER_WAIT: return "Meslek seciyorum";
+			case BOT_TOWN_PHASE_WEAPON_MERCHANT: return "Silahciya gidiyorum";
+			case BOT_TOWN_PHASE_WEAPON_WAIT: return "Silahciyla is yapiyorum";
+			case BOT_TOWN_PHASE_ARMOR_MERCHANT: return "Zirciciya gidiyorum";
+			case BOT_TOWN_PHASE_ARMOR_WAIT: return "Zircidan alisveris yapiyorum";
+			case BOT_TOWN_PHASE_MISC_MERCHANT: return "Genel saticiya gidiyorum";
+			case BOT_TOWN_PHASE_MISC_WAIT: return "Iksir aliyor, ganimet satiyorum";
+			case BOT_TOWN_PHASE_BLACKSMITH: return "Demirciye gidiyorum";
+			case BOT_TOWN_PHASE_BLACKSMITH_WAIT: return "Esya basiyorum";
+			case BOT_TOWN_PHASE_SAFEBOX: return "Depoya gidiyorum";
+			case BOT_TOWN_PHASE_SAFEBOX_WAIT: return "Kitaplari depoya koyuyorum";
 			case BOT_TOWN_PHASE_GATE_IN:
-			case BOT_TOWN_PHASE_GATE_CROSS_IN: return "Ide do miasta";
+			case BOT_TOWN_PHASE_GATE_CROSS_IN: return "Sehre gidiyorum";
 			case BOT_TOWN_PHASE_GATE_OUT:
-			case BOT_TOWN_PHASE_GATE_CROSS_OUT: return "Wracam na exp";
+			case BOT_TOWN_PHASE_GATE_CROSS_OUT: return "Exp yerine donuyorum";
 			default: return "Zalatwiam sprawy w miescie";
 		}
 	}
@@ -226,7 +226,7 @@ namespace
 					snprintf(status, statusSize, "%sSzykuje lur dla druzyny", prefix);
 					return;
 				case LURE_STAGE_RETURN:
-					snprintf(status, statusSize, "%sWracam do druzyny: prowadze %d mobow",
+					snprintf(status, statusSize, "%sGruba donuyorum: %d mob cekiyorum",
 							prefix, state.iLureChasing);
 					return;
 				case LURE_STAGE_HANDOFF:
@@ -280,7 +280,7 @@ namespace
 					// looked at this target.
 					if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_SELF_DEFENSE)
-						snprintf(status, statusSize, "%sBronie sie przed %s", prefix,
+						snprintf(status, statusSize, "%s%s'ye karsi savunuyorum", prefix,
 								target->GetName());
 					else if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_PARTY_DEFENSE)
@@ -308,18 +308,18 @@ namespace
 				if (state.bVisitingShop &&
 						(state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET ||
 						 state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET_WAIT))
-					snprintf(status, statusSize, "%sResetuje umiejetnosci u staruszki", prefix);
+					snprintf(status, statusSize, "%sYetenekleri sifirliyorum", prefix);
 				else
-					snprintf(status, statusSize, "%sWybieram profesje", prefix);
+					snprintf(status, statusSize, "%sMeslek seciyorum", prefix);
 				break;
 			case BOT_ACTION_SHOP:
-				snprintf(status, statusSize, "%sHandluje", prefix);
+				snprintf(status, statusSize, "%sTicaret yapiyorum", prefix);
 				break;
 			case BOT_ACTION_REFINE:
-				snprintf(status, statusSize, "%sUlepszam ekwipunek", prefix);
+				snprintf(status, statusSize, "%sEkipman basiyorum", prefix);
 				break;
 			case BOT_ACTION_READ_BOOK:
-				snprintf(status, statusSize, "%sCzytam ksiege umiejetnosci", prefix);
+				snprintf(status, statusSize, "%sBeceri kitabi okuyorum", prefix);
 				break;
 			case BOT_ACTION_SOCKET_STONE:
 				snprintf(status, statusSize, "%sWkladam kamien duszy", prefix);
@@ -332,11 +332,11 @@ namespace
 				const TPlayerBotBiologistMission* mission =
 						GetActivePlayerBotBiologistMission(ch);
 				if (!mission)
-					snprintf(status, statusSize, "%sWracam od Biologa", prefix);
+					snprintf(status, statusSize, "%sBiologdan donuyorum", prefix);
 				else if (state.bVisitingBiologist &&
 						DISTANCE_APPROX(ch->GetX() - PLAYERBOT_BIOLOGIST_X,
 								ch->GetY() - PLAYERBOT_BIOLOGIST_Y) > 850)
-					snprintf(status, statusSize, "%sIde do Biologa z: %s", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sBiologa gidiyorum: %s", prefix, mission->itemLabel);
 				else if (state.bVisitingBiologist)
 					snprintf(status, statusSize, "%sOddaje Biologowi: %s", prefix, mission->itemLabel);
 				else
@@ -353,10 +353,10 @@ namespace
 				const long stableY = inM2 ? PLAYERBOT_M2_STABLE_BOY_Y : PLAYERBOT_STABLE_BOY_Y;
 				const bool bFar = DISTANCE_APPROX(ch->GetX() - stableX, ch->GetY() - stableY) > 850;
 				if (IsPlayerBotBattleHorseEarned(ch))
-					snprintf(status, statusSize, bFar ? "%sIde do Stajennego po konia bojowego"
-							: "%sOdbieram konia bojowego u Stajennego", prefix);
+					snprintf(status, statusSize, bFar ? "%sSavas atina gidiyorum"
+							: "%sSavas atini aliyorum", prefix);
 				else if (bFar)
-					snprintf(status, statusSize, "%sIde do Stajennego z medalem", prefix);
+					snprintf(status, statusSize, "%sMadalyayla seyise gidiyorum", prefix);
 				else
 					snprintf(status, statusSize, "%sOddaje medal konny (%u/21)", prefix,
 							(unsigned int)ch->GetHorseLevel());
@@ -365,11 +365,11 @@ namespace
 			case BOT_ACTION_FISHING:
 				if (ch->CountSpecifyItem(PLAYERBOT_FISHING_BAIT_VNUM) <
 						PLAYERBOT_FISHING_BAIT_RESTOCK)
-					snprintf(status, statusSize, "%sIde do Rybaka po przynete", prefix);
+					snprintf(status, statusSize, "%sYem almak icin balikciya gidiyorum", prefix);
 				else if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_FISHING_BANK_X,
 						ch->GetY() - PLAYERBOT_FISHING_BANK_Y) >
 						PLAYERBOT_FISHING_BANK_RADIUS)
-					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
+					snprintf(status, statusSize, "%sNehirde balik tutmaya gidiyorum", prefix);
 				else if (state.bIsFishing)
 					snprintf(status, statusSize, "%sLowie ryby - czekam na branie", prefix);
 				else if (!IsPlayerBotHoldingRod(ch))
@@ -394,13 +394,13 @@ namespace
 			case BOT_ACTION_TRAVEL:
 				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sIde przez portal do M2 po Medal Konny", prefix);
+					snprintf(status, statusSize, "%sM2'ye at madalyasi icin gidiyorum", prefix);
 				else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
 						ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) == 0 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
-					snprintf(status, statusSize, "%sIde do Lochu Malp po Medal Konny", prefix);
+					snprintf(status, statusSize, "%sMaymun Zindani'na at madalyasi icin gidiyorum", prefix);
 				else if (IsPlayerBotOnBattleHorseTrial(ch))
-					snprintf(status, statusSize, "%sZdobywam konia bojowego na pustyni (%d/%d)", prefix,
+					snprintf(status, statusSize, "%sColde savas ati gorevini yapiyorum (%d/%d)", prefix,
 							GetPlayerBotBattleHorseKills(ch), PLAYERBOT_BATTLE_HORSE_KILLS);
 				// Only a medal the bot can hand in. A horse at ten waits for
 				// level thirty-five, a medal dropper carries them for its
@@ -408,7 +408,7 @@ namespace
 				// leg they rode - "idzie do stajennego przez godzine".
 				else if (ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) > 0 &&
 						CanPlayerBotAdvanceHorse(ch))
-					snprintf(status, statusSize, "%sIde do najblizszego Stajennego z Medalem", prefix);
+					snprintf(status, statusSize, "%sMadalyayla en yakin seyise gidiyorum", prefix);
 				else if (IsPlayerBotMonkeyMap(ch->GetMapIndex()))
 				{
 					// Only when the bot has actually decided to go. This was a
@@ -430,7 +430,7 @@ namespace
 					// for its whole visit, so twenty-one of thirty bots still
 					// announced an exit they were nowhere near. Say the true
 					// thing instead: it is crossing the maze.
-					snprintf(status, statusSize, "%sSzukam drogi przez Loch Malp", prefix);
+					snprintf(status, statusSize, "%sMaymun Zindani'nda yol ariyorum", prefix);
 				}
 				// "Szukam miejsca do expa (cel: zapasy)" was said over a bot
 				// walking to a merchant, which is the audit's example of a
@@ -438,22 +438,22 @@ namespace
 				// where the bot is going, and when the errand is not experience,
 				// say the errand instead.
 				else if (state.bLongTermGoal == BOT_GOAL_RESTOCK)
-					snprintf(status, statusSize, "%sIde do miasta po zapasy", prefix);
+					snprintf(status, statusSize, "%sSehre erzak icin gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_REFINE)
-					snprintf(status, statusSize, "%sIde do kowala ulepszyc ekwipunek", prefix);
+					snprintf(status, statusSize, "%sEsyalari basmak icin demirciye gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_BIOLOGIST)
-					snprintf(status, statusSize, "%sIde do Biologa", prefix);
+					snprintf(status, statusSize, "%sBiologa gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_FISHING)
-					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
+					snprintf(status, statusSize, "%sNehirde balik tutmaya gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_GET_EQUIPMENT)
-					snprintf(status, statusSize, "%sIde do miasta po ekwipunek", prefix);
+					snprintf(status, statusSize, "%sEkipman icin sehre gidiyorum", prefix);
 				else
 				{
 					const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
 					const char* where = wantMap != 0 && wantMap != ch->GetMapIndex()
 							? GetPlayerBotMapDestinationPl(wantMap) : "";
 					if (where[0])
-						snprintf(status, statusSize, "%sIde %s (cel: %s)", prefix,
+						snprintf(status, statusSize, "%s%s gidiyorum (hedef: %s)", prefix,
 								where, goal);
 					else
 						snprintf(status, statusSize, "%sSzukam lepszego miejsca (cel: %s)",

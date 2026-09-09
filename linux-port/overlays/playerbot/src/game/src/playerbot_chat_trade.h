@@ -42,6 +42,7 @@ namespace
 	// A player gets one whispered answer this often, so a shout repeated
 	// twice does not bring two bots to the same door.
 	const DWORD PLAYERBOT_TRADE_REPLY_INTERVAL = 8000;
+	const DWORD PLAYERBOT_PLAYER_MESSAGE_HOLD_TIME = 15;
 	// Fewer letters than this after the verb is not a thing anybody meant.
 	const size_t PLAYERBOT_TRADE_QUERY_MIN = 3;
 	// The skill books the proto names one skill each - "Instr. Aura Miecza",
@@ -52,7 +53,46 @@ namespace
 
 	DWORD s_dwPlayerBotTradeShoutTime = 0;
 	std::map<DWORD, DWORD> s_mapPlayerBotTradeShoutTime;
+	std::map<DWORD, DWORD> s_mapPlayerBotConversationHoldUntil;
+
+	void HoldPlayerBotForPlayerMessage(LPCHARACTER bot)
+	{
+		if (!bot)
+			return;
+		bot->Stop();
+		s_mapPlayerBotConversationHoldUntil[bot->GetPlayerID()] =
+				get_dword_time() + PLAYERBOT_PLAYER_MESSAGE_HOLD_TIME;
+	}
+
+	bool IsPlayerBotConversationHeld(DWORD playerID, DWORD dwNow)
+	{
+		std::map<DWORD, DWORD>::const_iterator it =
+				s_mapPlayerBotConversationHoldUntil.find(playerID);
+		return it != s_mapPlayerBotConversationHoldUntil.end() && it->second > dwNow;
+	}
 	std::map<DWORD, DWORD> s_mapPlayerBotTradeReplyTime;
+	struct TPlayerBotPendingTrade
+	{
+		LPCHARACTER bot;
+		WORD cell;
+		DWORD price;
+		DWORD expires;
+		bool botBuys;
+		TPlayerBotPendingTrade()
+			: bot(NULL), cell(0), price(0), expires(0), botBuys(false) {}
+	};
+	std::map<DWORD, TPlayerBotPendingTrade> s_mapPlayerBotPendingTrades;
+	void RememberPlayerBotPendingBuy(LPCHARACTER player, LPCHARACTER bot, DWORD price)
+	{
+		if (!player || !bot)
+			return;
+		TPlayerBotPendingTrade pending;
+		pending.bot = bot;
+		pending.price = price;
+		pending.expires = get_dword_time() + 60000;
+		pending.botBuys = true;
+		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
+	}
 
 	const char* GetPlayerBotTownName(long mapIndex)
 	{
@@ -72,8 +112,39 @@ namespace
 		for (const unsigned char* p = (const unsigned char*)(in ? in : ""); *p && o + 1 < size; ++p)
 		{
 			unsigned char c = *p;
+			if (p[0] == 0xC3 && p[1] != 0)
+			{
+				switch (p[1])
+				{
+					case 0x87: case 0xA7: c = 'c'; ++p; break;
+					case 0x96: case 0xB6: c = 'o'; ++p; break;
+					case 0x9C: case 0xBC: c = 'u'; ++p; break;
+					default: break;
+				}
+			}
+			else if (p[0] == 0xC4 && p[1] != 0)
+			{
+				switch (p[1])
+				{
+					case 0x9E: case 0x9F: c = 'g'; ++p; break;
+					case 0xB0: case 0xB1: c = 'i'; ++p; break;
+					default: break;
+				}
+			}
+			else if (p[0] == 0xC5 && p[1] != 0 &&
+					(p[1] == 0x9E || p[1] == 0x9F))
+			{
+				c = 's';
+				++p;
+			}
 			switch (c)
 			{
+				case 0xC7: case 0xE7: case 0xA7: c = 'c'; break;
+				case 0xD0: case 0xF0: c = 'g'; break;
+				case 0xDD: case 0xFD: c = 'i'; break;
+				case 0xD6: case 0xF6: c = 'o'; break;
+				case 0xDE: case 0xFE: c = 's'; break;
+				case 0xDC: case 0xFC: c = 'u'; break;
 				case 0xA5: case 0xB9: c = 'a'; break;
 				case 0xC6: case 0xE6: c = 'c'; break;
 				case 0xCA: case 0xEA: c = 'e'; break;
@@ -106,6 +177,7 @@ namespace
 	{
 		if (!bot || !to || !to->GetDesc() || !text || !*text)
 			return;
+		HoldPlayerBotForPlayerMessage(bot);
 		const size_t len = std::min<size_t>(strlen(text), CHAT_MAX_LEN);
 		TPacketGCWhisper pack;
 		pack.bHeader = HEADER_GC_WHISPER;
@@ -148,7 +220,7 @@ namespace
 			return;
 		char text[CHAT_MAX_LEN + 1];
 		FormatPlayerBotText(text, sizeof(text), "",
-				"Sprzedam %s - stragan w %s", pszItemName,
+				"Satilik %s - %s'te pazar", pszItemName,
 				GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
@@ -213,7 +285,26 @@ namespace
 			return false;
 		char name[64];
 		FoldPlayerBotChatText(item->GetProto()->szLocaleName, name, sizeof(name));
-		return strstr(name, foldedQuery) != NULL;
+		if (strstr(name, foldedQuery) != NULL)
+			return true;
+		char acronym[32];
+		size_t acronymSize = 0;
+		bool atWordStart = true;
+		for (const char* p = name; *p && acronymSize + 1 < sizeof(acronym); ++p)
+		{
+			if (IsPlayerBotChatSeparator(*p))
+			{
+				atWordStart = true;
+				continue;
+			}
+			if (atWordStart)
+			{
+				acronym[acronymSize++] = *p;
+				atWordStart = false;
+			}
+		}
+		acronym[acronymSize] = 0;
+		return strcmp(acronym, foldedQuery) == 0;
 	}
 
 	enum EPlayerBotTradeVerb
@@ -232,17 +323,40 @@ namespace
 		outBook = false;
 		char folded[CHAT_MAX_LEN + 1];
 		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		char* suffixVerb = NULL;
+		EPlayerBotTradeVerb suffixType = PLAYERBOT_TRADE_NONE;
+		static const struct { const char* word; EPlayerBotTradeVerb verb; } kSuffixes[] = {
+			{ " alinir", PLAYERBOT_TRADE_BUY }, { " alin", PLAYERBOT_TRADE_BUY },
+			{ " satilir", PLAYERBOT_TRADE_SELL }
+		};
+		for (size_t i = 0; i < sizeof(kSuffixes) / sizeof(kSuffixes[0]); ++i)
+		{
+			char* found = strstr(folded, kSuffixes[i].word);
+			if (found && (!suffixVerb || found > suffixVerb))
+			{
+				suffixVerb = found;
+				suffixType = kSuffixes[i].verb;
+			}
+		}
+		if (suffixVerb)
+		{
+			*suffixVerb = 0;
+			while (suffixVerb > folded && IsPlayerBotChatSeparator(suffixVerb[-1]))
+				*--suffixVerb = 0;
+		}
 		const char* p = folded;
 		while (*p && IsPlayerBotChatSeparator(*p))
 			++p;
 		static const struct { const char* word; EPlayerBotTradeVerb verb; } kVerbs[] = {
 			{ "kupie", PLAYERBOT_TRADE_BUY }, { "kupuje", PLAYERBOT_TRADE_BUY },
 			{ "szukam", PLAYERBOT_TRADE_BUY }, { "potrzebuje", PLAYERBOT_TRADE_BUY },
+			{ "alinir", PLAYERBOT_TRADE_BUY }, { "alin", PLAYERBOT_TRADE_BUY },
 			{ "sprzedam", PLAYERBOT_TRADE_SELL }, { "sprzedaje", PLAYERBOT_TRADE_SELL },
+			{ "satilir", PLAYERBOT_TRADE_SELL },
 			{ "oddam", PLAYERBOT_TRADE_SELL }, { "s>", PLAYERBOT_TRADE_SELL },
 			{ "k>", PLAYERBOT_TRADE_BUY },
 		};
-		EPlayerBotTradeVerb verb = PLAYERBOT_TRADE_NONE;
+		EPlayerBotTradeVerb verb = suffixVerb ? suffixType : PLAYERBOT_TRADE_NONE;
 		for (size_t i = 0; i < sizeof(kVerbs) / sizeof(kVerbs[0]); ++i)
 		{
 			const size_t len = strlen(kVerbs[i].word);
@@ -275,14 +389,140 @@ namespace
 		size_t n = strlen(outQuery);
 		while (n > 0 && IsPlayerBotChatSeparator(outQuery[n - 1]))
 			outQuery[--n] = 0;
+		// "kdp alinir" and "kdp satilir" can contain the verb twice.
+		const char* trailingVerbs[] = { " alinir", " satilir" };
+		for (size_t i = 0; i < sizeof(trailingVerbs) / sizeof(trailingVerbs[0]); ++i)
+		{
+			char* trailing = strstr(outQuery, trailingVerbs[i]);
+			if (trailing)
+			{
+				*trailing = 0;
+				n = strlen(outQuery);
+				while (n > 0 && IsPlayerBotChatSeparator(outQuery[n - 1]))
+					outQuery[--n] = 0;
+				break;
+			}
+		}
 		return n >= PLAYERBOT_TRADE_QUERY_MIN ? verb : PLAYERBOT_TRADE_NONE;
+	}
+
+	DWORD ParsePlayerBotChatPrice(const char* text)
+	{
+		char folded[CHAT_MAX_LEN + 1];
+		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		DWORD parsed = 0;
+		const char* p = folded;
+		while (*p)
+		{
+			while (*p && !isdigit((unsigned char)*p))
+				++p;
+			if (!*p)
+				break;
+			char* end = NULL;
+			unsigned long value = strtoul(p, &end, 10);
+			if (end == p || value == 0)
+			{
+				++p;
+				continue;
+			}
+			unsigned long multiplier = 1;
+			if (*end == 'k') multiplier = 1000;
+			else if (*end == 'm') multiplier = 1000000;
+			else if (*end == 'b') multiplier = 1000000000UL;
+			if (*end == 'k' || *end == 'm' || *end == 'b')
+				++end;
+			if (multiplier != 1 || end == p + strlen(p) || *end == ' ' || IsPlayerBotChatSeparator(*end))
+			{
+				const unsigned long total = value * multiplier;
+				if (total <= 2000000000UL)
+					parsed = (DWORD)total;
+			}
+			p = end;
+		}
+		return parsed;
 	}
 
 	// "Kupie X": the nearest open counter with X on it answers with where and
 	// how much. The player's own map first, then any.
+	bool AnswerPlayerBotOwnedItemBuyShout(LPCHARACTER player, const char* query,
+			bool book, DWORD skillVnum)
+	{
+		LPCHARACTER bestSeller = NULL;
+		LPITEM bestItem = NULL;
+		bool bestEquipped = false;
+		WORD bestCell = 0;
+		long long bestDistance = -1;
+		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
+				it != s_mapPlayerBotAIStates.end(); ++it)
+		{
+			LPCHARACTER bot = CHARACTER_MANAGER::instance().FindByPID(it->first);
+			if (!bot || !bot->IsItemLoaded() || bot->GetMyShop() ||
+					bot->GetMapIndex() != player->GetMapIndex() ||
+					DISTANCE_APPROX(player->GetX() - bot->GetX(),
+							player->GetY() - bot->GetY()) >= EXCHANGE_MAX_DISTANCE)
+				continue;
+			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			{
+				LPITEM item = bot->GetInventoryItem(cell);
+				if (!item)
+					continue;
+				const bool match = book
+						? (item->GetType() == ITEM_SKILLBOOK &&
+							GetPlayerBotSkillBookSkillVnum(item) == skillVnum)
+						: PlayerBotItemNameMatches(item, query);
+				if (!match)
+					continue;
+				const long long distance = bot->GetMapIndex() == player->GetMapIndex()
+						? (long long)DISTANCE_APPROX(player->GetX() - bot->GetX(),
+								player->GetY() - bot->GetY())
+						: 1000000LL + (long long)bot->GetMapIndex();
+				if (bestDistance < 0 || distance < bestDistance)
+				{
+					bestDistance = distance;
+					bestSeller = bot;
+					bestItem = item;
+					bestEquipped = item->IsEquipped();
+					bestCell = cell;
+				}
+			}
+		}
+		if (!bestSeller || !bestItem || !bestItem->GetProto())
+			return false;
+
+		if (bestEquipped)
+		{
+			char reply[CHAT_MAX_LEN + 1];
+			FormatPlayerBotText(reply, sizeof(reply), "",
+					"%s bende var ama ustumde, satmiyorum",
+					bestItem->GetProto()->szLocaleName);
+			SendPlayerBotWhisper(bestSeller, player, reply);
+			return true;
+		}
+		const DWORD basePrice = std::max<DWORD>(1,
+				(DWORD)std::max<long long>(1,
+					GetPlayerBotVnumSaleValue(bestItem->GetVnum(), get_dword_time())));
+		const DWORD askingPrice = std::max<DWORD>(1, basePrice * 120 / 100);
+		TPlayerBotPendingTrade pending;
+		pending.bot = bestSeller;
+		pending.cell = bestCell;
+		pending.price = askingPrice;
+		pending.expires = get_dword_time() + 60000;
+		pending.botBuys = false;
+		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
+		char reply[CHAT_MAX_LEN + 1];
+		FormatPlayerBotText(reply, sizeof(reply), "",
+				"Selam kanka, bende %s var. %u yang, istersen trade acalim",
+				bestItem->GetProto()->szLocaleName, askingPrice);
+		SendPlayerBotWhisper(bestSeller, player, reply);
+		return true;
+	}
+
 	bool AnswerPlayerBotBuyShout(LPCHARACTER player, const char* query, bool book,
 			DWORD skillVnum)
 	{
+		if (AnswerPlayerBotOwnedItemBuyShout(player, query, book, skillVnum))
+			return true;
+
 		LPCHARACTER bestKeeper = NULL;
 		const TPlayerBotShopOffer* bestOffer = NULL;
 		LPITEM bestItem = NULL;
@@ -352,10 +592,27 @@ namespace
 		}
 	}
 
+	BYTE GetPlayerBotTradeInterestChance(BYTE personality)
+	{
+		switch (personality)
+		{
+			case BOT_PERSONALITY_MERCHANT: return 5;
+			case BOT_PERSONALITY_GEAR_SPECIALIST: return 4;
+			case BOT_PERSONALITY_CAREFUL_COLLECTOR: return 3;
+			case BOT_PERSONALITY_METIN_DROPPER:
+			case BOT_PERSONALITY_M3_DROPPER:
+			case BOT_PERSONALITY_M2_DROPPER:
+			case BOT_PERSONALITY_MEDAL_DROPPER: return 2;
+			default: return 1;
+		}
+	}
+
 	// "Sprzedam X": a bot that is short of X says it will buy, and where. The
-	// bot can: playerbot_market.h reads a player's counter like any other.
-	bool AnswerPlayerBotSellShout(LPCHARACTER player, const char* query, bool book,
-			DWORD skillVnum)
+	// bot can: playerbot_market.h reads a player's counter like any other. A
+	// world shout is an opportunity, not a broadcast storm: interested bots
+	// roll their personality chance and at most three make an offer.
+	bool AnswerPlayerBotSellShout(LPCHARACTER player, const char* text, const char* query,
+			bool book, DWORD skillVnum)
 	{
 		DWORD wantedVnum = 0;
 		const char* pszName = NULL;
@@ -394,46 +651,114 @@ namespace
 				}
 			}
 			if (wantedVnum == 0)
+			{
+				// Player shouts may offer ordinary weapons and armor too, not
+				// only the market's preferred materials and level-30 weapons.
+				for (DWORD vnum = 1; vnum <= 7169 && wantedVnum == 0; ++vnum)
+				{
+					const TItemTable* proto = ITEM_MANAGER::instance().GetTable(vnum);
+					if (!proto)
+						continue;
+					char name[64];
+					FoldPlayerBotChatText(proto->szLocaleName, name, sizeof(name));
+					if (strstr(name, query))
+					{
+						wantedVnum = vnum;
+						pszName = proto->szLocaleName;
+					}
+				}
+			}
+			if (wantedVnum == 0)
+				return false;
+		}
+		else
+		{
+			for (DWORD vnum = PLAYERBOT_TRADE_SKILL_BOOK_FIRST;
+					vnum <= PLAYERBOT_TRADE_SKILL_BOOK_LAST && wantedVnum == 0; ++vnum)
+			{
+				const TItemTable* proto = ITEM_MANAGER::instance().GetTable(vnum);
+				if (proto && proto->bType == ITEM_SKILLBOOK &&
+						(DWORD)proto->alValues[0] == skillVnum)
+				{
+					wantedVnum = vnum;
+					pszName = proto->szLocaleName;
+				}
+			}
+			if (wantedVnum == 0)
 				return false;
 		}
 
-		LPCHARACTER buyer = NULL;
+		const TItemTable* proto = ITEM_MANAGER::instance().GetTable(wantedVnum);
+		if (!proto)
+			return false;
+		const DWORD dwNow = get_dword_time();
+		const DWORD basePrice = (DWORD)std::max<long long>(1,
+				GetPlayerBotVnumSaleValue(wantedVnum, dwNow));
+		const DWORD marketOffer = std::max<DWORD>(1, basePrice * 80 / 100);
+		const DWORD playerPrice = ParsePlayerBotChatPrice(text);
+		const DWORD offerPrice = playerPrice != 0 && playerPrice < marketOffer
+				? playerPrice : marketOffer;
+		int offersSent = 0;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
-				it != s_mapPlayerBotAIStates.end() && !buyer; ++it)
+				it != s_mapPlayerBotAIStates.end() && offersSent < 3; ++it)
 		{
 			LPCHARACTER bot = CHARACTER_MANAGER::instance().FindByPID(it->first);
-			if (!bot || !bot->IsItemLoaded() || bot->GetMyShop() || !CanPlayerBotAffordMarket(bot))
+			if (!bot || !bot->IsItemLoaded() || bot->GetMyShop() ||
+					bot->GetMapIndex() != player->GetMapIndex() ||
+					DISTANCE_APPROX(player->GetX() - bot->GetX(),
+							player->GetY() - bot->GetY()) >= EXCHANGE_MAX_DISTANCE ||
+					!CanPlayerBotAffordMarket(bot))
+				continue;
+			const BYTE interestChance = wantedVnum != 0
+					? 100
+					: GetPlayerBotTradeInterestChance(
+							GetPlayerBotPersonalityByPID(bot->GetPlayerID()));
+			if (number(1, 100) > interestChance)
+				continue;
+			if (bot->GetGold() - (int)offerPrice < (int)PLAYERBOT_SHOPPING_GOLD_FLOOR)
 				continue;
 			if (book)
 			{
 				if (IsPlayerBotOwnSkill(bot, skillVnum) &&
 						bot->GetSkillMasterType(skillVnum) == SKILL_MASTER &&
 						bot->GetSkillLevel(skillVnum) >= 20 && bot->GetSkillLevel(skillVnum) < 30)
-					buyer = bot;
+				{
+					char reply[CHAT_MAX_LEN + 1];
+					RememberPlayerBotPendingBuy(player, bot, offerPrice);
+					FormatPlayerBotText(reply, sizeof(reply), "",
+							"%s icin %u yang veririm, musaitsen trade ac",
+							pszName ? pszName : query, offerPrice);
+					SendPlayerBotWhisper(bot, player, reply);
+					++offersSent;
+				}
 			}
 			else if (IsPlayerBotSpecialLevel30WeaponVnum(wantedVnum))
 			{
-				const TItemTable* proto = ITEM_MANAGER::instance().GetTable(wantedVnum);
-				if (proto && bot->GetLevel() >= 30 && !HasPlayerBotSpecialLevel30Weapon(bot, false) &&
+				if (bot->GetLevel() >= 30 && !HasPlayerBotSpecialLevel30Weapon(bot, false) &&
 						!IS_SET(proto->dwAntiFlags, GetPlayerBotJobAntiFlag(bot->GetJob())))
-					buyer = bot;
+				{
+					char reply[CHAT_MAX_LEN + 1];
+					RememberPlayerBotPendingBuy(player, bot, offerPrice);
+					FormatPlayerBotText(reply, sizeof(reply), "",
+							"%s lazim, %u yang veririm. Trade acabiliriz",
+							pszName ? pszName : query, offerPrice);
+					SendPlayerBotWhisper(bot, player, reply);
+					++offersSent;
+				}
 			}
-			else if (PlayerBotNeedsRefineMaterial(bot, wantedVnum))
-				buyer = bot;
+			else if (PlayerBotNeedsRefineMaterial(bot, wantedVnum) ||
+					!book)
+			{
+				char reply[CHAT_MAX_LEN + 1];
+				RememberPlayerBotPendingBuy(player, bot, offerPrice);
+				FormatPlayerBotText(reply, sizeof(reply), "",
+						"%s lazim, %u yang veririm. Trade acabiliriz",
+						pszName ? pszName : query, offerPrice);
+				SendPlayerBotWhisper(bot, player, reply);
+				++offersSent;
+			}
 		}
-		if (!buyer)
-			return false;
-		char reply[CHAT_MAX_LEN + 1];
-		if (book)
-			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
-					GetPlayerBotSkillName(skillVnum));
-		else
-			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Kupie %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja",
-					pszName ? pszName : query);
-		SendPlayerBotWhisper(buyer, player, reply);
-		return true;
+		return offersSent > 0;
 	}
 
 	bool PlayerBotTradeReplyAllowed(LPCHARACTER player, DWORD dwNow)
@@ -445,11 +770,186 @@ namespace
 		return true;
 	}
 
+	bool IsPlayerBotInventoryQuestion(const char* text)
+	{
+		char folded[CHAT_MAX_LEN + 1];
+		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		return strstr(folded, "elinde") || strstr(folded, "ustunde") ||
+				strstr(folded, "envanter") || strstr(folded, "silah") ||
+				strstr(folded, "zirh") || strstr(folded, "itemlerin");
+	}
+
+	bool AnswerPlayerBotInventoryQuestion(LPCHARACTER bot, LPCHARACTER player)
+	{
+		if (!bot || !player || !bot->IsItemLoaded())
+			return false;
+		std::string equipped;
+		std::string carried;
+		const BYTE wearSlots[] = {
+			WEAR_WEAPON, WEAR_BODY, WEAR_SHIELD, WEAR_HEAD,
+			WEAR_FOOTS, WEAR_WRIST, WEAR_NECK, WEAR_EAR
+		};
+		for (size_t i = 0; i < sizeof(wearSlots) / sizeof(wearSlots[0]); ++i)
+		{
+			LPITEM item = bot->GetWear(wearSlots[i]);
+			if (item && item->GetProto())
+			{
+				if (!equipped.empty())
+					equipped += ", ";
+				equipped += item->GetProto()->szLocaleName;
+			}
+		}
+		int listed = 0;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM && listed < 8; ++cell)
+		{
+			LPITEM item = bot->GetInventoryItem(cell);
+			if (!item || item->IsEquipped() || !item->GetProto())
+				continue;
+			if (!carried.empty())
+				carried += ", ";
+			carried += item->GetProto()->szLocaleName;
+			++listed;
+		}
+		char reply[CHAT_MAX_LEN + 1];
+		FormatPlayerBotText(reply, sizeof(reply), "",
+				"Ustumde: %s. Cantada: %s",
+				equipped.empty() ? "yok" : equipped.c_str(),
+				carried.empty() ? "yok" : carried.c_str());
+		SendPlayerBotWhisper(bot, player, reply);
+		return true;
+	}
+
+	bool IsPlayerBotPriceQuestion(const char* text)
+	{
+		char folded[CHAT_MAX_LEN + 1];
+		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		return strstr(folded, "fiyat") || strstr(folded, "fiyati") ||
+				strstr(folded, "ne kadar") || strstr(folded, "kac para") ||
+				strstr(folded, "kac yang") || strstr(folded, "buna ne verirsin");
+	}
+
+	bool IsPlayerBotTradeConfirmation(const char* text)
+	{
+		char folded[CHAT_MAX_LEN + 1];
+		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		return strstr(folded, "tamam") || strstr(folded, "olur") ||
+				strstr(folded, "trade ac") || strcmp(folded, "al") == 0 ||
+				strcmp(folded, "aliyorum") == 0;
+	}
+
+	bool AnswerPlayerBotItemPriceQuestion(LPCHARACTER player, LPCHARACTER targetBot,
+			const char* text)
+	{
+		if (!player || !targetBot || !text)
+			return false;
+		char folded[CHAT_MAX_LEN + 1];
+		FoldPlayerBotChatText(text, folded, sizeof(folded));
+		const char* markers[] = {
+			" ne kadar", " fiyat", " fiyati", " kac para", " kac yang",
+			" buna ne verirsin"
+		};
+		for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); ++i)
+		{
+			char* marker = strstr(folded, markers[i]);
+			if (marker)
+			{
+				*marker = 0;
+				break;
+			}
+		}
+		while (*folded && IsPlayerBotChatSeparator(folded[0]))
+			memmove(folded, folded + 1, strlen(folded));
+		if (strlen(folded) < PLAYERBOT_TRADE_QUERY_MIN)
+			return false;
+
+		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
+				it != s_mapPlayerBotAIStates.end(); ++it)
+		{
+			LPCHARACTER bot = CHARACTER_MANAGER::instance().FindByPID(it->first);
+			if (!bot || bot != targetBot || !bot->IsItemLoaded() || bot->GetMyShop())
+				continue;
+			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			{
+				LPITEM item = bot->GetInventoryItem(cell);
+				if (!item || item->IsEquipped() || !PlayerBotItemNameMatches(item, folded))
+					continue;
+				const DWORD basePrice = std::max<DWORD>(1,
+						(DWORD)std::max<long long>(1,
+							GetPlayerBotVnumSaleValue(item->GetVnum(), get_dword_time())));
+				TPlayerBotPendingTrade pending;
+				pending.bot = bot;
+				pending.cell = cell;
+				pending.price = std::max<DWORD>(1, basePrice * 120 / 100);
+				pending.expires = get_dword_time() + 60000;
+				pending.botBuys = false;
+				s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
+				char reply[CHAT_MAX_LEN + 1];
+				FormatPlayerBotText(reply, sizeof(reply), "",
+						"%s icin %u yang. Uygunsa tamam yaz, trade acayim",
+						item->GetProto()->szLocaleName, pending.price);
+				SendPlayerBotWhisper(bot, player, reply);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool OpenPlayerBotPendingTrade(LPCHARACTER player)
+	{
+		if (!player)
+			return false;
+		std::map<DWORD, TPlayerBotPendingTrade>::iterator it =
+				s_mapPlayerBotPendingTrades.find(player->GetPlayerID());
+		if (it == s_mapPlayerBotPendingTrades.end() ||
+				it->second.expires < get_dword_time())
+		{
+			sys_log(0, "PLAYERBOT_TRADE: confirmation without pending player=%s",
+					player->GetName());
+			return false;
+		}
+		TPlayerBotPendingTrade pending = it->second;
+		if (!pending.bot || (!pending.botBuys &&
+				(pending.bot->GetInventoryItem(pending.cell) == NULL ||
+				pending.bot->GetInventoryItem(pending.cell)->IsEquipped())) ||
+				DISTANCE_APPROX(player->GetX() - pending.bot->GetX(),
+						player->GetY() - pending.bot->GetY()) >= EXCHANGE_MAX_DISTANCE ||
+				!pending.bot->ExchangeStart(player))
+		{
+			sys_log(0, "PLAYERBOT_TRADE: exchange start failed player=%s bot=%s botBuys=%d",
+					player->GetName(), pending.bot ? pending.bot->GetName() : "?",
+					pending.botBuys ? 1 : 0);
+			return false;
+		}
+		const bool itemAdded = pending.botBuys ||
+				pending.bot->GetExchange()->AddItem(TItemPos(INVENTORY, pending.cell), 0);
+		const bool goldAdded = pending.botBuys
+				? pending.bot->GetExchange()->AddGold(pending.price)
+				: itemAdded && player->GetExchange()->AddGold(pending.price);
+		if (!itemAdded || !goldAdded)
+		{
+			sys_log(0, "PLAYERBOT_TRADE: exchange offer failed player=%s bot=%s item=%d gold=%d",
+					player->GetName(), pending.bot->GetName(),
+					itemAdded ? 1 : 0, goldAdded ? 1 : 0);
+			if (pending.bot->GetExchange())
+				pending.bot->GetExchange()->Cancel();
+			return false;
+		}
+		char reply[CHAT_MAX_LEN + 1];
+		FormatPlayerBotText(reply, sizeof(reply), "",
+				"Trade acildi, item ve %u yang hazir. Son onay sende",
+				pending.price);
+		SendPlayerBotWhisper(pending.bot, player, reply);
+		s_mapPlayerBotPendingTrades.erase(it);
+		return true;
+	}
+
 	// A player's shout, after it has gone out on the channel.
 	void HandlePlayerShoutForTrade(LPCHARACTER player, const char* text)
 	{
 		if (!player || !text)
 			return;
+		sys_log(0, "PLAYERBOT_INPUT: player shout from=%s text=\"%s\"",
+				player->GetName(), text);
 		char query[128];
 		bool book = false;
 		const EPlayerBotTradeVerb verb = ParsePlayerBotTradeText(text, query, sizeof(query), book);
@@ -463,11 +963,14 @@ namespace
 			return;
 		const bool answered = verb == PLAYERBOT_TRADE_BUY
 				? AnswerPlayerBotBuyShout(player, query, book, skillVnum)
-				: AnswerPlayerBotSellShout(player, query, book, skillVnum);
+				: AnswerPlayerBotSellShout(player, text, query, book, skillVnum);
 		sys_log(0, "PLAYERBOT_TRADE: shout from=%s verb=%s book=%d query=\"%s\" answered=%d",
 				player->GetName(), verb == PLAYERBOT_TRADE_BUY ? "buy" : "sell",
 				book ? 1 : 0, query, answered ? 1 : 0);
 	}
+
+	// Forward declaration of LLM bridge dispatch defined in playerbot_llm_bridge.h
+	static bool DispatchPlayerBotLLMWhisper(LPCHARACTER player, LPCHARACTER bot, const char* text);
 
 	// A player's whisper to a bot. A trade line is answered like a shout, by
 	// whichever bot is best placed; anything else gets the bot's own state -
@@ -476,15 +979,30 @@ namespace
 	{
 		if (!player || !bot || !text)
 			return;
+		HoldPlayerBotForPlayerMessage(bot);
+		sys_log(0, "PLAYERBOT_INPUT: player whisper from=%s to=%s text=\"%s\"",
+				player->GetName(), bot->GetName(), text);
 		const DWORD dwNow = get_dword_time();
+		if (IsPlayerBotTradeConfirmation(text) && OpenPlayerBotPendingTrade(player))
+			return;
+		if (IsPlayerBotPriceQuestion(text) &&
+				AnswerPlayerBotItemPriceQuestion(player, bot, text))
+			return;
+		if (IsPlayerBotInventoryQuestion(text) &&
+				AnswerPlayerBotInventoryQuestion(bot, player))
+			return;
 		char query[128];
 		bool book = false;
 		const EPlayerBotTradeVerb verb = ParsePlayerBotTradeText(text, query, sizeof(query), book);
-		if (verb != PLAYERBOT_TRADE_NONE)
-		{
-			HandlePlayerShoutForTrade(player, text);
+		// Trade broadcasts are handled only by the real shout hook. A private
+		// whisper must never fan out to every bot in the world.
+		(void)verb;
+		(void)query;
+		(void)book;
+		// Non-trade conversation is owned by the cognitive bridge. Queue it
+		// before market/status replies so those handlers cannot answer first.
+		if (DispatchPlayerBotLLMWhisper(player, bot, text))
 			return;
-		}
 		if (!PlayerBotTradeReplyAllowed(player, dwNow))
 			return;
 		char reply[CHAT_MAX_LEN + 1];
@@ -504,18 +1022,25 @@ namespace
 				++listed;
 			}
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Stoje ze straganem w %s, mam: %s",
+					"%s'te pazarim acik, elimde: %s",
 					GetPlayerBotTownName(bot->GetMapIndex()),
 					goods.empty() ? PlayerBotText("nic juz") : goods.c_str());
+			SendPlayerBotWhisper(bot, player, reply);
 		}
 		else if (it != s_mapPlayerBotAIStates.end() && it->second.bMarketTrip)
+		{
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Wlasnie ide na targ w %s",
+					"%s'te pazara gidiyorum",
 					GetPlayerBotTownName(bot->GetMapIndex()));
+			SendPlayerBotWhisper(bot, player, reply);
+		}
 		else
+		{
+			// Fallback if bridge is not available
 			FormatPlayerBotText(reply, sizeof(reply), "",
 					"Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung");
-		SendPlayerBotWhisper(bot, player, reply);
+			SendPlayerBotWhisper(bot, player, reply);
+		}
 	}
 }
 

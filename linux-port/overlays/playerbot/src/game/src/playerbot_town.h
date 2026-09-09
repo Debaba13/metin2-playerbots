@@ -1204,19 +1204,19 @@ namespace
 			return;
 
 		static const char* kPlus7[] = {
-			"%s poszedl na +7, kowal dzis laskawy",
-			"no i mam +7 na %s, moglo byc gorzej",
+			"%s +7 oldu, demirci bugun sansli",
+			"%s +7 oldu, daha kotusu olabilirdi",
 			"+7 na %s siadlo za pierwszym razem",
 			"udalo sie, %s na +7"
 		};
 		static const char* kPlus8[] = {
 			"%s na +8! rece mi sie trzesly",
-			"jest +8 na %s, teraz sie zastanawiam czy pchac dalej",
-			"+8 na %s, chyba mam dzis szczescie",
+			"%s +8 oldu, daha ileri basayim mi diye dusunuyorum",
+			"%s +8 oldu, galiba bugun sansliyim",
 			"weszlo na +8, %s gotowy do roboty"
 		};
 		static const char* kPlus9[] = {
-			"%s NA +9!!! nie wierze",
+			"%s +9 oldu!!! Inanamiyorum",
 			"+9 na %s, kto by pomyslal",
 			"dziewiatka na %s, dzis stawiam :D",
 			"%s +9, chyba wystarczy tych probek na dzis"
@@ -1795,22 +1795,22 @@ namespace
 			// a level-30 weapon, a big refine. A poor keeper's counter is a
 			// clearance sale and the sign says that first.
 			const DWORD draw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU);
-			static const char* const s_apszPrefixes[] = { "", "Tanio: ", "Okazja: ", "Sprzedam " };
+			static const char* const s_apszPrefixes[] = { "", "Ucuz: ", "Firsat: ", "Satilik " };
 			static const char* const s_apszBookShops[] = {
-				"Ksiegi umiejetnosci", "KU dla kazdej klasy", "Biblioteka - ksiegi", "Ksiegi: %s i inne" };
+				"Beceri kitaplari", "Her sinifa KU", "Kitaplik - beceri kitaplari", "Kitaplar: %s ve digerleri" };
 			static const char* const s_apszMaterialShops[] = {
-				"Ulepki z %s", "Materialy do kowala", "Skory, zeby i kly", "Ulepszacze, tanio" };
+				"%s malzemeleri", "Demirci malzemeleri", "Post, dis ve kil", "Upletmeler, ucuz" };
 			static const char* const s_apszMarketCries[] = {
-				"Zobacz kotku co mam w srodku", "Zaczynam gre, kup cos", "%s - najnizsze ceny",
-				"Wszystko za grosze", "Tanio jak barszcz", "Rozne rozczne, zapraszam",
-				"Czego szukasz, to mam", "Sprzedam, bez targow" };
+				"Bak kanka ne var bende", "Oyuna basladim, bir sey al", "%s - en ucuz fiyat",
+				"Her sey ucuz", "Bedavadan biraz pahali", "Cesit cesit, beklerim",
+				"Ne ariyorsan bende var", "Satilik, pazarlik yok" };
 			const char* pszPrefix = bPoor ? "Wyprzedaz: "
 					: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 			const char* pszTemplate = NULL;
 			const char* pszArg = "";
 			if (pszWeapon30)
-				snprintf(body, sizeof(body), "Bron 30: %s", pszWeapon30);
+				snprintf(body, sizeof(body), "30 level silah: %s", pszWeapon30);
 			else if (pszPrecious)
 				snprintf(body, sizeof(body), "%s", pszPrecious); // the name carries its +N
 			else if (iBooks > 0 && iBooks * 2 >= (int)tableCount)
@@ -1824,7 +1824,7 @@ namespace
 				pszArg = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ? "M1" : "M2";
 			}
 			else if (iScrap > 0 && iScrap >= (int)tableCount / 2)
-				snprintf(body, sizeof(body), "Zlom do palenia +0..+3");
+				snprintf(body, sizeof(body), "Basmalik item +0..+3");
 			else if (pszBestName && tableCount > 1 && (draw & 8U) != 0)
 				snprintf(body, sizeof(body), "%s i inne", pszBestName);
 			else if (tableCount > 1)

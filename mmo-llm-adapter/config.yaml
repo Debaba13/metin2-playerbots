@@ -1,0 +1,60 @@
+# MMO LLM Adapter Configuration
+# -------------------------------------------------------------
+# Active language for prompts, bot speech, and archetypes.
+# Options: "tr" (Turkish), "en" (English).
+# To add a new language, drop a new YAML file into locales/ (e.g. locales/de.yaml)
+# and set language: "de".
+language: "tr"
+
+# LLM Provider settings (OpenAI-compatible endpoints)
+# Supports: Ollama (default 11434), LM Studio (default 1234), vLLM (default 8000), etc.
+llm:
+  # "openai_compatible": standard /v1/chat/completions (Ollama/LM Studio/vLLM/LocalAI).
+  # "ollama_native": Ollama's own /api/chat + think:false. Use this for "thinking" models
+  #   (e.g. Qwen3.5-based) that return empty content on the OpenAI-compatible route because
+  #   the whole token budget goes into the hidden reasoning trace instead of the answer
+  #   (see MMO_LLM_ADAPTER_MASTER_PLAN.md section 6.1).
+  provider: "ollama_native"
+  base_url: "http://localhost:11434/v1"
+  api_key: "not-needed"
+  model: "playerbot-4b"            # e.g., "qwen2.5:7b", "llama3.2:3b", "mistral:7b"
+  # Lower temperature keeps short Turkish chat grammatically consistent.
+  temperature: 0.35
+  max_tokens: 200
+  timeout_sec: 15.0
+  # Only used by provider "ollama_native": disables the model's hidden reasoning pass.
+  think: false
+  # Only used by provider "openai_compatible": some Ollama builds also accept "think"
+  # on the OpenAI-compatible route. Unverified in general; prefer "ollama_native" above
+  # if your model is thinking-capable and content still comes back empty.
+  disable_thinking: false
+
+# Handover State Machine
+# Controls how long a bot stays under direct LLM control during interactions
+handover:
+  interaction_ttl_sec: 120       # 2 minutes of player inactivity before returning to PlayerBots
+  graceful_farewell: true        # Bot sends a short parting message when timer expires
+
+# Attention Bubble Manager
+# Manages active awareness for bots near players vs. background bots
+attention_bubble:
+  max_active_bots: 50            # Up to 50 nearest bots tracked in active bubble
+  bubble_radius: 3500            # Units (Metin2 world distance)
+  ambient_cooldown_sec: 15       # Minimum cooldown between ambient overhead chat reactions
+  priority_weights:
+    direct_whisper: 100          # Top priority: instant processing
+    party_command: 90
+    trade_interaction: 80
+    nearby_say: 40
+    ambient_reaction: 20
+
+# Background Macro Pulse
+# Macro updates to synchronize the world without wasting GPU tokens per bot
+macro_pulse:
+  enabled: true
+  interval_sec: 60               # Pulse interval for macro world trends
+
+# Service API Server
+server:
+  host: "0.0.0.0"
+  port: 8080
