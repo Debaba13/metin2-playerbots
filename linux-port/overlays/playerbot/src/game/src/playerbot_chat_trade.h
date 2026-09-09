@@ -868,7 +868,72 @@ namespace
 		return strstr(folded, "elinde") || strstr(folded, "ustunde") ||
 				strstr(folded, "uzerinde") ||
 				strstr(folded, "envanter") || strstr(folded, "silah") ||
-				strstr(folded, "zirh") || strstr(folded, "itemlerin");
+				strstr(folded, "zirh") || strstr(folded, "itemlerin") ||
+				strstr(folded, "ozellik") || strstr(folded, "bonus") ||
+				strstr(folded, "kalkan") || strstr(folded, "yay") ||
+				strstr(folded, "hancer") || strstr(folded, "kilic") ||
+				strstr(folded, "kitap") || strstr(folded, "kutsama");
+	}
+
+	const char* GetPlayerBotApplyLabel(BYTE type)
+	{
+		switch (type)
+		{
+			case APPLY_MAX_HP: return "can";
+			case APPLY_MAX_SP: return "zeka";
+			case APPLY_ATT_GRADE_BONUS: return "saldiri";
+			case APPLY_DEF_GRADE_BONUS: return "savunma";
+			case APPLY_ATT_SPEED: return "saldiri hizi";
+			case APPLY_MOV_SPEED: return "hareket hizi";
+			case APPLY_CAST_SPEED: return "buyu hizi";
+			case APPLY_CRITICAL_PCT: return "kritik";
+			case APPLY_PENETRATE_PCT: return "delici";
+			case APPLY_ATTBONUS_MONSTER: return "canavarlara karsi";
+			case APPLY_NORMAL_HIT_DAMAGE_BONUS: return "ortalama";
+			case APPLY_SKILL_DAMAGE_BONUS: return "beceri";
+			case APPLY_RESIST_SWORD: return "kilic direnci";
+			case APPLY_RESIST_TWOHAND: return "cift el direnci";
+			case APPLY_RESIST_DAGGER: return "hancer direnci";
+			case APPLY_RESIST_BELL: return "zil direnci";
+			case APPLY_RESIST_FAN: return "yelpaze direnci";
+			case APPLY_RESIST_BOW: return "yay direnci";
+			case APPLY_IMMUNE_STUN: return "sersemletme bagisikligi";
+			default: return "bonus";
+		}
+	}
+
+	std::string DescribePlayerBotItem(LPITEM item)
+	{
+		if (!item || !item->GetProto())
+			return "yok";
+		char part[96];
+		std::string result = item->GetProto()->szLocaleName;
+		const int refine = item->GetRefineLevel();
+		if (refine > 0)
+		{
+			snprintf(part, sizeof(part), " +%d", refine);
+			result += part;
+		}
+		if (item->GetCount() > 1)
+		{
+			snprintf(part, sizeof(part), " x%u", (unsigned int)item->GetCount());
+			result += part;
+		}
+		int listed = 0;
+		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM && listed < 4; ++i)
+		{
+			const BYTE type = item->GetAttributeType(i);
+			const long value = item->GetAttributeValue(i);
+			if (!type || value == 0)
+				continue;
+			snprintf(part, sizeof(part), "%s%s %ld", listed == 0 ? " (" : ", ",
+					GetPlayerBotApplyLabel(type), value);
+			result += part;
+			++listed;
+		}
+		if (listed > 0)
+			result += ")";
+		return result;
 	}
 
 	bool AnswerPlayerBotInventoryQuestion(LPCHARACTER bot, LPCHARACTER player)
@@ -888,7 +953,7 @@ namespace
 			{
 				if (!equipped.empty())
 					equipped += ", ";
-				equipped += item->GetProto()->szLocaleName;
+				equipped += DescribePlayerBotItem(item);
 			}
 		}
 		int listed = 0;
@@ -899,7 +964,7 @@ namespace
 				continue;
 			if (!carried.empty())
 				carried += ", ";
-			carried += item->GetProto()->szLocaleName;
+			carried += DescribePlayerBotItem(item);
 			++listed;
 		}
 		char reply[CHAT_MAX_LEN + 1];

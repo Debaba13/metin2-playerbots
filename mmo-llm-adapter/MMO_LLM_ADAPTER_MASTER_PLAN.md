@@ -185,6 +185,10 @@ Arka planda `lease_sweeper_task` her 5 saniyede bir tüm agent'ları tarayıp 12
    yeniden oluşturulup `healthy` olarak deploy edildi.
 8. **Hedef etiketleri:** Genel hedef fallback'i `poziom` yerine `seviye kasma`
    oldu; diğer hedef adları da doğrudan Türkçe ve anlaşılır hale getirildi.
+9. **Item detayları:** Envanter sorguları artık item adı, refine seviyesi, stack
+   adedi ve en fazla dört bonus tip/değerini kısa Türkçe özet olarak gösteriyor.
+   `özellikleri`, `bonusları`, `kalkan`, `yay`, `hançer`, `kılıç`, `kitap` ve
+   `kutsama` sorgu niyetleri eklendi; game image yeniden oluşturulup healthy deploy edildi.
 
 ---
 
@@ -316,6 +320,7 @@ Her faz, bir önceki fazın test kapısı geçmeden başlatılmamalıdır.
 | DONE | Exchange yönü | bot `Accept(true)`, oyuncu son onay | Bot item/yang koyar ve kendi tarafını kabul eder |
 | DONE | LLM Türkçe cevap katmanı | `prompts.py`, `agent.py`, `text.py` | Kısa ASCII Türkçe, artifact temizliği, native Ollama |
 | DONE | Lehçe çıktı temizliği | `playerbot_status.h`, `playerbot_chat_trade.h`, `playerbot_town.h`, `text.py` | Runtime ve LLM cevaplarında Lehçe kelime/kısaltma kalmaz; `BK` görünür |
+| DONE | Item bonus ve özellik özeti | `AnswerPlayerBotInventoryQuestion`, `DescribePlayerBotItem` | İsim, refine, stack ve bonus tip/değeri Türkçe kısa cevapta görünür |
 | DONE | 9B bellek araştırması | Ollama GPU ölçümü, Docker stats | Model GPU'da; vmmem artışı WSL cache olarak ayrıştırıldı |
 | DONE | Docker staging/build prosedürü | `prepare-context.sh`, staged game context | Kaynak değişince staged dosya hash'leri kontrol edilir |
 
