@@ -132,13 +132,20 @@ namespace
 		return formatted;
 	}
 
+	DWORD RoundPlayerBotTradePrice(DWORD price)
+	{
+		if (price > 1000 && price < 10000)
+			return ((price + 500) / 1000) * 1000;
+		return price;
+	}
+
 	void RememberPlayerBotPendingBuy(LPCHARACTER player, LPCHARACTER bot, DWORD price)
 	{
 		if (!player || !bot)
 			return;
 		TPlayerBotPendingTrade pending;
 		pending.bot = bot;
-		pending.price = price;
+		pending.price = RoundPlayerBotTradePrice(price);
 		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = true;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
@@ -392,6 +399,46 @@ namespace
 		return strcmp(acronym, foldedQuery) == 0;
 	}
 
+	size_t PlayerBotItemNameMatchScore(LPITEM item, const char* foldedQuery)
+	{
+		if (!item || !item->GetProto() || !foldedQuery || !*foldedQuery)
+			return (size_t)-1;
+		if (PlayerBotItemNameMatches(item, foldedQuery))
+			return 0;
+		const size_t queryLength = strlen(foldedQuery);
+		if (queryLength < PLAYERBOT_TRADE_QUERY_MIN)
+			return (size_t)-1;
+		char foldedName[128];
+		FoldPlayerBotChatText(item->GetProto()->szLocaleName, foldedName,
+				sizeof(foldedName));
+		const size_t nameLength = strlen(foldedName);
+		if (nameLength == 0)
+			return (size_t)-1;
+		size_t previous[128];
+		size_t current[128];
+		if (queryLength >= sizeof(previous) || nameLength >= sizeof(previous))
+			return (size_t)-1;
+		for (size_t j = 0; j <= queryLength; ++j)
+			previous[j] = j;
+		for (size_t i = 1; i <= nameLength; ++i)
+		{
+			current[0] = i;
+			for (size_t j = 1; j <= queryLength; ++j)
+			{
+				const size_t substitution = previous[j - 1] +
+						(foldedName[i - 1] == foldedQuery[j - 1] ? 0 : 1);
+				current[j] = std::min(std::min(previous[j] + 1, current[j - 1] + 1),
+						substitution);
+			}
+			for (size_t j = 0; j <= queryLength; ++j)
+				previous[j] = current[j];
+		}
+		const size_t maxDistance = std::min<size_t>(4,
+				std::max<size_t>(1, queryLength / 4));
+		return previous[queryLength] <= maxDistance
+				? previous[queryLength] : (size_t)-1;
+	}
+
 	enum EPlayerBotTradeVerb
 	{
 		PLAYERBOT_TRADE_NONE,
@@ -551,6 +598,7 @@ namespace
 		bool bestEquipped = false;
 		WORD bestCell = 0;
 		long long bestDistance = -1;
+		size_t bestMatchScore = (size_t)-1;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end(); ++it)
 		{
@@ -563,19 +611,22 @@ namespace
 				LPITEM item = bot->GetInventoryItem(cell);
 				if (!item)
 					continue;
-				const bool match = book
-						? (item->GetType() == ITEM_SKILLBOOK &&
+				const size_t matchScore = book
+						? ((item->GetType() == ITEM_SKILLBOOK &&
 							GetPlayerBotSkillBookSkillVnum(item) == skillVnum)
-						: PlayerBotItemNameMatches(item, query);
-				if (!match)
+								? 0 : (size_t)-1)
+						: PlayerBotItemNameMatchScore(item, query);
+				if (matchScore == (size_t)-1)
 					continue;
 				const long long distance = bot->GetMapIndex() == player->GetMapIndex()
 						? (long long)DISTANCE_APPROX(player->GetX() - bot->GetX(),
 								player->GetY() - bot->GetY())
 						: 1000000LL + (long long)bot->GetMapIndex();
-				if (bestDistance < 0 || distance < bestDistance)
+				if (bestDistance < 0 || matchScore < bestMatchScore ||
+						(matchScore == bestMatchScore && distance < bestDistance))
 				{
 					bestDistance = distance;
+					bestMatchScore = matchScore;
 					bestSeller = bot;
 					bestItem = item;
 					bestEquipped = item->IsEquipped();
@@ -603,7 +654,7 @@ namespace
 		TPlayerBotPendingTrade pending;
 		pending.bot = bestSeller;
 		pending.cell = bestCell;
-		pending.price = (DWORD)totalPrice;
+		pending.price = RoundPlayerBotTradePrice((DWORD)totalPrice);
 		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
@@ -627,6 +678,7 @@ namespace
 		const TPlayerBotShopOffer* bestOffer = NULL;
 		LPITEM bestItem = NULL;
 		long long bestDistance = -1;
+		size_t bestMatchScore = (size_t)-1;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end(); ++it)
 		{
@@ -641,19 +693,22 @@ namespace
 				LPITEM item = FindPlayerBotOfferItem(keeper, offer);
 				if (!item)
 					continue;
-				const bool match = book
-						? (item->GetType() == ITEM_SKILLBOOK &&
+				const size_t matchScore = book
+						? ((item->GetType() == ITEM_SKILLBOOK &&
 							GetPlayerBotSkillBookSkillVnum(item) == skillVnum)
-						: PlayerBotItemNameMatches(item, query);
-				if (!match)
+								? 0 : (size_t)-1)
+						: PlayerBotItemNameMatchScore(item, query);
+				if (matchScore == (size_t)-1)
 					continue;
 				const long long distance = keeper->GetMapIndex() == player->GetMapIndex()
 						? (long long)DISTANCE_APPROX(player->GetX() - keeper->GetX(),
 								player->GetY() - keeper->GetY())
 						: 1000000LL + (long long)keeper->GetMapIndex();
-				if (bestDistance < 0 || distance < bestDistance)
+				if (bestDistance < 0 || matchScore < bestMatchScore ||
+						(matchScore == bestMatchScore && distance < bestDistance))
 				{
 					bestDistance = distance;
+					bestMatchScore = matchScore;
 					bestKeeper = keeper;
 					bestOffer = &offer;
 					bestItem = item;
@@ -679,7 +734,7 @@ namespace
 		TPlayerBotPendingTrade pending;
 		pending.bot = bestKeeper;
 		pending.cell = inventoryCell;
-		pending.price = std::max<DWORD>(1, bestOffer->dwPrice);
+		pending.price = RoundPlayerBotTradePrice(std::max<DWORD>(1, bestOffer->dwPrice));
 		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
@@ -821,8 +876,9 @@ namespace
 				GetPlayerBotVnumSaleValue(wantedVnum, dwNow));
 		const DWORD marketOffer = std::max<DWORD>(1, basePrice * 80 / 100);
 		const DWORD playerPrice = ParsePlayerBotChatPrice(text);
-		const DWORD offerPrice = playerPrice != 0 && playerPrice < marketOffer
-				? playerPrice : marketOffer;
+		const DWORD offerPrice = RoundPlayerBotTradePrice(
+				playerPrice != 0 && playerPrice < marketOffer
+						? playerPrice : marketOffer);
 		int offersSent = 0;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end() && offersSent < 3; ++it)
@@ -1082,6 +1138,10 @@ namespace
 		if (strlen(folded) < PLAYERBOT_TRADE_QUERY_MIN)
 			return false;
 
+		LPCHARACTER matchedBot = NULL;
+		LPITEM matchedItem = NULL;
+		WORD matchedCell = 0;
+		size_t matchedScore = (size_t)-1;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end(); ++it)
 		{
@@ -1091,8 +1151,22 @@ namespace
 			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
 			{
 				LPITEM item = bot->GetInventoryItem(cell);
-				if (!item || item->IsEquipped() || !PlayerBotItemNameMatches(item, folded))
+				if (!item || item->IsEquipped())
 					continue;
+				const size_t score = PlayerBotItemNameMatchScore(item, folded);
+				if (score == (size_t)-1 || score >= matchedScore)
+					continue;
+				matchedBot = bot;
+				matchedItem = item;
+				matchedCell = cell;
+				matchedScore = score;
+			}
+		}
+		if (matchedBot && matchedItem)
+		{
+				const LPCHARACTER bot = matchedBot;
+				const LPITEM item = matchedItem;
+				const WORD cell = matchedCell;
 				const DWORD basePrice = std::max<DWORD>(1,
 						GetPlayerBotShopAskingPrice(item));
 				const unsigned long long totalPrice =
@@ -1102,7 +1176,7 @@ namespace
 				TPlayerBotPendingTrade pending;
 				pending.bot = bot;
 				pending.cell = cell;
-				pending.price = (DWORD)totalPrice;
+				pending.price = RoundPlayerBotTradePrice((DWORD)totalPrice);
 				pending.expires = get_dword_time() + 120000;
 				pending.botBuys = false;
 				s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
@@ -1114,7 +1188,6 @@ namespace
 						itemDetails.c_str(), priceText.c_str());
 				SendPlayerBotWhisper(bot, player, reply);
 				return true;
-			}
 		}
 		return false;
 	}

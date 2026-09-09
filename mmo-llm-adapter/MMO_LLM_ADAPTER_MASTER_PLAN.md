@@ -490,3 +490,13 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
   - `2000000` -> `2M`
 - Native exchange'e gönderilen gerçek yang değeri değiştirilmedi; yalnızca chat
   metni kısaltılıyor.
+
+## GÜNCELLEME — 2026-09-09: Item typo eşleştirme ve küçük fiyat yuvarlama
+
+- Item aramalarında önce tam/alias eşleşmesi, sonra sınırlı Levenshtein benzerliği
+  kullanılıyor. Örneğin `sus eysasi`, envanterdeki `sus esyasi` adına otomatik
+  olarak eşleşiyor; birden fazla adayda en yakın isim seçiliyor.
+- Aynı yakın isim mantığı shout, pazar ve PM fiyat sorgularında kullanılıyor.
+- `1000 < fiyat < 10000` aralığındaki fiyatlar gerçek trade fiyatı dahil en yakın
+  binliğe yuvarlanıyor: `9500 -> 10000`, `7350 -> 7000`.
+- `1k` altı ve `10k` üzeri fiyatların mevcut değerleri korunuyor.
