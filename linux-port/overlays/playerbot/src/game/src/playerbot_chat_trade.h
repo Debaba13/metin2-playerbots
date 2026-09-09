@@ -249,6 +249,45 @@ namespace
 				bot->GetPlayerID(), bot->GetName(), to->GetName(), text);
 	}
 
+	void SendPlayerBotItemList(LPCHARACTER bot, LPCHARACTER player,
+			const char* label, const std::string& items)
+	{
+		if (items.empty())
+		{
+			char reply[CHAT_MAX_LEN + 1];
+			FormatPlayerBotText(reply, sizeof(reply), "", "%s yok", label);
+			SendPlayerBotWhisper(bot, player, reply);
+			return;
+		}
+		size_t start = 0;
+		bool first = true;
+		while (start < items.size())
+		{
+			const char* prefix = first ? label : "  devam: ";
+			const size_t available = CHAT_MAX_LEN - strlen(prefix) - 1;
+			size_t end = std::min(items.size(), start + available);
+			if (end < items.size())
+			{
+				const size_t split = items.rfind(',', end);
+				if (split > start)
+					end = split;
+			}
+			while (end > start && items[end - 1] == ' ')
+				--end;
+			if (end == start)
+				end = std::min(items.size(), start + available);
+			char reply[CHAT_MAX_LEN + 1];
+			FormatPlayerBotText(reply, sizeof(reply), "", "%s%s",
+					prefix, items.substr(start, end - start).c_str());
+			SendPlayerBotWhisper(bot, player, reply);
+			start = end;
+			while (start < items.size() &&
+					(items[start] == ',' || items[start] == ' '))
+				++start;
+			first = false;
+		}
+	}
+
 	// A line on the world channel in the bot's name, within the two throttles.
 	bool ShoutPlayerBotTrade(LPCHARACTER bot, const char* text, DWORD dwNow)
 	{
@@ -433,8 +472,8 @@ namespace
 			for (size_t j = 0; j <= queryLength; ++j)
 				previous[j] = current[j];
 		}
-		const size_t maxDistance = std::min<size_t>(4,
-				std::max<size_t>(1, queryLength / 4));
+		const size_t maxDistance = std::min<size_t>(6,
+				std::max<size_t>(2, queryLength / 2));
 		return previous[queryLength] <= maxDistance
 				? previous[queryLength] : (size_t)-1;
 	}
@@ -1059,7 +1098,7 @@ namespace
 			}
 		}
 		int listed = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM && listed < 8; ++cell)
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
 		{
 			LPITEM item = bot->GetInventoryItem(cell);
 			if (!item || item->IsEquipped() || !item->GetProto())
@@ -1069,12 +1108,10 @@ namespace
 			carried += DescribePlayerBotItemName(item);
 			++listed;
 		}
-		char reply[CHAT_MAX_LEN + 1];
-		FormatPlayerBotText(reply, sizeof(reply), "",
-				"Ustumde: %s. Cantada: %s",
-				equipped.empty() ? "yok" : equipped.c_str(),
-				carried.empty() ? "yok" : carried.c_str());
-		SendPlayerBotWhisper(bot, player, reply);
+		SendPlayerBotItemList(bot, player, "Ustumde: ",
+				equipped.empty() ? "yok" : equipped);
+		SendPlayerBotItemList(bot, player, "Cantada: ",
+				carried.empty() ? "yok" : carried);
 		return true;
 	}
 

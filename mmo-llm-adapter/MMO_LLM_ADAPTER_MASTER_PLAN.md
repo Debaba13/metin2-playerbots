@@ -500,3 +500,13 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
 - `1000 < fiyat < 10000` aralığındaki fiyatlar gerçek trade fiyatı dahil en yakın
   binliğe yuvarlanıyor: `9500 -> 10000`, `7350 -> 7000`.
 - `1k` altı ve `10k` üzeri fiyatların mevcut değerleri korunuyor.
+
+## GÜNCELLEME — 2026-09-09: Daha toleranslı typo ve tam envanter cevabı
+
+- Fuzzy item eşleştirme toleransı artırıldı; `kilc -> kilici/kilic` ve
+  `krmzi iskr -> kirmizi iksiri` gibi eksik harfli yazımlar envanterdeki en yakın
+  ada göre eşleştiriliyor.
+- Envanter özeti artık ilk birkaç itemle sınırlı değil; tüm taşınan itemler
+  gösteriliyor.
+- Uzun envanter cevapları chat sınırına göre virgül noktalarından bölünüp
+  `Ustumde`, `Cantada` ve devam mesajları olarak eksiksiz gönderiliyor.
