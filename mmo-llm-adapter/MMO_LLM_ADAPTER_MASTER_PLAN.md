@@ -530,3 +530,19 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
   gösteriliyor.
 - Uzun envanter cevapları chat sınırına göre virgül noktalarından bölünüp
   `Ustumde`, `Cantada` ve devam mesajları olarak eksiksiz gönderiliyor.
+
+## GÜNCELLEME — 2026-09-10: Plug-and-play adapter seam ve pending trade temizligi
+
+- Private shop tabelalarinin Lehce sabitleri upstream ile ortak olan
+  `playerbot_town.h` icinden cikartildi.
+- Yeni `playerbot_llm_shop.h`, Turkce shop prefix/template/market cry
+  uretimini tasiyor; `playerbot_town.h` yalnizca tek bir
+  `BuildPlayerBotTurkishShopSign(...)` hook'u cagiriyor.
+- Pending trade kayitlari artik bot PID'sini tutuyor ve her tick'te timeout,
+  oyuncu logout, bot logout veya teklif edilen itemin tasinmasi/equip edilmesi
+  durumlarinda temizleniyor.
+- Bu degisiklik Faz 1'in pending state yasam dongusu maddesini ilerletir ve
+  upstream sync sonrasi uzun adapter mantiginin tekrar ortak dosyaya gomulmesini
+  engeller.
+- Cache'siz game build ve force-recreate sonrasi game container `healthy`
+  olarak dogrulandi; canlı status dosyasi Turkce cikti uretiyor.
