@@ -93,6 +93,7 @@ STACK_DIR="${M2_UPDATE_STACK_DIR:-/opt/metin2/stack}"
 CACHE_DIR="${M2_UPDATE_CACHE_DIR:-/var/cache/m2src}"
 REPO_DIR="${M2_UPDATE_REPO_DIR:-$CACHE_DIR/repo}"
 BRANCH="${M2_UPDATE_BRANCH:-main}"
+REPO_URL="${M2_UPDATE_REPO_URL:-https://github.com/Debaba13/metin2-playerbots.git}"
 
 POLL="${M2_UPDATE_POLL:-5}"
 # A ceiling on each long step, so that a build which has genuinely wedged is
@@ -257,6 +258,11 @@ do_update() {
     step "getting the newest version of the project"
     _before=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo none)
     _patch_before=$(patch_sum)
+    if ! run git -C "$REPO_DIR" remote set-url origin "$REPO_URL"; then
+        fail "the project checkout has no usable origin remote"
+        return 1
+    fi
+    note "   remote    $REPO_URL"
     if ! run git -C "$REPO_DIR" fetch --depth 1 origin "$BRANCH"; then
         fail "the project could not be fetched -- no internet, or GitHub is unreachable"
         return 1

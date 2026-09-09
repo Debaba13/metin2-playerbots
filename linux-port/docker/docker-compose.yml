@@ -366,6 +366,7 @@ services:
       # else about the panel changes. The panel's own patch-log page explains
       # this in the operator's language, including what GitHub gets to see.
       M2PANEL_UPDATE_CHECK: "${M2_UPDATE_CHECK:-1}"
+      M2PANEL_UPDATE_URL: "${M2PANEL_UPDATE_URL:-https://raw.githubusercontent.com/Debaba13/metin2-playerbots/main}"
 
       # Whether the panel may offer a button that installs an update. Off, and
       # meant to stay off on anything with a public address: see UPDATING.md.
@@ -712,7 +713,7 @@ services:
       # server it is actually looking at rather than "nieustawiona".
       # The default is bumped with every release, so a world nobody has
       # configured still reports the version it is actually running.
-      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-1.30.38}"
+      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-1.31.2}"
       TZ: "${M2_TZ:-UTC}"
     ports:
       # 7790 outside: 7789 is the browser bridge's port in this stack.
@@ -792,12 +793,13 @@ services:
 
     environment:
       M2_UPDATE_SPOOL: "/opt/m2update"
-      # Where the installed stack is -- the directory holding this file.
+      # Where the installed stack is inside the updater container.
       M2_UPDATE_STACK_DIR: "${M2_UPDATE_STACK_DIR:-/opt/metin2/stack}"
-      # Where install.sh put the source cache and the git checkout inside it.
+      # Where the source cache lives inside the updater container.
       M2_UPDATE_CACHE_DIR: "${M2_UPDATE_CACHE_DIR:-/var/cache/m2src}"
       M2_UPDATE_REPO_DIR: "${M2_UPDATE_REPO_DIR:-/var/cache/m2src/repo}"
       M2_UPDATE_BRANCH: "${M2_UPDATE_BRANCH:-main}"
+      M2_UPDATE_REPO_URL: "${M2_UPDATE_REPO_URL:-https://github.com/Debaba13/metin2-playerbots.git}"
       TZ: "${M2_TZ:-UTC}"
 
     volumes:
@@ -810,9 +812,10 @@ services:
       # it is confined to this service on purpose. Read UPDATING.md.
       - /var/run/docker.sock:/var/run/docker.sock
 
-      # Same path inside as outside -- see above.
-      - "${M2_UPDATE_STACK_DIR:-/opt/metin2/stack}:${M2_UPDATE_STACK_DIR:-/opt/metin2/stack}"
-      - "${M2_UPDATE_CACHE_DIR:-/var/cache/m2src}:${M2_UPDATE_CACHE_DIR:-/var/cache/m2src}"
+      # The host side is configurable separately so Docker Desktop can mount a
+      # Windows checkout at the stable Linux path used by the updater script.
+      - "${M2_UPDATE_HOST_STACK_DIR:-/opt/metin2/stack}:${M2_UPDATE_STACK_DIR:-/opt/metin2/stack}"
+      - "${M2_UPDATE_HOST_CACHE_DIR:-/var/cache/m2src}:${M2_UPDATE_CACHE_DIR:-/var/cache/m2src}"
 
     # Not on `backend': it has no business talking to the database or the game,
     # and the only network it needs is the one out to the project's repository.

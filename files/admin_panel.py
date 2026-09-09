@@ -1635,7 +1635,7 @@ def _update_fetch(url, limit):
         # Honest about who is calling. GitHub sees this, and so would anyone
         # else the operator points M2PANEL_UPDATE_URL at.
         "User-Agent": "metin2-panel/%s (+%s)" % (PANEL_VERSION or "unknown",
-                                                 "https://github.com/TieruYT/"
+                                                 "https://github.com/Debaba13/"
                                                  "metin2-playerbots"),
         "Accept": "text/plain",
     })
