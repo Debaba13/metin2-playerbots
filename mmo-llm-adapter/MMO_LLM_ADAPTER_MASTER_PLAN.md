@@ -458,3 +458,11 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
   Aynı anda `PLAYERBOT_INPUT`, `PLAYERBOT_TRADE` ve `PLAYERBOT_SHOP` logları
   izlenecek; pazar açılmıyorsa uygunluk ve 20 dakikalık bot shout throttling'i
   ayrıştırılacak.
+
+## GÜNCELLEME — 2026-09-09: Item cevaplarının kapsamı
+
+- `ustumde ne var`/`ustundeki` cevapları artık yalnızca item adı, refine seviyesi
+  ve stack miktarını gösteriyor; bonuslar listeyi doldurmuyor.
+- Fiyat sorularında item adı, refine, stack ve mevcut bonuslar birlikte gösteriliyor.
+- Bilinmeyen bonus türlerinde görünen genel `bonus` etiketi yalnızca fiyat
+  detayında kullanılacak; envanter özeti artık bu etiketi üretmiyor.

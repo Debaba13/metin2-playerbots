@@ -906,7 +906,7 @@ namespace
 		}
 	}
 
-	std::string DescribePlayerBotItem(LPITEM item)
+	std::string DescribePlayerBotItemName(LPITEM item)
 	{
 		if (!item || !item->GetProto())
 			return "yok";
@@ -923,6 +923,15 @@ namespace
 			snprintf(part, sizeof(part), " x%u", (unsigned int)item->GetCount());
 			result += part;
 		}
+		return result;
+	}
+
+	std::string DescribePlayerBotItem(LPITEM item)
+	{
+		std::string result = DescribePlayerBotItemName(item);
+		if (!item || !item->GetProto())
+			return result;
+		char part[96];
 		int listed = 0;
 		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM && listed < 4; ++i)
 		{
@@ -957,7 +966,7 @@ namespace
 			{
 				if (!equipped.empty())
 					equipped += ", ";
-				equipped += DescribePlayerBotItem(item);
+				equipped += DescribePlayerBotItemName(item);
 			}
 		}
 		int listed = 0;
@@ -968,7 +977,7 @@ namespace
 				continue;
 			if (!carried.empty())
 				carried += ", ";
-			carried += DescribePlayerBotItem(item);
+			carried += DescribePlayerBotItemName(item);
 			++listed;
 		}
 		char reply[CHAT_MAX_LEN + 1];
@@ -1065,10 +1074,10 @@ namespace
 				pending.botBuys = false;
 				s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 				char reply[CHAT_MAX_LEN + 1];
+				const std::string itemDetails = DescribePlayerBotItem(item);
 				FormatPlayerBotText(reply, sizeof(reply), "",
-						"%s x%u icin %u yang. Uygunsa tamam yaz, trade acayim",
-						item->GetProto()->szLocaleName,
-						std::max<DWORD>(1, item->GetCount()), pending.price);
+						"%s icin %u yang. Uygunsa tamam yaz, trade acayim",
+						itemDetails.c_str(), pending.price);
 				SendPlayerBotWhisper(bot, player, reply);
 				return true;
 			}
