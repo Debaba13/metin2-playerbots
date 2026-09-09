@@ -1,636 +1,361 @@
-# MMO LLM Adapter — Master Plan & Durum Raporu
+# MMO LLM Adapter — Normatif Calisma Sozlesmesi
 
-> **Bu dosya, projeye dahil olacak her AI asistanı (Claude, GPT, Antigravity, Copilot, vb.) için tek ve
-> güncel referans kaynağıdır.** Yeni bir oturuma başlamadan önce bu dosyayı baştan sona okuyun.
-> Mimari kararlar, tamamlanan işler, bilinen sorunlar ve bir sonraki adımlar burada tutulur.
-> Güncellemeler bu dosyaya eklenir, eski kararlar silinmez — üzerine "GÜNCELLEME" bölümleri eklenir.
+> Bu dosya, projeye katilan her AI ajani icin guncel ve normatif referanstir.
+> Oturuma baslamadan once tamamini okuyun. Tarihsel kararlar ve gunluk
+> gelismeler [CHANGELOG](./MMO_LLM_ADAPTER_CHANGELOG.md) dosyasindadir; bu
+> dosyaya gunluk not eklemeyin.
 
-**Son güncelleme:** 2026-09-09
-**Durum:** Adapter, C++ köprüsü, Türkçe etkileşim, yaklaşma ve deterministik trade akışı canlı olarak
-doğrulandı. Native PlayerBot davranışı temel otorite olmaya devam ediyor; LLM yalnızca sosyal etkileşim
-katmanında devreye giriyor. Kalan işler Bölüm 11'deki sıralı roadmap'e göre yürütülecek.
+**Kapsam:** `mmo-llm-adapter/` ve onun Metin2 game adapter seam'leri
+**Guncel durum:** Adapter, C++ koprusu, Turkce etkilesim, yaklasma ve
+deterministik trade akisi canli olarak dogrulandi. Native PlayerBots temel
+otoritedir; LLM yalnizca sosyal/niyet katmanidir.
+**Son normatif gozden gecirme:** 2026-09-10
 
----
+## 1. Okuma talimati ve net vizyon
 
-## 1. Proje Amacı
+Bu sozlesme su sirayla kullanilir:
 
-Metin2 sunucusu (`Metin2_Singleplayer_Server_r40250_FIXED_1.25.2`), [Debaba13/metin2-playerbots](https://github.com/Debaba13/metin2-playerbots)
-projesinin Türkçe lokalizasyonlu bir fork'unu kullanıyor (upstream: `TieruYT/metin2-playerbots`).
-PlayerBots sistemi zaten çok güçlü bir C++ bot motoru: pathfinding, savaş, ekonomi, quest, market vb.
-her şeyi deterministik olarak hallediyor.
+1. Kapsami ve dosya sahipligini belirle.
+2. Upstream seam'i ve ilgili engine/API varsayimlarini kontrol et.
+3. Degisikligi uygula; hedefli test ve dogrulamayi calistir.
+4. Teslim kaydini bu sozlesmenin formatinda ve tarihsel ayrintilari
+   [CHANGELOG](./MMO_LLM_ADAPTER_CHANGELOG.md) icinde tut.
 
-Hedef: Bu botlara **yerel bir LLM (local LLM) ile "zihin" eklemek** — ama PlayerBots'un yerini almadan,
-onu tamamlayan (complement eden), oyun-agnostik ve LLM-agnostik bir dış servis olarak.
+Vizyon: Metin2 PlayerBots'un deterministik reflekslerini bozmadan, herhangi
+bir PlayerBots-benzeri oyuna takilabilen, oyun-agnostik ve LLM-agnostik yerel
+bir sosyal zihin katmani kurmak.
 
-Kullanıcının orijinal isteği (özet):
-- Ayrı bir klasör, `playerbots`'un yanında (`mmo-llm-adapter/`).
-- Herhangi bir "playerbots benzeri" projeye plug-and-play bağlanabilen genel bir "MMO Adapter".
-- Yerel LLM değiştirilebilir olmalı (Ollama / LM Studio / vLLM arasında sorunsuz geçiş).
-- Botlar varsayılan olarak PlayerBots kontrolünde kalmalı; sadece **oyuncuyla doğrudan etkileşimde**
-  (fısıltı, parti, trade) LLM devreye girmeli, 2 dakika etkileşimsizlik sonrası PlayerBots'a geri dönmeli.
-- LLM devredeyken bile mümkün olduğunca PlayerBots'un altyapısını (follow, attack, buff, trade fonksiyonları) kullanmalı.
-- Model boyutu: 4B veya 7B arası, performans/kişilik dengesine göre karar verilecek.
-- Başlangıçta İngilizce + Türkçe desteklenecek, config'te tek satırla değişebilir, yeni dil eklemek
-  sadece yeni bir locale dosyası + bir satır config olmalı.
-- Ölçek: 300–800 bot arasında sunucu olabilir. Oyuncuya en yakın 30–50 bot "aktif dikkat balonu" (attention
-  bubble) içinde tutulacak, geri kalanlar dakikada bir toplu (macro pulse) güncelleme alacak — GPU'yu boğmadan.
+- Normal exp, fishing, quest, combat, follow, buff, ekonomi ve market akisi
+  PlayerBots C++ kontrolundedir.
+- Fisilti, yakin konusma, parti daveti/komutu ve trade gibi oyuncu etkilesimi
+  LLM katmanini tetikler.
+- Her etkilesim 120 saniyelik lease'i yeniler; parti liderligi aktifse lease
+  sona ermez. Sure dolunca bot nazikce native rutine doner.
+- Ollama, LM Studio, vLLM ve LocalAI degistirilebilir provider'lardir.
+- Baslangic dilleri `tr` ve `en`dir; yeni dil, locale dosyasi ve tek config
+  satiriyla eklenir.
+- 300-800 bot olceginde oyuncuya en yakin 30-50 bot attention bubble'da,
+  digerleri native tick'te, istege bagli 60 saniyelik macro pulse ile
+  calisir.
 
----
+## 2. Degismez mimari ilkeler
 
-## 2. Onaylanan Mimari
+### 2.1. Refleks ve zihin
 
-### 2.1. Çift Katman Felsefesi: "Refleks vs. Zihin"
-
-```
-STATE: AUTONOMOUS (PlayerBots C++)
-  - Normal rutin: exp, fishing, market, quest
-  - LLM hiç çağrılmıyor, sıfır GPU maliyeti
-        │
-        │  [Tetikleyici: Fısıltı / Yakın Konuşma / Parti Daveti / Trade]
-        ▼
-STATE: LLM_OVERRIDE (Zihin devrede)
-  - 120 saniyelik "leash" (kayış) zamanlayıcısı başlar
-  - Bot oyuncuyla doğal konuşur, PlayerBots primitiflerini
-    (follow, attack, buff, trade, stance) LLM tool-call'ları ile tetikler
-  - Her yeni etkileşim 120s sayacını sıfırlar
-  - Parti liderliği aktifse süre dolmaz
-        │
-        │  [120s doldu VE partide değil]
-        ▼
-STATE: RESUME_ROUTINE (Nazik geri dönüş)
-  - Bot vedalaşır (graceful farewell) veya sonraki işini söyler
-  - Kontrol PlanPlayerBotLongTermGoal'a geri döner
+```text
+AUTONOMOUS (PlayerBots C++)
+  normal rutin; LLM cagrisi yok
+        |
+        | whisper / yakin konusma / parti / trade
+        v
+LLM_OVERRIDE
+  120s lease; sohbet ve whitelist tool-call
+        |
+        | lease doldu ve parti liderligi yok
+        v
+RESUME_ROUTINE
+  farewell veya sonraki is; PlanPlayerBotLongTermGoal'a donus
 ```
 
-### 2.2. 3 Katmanlı Modüler Yapı
+LLM hareket, savas veya exchange'i dogrudan yurutmez. Yalnizca whitelist
+edilmis niyeti/tool cagrisini uretir; deterministik native fonksiyonlar
+uygular.
 
-```
-[ Game Server (Metin2 r40250, C++) ]
-                 ▲
-                 │  JSON over HTTP (localhost, non-blocking worker thread)
-                 ▼
-┌────────────────────────────────────────────────────────┐
-│               MMO LLM ADAPTER SERVICE (Python)          │
-├────────────────────────────────────────────────────────┤
-│ 1. Game Adapters (Pluggable)                            │
-│    ├── Metin2Bridge (bridges/metin2/)                    │
-│    └── (Gelecek: WoWBridge, L2Bridge, vb.)               │
-├────────────────────────────────────────────────────────┤
-│ 2. Core Agent Runtime (Oyun-agnostik)                    │
-│    ├── State machine (AUTONOMOUS <-> LLM_OVERRIDE)       │
-│    ├── Memory (kısa vadeli sohbet geçmişi)               │
-│    ├── Attention Bubble (30-50 en yakın bot)             │
-│    └── Tool schema (follow, attack, buff, trade, say...) │
-├────────────────────────────────────────────────────────┤
-│ 3. LLM Providers (Pluggable, OpenAI-uyumlu)              │
-│    └── Ollama / LM Studio / vLLM / LocalAI               │
-└────────────────────────────────────────────────────────┘
+### 2.2. Katmanlar
+
+```text
+Game Server (Metin2 r40250, C++)
+  <-> JSON over HTTP, localhost, non-blocking worker
+MMO LLM Adapter (Python)
+  1. Pluggable game adapters (Metin2Bridge, gelecek diger bridge'ler)
+  2. Oyun-agnostik runtime (state, memory, bubble, queue, tools)
+  3. Pluggable OpenAI-uyumlu/native LLM providers
 ```
 
-### 2.3. Lokalizasyon
+Oyun tick'i LLM cevabini beklemez. Worker request'i kuyruklar; tamamlanan
+cevaplar tick'te drain edilir. Adapter offline, timeout veya gecersiz cevap
+verirse bot aninda native PlayerBots davranisina doner ve bu durum acikca
+loglanir (zero-regression fallback).
 
-- `config.yaml` içinde tek satır: `language: "tr"` (veya `"en"`).
-- Her dil `locales/<kod>.yaml` dosyasında: prompt şablonları, kişilik/persona metinleri, jargon.
-- Yeni dil eklemek = yeni `locales/xx.yaml` dosyası + config'te bir satır değişikliği.
-- Türkçe karakterler ASCII güvenli tutulur (CP1250/ASCII chat paketlerini bozmamak için) — PlayerBots'un
-  mevcut `playerbot_language.h` yaklaşımıyla tutarlı.
+### 2.3. Lokalizasyon ve performans
 
-### 2.4. Attention Bubble / Macro Pulse
+- `config.yaml`: `language: "tr"` veya `"en"`.
+- `locales/<kod>.yaml`: prompt, persona ve jargon.
+- Oyuncuya giden metinler ASCII/CP1250 guvenli olmalidir.
+- Bubble onceligi: whisper > trade > party > yakin konusma > ambient.
+- Queue uzunlugu, duplicate event coalescing, timeout/cancellation ve
+  response high-water mark sinirli ve olculebilir olmalidir.
 
-- Oyuncuya en yakın 30–50 bot: aktif algı, öncelik kuyruğu (whisper > parti komutu > trade > yakın konuşma > ambient).
-- Diğer botlar: native C++ tick döngüsünde çalışmaya devam eder; adapter'dan dakikada bir (60s) toplu
-  "macro pulse" güncellemesi alabilirler (opsiyonel, ileride).
-
-### 2.5. C++ ↔ Python İletişimi
-
-- Seçilen yöntem: hafif, **non-blocking arka plan thread + POSIX socket tabanlı basit HTTP client** (C++ tarafı).
-- Oyun tick'i asla LLM cevabını beklemez; worker thread kuyruğa yazar, tick'te tamamlanan cevaplar drenajlanır (drain).
-- Adapter offline ise bot anında native PlayerBots davranışına geri düşer (zero-regression fallback).
-
----
-
-## 3. Klasör Yapısı (Uygulandı)
-
-```
-mmo-llm-adapter/
-├── config.yaml               # LLM endpoint, model, dil, handover TTL, bubble ayarları
-├── requirements.txt
-├── main.py                   # FastAPI servis giriş noktası
-├── run_adapter.bat           # Tek tık başlatıcı (.venv Python'unu kullanır)
-├── core/
-│   ├── agent.py              # PlayerBotAgent state machine (AUTONOMOUS <-> LLM_OVERRIDE, 120s TTL)
-│   ├── memory.py             # Sohbet geçmişi (AgentMemory)
-│   ├── bubble.py             # AttentionBubbleManager (30-50 en yakın bot, cooldown)
-│   └── tools.py              # PlayerBots'a eşlenen tool şemaları
-├── llm/
-│   ├── base.py                # Soyut LLM provider arayüzü
-│   ├── client.py               # OpenAI-uyumlu client (Ollama/LM Studio/vLLM)
-│   └── prompts.py              # PromptManager (persona + dil + bağlam birleştirme)
-├── locales/
-│   ├── en.yaml
-│   └── tr.yaml
-├── bridges/
-│   ├── base.py                 # Soyut oyun köprüsü arayüzü
-│   └── metin2/
-│       ├── connector.py        # Metin2Bridge: event alma, agent yönetimi, dispatch
-│       └── schemas.py          # Pydantic modelleri (Metin2EventRequest, ActionResponse, vb.)
-└── tests/                       # 32 test — hepsi geçiyor (bkz. Bölüm 5)
-```
-
-C++ tarafı (`linux-port/overlays/playerbot/src/game/src/`):
-- `playerbot_llm_bridge.h` **(yeni, henüz commit edilmedi)** — arka plan worker thread, JSON encode/decode,
-  basit socket HTTP client, `TPlayerBotLLMRequest` / `TPlayerBotLLMResponse` kuyrukları.
-- `playerbot_chat_trade.h` **(değiştirildi)** — trade dışı fısıltılar artık önce
-  `DispatchPlayerBotLLMWhisper()` çağırıyor; köprü uygun cevap veremezse eski native fallback mesajına düşüyor.
-- `playerbot_manager.cpp` **(değiştirildi)** — `CPlayerBotManager::Update()` içine
-  `UpdatePlayerBotLLMBridge(dwNow)` çağrısı eklendi (tamamlanan LLM cevaplarını her tick drenajlar).
-
----
-
-## 4. Uygulanan Endpoint'ler (main.py)
-
-| Endpoint | Açıklama |
-|---|---|
-| `GET /health` | Servis durumu, aktif dil, model adı, bubble/agent sayaçları |
-| `POST /v1/config/language` | Dili çalışırken değiştirir (`tr`/`en`) |
-| `POST /v1/metin2/event` | Ana giriş noktası: whisper/say event'i alır, agent'ı bulur/oluşturur, LLM'i çağırır, aksiyon döner |
-| `POST /v1/metin2/bubble` | Oyuncu konumunu senkronlar, en yakın 30-50 botu aktif bubble'a alır |
-| `GET /v1/agents/{pid}/state` | Bir botun bilişsel durumunu (state, lease, son sohbetler) inceleme |
-
-Arka planda `lease_sweeper_task` her 5 saniyede bir tüm agent'ları tarayıp 120s TTL'i dolanları
-`AUTONOMOUS`'a döndürüyor ve (varsa) vedalaşma mesajı üretiyor.
-
----
-
-## 5. Doğrulama Durumu (Bugüne Kadar Yapılanlar)
-
-1. **Birim testleri:** `pytest` ile `mmo-llm-adapter/tests/` içindeki 32 test **hepsi PASS**.
-   (`test_api_endpoints.py`, `test_bubble_priority.py`, `test_handover_state.py`, `test_locales.py`, `test_mock_llm.py`)
-2. **Servis canlı başlatma:** `run_adapter.bat` düzeltildi (artık `.venv\Scripts\python.exe` kullanıyor,
-   önceden sistem Python'unu çağırıp `uvicorn bulunamadı` hatası veriyordu — düzeltildi ve doğrulandı).
-3. **`/health` testi:** Gerçek çalışan serviste `curl`/`Invoke-RestMethod` ile test edildi, beklenen JSON döndü.
-4. **Uçtan uca `/v1/metin2/event` testi:** Gerçek bir whisper event'i gönderildi, adapter Ollama'ya
-   (`playerbot-4b` modeli) gerçek bir HTTP isteği attı (200 OK, ~11s), fakat **cevap boş döndü** (bkz. Bölüm 6).
-5. **Git durumu:** `mmo-llm-adapter/` klasörü henüz **untracked** (commit edilmemiş). C++ tarafındaki
-   3 dosya (`playerbot_llm_bridge.h` yeni, `playerbot_chat_trade.h` ve `playerbot_manager.cpp` değişti)
-   da henüz commit edilmemiş durumda — working tree'de bekliyor.
-6. **Lehçe temizliği ve deploy:** Native PlayerBot status, trade ve pazar çıktıları
-   Türkçeleştirildi; görünen `KU` kullanımları `BK` oldu ve parser uyumluluğu korundu.
-   LLM temizleyicisi `wyprzedaz`, `kupie`, `sprzedam`, `stragan` ve benzeri sızıntıları
-   Türkçeye dönüştürüyor. Staged game context hash'leri eşitlendi, game image yeniden
-   oluşturuldu ve container `healthy` durumunda doğrulandı.
-7. **Görünen kısaltmalar:** Oyuncuya gösterilen `PT` ifadeleri `grup`, `[PT]`
-   etiketi `[GRUP]`, `cel:` etiketi `hedef:` olarak güncellendi. Parser ve iç
-   lookup anahtarları geriye dönük uyumluluk için değiştirilmedi; yeni game image
-   yeniden oluşturulup `healthy` olarak deploy edildi.
-8. **Hedef etiketleri:** Genel hedef fallback'i `poziom` yerine `seviye kasma`
-   oldu; diğer hedef adları da doğrudan Türkçe ve anlaşılır hale getirildi.
-9. **Item detayları:** Envanter sorguları artık item adı, refine seviyesi, stack
-   adedi ve en fazla dört bonus tip/değerini kısa Türkçe özet olarak gösteriyor.
-   `özellikleri`, `bonusları`, `kalkan`, `yay`, `hançer`, `kılıç`, `kitap` ve
-   `kutsama` sorgu niyetleri eklendi; game image yeniden oluşturulup healthy deploy edildi.
-
----
-
-## 6. BİLİNEN SORUNLAR (Çözülmeden oyun içi canlı teste geçilmemeli)
-
-### 6.1. `playerbot-4b` modeli "thinking" modeli — boş cevap sorunu (ÇÖZÜLDÜ)
-
-**Belirti:** `/v1/metin2/event` gerçek bir istek gönderildiğinde adapter 200 OK dönüyor ama
-`primary_action`, `arguments` ve `speech_reply` hepsi boş/null geliyor.
-
-**Kök neden:** `ollama show playerbot-4b` çıktısı modelin `thinking` (Qwen3.5 tabanlı, akıl yürütme/
-reasoning) kapasitesine sahip olduğunu gösteriyor. Ollama'nın OpenAI-uyumlu
-`/v1/chat/completions` endpoint'ine yapılan çağrılarda model, verilen `max_tokens` bütçesinin **tamamını**
-`reasoning` alanına (iç düşünce süreci) harcıyor ve `content` alanı hep boş kalıyor:
-
-```
-"message": {
-    "content": "",
-    "reasoning": "Thinking Process:\n\n1. Analyze the Request...\n...",
-},
-"finish_reason": "length"
-```
-
-- `max_tokens: 200` (config.yaml varsayılanı) ile test edildi → boş content.
-- `max_tokens: 700` ile tekrar test edildi → hâlâ boş content, reasoning yarım kesilmiş halde bitti.
-- Ollama'nın native `/api/chat` endpoint'inde `think: false` parametresiyle test edildiğinde
-  **çalıştı ve gerçek bir Türkçe cevap üretti**:
-  ```
-  "content": "Selam! Şu an Kazanköyü civarında (Süper Orman girişinden hemen sonra) dolaşıyorum. Nereye uğrayacağın?"
-  ```
-  Bu istek `eval_count: 42` token'da bitti (200'den çok daha az) ve `done_reason: "stop"` ile temiz sonlandı.
-
-**Sonuç:** Sorun modelin kendisinde değil, **adapter'ın kullandığı OpenAI-uyumlu `/v1/chat/completions`
-endpoint'inin bu model için `think`/reasoning modunu kapatmıyor olmasında.** Ollama'nın native `/api/chat`
-endpoint'i + `think: false` parametresi ile aynı model doğru ve hızlı çalışıyor.
-
-**Uygulanan çözüm (bkz. `llm/client.py`):** Seçenek (b) uygulandı — `OllamaNativeProvider` adında
-ikinci bir provider eklendi, Ollama'nın native `/api/chat` endpoint'ini `think: false` ile çağırıyor
-ve aynı `parse_message_to_llm_response` mantığını (`llm/base.py`) OpenAI-uyumlu provider ile paylaşıyor.
-`config.yaml`'da `llm.provider: "ollama_native"` seçilirse aktif olur; `base_url` OpenAI-stili
-(`.../v1`) veya çıplak host olabilir, ikisi de kabul edilir. Varsayılan `openai_compatible` provider'a
-da opsiyonel `disable_thinking`/`think` alanı eklendi (bazı Ollama sürümleri OpenAI-uyumlu yolda da
-`think` alanını kabul edebiliyor diye), ama varsayılan `false` olduğu için mevcut Ollama/LM Studio/vLLM
-davranışı hiç değişmedi (payload'a `think` alanı hiç eklenmiyor — bkz.
-`tests/test_llm_client.py::test_openai_compatible_omits_think_by_default`). Testler:
-`tests/test_llm_client.py` (6 yeni test, httpx.MockTransport ile gerçek ağ çağrısı yapmadan).
-
-### 6.2. Önceki oturumdaki Git index bozulmaları (ÇÖZÜLDÜ, bilgi amaçlı)
-
-Antigravity Auto Accept eklentisi, repo'nun **dış** (üst) klasöründen (`C:\Metin2 Bot server`) çalıştırılırken
-Antigravity aksiyonlarını otomatik onaylıyordu; bu durum tekrar tekrar `.git\index` dosyasının 0 byte'a
-inmesine sebep oldu. Artık: Auto Accept devre dışı bırakıldı, çalışma doğrudan repo klasöründen yapılıyor,
-`.git\index` sağlıklı (227,784 byte). İki bozuk yedek dosya (`.git\index.corrupt-*`) silindi.
-
----
-
-## 7. Sıradaki Adımlar (Öncelik Sırasıyla)
-
-1. **[TAMAMLANDI]** Thinking-model boş cevap sorunu `ollama_native` + `think: false` ile çözüldü.
-2. **[TAMAMLANDI]** Adapter canlı event, Türkçe cevap, movement hold ve native trade akışı doğrulandı.
-3. **[TAMAMLANDI]** Pazar shout teklifinden `tamam` ile pazarı kapatıp birebir trade'e geçiş doğrulandı.
-4. Bir sonraki uygulanacak iş: **Bölüm 11.2 — Faz 1, Trade UX ve item/bonus anlatımı**.
-5. Sonraki bağımlı fazlar: exchange state güvenliği, LLM tool-call, attention bubble/queue,
-   provider-operasyon ve release/upstream senkronizasyonu.
-
-> Ayrıntılı görev sırası, fonksiyon yüzeyleri ve test kapıları için Bölüm 11 tek güncel roadmap'tir.
-
----
-
-## 8. Önceki Sohbetlerin Referans Özeti (Kronolojik)
-
-1. Kullanıcının fork'u analiz edildi: PlayerBots + Türkçe lokalizasyon overlay pattern'i (`playerbot_language.h`,
-   `PlayerBotText()`, ASCII-safe çeviri, overlay dosyaları tek anonymous namespace içinde sıralı include ediliyor).
-2. "MMO LLM Adapter" konsepti tartışıldı: Reflex (C++) vs Mind (LLM) ikili katman felsefesi kabul edildi.
-3. Kullanıcı karar verdi: Öncelik "A + biraz C" (sosyal etkileşim + yüksek seviye strateji), PlayerBots
-   kontrolü korunmalı, 120s handover, 30-50 attention bubble, dakikada bir macro pulse (opsiyonel),
-   TR+EN native destek + kolay dil ekleme.
-4. Mimari onaylandı, `implementation_plan.md` (Part 1: Adapter) yazıldı ve onaylandı.
-5. Adapter koda döküldü: `.venv` kuruldu, bağımlılıklar yüklendi, 16 test yazıldı ve geçti.
-6. `implementation_plan.md` (Part 2: C++ Bridge) yazıldı ve onaylandı; `playerbot_llm_bridge.h` ve
-   entegrasyon noktaları oluşturuldu.
-7. Kullanıcı elindeki GGUF modellerden `Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q6_K` önerildi (düşük
-   gecikme, düşük VRAM, "aggressive" ton Metin2 kültürüne uygun) → `ollama create playerbot-4b -f Modelfile`
-   ile Ollama'ya eklendi, `config.yaml`'da `model: "playerbot-4b"` olarak ayarlandı.
-8. Bu oturumda (farklı bir AI asistanı ile) canlı test yapıldı: adapter başlatıldı, testler tekrar
-   doğrulandı, gerçek bir whisper event'i gönderildi → **Bölüm 6.1'deki boş cevap sorunu keşfedildi.**
-
----
-
-## 9. Önemli Notlar / Kısıtlar
-
-- Bu ortamda bazı AI oturumları `C:\Metin2 Bot server` klasörüne yazma izni reddedebiliyor (araç/ortam
-  kısıtlaması). Eğer bir asistan yazamıyorsa, kullanıcıdan repo klasörünü doğrudan paylaşmasını/açmasını
-  istemeli, dış (üst) klasörden değil.
-- Antigravity Auto Accept eklentisi, repo dışından çalıştırıldığında Git index'i bozabiliyor — bu eklenti
-  repoklasörü dışında **kapalı tutulmalı**.
-- Tüm karakterler ASCII güvenli tutulmalı (Türkçe özel karakterler chat paketlerini bozabilir) —
-  PlayerBots'un mevcut kuralıyla tutarlı kalınmalı.
-
-## 10. Son Canli Trade Duzeltmeleri (9 Eylul 2026)
-
-- Oyuncu mesaji sonrasi bot yaklasma hold suresi milisaniye birimine uygun olarak 15 saniyeye
-  (`15000`) duzeltildi; uzak fiyat sorusu ve erken `tamam` onayi bot mesafeye girince tamamlanabiliyor.
-- Trade item eslestirmesine `kutsama`, `kagit`, `uzerinde` ve benzeri Turkce niyet kaliplari eklendi.
-- Fiyat, `GetPlayerBotShopAskingPrice()` algoritmasi uzerinden birim pazar fiyatinin %10 ustune
-  ve item stack miktariyla carpilarak hesaplanmaya baslandi.
-- Botun exchange tarafini kabul etmesi ve oyuncunun son kabul tikini yapmasi saglandi.
-- Pazar shout'ina cevap veren botun teklifi pending trade olarak tutuluyor; oyuncu
-  `tamam` dediginde bot pazari kapatip oyuncuya gelerek dogrudan trade aciyor.
-
----
-
-## 11. Güncel Durum ve Sıralı Roadmap
-
-Bu bölüm sonraki tüm uygulama oturumlarında öncelik sırası olarak kullanılmalıdır.
-Her faz, bir önceki fazın test kapısı geçmeden başlatılmamalıdır.
-
-### 11.0. Plug-and-play / upstream conflict kuralı
-
-LLM ve Turkce fork davranisi upstream'in aktif gelistirdigi buyuk
-`playerbot_*.h` dosyalarinin govdesine gomulmemelidir. Upstream pull sonrasi
-otomatik merge'i korumak icin:
-
-- Ozel mantik yeni `playerbot_llm_*.h` adapter fragmentlerine tasinir.
-- Upstream dosyasinda yalnizca include ve sabit imzali tek hook cagrisi kalir.
-- Pazar tabelasi metinleri bu nedenle `playerbot_llm_shop.h` icindedir;
-  `playerbot_town.h` yalnizca `BuildPlayerBotTurkishShopSign(...)` cagirir.
-- `playerbot_status.h` ve `playerbot_chat_trade.h` seam wrapper olarak kalir.
-- Yeni adapter dosyalari `playerbot_*.h` wildcard'i ile staged game context'e
-  otomatik kopyalanir; ayri dosya listesi eklenmez.
-- Upstream dosyasinda davranis degisikligi gerekiyorsa once adapter seam'i
-  tasarla; dogrudan upstream fonksiyonuna uzun bir hunk ekleme.
-
-Bu kural, upstream merge conflict'ini tamamen teorik olarak yok etmez; ancak
-aktif upstream dosyasindaki degisiklik alanini include/hook satirlarina indirir.
-Adapter mantigi ve dil sabitleri upstream'de bulunmayan yeni dosyalarda tutulur.
-
-### 11.0.1. Steril ana repo ve adapter sahipligi
-
-Bu proje icin kalici hedef sudur:
+## 3. Dosya sahipligi ve upstream seam sozlesmesi
 
 ```text
 upstream playerbot dosyalari
         |
-        |  minimal, sabit seam (include + tek hook)
+        | minimal, sabit seam (include + tek hook)
         v
 playerbot_llm_*.h / playerbot_llm_*.cpp
         ^
         |
-mmo-llm-adapter/  (Python servis, locale, prompt, provider)
+mmo-llm-adapter/ (Python servis, locale, prompt, provider)
 ```
 
-AI asistanlari yeni LLM, Turkce, sosyal, pazar veya trade davranisini once
-adapter tarafinda yazmalidir. Ana PlayerBot mantigi upstream'e yakin ve steril
-kalmalidir.
+### 3.1. Sahipler
 
-#### Dosya sahipligi
-
-- `mmo-llm-adapter/`: LLM servisinin tek sahibi. Provider, prompt, locale,
-  agent state machine, queue ve adapter testleri burada tutulur.
+- `mmo-llm-adapter/`: provider, prompt, locale, agent state machine,
+  queue, bridge ve adapter testlerinin tek sahibi.
 - `linux-port/overlays/playerbot/src/game/src/playerbot_llm_*.h/.cpp`:
-  game tarafindaki fork/LLM adapter fragmentleri. Dil sabitleri, shop sign
-  uretimi, LLM bridge, chat/trade sosyal katmani ve adapter'a ozel state burada
-  tutulur.
+  game tarafindaki LLM/fork fragmentleri; bridge, sosyal katman, dil ve
+  adapter'a ozel state burada.
 - `playerbot_manager.cpp`, `playerbot_town.h`, `playerbot_status.h`,
   `playerbot_chat_trade.h`: upstream'e yakin ana dosyalar. Yalnizca zorunlu
   include, forward declaration veya tek satirlik sabit hook kalabilir.
-- `linux-port/overlays/playerbot/patches/`: engine patch mekanizmasidir;
+- `linux-port/overlays/playerbot/patches/`: engine patch mekanizmasi;
   LLM davranisi buraya konmaz.
 
-#### Yasakli degisiklikler
+### 3.2. MUST kurallari
 
-Asagidaki degisiklikler adapter seam olmadan yapilmaz:
+Her ajan:
 
-1. Upstream `playerbot_*.h` fonksiyonunun icine uzun Turkce/LLM/trade mantigi
-   eklemek.
-2. Shop title, market cry, status veya chat metnini ana dosyada yeni sabit
-   dizi olarak tutmak.
-3. Ayni davranisi hem upstream fonksiyonunda hem adapter fragmentinde iki kez
-   uygulamak.
-4. Bir adapter dosyasini `prepare-context.sh`, Makefile veya update listesine
-   tek tek eklemek. `playerbot_*.h/.cpp` wildcard'i tek kaynak olmaya devam
-   etmelidir.
-5. Upstream dosyasini fork'a ait davranisla yeniden formatlamak veya buyuk
-   bolumlerini tasimak.
+1. Davranisin sahibini (adapter, game fragmenti veya gercek upstream motoru)
+   degisiklikten once siniflandirmalidir.
+2. Ozel game mantigini `playerbot_llm_<alan>.h/.cpp` dosyasina koymali;
+   include siralamasini dependency order olarak korumalidir.
+3. Upstream dosyasinda en kucuk seam'i (tercihen include + tek sabit
+   imzali hook) birakmalidir.
+4. Yeni fragmentlerin `playerbot_*.h/.cpp` wildcard'i ile staged context'e
+   girdigini kontrol etmelidir; ayri dosya listesi olusturmamalidir.
+5. Upstream sync'i ayri branch/staging context'te yapmali, upstream diff'ini
+   incelemeli ve uzun hunk'lari seam'e tasimalidir.
+6. Adapter offline/timeout, gecersiz PID/map/mesafe/state, exchange ownership
+   ve fiyat sinirlarini acik sonuc kodlariyla ele almalidir.
+7. Degisiklik sonrasi hedefli test, staged/build kontrolu ve bu dosyanin
+   teslim formatini tamamlamalidir.
 
-#### Yeni ozellik ekleme protokolu
+### 3.3. DO NOT kurallari
 
-Her AI su sirayi izlemelidir:
+- Upstream `playerbot_*.h` icine uzun Turkce/LLM/trade mantigi ekleme.
+- Shop title, market cry, status veya chat metnini ana dosyada yeni sabit
+  dizilere koyma.
+- Ayni davranisi upstream ve adapter fragmentinde iki kez uygulama.
+- Fragmenti `prepare-context.sh`, Makefile veya update listesine tek tek
+  kaydetme; wildcard tek kaynaktir.
+- Upstream dosyasini fork davranisiyla yeniden formatlama veya buyuk bolum
+  tasima.
+- LLM'ye dogrudan item, yang veya exchange API'si verme.
+- Deterministik native trade, movement veya combat kararini LLM'ye devretme.
+- Test edilmemis canlı basari, gecmis olay veya gecici workaround'u normatif
+  durum gibi yazma; tarihsel bilgi changelog'a gider.
 
-1. Davranisin sahibi `mmo-llm-adapter/` mi, game adapter fragmenti mi, yoksa
-   gercekten upstream motoru mu diye siniflandir.
-2. Game tarafinda yeni bir `playerbot_llm_<alan>.h` dosyasi olustur.
-3. Gerekli upstream baglantisini ana dosyada en kucuk seam ile yap:
-   once include + tek sabit imzali hook dene.
-4. Adapter fragmentini manager'in include siralamasinda bagimlilik sirasina
-   yerlestir; fragmentler tek translation unit oldugu icin include order
-   dependency order'dir.
-5. Yeni dosyanin otomatik staged context'e girdigini wildcard ile kontrol et.
-6. Ana dosyanin diff'ini kontrol et: yeni davranis buyuk bir hunk olarak
-   gorunuyorsa refactor tamamlanmis sayilmaz.
+## 4. Sistem akis ve guvenlik sinirlari
 
-#### Upstream sync protokolu
-
-1. `git fetch upstream` ve merge'i ayri bir branch/staging context'te yap.
-2. Conflict cikarsa adapter mantigini upstream dosyasina geri yapistirma.
-   Once seam dosyasini ve include/hook satirini yeniden kur.
-3. `git diff --stat upstream/main...HEAD` ile upstream dosyalarindaki degisim
-   alanini kontrol et; uzun farklar adapter'a tasinmalidir.
-4. `prepare-context.sh` sonrasinda overlay ve staged dosya hash'lerini
-   karsilastir.
-5. `docker compose build --no-cache game` ve hedefli adapter testlerini calistir.
-6. Game container healthy olduktan sonra canli status/shop smoke testi yap.
-7. Commitleri alanlara ayir: adapter, minimal seam, test/dokumantasyon.
-
-#### Her AI oturumu icin zorunlu cikti
-
-AI, kod degisikliginden sonra master plana veya ilgili guncelleme bolumune
-sunlari yazmalidir:
-
-- hangi yeni adapter fragmentinin kullanildigi,
-- ana upstream dosyasinda kalan seam'in ne oldugu,
-- upstream sync'te neden conflict cikarmayacagi,
-- staged/build/test sonucunun ne oldugu.
-
-### 11.1. Tamamlanan ve korunacak temel sistemler
-
-| Durum | Sistem | Uygulanan yüzeyler | Kabul kriteri |
-|---|---|---|---|
-| DONE | Türkçe PlayerBot görünür metinleri | `playerbot_status.h`, `playerbot_language.h` | Runtime status ve shout metinleri ASCII Türkçe |
-| DONE | Pazar alias ve kısa adları | `playerbot_chat_trade.h` | `BK`, `KDP`, `GBY`, `SYH`, `DOLU`, `kutsama`, `kagit` eşleşir |
-| DONE | Native trade parser | `ParsePlayerBotTradeText`, pending trade map | Shout/whisper niyeti deterministik ayrılır |
-| DONE | Uzak bot yaklaşması | `HoldPlayerBotForPlayerMessage`, manager update | Bot yaklaşık 10 m'ye gelir, 15 s hold yenilenir |
-| DONE | Fiyat sorusu ve erken onay | deferred price/confirmation helpers | Uzak botta `fiyat` ve `tamam` kaybolmaz |
-| DONE | Pazar shout -> birebir trade | `AnswerPlayerBotBuyShout`, `OpenPlayerBotPendingTrade` | Bot pazarı kapatır, oyuncuya gelir, trade açar |
-| DONE | Stack ve fiyat hesabı | `GetPlayerBotShopAskingPrice` + %10 satıcı marjı | Tüm stack tek toplam fiyatla koyulur |
-| DONE | Exchange yönü | bot `Accept(true)`, oyuncu son onay | Bot item/yang koyar ve kendi tarafını kabul eder |
-| DONE | LLM Türkçe cevap katmanı | `prompts.py`, `agent.py`, `text.py` | Kısa ASCII Türkçe, artifact temizliği, native Ollama |
-| DONE | Lehçe çıktı temizliği | `playerbot_status.h`, `playerbot_chat_trade.h`, `playerbot_town.h`, `text.py` | Runtime ve LLM cevaplarında Lehçe kelime/kısaltma kalmaz; `BK` görünür |
-| DONE | Item bonus ve özellik özeti | `AnswerPlayerBotInventoryQuestion`, `DescribePlayerBotItem` | İsim, refine, stack ve bonus tip/değeri Türkçe kısa cevapta görünür |
-| DONE | 9B bellek araştırması | Ollama GPU ölçümü, Docker stats | Model GPU'da; vmmem artışı WSL cache olarak ayrıştırıldı |
-| DONE | Docker staging/build prosedürü | `prepare-context.sh`, staged game context | Kaynak değişince staged dosya hash'leri kontrol edilir |
-
-### 11.2. Faz 1 — Trade UX ve veri doğruluğu (P0)
-
-**Amaç:** Oyuncunun trade sırasında gördüğü bilgiyi anlaşılır ve güvenilir yapmak.
-
-1. Item sorgu sözlüğünü genişlet:
-   - `silah`, `zirh`, `kalkan`, `yay`, `hançer`, `kılıç`, `kitap`, `kutsama`
-   - `ne var`, `üzerinde ne var`, `özellikleri`, `bonusları`, `fiyatı`
-2. `AnswerPlayerBotInventoryQuestion()` çıktısına ekle:
-   - item adı, refine seviyesi, stack adedi
-   - uygulanmış bonus tipi ve değeri
-   - kısa Türkçe özet ve ASCII normalizasyonu
-3. Trade teklifinde açık veri göster:
-   - `item xN`, birim fiyat, toplam fiyat
-   - botun pazarı kapattığı ve teklifin geçerlilik süresi
-4. Pending state yaşam döngüsü:
-   - oyuncu disconnect, bot logout, item taşınması ve timeout temizliği
-   - aynı oyuncu için eski teklifin yeni teklifle atomik değiştirilmesi
-
-**Test kapısı:** `kutsama fiyat`, `silah ne`, `özellikleri`, stack 1/20/200,
-uzak `tamam`, pazar açıkken `tamam`, disconnect ve timeout senaryoları.
-
-### 11.3. Faz 2 — Trade güvenliği ve native engine uyumu (P0)
-
-**Amaç:** Native exchange state ile PlayerBot pending state'in her durumda tutarlı kalması.
-
-1. `OpenPlayerBotPendingTrade()` için açık sonuç kodları:
-   - `expired`, `too_far`, `shop_closed`, `exchange_busy`, `item_missing`,
-     `gold_failed`, `bot_accept_failed`
-2. Exchange event hook'ları:
-   - trade cancel, item değişimi, gold değişimi, player accept ve completion
-3. Bot kabul durumunu gerçek `CExchange` state'inden doğrula; yalnızca local bool'a güvenme.
-4. Bot alıcı olduğu senaryoda oyuncu itemini exchange'e koyma ve miktar kontrolünü tamamla.
-5. Fiyat taşması, negatif/0 fiyat ve maksimum yang sınırlarını ortak helper'a taşı.
-
-**Test kapısı:** iki yönlü trade, cancel/retry, exchange busy, yetersiz slot/yang,
-oyuncunun itemi değiştirmesi ve trade completion logları.
-
-### 11.4. Faz 3 — LLM sosyal davranışının native araçlara bağlanması (P1)
-
-**Amaç:** LLM konuşsun; hareket, savaş ve trade kararları güvenli native tool çağrılarıyla uygulansın.
-
-1. Adapter tool şemaları:
-   - `follow_player`, `stop_follow`, `come_to_player`
-   - `say_status`, `inspect_inventory`, `ask_price`
-   - `start_trade`, `cancel_trade`, `party_request`
-2. C++ bridge action doğrulaması:
-   - bot PID, player PID, map, mesafe, cooldown, state ve ownership kontrolü
-3. LLM'nin doğrudan item/yang/exchange API'sine erişmesini engelle; yalnızca whitelist tool.
-4. 120 s LLM leash, yeni mesajda yenileme ve native routine'e graceful dönüş.
-5. Adapter offline/timeout olduğunda native fallback ve açık log.
-
-**Test kapısı:** her tool için schema testleri, yetkisiz PID, uzak map, timeout,
-adapter kapalıyken whisper/trade regresyon testleri.
-
-### 11.5. Faz 4 — Attention bubble ve ölçekleme (P1)
-
-**Amaç:** 750 botta LLM trafiğini sınırlamak ve bellek/queue büyümesini kontrol etmek.
-
-1. `AttentionBubbleManager` gerçek oyun pozisyonlarıyla 30–50 bot seçsin.
-2. Öncelik kuyruğu: whisper > trade > party > yakın konuşma > ambient.
-3. C++ LLM request queue:
-   - maksimum uzunluk
-   - eski request discard
-   - request timeout/cancellation
-   - response queue limiti ve sayaç logları
-4. Aynı bot/oyuncu için duplicate event coalescing.
-5. 60 s macro pulse'u yalnızca opt-in ve düşük token bütçesiyle uygula.
-
-**Test kapısı:** 750 bot soak testi, queue high-water mark, adapter restart,
-LLM yokken CPU/RAM baseline ve 9B GPU belleği.
-
-### 11.6. Faz 5 — Provider, dil ve operasyonel sağlamlık (P2)
-
-1. Ollama native provider'ı ana yol olarak koru; OpenAI-compatible, LM Studio ve vLLM smoke testleri.
-2. `locales/<kod>.yaml` ile yeni dil ekleme doğrulaması ve ASCII/CP1250 contract testleri.
-3. `/health`, `/metrics`, request latency, model token kullanımı ve hata sayaçları.
-4. Config validation: model, provider, timeout, max tokens, language ve queue limitleri.
-5. Docker healthcheck, adapter restart policy ve log rotation.
-
-**Test kapısı:** provider matrix, locale testleri, container restart, config invalidation
-ve 24 saatlik düşük yoğunluk soak.
-
-### 11.7. Faz 6 — Release ve upstream senkronizasyonu (P2)
-
-1. Upstream değişikliklerini önce ayrı staging context'te uygulayıp overlay conflict kontrolü yap.
-2. `prepare-context.sh` sonrası kaynak/staged hash doğrulaması zorunlu olsun.
-3. Adapter testleri, game image build, Docker health ve canlı smoke test tek release checklist'inde toplansın.
-4. Değişiklikleri anlamlı commit'lere ayır:
-   - native trade/approach
-   - Türkçe ve market aliasları
-   - LLM adapter/prompt/provider
-   - Docker/staging ve dokümantasyon
-5. Testlerden sonra commit ve GitHub push; push öncesi `git diff --check`.
-
-**Release kapısı:** tüm hedefli testler, game/panel/mariadb healthy, canlı trade smoke
-ve rollback image tag'i mevcut.
-
-### 11.8. Uygulama sırası özeti
+### 4.1. Endpoint ve klasor kontrati
 
 ```text
-Faz 1: Trade UX ve item/bonus anlatımı
-  -> Faz 2: Exchange state güvenliği
-  -> Faz 3: LLM tool-call ve leash
-  -> Faz 4: Attention bubble, queue limitleri, macro pulse
-  -> Faz 5: Provider/locale/operasyon
-  -> Faz 6: Upstream sync, release, commit/push
+mmo-llm-adapter/
+  config.yaml, requirements.txt, main.py, run_adapter.bat
+  core/agent.py, memory.py, bubble.py, tools.py
+  llm/base.py, client.py, prompts.py
+  locales/en.yaml, tr.yaml
+  bridges/base.py
+  bridges/metin2/connector.py, schemas.py
+  tests/
 ```
 
-**Kural:** Deterministik native trade ve movement davranışı hiçbir fazda LLM'ye
-devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağrıları sağlar.
+Uygulanan endpoint'ler:
 
----
+- `GET /health`: servis, dil, model, bubble/agent sayaçlari.
+- `POST /v1/config/language`: calisirken `tr`/`en` degistirme.
+- `POST /v1/metin2/event`: event -> agent -> LLM -> action response.
+- `POST /v1/metin2/bubble`: oyuncu konumu ve 30-50 bot bubble secimi.
+- `GET /v1/agents/{pid}/state`: state, lease ve sohbet inceleme.
 
-## GÜNCELLEME — 2026-09-09: Shout ve pazar metni düzeltmesi
+`lease_sweeper_task` her 5 saniyede lease'leri tarar; 120 saniye sonunda
+parti liderligi yoksa AUTONOMOUS'a doner ve varsa farewell uretir.
 
-- Oyuncu bağırışlarında `alinir`, `alin`, `alirim`, `aranir` ve `satilir` kalıpları
-  artık teklif metninden ayrıştırılıyor; örneğin `dolu alirim` doğrudan `dolu` item
-  sorgusuna dönüşüyor.
-- Pazar tabelası ve kitap listesinde kalan görünür Lehçe `inne`/`SK` çıktıları
-  Türkçeleştirildi (`ve digerleri`, `BK`).
-- Geliştirme metinlerinde kalan `poziom` görünümü `seviye` olarak düzeltildi.
-- Demirci/pazar +7/+8/+9 shout örneklerindeki Lehçe cümleler Türkçe ASCII
-  karşılıklarıyla değiştirildi.
-- Doğrulama: game image yeniden build edildi, game container `healthy` oldu;
-  `tests/test_locales.py`: **12 passed**.
-- Docker doğrulaması: MariaDB, game ve panel container'ları `healthy`; panel canlı
-  haritada 750 bot gösteriyor.
-- Son 15 dakikalık game loglarında shout/shop event'i yok; bu nedenle oyuncu
-  shout smoke testi henüz gerçek oyun istemcisi mesajıyla tamamlanmış sayılmıyor.
-- Bir sonraki canlı testte şu mesajlar tek tek gönderilecek:
+### 4.2. C++ bridge
+
+- POSIX socket tabanli hafif HTTP client, non-blocking worker thread ve JSON
+  request/response kuyruklari kullanilir.
+- `CPlayerBotManager::Update()` tamamlanan cevaplari her tick drain eder.
+- Bot PID, player PID, map, mesafe, cooldown, state ve ownership her action'da
+  dogrulanir.
+- Trade pending state; disconnect, logout, item tasima/equip ve timeout'ta
+  temizlenir. Exchange gercek engine state'inden dogrulanir.
+- Fallback ve reddetme nedenleri sessiz degil, yapisal log/sonuc kodudur.
+
+## 5. Guncel durum
+
+### DONE
+
+- Turkce ASCII PlayerBot status, trade, market ve alias katmani.
+- Deterministik native trade parser, uzak yaklasma, 15s hold ve erken
+  confirmation.
+- Pazar shout -> pending teklif -> `tamam` ile birebir trade gecisi.
+- Stack/toplam fiyat ve native exchange yonu.
+- LLM Turkce cevap katmani, native Ollama provider ve artifact temizligi.
+- Item adi/refine/stack/bonus ozeti ve typo-tolerant sorgular.
+- Attention/bubble ve temel adapter endpointleri.
+- Docker staging/build proseduru ve saglikli game/panel deploy dogrulamasi.
+- Pending trade temizligi ve `playerbot_llm_shop.h` seam ayrimi.
+
+### ACTIVE
+
+- **Faz 1 — Trade UX ve veri dogrulugu (P0):** item sorgu kapsami,
+  teklif gorunurlugu ve pending state yasam dongusunun tamamlanmasi.
+- Sonraki implementasyon, Faz 1 test kapisi gecmeden Faz 2'ye gecemez.
+
+### BLOCKED / LIVE TEST BEKLIYOR
+
+- Gercek oyun istemcisiyle shout smoke testi henüz tamamlanmis sayilmaz:
   `dolu alinir`, `dolu alin`, `dolu alirim`, `dolu aranir`, `KDP satilir`.
-  Aynı anda `PLAYERBOT_INPUT`, `PLAYERBOT_TRADE` ve `PLAYERBOT_SHOP` logları
-  izlenecek; pazar açılmıyorsa uygunluk ve 20 dakikalık bot shout throttling'i
-  ayrıştırılacak.
+- Bu testte `PLAYERBOT_INPUT`, `PLAYERBOT_TRADE` ve `PLAYERBOT_SHOP`
+  loglari birlikte izlenmelidir.
+- Faz 4'te 750 bot soak'i ve Faz 5 provider/operasyon matrisi yapilmadan
+  olceklenmis release kabul edilmez.
 
-## GÜNCELLEME — 2026-09-09: Item cevaplarının kapsamı
+## 6. Sirali roadmap ve kapilar
 
-- `ustumde ne var`/`ustundeki` cevapları artık yalnızca item adı, refine seviyesi
-  ve stack miktarını gösteriyor; bonuslar listeyi doldurmuyor.
-- Fiyat sorularında item adı, refine, stack ve mevcut bonuslar birlikte gösteriliyor.
-- Bilinmeyen bonus türlerinde görünen genel `bonus` etiketi yalnızca fiyat
-  detayında kullanılacak; envanter özeti artık bu etiketi üretmiyor.
+Fazlar sirasiyla ilerler. Her fazin test kapisi gecmeden sonraki faz
+baslatilamaz.
 
-## GÜNCELLEME — 2026-09-09: Trade teklifinin kaybolmaması
+### Faz 1 — Trade UX ve veri dogrulugu (P0)
 
-- Oyuncu bağırışıyla item arayan bot artık yalnızca oyuncuya çok yakın olanı değil,
-  aynı haritadaki uygun iteme sahip en yakın botu seçiyor; botun oyuncuya yaklaşması
-  pending trade onayından sonra devam ediyor.
-- Pending trade süresi 60 saniyeden 120 saniyeye çıkarıldı. Böylece `tamam` ile
-  yaklaşma/trade açma arasında teklifin sessizce düşmesi engellendi.
-- Bu akışta gerçek oyun istemcisiyle `dolu alinir` ve ardından `tamam` testi
-  yapılmadan başarı kesin kabul edilmeyecek.
+Item sorgu sozlugunu (`silah`, `zirh`, `kalkan`, `yay`, `hançer`, `kılıç`,
+`kitap`, `kutsama`, `ne var`, `uzerinde ne var`, `ozellikleri`, `bonuslari`,
+`fiyati`) genislet. Cikti item adi, refine, stack, bonus ve kisa ASCII
+Turkce ozeti gostersin. Teklifte `item xN`, birim/toplam fiyat, pazar kapanisi
+ve gecerlilik suresi acik olsun. Pending kaydi disconnect, logout, item
+tasima/equip ve timeout'ta temizlensin; ayni oyuncunun eski teklifi atomik
+olarak degissin.
 
-## GÜNCELLEME — 2026-09-09: Shout item detayları ve kısa yang gösterimi
+**Kapi:** `kutsama fiyat`, `silah ne`, `ozellikleri`; stack 1/20/200; uzak
+`tamam`; pazar acikken `tamam`; disconnect ve timeout.
 
-- Oyuncunun bağırışına verilen item cevabı artık yalnızca item adı değil; refine,
-  stack ve itemde bulunan tüm dolu bonusları gösteriyor (`ortalama`, `beceri`,
-  `can` vb.).
-- Bağırış cevabındaki pending trade, PM fiyat cevabındaki akışla aynı şekilde
-  `tamam` sonrasında exchange açıyor.
-- Oyuncuya gösterilen yang tutarları kısaltıldı:
-  - `345000` -> `345k`
-  - `1300000` -> `1M 300k`
-  - `2000000` -> `2M`
-- Native exchange'e gönderilen gerçek yang değeri değiştirilmedi; yalnızca chat
-  metni kısaltılıyor.
+### Faz 2 — Trade guvenligi ve native engine uyumu (P0)
 
-## GÜNCELLEME — 2026-09-09: Item typo eşleştirme ve küçük fiyat yuvarlama
+`expired`, `too_far`, `shop_closed`, `exchange_busy`, `item_missing`,
+`gold_failed`, `bot_accept_failed` sonuc kodlari; cancel/item/gold/accept/
+completion hook'lari; gercek `CExchange` state dogrulamasi; bot alici
+senaryosu; miktar, fiyat tasmasi, negatif/0 fiyat ve maksimum yang siniri.
 
-- Item aramalarında önce tam/alias eşleşmesi, sonra sınırlı Levenshtein benzerliği
-  kullanılıyor. Örneğin `sus eysasi`, envanterdeki `sus esyasi` adına otomatik
-  olarak eşleşiyor; birden fazla adayda en yakın isim seçiliyor.
-- Aynı yakın isim mantığı shout, pazar ve PM fiyat sorgularında kullanılıyor.
-- `1000 < fiyat < 10000` aralığındaki fiyatlar gerçek trade fiyatı dahil en yakın
-  binliğe yuvarlanıyor: `9500 -> 10000`, `7350 -> 7000`.
-- `1k` altı ve `10k` üzeri fiyatların mevcut değerleri korunuyor.
+**Kapi:** iki yonlu trade, cancel/retry, busy, slot/yang yetersizligi,
+item degistirme ve completion loglari.
 
-## GÜNCELLEME — 2026-09-09: Daha toleranslı typo ve tam envanter cevabı
+### Faz 3 — LLM sosyal davranisinin native araclara baglanmasi (P1)
 
-- Fuzzy item eşleştirme toleransı artırıldı; `kilc -> kilici/kilic` ve
-  `krmzi iskr -> kirmizi iksiri` gibi eksik harfli yazımlar envanterdeki en yakın
-  ada göre eşleştiriliyor.
-- Envanter özeti artık ilk birkaç itemle sınırlı değil; tüm taşınan itemler
-  gösteriliyor.
-- Uzun envanter cevapları chat sınırına göre virgül noktalarından bölünüp
-  `Ustumde`, `Cantada` ve devam mesajları olarak eksiksiz gönderiliyor.
+Whitelist tool'lar: `follow_player`, `stop_follow`, `come_to_player`,
+`say_status`, `inspect_inventory`, `ask_price`, `start_trade`,
+`cancel_trade`, `party_request`. Her cagri PID/player/map/mesafe/cooldown/
+state/ownership kontrolunden gecsin. 120s leash, yenileme, graceful native
+donus ve offline/timeout fallback'i korunur.
 
-## GÜNCELLEME — 2026-09-10: Plug-and-play adapter seam ve pending trade temizligi
+**Kapi:** her tool schema'si, yetkisiz PID, uzak map, timeout ve adapter
+kapaliyken whisper/trade regresyonu.
 
-- Private shop tabelalarinin Lehce sabitleri upstream ile ortak olan
-  `playerbot_town.h` icinden cikartildi.
-- Yeni `playerbot_llm_shop.h`, Turkce shop prefix/template/market cry
-  uretimini tasiyor; `playerbot_town.h` yalnizca tek bir
-  `BuildPlayerBotTurkishShopSign(...)` hook'u cagiriyor.
-- Pending trade kayitlari artik bot PID'sini tutuyor ve her tick'te timeout,
-  oyuncu logout, bot logout veya teklif edilen itemin tasinmasi/equip edilmesi
-  durumlarinda temizleniyor.
-- Bu degisiklik Faz 1'in pending state yasam dongusu maddesini ilerletir ve
-  upstream sync sonrasi uzun adapter mantiginin tekrar ortak dosyaya gomulmesini
-  engeller.
-- Cache'siz game build ve force-recreate sonrasi game container `healthy`
-  olarak dogrulandi; canlı status dosyasi Turkce cikti uretiyor.
+### Faz 4 — Attention bubble ve olcekleme (P1)
+
+Gercek pozisyonlardan 30-50 bot secimi; whisper > trade > party > yakin
+konusma > ambient kuyrugu; request/response limitleri, eski request discard,
+timeout/cancellation, duplicate coalescing ve sayaçlar. 60s macro pulse
+yalnizca opt-in ve dusuk token butcesiyle.
+
+**Kapi:** 750 bot soak, queue high-water mark, adapter restart, LLM yokken
+CPU/RAM baseline ve 9B GPU bellegi.
+
+### Faz 5 — Provider, dil ve operasyonel saglamlik (P2)
+
+Ollama native ana yol; OpenAI-compatible, LM Studio ve vLLM smoke testleri.
+Locale ekleme ve ASCII/CP1250 contract testleri. `/health`, `/metrics`,
+latency, token ve hata sayaçlari. Config validation, Docker healthcheck,
+restart policy ve log rotation.
+
+**Kapi:** provider matrisi, locale, container restart, gecersiz config ve
+24 saat dusuk yogunluk soak.
+
+### Faz 6 — Release ve upstream senkronizasyonu (P2)
+
+Upstream degisikligini staging context'te uygula; seam conflict kontrolu,
+`prepare-context.sh` sonrasi kaynak/staged hash eslesmesi, adapter testleri,
+game image build, Docker health ve canlı smoke checklist'te birlikte olsun.
+Commit alanlari: native trade/approach; Turkce/market alias; LLM adapter/
+prompt/provider; Docker/staging/dokumantasyon.
+
+**Release kapisi:** tum hedefli testler; game/panel/mariadb healthy; canli
+trade smoke; rollback image tag'i. Commit/push bu kullanici isteginin
+disindadir; bu dokuman duzenlemesinde commit olusturulmaz.
+
+```text
+Faz 1 -> Faz 2 -> Faz 3 -> Faz 4 -> Faz 5 -> Faz 6
+```
+
+## 7. Zorunlu calisma kapilari
+
+Her kod degisikligi teslim edilmeden once su dort kapi kayitsiz gecilemez:
+
+1. **Kapsam:** Istek, etkilenen davranis, owner dosyalari ve kapsam disi
+   alanlar yazilir.
+2. **Dosya sahipligi ve upstream seam:** Sahiplik, include dependency order,
+   upstream API/engine seam'i ve conflict risk'i kontrol edilir.
+3. **Hedefli test/dogrulama:** Degisen davranisa en yakin mevcut test,
+   syntax/build, endpoint veya canli smoke secilir; neyin derlendiği ve
+   neyin gozlemlendigi ayrilir.
+4. **Teslim kaydi:** Degisen dosyalar, seam, test sonucu, kalan risk ve
+   changelog tarihi kaydedilir.
+
+## 8. AI oturum loglari ve calisma kayitlari
+
+Log ve kayit turleri birbirinden ayrilmalidir:
+
+- **Kalici tarihsel/oturum ozeti:** Oturumun tarihini baslik yapan bir kayit
+  olarak [CHANGELOG](./MMO_LLM_ADAPTER_CHANGELOG.md) dosyasinin sonuna eklenir.
+  Ozet; amaci, degisen alanlari, karar gerekcesini, dogrulamayi ve kalan
+  riski kisa ve tekrar etmeyecek sekilde belirtir.
+- **Normatif degisiklik:** Bu sozlesmenin ilgili bolumunde guncellenir.
+  Mimari ilke, sahiplik, seam, roadmap, kapi veya durum degisiyorsa ana
+  dosyada acikca guncellenmelidir; changelog tek basina normatif kaynak
+  degildir.
+- **Gecici debug ciktisi:** Repo disindaki session-state `files/` altina
+  (bu oturumda `C:/Users/Boran/.copilot/session-state/.../files/`) veya
+  sistem temp dizinine yazilir. Bu dosyalar repoya eklenmez ve teslim
+  kaydinda yalnizca gerekiyorsa yolu/amaciyla anilir.
+- **Runtime uygulama logu:** Bu sozlesme yeni bir `mmo-llm-adapter/logs/`
+  dizini tanimlamaz veya olusturmaz. Mevcut Docker/game log yollari ancak
+  hedefli dogrulamanin kaniti olarak referans verilebilir; yeni kalici log
+  convention'i icin ayri bir karar gerekir.
+
+Bir kayit hem tarihsel hem normatif bilgi iceriyorsa normatif kisim once
+ilgili master plan bolumune, oturum anlatimi ve kanit ise changelog sonuna
+konur. Hassas veri, credential, tam sohbet transkripti veya gereksiz ham
+debug dump'i kaydedilmez.
+
+## 9. Oturum teslim formati
+
+Her ajan son mesajinda su sirayi kullanir:
+
+```text
+Kapsam:
+- ...
+
+Dosya sahipligi / upstream seam:
+- adapter dosyasi:
+- game fragmenti:
+- upstream ana dosyada kalan minimal hook:
+
+Uygulama:
+- ...
+
+Hedefli dogrulama:
+- Komut/test:
+- Derlenen:
+- Canli gozlemlenen:
+- Sonuc:
+
+Teslim:
+- Normatif dosyada guncellenen bolum:
+- Tarihsel ayrinti icin changelog kaydi:
+- Kalan risk / BLOCKED:
+```
+
+Bu sozlesme, native PlayerBots kontrolunu ve Faz 1-6 sirasini degistirmeden
+uygulanir. Yeni tarihsel bilgi normatif metni sisirmek yerine changelog'a
+eklenir.
