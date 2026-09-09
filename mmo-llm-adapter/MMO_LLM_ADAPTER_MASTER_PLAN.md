@@ -326,6 +326,94 @@ Bu kural, upstream merge conflict'ini tamamen teorik olarak yok etmez; ancak
 aktif upstream dosyasindaki degisiklik alanini include/hook satirlarina indirir.
 Adapter mantigi ve dil sabitleri upstream'de bulunmayan yeni dosyalarda tutulur.
 
+### 11.0.1. Steril ana repo ve adapter sahipligi
+
+Bu proje icin kalici hedef sudur:
+
+```text
+upstream playerbot dosyalari
+        |
+        |  minimal, sabit seam (include + tek hook)
+        v
+playerbot_llm_*.h / playerbot_llm_*.cpp
+        ^
+        |
+mmo-llm-adapter/  (Python servis, locale, prompt, provider)
+```
+
+AI asistanlari yeni LLM, Turkce, sosyal, pazar veya trade davranisini once
+adapter tarafinda yazmalidir. Ana PlayerBot mantigi upstream'e yakin ve steril
+kalmalidir.
+
+#### Dosya sahipligi
+
+- `mmo-llm-adapter/`: LLM servisinin tek sahibi. Provider, prompt, locale,
+  agent state machine, queue ve adapter testleri burada tutulur.
+- `linux-port/overlays/playerbot/src/game/src/playerbot_llm_*.h/.cpp`:
+  game tarafindaki fork/LLM adapter fragmentleri. Dil sabitleri, shop sign
+  uretimi, LLM bridge, chat/trade sosyal katmani ve adapter'a ozel state burada
+  tutulur.
+- `playerbot_manager.cpp`, `playerbot_town.h`, `playerbot_status.h`,
+  `playerbot_chat_trade.h`: upstream'e yakin ana dosyalar. Yalnizca zorunlu
+  include, forward declaration veya tek satirlik sabit hook kalabilir.
+- `linux-port/overlays/playerbot/patches/`: engine patch mekanizmasidir;
+  LLM davranisi buraya konmaz.
+
+#### Yasakli degisiklikler
+
+Asagidaki degisiklikler adapter seam olmadan yapilmaz:
+
+1. Upstream `playerbot_*.h` fonksiyonunun icine uzun Turkce/LLM/trade mantigi
+   eklemek.
+2. Shop title, market cry, status veya chat metnini ana dosyada yeni sabit
+   dizi olarak tutmak.
+3. Ayni davranisi hem upstream fonksiyonunda hem adapter fragmentinde iki kez
+   uygulamak.
+4. Bir adapter dosyasini `prepare-context.sh`, Makefile veya update listesine
+   tek tek eklemek. `playerbot_*.h/.cpp` wildcard'i tek kaynak olmaya devam
+   etmelidir.
+5. Upstream dosyasini fork'a ait davranisla yeniden formatlamak veya buyuk
+   bolumlerini tasimak.
+
+#### Yeni ozellik ekleme protokolu
+
+Her AI su sirayi izlemelidir:
+
+1. Davranisin sahibi `mmo-llm-adapter/` mi, game adapter fragmenti mi, yoksa
+   gercekten upstream motoru mu diye siniflandir.
+2. Game tarafinda yeni bir `playerbot_llm_<alan>.h` dosyasi olustur.
+3. Gerekli upstream baglantisini ana dosyada en kucuk seam ile yap:
+   once include + tek sabit imzali hook dene.
+4. Adapter fragmentini manager'in include siralamasinda bagimlilik sirasina
+   yerlestir; fragmentler tek translation unit oldugu icin include order
+   dependency order'dir.
+5. Yeni dosyanin otomatik staged context'e girdigini wildcard ile kontrol et.
+6. Ana dosyanin diff'ini kontrol et: yeni davranis buyuk bir hunk olarak
+   gorunuyorsa refactor tamamlanmis sayilmaz.
+
+#### Upstream sync protokolu
+
+1. `git fetch upstream` ve merge'i ayri bir branch/staging context'te yap.
+2. Conflict cikarsa adapter mantigini upstream dosyasina geri yapistirma.
+   Once seam dosyasini ve include/hook satirini yeniden kur.
+3. `git diff --stat upstream/main...HEAD` ile upstream dosyalarindaki degisim
+   alanini kontrol et; uzun farklar adapter'a tasinmalidir.
+4. `prepare-context.sh` sonrasinda overlay ve staged dosya hash'lerini
+   karsilastir.
+5. `docker compose build --no-cache game` ve hedefli adapter testlerini calistir.
+6. Game container healthy olduktan sonra canli status/shop smoke testi yap.
+7. Commitleri alanlara ayir: adapter, minimal seam, test/dokumantasyon.
+
+#### Her AI oturumu icin zorunlu cikti
+
+AI, kod degisikliginden sonra master plana veya ilgili guncelleme bolumune
+sunlari yazmalidir:
+
+- hangi yeni adapter fragmentinin kullanildigi,
+- ana upstream dosyasinda kalan seam'in ne oldugu,
+- upstream sync'te neden conflict cikarmayacagi,
+- staged/build/test sonucunun ne oldugu.
+
 ### 11.1. Tamamlanan ve korunacak temel sistemler
 
 | Durum | Sistem | Uygulanan yüzeyler | Kabul kriteri |
