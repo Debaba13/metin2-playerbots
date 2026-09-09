@@ -31,7 +31,6 @@
 #include "sectree.h"
 #include "shop.h"
 #include "shop_manager.h"
-#include "exchange.h"
 #include "sectree_manager.h"
 #include "vector.h"
 #include "utils.h"
@@ -45,6 +44,8 @@
 #include <cstring>
 #include <cstdarg>
 #include <sys/stat.h>
+
+#include "exchange.h"
 
 extern int passes_per_sec;
 
@@ -72,9 +73,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_travel.h"
 #include "playerbot_planner.h"
 #include "playerbot_guild.h"
-#include "playerbot_language.h"
 #include "playerbot_town.h"
 #include "playerbot_market.h"
+#include "playerbot_language.h"
 #include "playerbot_chat_trade.h"
 #include "playerbot_llm_bridge.h"
 #include "playerbot_loot.h"
@@ -1396,8 +1397,6 @@ void CPlayerBotManager::Update()
 	// the last tick, and every bot planned below must see the same numbers.
 	RefreshPlayerBotWeights(dwNow);
 	ManagePlayerBotNight(dwNow);
-
-	// Drain any completed cognitive LLM responses from mmo-llm-adapter
 	UpdatePlayerBotLLMBridge(dwNow);
 
 	static DWORD s_dwTick = 0;
