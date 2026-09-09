@@ -802,6 +802,22 @@ namespace
 				// level sixty.
 				{ 89700, 525100, PLAYERBOT_SPIDER_MIN_LEVEL, 255, true, 2091 }
 			};
+			// The second Spider Dungeon, measured the way the temple below was:
+			// every spawn point of regen.txt (668 of them, through group.txt
+			// and group_group.txt) binned into 6400-unit cells, the eleven
+			// richest taken, and each hub put on the actual spawn point nearest
+			// its cell's centre, checked free on server_attr. The east and the
+			// south run to 66; the middle band is 62-63. None of them attacks
+			// first, so no party is needed anywhere; the Elite Queen by the V3
+			// warp is level 97 and gets no row.
+			const TPlayerBotHuntingHub spiderV2Hubs[] = {
+				{ 694400, 483300, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false }, { 725300, 483600, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false },
+				{ 713700, 482500, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false }, { 714700, 470700, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false },
+				{ 700600, 482600, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false }, { 688200, 483200, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false },
+				{ 682200, 484100, PLAYERBOT_SPIDER_V2_MIN_LEVEL, 255, false },
+				{ 725500, 501800, 58, 255, false }, { 695700, 503200, 58, 255, false },
+				{ 687400, 502800, 58, 255, false }, { 713900, 501300, 58, 255, false }
+			};
 			// The Hwang Temple, from the density of its own regen.txt rather than
 			// from the map: every spawn point binned into 6400-unit cells and the
 			// richest taken, which is the same unit the population's own memory
@@ -868,6 +884,11 @@ namespace
 			{
 				hubs = spiderHubs;
 				hubCount = sizeof(spiderHubs) / sizeof(spiderHubs[0]);
+			}
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_SPIDER_V2)
+			{
+				hubs = spiderV2Hubs;
+				hubCount = sizeof(spiderV2Hubs) / sizeof(spiderV2Hubs[0]);
 			}
 			else if (ch->GetMapIndex() == PLAYERBOT_MAP_HWANG)
 			{

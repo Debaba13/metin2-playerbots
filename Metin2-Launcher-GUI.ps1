@@ -159,6 +159,7 @@ $script:Strings = @{
         importDb     = 'IMPORTUJ BAZE'
         repairDb     = 'NAPRAW DOSTEP DO BAZY'
         dbAccess     = 'DANE DO BAZY (NAVICAT)'
+        gmPanel      = 'PANEL GM F9 (TEST)'
         dbAccessTitle = 'Dane do polaczenia z baza'
         dbAccessHint = 'Wpisz te dane w Navicat, HeidiSQL albo DBeaver (typ MySQL/MariaDB, polaczenie TCP). Konto root widzi wszystko, konto gry tylko bazy gry. Baza slucha wylacznie na tym komputerze. Jesli baza odrzuca haslo, kliknij NAPRAW DOSTEP DO BAZY - ustawia oba konta na hasla z pliku .env. Nie wklejaj tych hasel na Discordzie.'
         dbAccessOpenEnv = 'OTWORZ PLIK .ENV'
@@ -197,6 +198,7 @@ $script:Strings = @{
         importDb     = 'IMPORT DATABASE'
         repairDb     = 'REPAIR DATABASE ACCESS'
         dbAccess     = 'DATABASE LOGIN (NAVICAT)'
+        gmPanel      = 'GM PANEL F9 (BETA)'
         dbAccessTitle = 'Database connection details'
         dbAccessHint = 'Enter these in Navicat, HeidiSQL or DBeaver (MySQL/MariaDB, TCP connection). root sees everything, the game account only the game databases. The database listens on this computer only. If it rejects the password, click REPAIR DATABASE ACCESS - it sets both accounts to the passwords in .env. Never paste these passwords on Discord.'
         dbAccessOpenEnv = 'OPEN .ENV FILE'
@@ -744,8 +746,12 @@ function Start-LauncherAction {
 }
 
 function Install-Or-Prepare {
-    $missing = @($cliLauncher, $composeFile, $modulePath) | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
-    if ($missing.Count) {
+    # @(...) round the whole pipeline, not only its input: Where-Object hands
+    # back a bare string when one file is missing, and under Set-StrictMode a
+    # string has no .Count - the button threw "The property 'Count' cannot be
+    # found" at exactly the player whose package was incomplete.
+    $missing = @(@($cliLauncher, $composeFile, $modulePath) | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+    if ($missing.Count -gt 0) {
         [Windows.Forms.MessageBox]::Show('Paczka jest niekompletna. Rozpakuj ponownie całe archiwum RAR.', 'Brak plików', 'OK', 'Error') | Out-Null
         return
     }
@@ -881,13 +887,17 @@ $botCountButton = New-Button (T 'botCount') 28 380 218 32 ([Drawing.Color]::From
 $importDbButton = New-Button (T 'importDb') 262 380 218 32 ([Drawing.Color]::FromArgb(70, 120, 90))
 $repairDbButton = New-Button (T 'repairDb') 496 380 230 32 ([Drawing.Color]::FromArgb(150, 90, 55))
 $dbAccessButton = New-Button (T 'dbAccess') 28 418 218 32 ([Drawing.Color]::FromArgb(70, 100, 130))
+# The optional, experimental client half of the GM panel (F9): the server half
+# rides in every update, this button fetches the client package from the
+# manifest's `client` component and swaps pack/root.eix + root.epk.
+$gmPanelButton = New-Button (T 'gmPanel') 262 418 218 32 ([Drawing.Color]::FromArgb(120, 70, 130))
 
 # The language switch sits with the other small buttons rather than in a menu:
 # somebody who cannot read the window needs to find it without reading anything.
 $languageButton = New-Button (T 'language') 508 702 218 28 ([Drawing.Color]::FromArgb(60, 70, 95))
 $languageButton.Add_Click({ Switch-LauncherLanguage })
 
-foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $languageButton)) {
+foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $gmPanelButton, $languageButton)) {
     $script:form.Controls.Add($button)
 }
 
@@ -1108,7 +1118,21 @@ $updateButton.Add_Click({
         Write-LocalLog 'Aktualizacja odłożona na później.'
         return
     }
-    Start-LauncherAction -Action 'UpdateAll' -Yes
+    # The server only. The client half of the GM panel is experimental and
+    # goes in through its own button below, never with the ordinary update.
+    Start-LauncherAction -Action 'UpdateServer' -Yes
+})
+$gmPanelButton.Add_Click({
+    $config = Get-M2LauncherConfig -ServerRoot $root -ConfigPath $configPath
+    if (-not [string]$config.clientRoot) {
+        [Windows.Forms.MessageBox]::Show('Najpierw wskaż folder klienta przyciskiem WYBIERZ KLIENTA.', 'Brak klienta', 'OK', 'Information') | Out-Null
+        return
+    }
+    $answer = [Windows.Forms.MessageBox]::Show(
+        "Panel GM na F9 (autor: OskarPWA) to funkcja MOCNO EKSPERYMENTALNA.`r`n`r`nInstalacja podmienia w kliencie dwa pliki: packoot.eix i packoot.epk (skrypty gry). Poprzednie wersje trafiają do kopii zapasowej w folderze serwera (backups\client), więc da się wrócić.`r`n`r`nPanel otwiera tylko postać z uprawnieniami GM klawiszem F9. Jeśli po instalacji gra nie wczytuje się do końca, przywróć pliki z kopii i zgłoś to na Discordzie.`r`n`r`nZainstalować teraz?",
+        'Panel GM F9 - wersja testowa', 'YesNo', 'Warning')
+    if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
+    Start-LauncherAction -Action 'UpdateClient' -Yes
 })
 $diagnosticsButton.Add_Click({ Start-LauncherAction -Action 'Diagnose' })
 $bundleButton.Add_Click({

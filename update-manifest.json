@@ -1,15 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-09T14:40:00Z",
-  "statusMessage": "Aktualizacja 1.30.38. Historia ekwipunku bota w panelu klasycznym: ulepszenia, spalenia, zalozenia, prezenty, sprzedaz na straganie, magazyn.",
+  "publishedAt": "2026-09-09T20:32:00Z",
+  "statusMessage": "Aktualizacja 1.31.2. Panel zaawansowany 1.40.0 (motywy, portrety klas, flagi krolestw), poprawiony opis czytania ksiag.",
   "server": {
-    "version": "1.30.38",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.30.38/metin2-server-update-1.30.38.zip",
-    "sha256": "3003CB1DDF83112EF5E7246D1BC11233A263349056604D67FD5F91FFBF1440F7"
+    "version": "1.31.2",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.31.2/metin2-server-update-1.31.2.zip",
+    "sha256": "1510D738CA2C112780836C4494EDFDD8CA2896A0BB700B7F221C830E9A9A9C81"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
+  },
+  "client": {
+    "version": "1.31.1",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v1.31.1/metin2-client-update-1.31.1.zip",
+    "sha256": "53C419421C9DA9F20C166C701932AFDD59C5EF5B5392C139766DE0086E6C13D4"
   }
 }

@@ -65,6 +65,42 @@ namespace
 		return false;
 	}
 
+	// A weapon with a line a player stops rerolling at: average damage from
+	// PLAYERBOT_BONUS_KEEP_AVERAGE, or skill damage from
+	// PLAYERBOT_WEAPON_PRIZE_SKILL_PERCENT. In this engine every failed
+	// refine destroys the item - DoRefine has no grade that only drops a
+	// level - so a +8 bow with 51% average burned at the blacksmith on a
+	// forty-percent roll ("i spalil u kowala"). Such a weapon is refined only
+	// under a Blessing Scroll, which hands it back a level down instead.
+	bool IsPlayerBotPrizeWeapon(LPITEM item)
+	{
+		if (!item || item->GetType() != ITEM_WEAPON)
+			return false;
+		long avg = 0, skill = 0;
+		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
+		{
+			const BYTE t = item->GetAttributeType(i);
+			if (t == APPLY_NORMAL_HIT_DAMAGE_BONUS) avg += item->GetAttributeValue(i);
+			else if (t == APPLY_SKILL_DAMAGE_BONUS) skill += item->GetAttributeValue(i);
+		}
+		return avg >= PLAYERBOT_BONUS_KEEP_AVERAGE || skill >= PLAYERBOT_WEAPON_PRIZE_SKILL_PERCENT;
+	}
+
+	// Anything a player would not put on the anvil without a scroll: a prize
+	// weapon, or a piece already carrying PLAYERBOT_PRIZE_LINES lines.
+	bool IsPlayerBotPrizeItem(LPITEM item)
+	{
+		if (!item)
+			return false;
+		if (IsPlayerBotPrizeWeapon(item))
+			return true;
+		int lines = 0;
+		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
+			if (item->GetAttributeType(i) != 0 && item->GetAttributeValue(i) != 0)
+				++lines;
+		return lines >= PLAYERBOT_PRIZE_LINES;
+	}
+
 	// Every skill book in the bag, whatever the skill.
 	int CountPlayerBotSkillBooks(LPCHARACTER ch)
 	{
@@ -421,6 +457,43 @@ namespace
 		return false;
 	}
 
+	// How many bots are short of a material and can pay for it, from the
+	// market ledger (playerbot_market.h, which comes after this fragment).
+	DWORD GetPlayerBotLedgerDemand(DWORD vnum);
+
+	// A spare of a higher tier than the piece worn in its slot: not an
+	// upgrade yet, but one the blacksmith can make into one, so neither the
+	// merchant nor the refine pass treats it as scrap. Only the best such
+	// spare per slot counts; the rest are still scrap.
+	bool IsPlayerBotHigherTierSpare(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !IsPlayerBotEquipmentCandidate(ch, item))
+			return false;
+		const int wearCell = item->FindEquipCell(ch);
+		if (wearCell < 0 || wearCell >= WEAR_MAX_NUM)
+			return false;
+		if (item->GetLevelLimit() > ch->GetLevel())
+			return false;
+		LPITEM worn = ch->GetWear(wearCell);
+		if (!worn || item->GetLevelLimit() <= worn->GetLevelLimit())
+			return false;
+		const long long itemScore = GetPlayerBotEquipmentScore(item, ch);
+		for (WORD otherCell = 0; otherCell < INVENTORY_MAX_NUM; ++otherCell)
+		{
+			LPITEM other = ch->GetInventoryItem(otherCell);
+			if (!other || other == item || !IsPlayerBotEquipmentCandidate(ch, other) ||
+					other->GetLevelLimit() > ch->GetLevel() ||
+					other->GetLevelLimit() <= worn->GetLevelLimit() ||
+					other->FindEquipCell(ch) != wearCell)
+				continue;
+			const long long otherScore = GetPlayerBotEquipmentScore(other, ch);
+			if (otherScore > itemScore ||
+					(otherScore == itemScore && other->GetID() < item->GetID()))
+				return false;
+		}
+		return true;
+	}
+
 	bool IsPlayerBotJunkItem(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item || item->IsEquipped() || item->isLocked())
@@ -569,13 +642,20 @@ namespace
 		// IsPlayerBotSurplusMaterial for why that is worth eight cells. Judged by
 		// the recipe table, not by item type: that is what brings the fishbone
 		// and the blessing scroll in.
+		// A material somebody on this world is short of is counter goods,
+		// not merchant scrap: a Scorpion Tail went to the merchant for a
+		// few hundred yang while the next stall along sold one for 58 894.
+		// Only a material nobody wants, and only under bag pressure.
 		if (IsPlayerBotTradeableMaterial(item))
 			return !PlayerBotNeedsRefineMaterial(ch, vnum) &&
-					IsPlayerBotSurplusMaterial(ch, item);
+					IsPlayerBotSurplusMaterial(ch, item) &&
+					GetPlayerBotLedgerDemand(vnum) == 0;
 		// The rest of the 30000 block is eight gift boxes and two quest items.
 		// No counter would carry those, so there junk still means junk.
 		if (vnum >= 30000 && vnum <= 30200)
-			return !PlayerBotNeedsRefineMaterial(ch, vnum);
+			return !PlayerBotNeedsRefineMaterial(ch, vnum) &&
+					GetPlayerBotLedgerDemand(vnum) == 0 &&
+					CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS;
 		if (vnum >= 70038 && vnum <= 70060)
 			return false;
 
@@ -616,6 +696,9 @@ namespace
 				// still valuable to another bot.  Keep only the single best +6-or-higher
 				// reserve for this wear slot; the nearby sharing pass will hand the real
 				// item (including sockets/attributes) to a lower-level compatible build.
+				if (IsPlayerBotHigherTierSpare(ch, item))
+					return false;
+
 				if (item->GetRefineLevel() >= PLAYERBOT_RESERVE_GEAR_MIN_REFINE)
 				{
 					for (WORD otherCell = 0; otherCell < INVENTORY_MAX_NUM; ++otherCell)
@@ -731,6 +814,33 @@ namespace
 		return false;
 	}
 
+	// The scroll a refine goes under: from PLAYERBOT_DRAGON_GOD_SCROLL_MIN_PLUS
+	// the Zwoj Boga Smokow when the bag has one, otherwise the Blessing
+	// Scroll. Both are read by DoRefineWithScroll from the cell SetRefineMode
+	// names, no blacksmith needed - which is also why the scroll pass runs
+	// wherever the bot stands. plusLevel 0 means "any scroll that is here".
+	int FindPlayerBotRefineScrollCell(LPCHARACTER ch, BYTE plusLevel)
+	{
+		if (!ch)
+			return -1;
+		int blessing = -1, dragonGod = -1;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			LPITEM scroll = ch->GetInventoryItem(cell);
+			if (!scroll)
+				continue;
+			const DWORD vnum = scroll->GetVnum();
+			if (vnum == PLAYERBOT_BLESSING_SCROLL_VNUM && blessing < 0)
+				blessing = cell;
+			for (size_t i = 0; i < sizeof(PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS) / sizeof(PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS[0]); ++i)
+				if (vnum == PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS[i] && dragonGod < 0)
+					dragonGod = cell;
+		}
+		if (dragonGod >= 0 && (plusLevel >= PLAYERBOT_DRAGON_GOD_SCROLL_MIN_PLUS || blessing < 0))
+			return dragonGod;
+		return blessing;
+	}
+
 	bool ManagePlayerBotRefining(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->IsItemLoaded() || dwNow < state.dwNextRefineCheckTime)
@@ -777,6 +887,13 @@ namespace
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetRefinedVnum() == 0 || !IsPlayerBotEquipmentCandidate(ch, item))
+				continue;
+			// What the merchant would take on the next town visit is not
+			// worth a refine now: Ametystowy Naszyjnik+0 was raised to +1 at
+			// 17:58 and sold for scrap at 18:19. A spare that is kept - an
+			// upgrade, a higher tier than the worn piece, a reserve at +6 -
+			// is worth raising; the rest is scrap and stays at what it is.
+			if (IsPlayerBotJunkItem(ch, item))
 				continue;
 
 			const BYTE plusLevel = item->GetRefineLevel();
@@ -868,12 +985,18 @@ namespace
 			// level down rather than nothing.
 			int scrollCell = -1;
 			if (plusLevel >= PLAYERBOT_SCROLL_REFINE_MIN_PLUS)
+				scrollCell = FindPlayerBotRefineScrollCell(ch, plusLevel);
+			// No scroll, a roll that can fail, and a weapon worth more than the
+			// next plus: leave it. The blacksmith burns what he fails.
+			if (scrollCell < 0 && IsPlayerBotPrizeItem(item))
 			{
-				for (WORD cell = 0; cell < INVENTORY_MAX_NUM && scrollCell < 0; ++cell)
+				const TRefineTable* prt = CRefineManager::instance().GetRefineRecipe(item->GetRefineSet());
+				if (prt && prt->prob < 100)
 				{
-					LPITEM scroll = ch->GetInventoryItem(cell);
-					if (scroll && scroll->GetVnum() == PLAYERBOT_BLESSING_SCROLL_VNUM)
-						scrollCell = cell;
+					PlayerBotLogThrottled("refine_prize_no_scroll", dwNow,
+							"PLAYERBOT_AI: refine held, prize line and no blessing scroll pid=%u name=%s vnum=%u plus=%u prob=%d",
+							ch->GetPlayerID(), ch->GetName(), oldVnum, (unsigned int)plusLevel, prt->prob);
+					continue;
 				}
 			}
 			bool attempted = false;
@@ -923,13 +1046,7 @@ namespace
 			return false;
 		state.dwNextScrollRefineTime = dwNow + PLAYERBOT_SCROLL_REFINE_INTERVAL;
 
-		int scrollCell = -1;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM && scrollCell < 0; ++cell)
-		{
-			LPITEM scroll = ch->GetInventoryItem(cell);
-			if (scroll && scroll->GetVnum() == PLAYERBOT_BLESSING_SCROLL_VNUM)
-				scrollCell = cell;
-		}
+		int scrollCell = FindPlayerBotRefineScrollCell(ch, 0);
 		if (scrollCell < 0)
 			return false;
 

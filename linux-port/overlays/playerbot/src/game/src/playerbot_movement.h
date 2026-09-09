@@ -800,6 +800,19 @@ namespace
 			return;
 		}
 
+		// The target pass owns the saddle while there is a target it may hit
+		// from it: it mounts ("mounted_combat") on its approach, and the leg
+		// that brought the bot here - a known-stone walk, a wander leg - used
+		// to climb down again the moment the route's end was close, so a
+		// warrior with a battle horse next to a Metin mounted and dismounted
+		// once a second for as long as the stone stood (botgrom2, V1, a
+		// hundred pairs a minute in one operator's bundle).
+		if (!fightOnHorse && !keepHorseAtDestination && ch->IsRiding() && state.dwTargetVID != 0)
+		{
+			LPCHARACTER target = CHARACTER_MANAGER::instance().Find(state.dwTargetVID);
+			if (target && CanPlayerBotFightOnHorse(ch, target))
+				return;
+		}
 		const int distance = DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY);
 		if (!allowHorse || distance <= PLAYERBOT_HORSE_DISMOUNT_DISTANCE)
 			SetPlayerBotRidingForTravel(ch, state, false, dwNow,

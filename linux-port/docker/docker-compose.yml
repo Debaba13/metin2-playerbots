@@ -104,6 +104,8 @@ services:
       M2_DB_PORT: "3306"
       M2_DB_USER: "${M2_DB_USER:-metin2}"
       M2_DB_PASSWORD: "${M2_DB_PASSWORD:?set M2_DB_PASSWORD in .env}"
+      # For the ItemShop's database, which the metin2 user cannot create.
+      M2_DB_ROOT_PASSWORD: "${M2_DB_ROOT_PASSWORD:-}"
       # 0 preserves an older/non-canonical cohort without changing it. CI and
       # deliberate migrations can choose 1 to fail the stack on any collision.
       PLAYERBOT_SEED_STRICT: "${PLAYERBOT_SEED_STRICT:-0}"
@@ -172,7 +174,11 @@ services:
       M2_CHANNELS: "${M2_CHANNELS:-1}"
       M2_MAX_LEVEL: "${M2_MAX_LEVEL:-120}"
       M2_TEST_SERVER: "${M2_TEST_SERVER:-0}"
-      M2_MALL_URL: "${M2_MALL_URL:-}"
+      # Where the coin on the taskbar sends the player: host:port of the
+      # itemshop service as the player's machine reaches it. The game core
+      # signs the link (ACMD(do_in_game_mall)) and the client opens it in its
+      # built-in browser. Empty M2_MALL_URL means "this machine".
+      M2_MALL_URL: "${M2_MALL_URL:-${M2_PUBLIC_ADDRESS:-127.0.0.1}:${M2_ITEMSHOP_PUBLIC_PORT:-7791}}"
       M2_LOG_KEEP_DAYS: "${M2_LOG_KEEP_DAYS:-3}"
       M2_TABLE_POSTFIX: "${M2_TABLE_POSTFIX:-}"
       M2_ADMINPAGE_PASSWORD: "${M2_ADMINPAGE_PASSWORD:-}"
@@ -719,6 +725,34 @@ services:
       # writes a request there and reads the updater's status back. Without
       # the mount the button can only say "the updater is not running".
       - update-spool:/opt/m2update
+    networks: [backend]
+
+  # The ItemShop (OskarPWA): a PHP shop for Dragon Coins (account.cash) and
+  # Dragon Marks (account.mileage), opened from the coin on the game's
+  # taskbar in the client's built-in browser. A purchase writes
+  # player.item_award; the db core delivers it at the player's next login.
+  # Its own tables live in the itemshop database, created and seeded by
+  # playerbot-migrate (mariadb/playerbot/itemshop_schema.sql).
+  itemshop:
+    build:
+      context: ./itemshop
+      dockerfile: Dockerfile
+    image: metin2/itemshop:latest
+    container_name: "${M2_CONTAINER_PREFIX:-metin2}-itemshop"
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      M2_DB_HOST: mariadb
+      M2_DB_USER: "${M2_DB_USER:-metin2}"
+      M2_DB_PASSWORD: "${M2_DB_PASSWORD:?set M2_DB_PASSWORD in .env}"
+      # The r40250 core signs the shop link with "GF9001"; only a core built
+      # with another key needs this changed.
+      M2_MALL_SAS_KEY: "${M2_MALL_SAS_KEY:-GF9001}"
+      TZ: "${M2_TZ:-UTC}"
+    ports:
+      - "${M2_PANEL_BIND_ADDRESS:-${M2_HOST_BIND_ADDRESS:-0.0.0.0}}:${M2_ITEMSHOP_PUBLIC_PORT:-7791}:80/tcp"
     networks: [backend]
 
   seban-collector:

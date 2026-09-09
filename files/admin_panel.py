@@ -2694,9 +2694,9 @@ T.update({
                   "tr":"Botun başının üstündeki satır (avlanıyor, demirciye gidiyor, balık tutuyor). Spam diyen oyuncular için kapatın. Dünya kanalındaki +7/+8/+9 bağırışı her halükârda kalır."},
  "ai_chat_on":   {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
  "ai_books":     {"en":"Skill books without the day's wait","pl":"Księgi umiejętności bez dobowej przerwy","de":"Fertigkeitsbücher ohne Tageswartezeit","tr":"Günlük bekleme olmadan beceri kitapları"},
- "ai_books_help":{"en":"The game makes a character wait about a day between two reads of the same skill, so a bot needs a month of books to take a skill from M1 to G1 and the books pile up in its bag meanwhile. On, a bot reads again after half an hour - what a player does with Exorcism Scrolls. Off keeps the game's own pace.",
-                  "pl":"Gra każe czekać około doby między dwoma czytaniami tej samej umiejętności, więc bot potrzebuje miesiąca, by przeczytać skill z M1 na G1, a księgi tymczasem zalegają w plecaku. Włączone: bot czyta ponownie po pół godzinie, jak gracz ze Zwojami Egzorcyzmu. Wyłączone: tempo gry bez zmian.",
-                  "de":"Das Spiel lässt zwischen zwei Lesungen derselben Fertigkeit etwa einen Tag warten, also braucht ein Bot einen Monat, um eine Fertigkeit von M1 auf G1 zu lesen, und die Bücher stapeln sich derweil. An: der Bot liest nach einer halben Stunde erneut, wie ein Spieler mit Exorzismus-Rollen. Aus: das Tempo des Spiels.",
+ "ai_books_help":{"en":"The game makes a character wait about a day between two reads of the same skill, so a bot needs a month of books to take a skill from M1 to G1 and the books pile up in its bag meanwhile. On, a bot reads a book the moment it has one; the only pace left is the game's own (20 000 experience and a roll per read). Off keeps the game's daily wait.",
+                  "pl":"Gra każe czekać około doby między dwoma czytaniami tej samej umiejętności, więc bot potrzebuje miesiąca, by przeczytać skill z M1 na G1, a księgi tymczasem zalegają w plecaku. Włączone: bot czyta księgę od razu, gdy ją ma — jedyny hamulec to sama gra (20 000 doświadczenia i rzut przy każdej lekturze). Wyłączone: dobowa przerwa gry bez zmian.",
+                  "de":"Das Spiel lässt zwischen zwei Lesungen derselben Fertigkeit etwa einen Tag warten, also braucht ein Bot einen Monat, um eine Fertigkeit von M1 auf G1 zu lesen, und die Bücher stapeln sich derweil. An: der Bot liest ein Buch, sobald er eines hat; nur das Spiel selbst bremst (20 000 Erfahrung und ein Wurf pro Lesung). Aus: die tägliche Wartezeit des Spiels.",
                   "tr":"Oyun aynı becerinin iki okuması arasında yaklaşık bir gün bekletir; bot bir beceriyi M1'den G1'e çıkarmak için bir ay kitap okur ve kitaplar bu arada çantada birikir. Açık: bot yarım saat sonra tekrar okur, Ayin Parşömeni kullanan bir oyuncu gibi. Kapalı: oyunun kendi temposu."},
  "ai_books_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
  "ai_night":     {"en":"Night on the server","pl":"Noc na serwerze","de":"Nacht auf dem Server","tr":"Sunucuda gece"},
@@ -4348,7 +4348,7 @@ MAP_I18N = {
  "pl": {
   "title":"Mapa świata na żywo — Chunjo","live":"NA ŻYWO (1,5 s)","subtitle":"Interaktywny podgląd pozycji i rozwoju botów w czasie rzeczywistym",
   "player_panel":"Panel graczy","play_browser":"Graj w przeglądarce","show_bots":"Pokaż boty","names_levels":"Nicki i poziomy","pt_only":"Tylko w grupie (PT)",
-  "level":"Poziom","all":"Wszystkie","map":"Mapa","m1":"M1 — Joan","m2":"M2 — Bokjung","m3":"M3 — Waryong","monkey":"Łatwy Loch Małp","monkey_medium":"Średni Loch Małp","monkey_hard":"Trudny Loch Małp","orc":"Dolina Orków","desert":"Pustynia Yongbi","sohan":"Góra Sohan","spider":"Loch Pająków V1","heat":"Mapa cieplna","heat_deaths":"Zgony botów","heat_metins":"Rozbite metiny","heat_skills":"Awanse umiejętności","search":"🔍 Szukaj bota (np. botarek)...",
+  "level":"Poziom","all":"Wszystkie","map":"Mapa","m1":"M1 — Joan","m2":"M2 — Bokjung","m3":"M3 — Waryong","monkey":"Łatwy Loch Małp","monkey_medium":"Średni Loch Małp","monkey_hard":"Trudny Loch Małp","orc":"Dolina Orków","desert":"Pustynia Yongbi","sohan":"Góra Sohan","spider":"Loch Pająków V1","spider_v2":"Loch Pająków V2","hwang":"Świątynia Hwang","heat":"Mapa cieplna","heat_deaths":"Zgony botów","heat_metins":"Rozbite metiny","heat_skills":"Awanse umiejętności","search":"🔍 Szukaj bota (np. botarek)...",
   "solo_bot":"Bot solo","party_bot":"W grupie (PT)","metin_fight":"Walka z Metinem","loading":"Ładowanie...","world_stats":"Statystyki świata","active_bots":"Aktywne boty",
   "in_parties":"W grupach (PT)","avg_level":"Średni poziom","max_level":"Maks. poziom","rankings":"Rankingi botów","rank_level":"Poziom","rank_weapon":"Broń","rank_armor":"Zbroja",
   "rank_weapon30":"Bronie 30 Lv","rank_items":"Przedmioty","rank_horse":"Koń","rank_biologist":"Biolog","rank_hunting":"Polowanie","rank_shops":"Otwarte sklepy","rank_skills":"Umiejętności","rank_plus9":"Przedmiot +9","rank_stall_open":"Stragan otwarty","rank_empty":"Brak danych rankingu.","rank_show":"Pokaż","rank_search":"Szukaj w rankingu...","none":"Brak","items_short":"przedm.",
@@ -4368,7 +4368,7 @@ MAP_I18N = {
  "en": {
   "title":"Live world map — Chunjo","live":"LIVE (1.5 s)","subtitle":"Interactive real-time view of bot positions and progression",
   "player_panel":"Player panel","play_browser":"Play in browser","show_bots":"Show bots","names_levels":"Names and levels","pt_only":"Party only (PT)",
-  "level":"Level","all":"All","map":"Map","m1":"M1 — Joan","m2":"M2 — Bokjung","m3":"M3 — Waryong","monkey":"Easy Monkey Dungeon","monkey_medium":"Medium Monkey Dungeon","monkey_hard":"Hard Monkey Dungeon","orc":"Orc Valley","desert":"Yongbi Desert","sohan":"Mount Sohan","spider":"Spider Dungeon V1","heat":"Heatmap","heat_deaths":"Bot deaths","heat_metins":"Metins broken","heat_skills":"Skill-ups","search":"🔍 Find a bot (e.g. botarek)...",
+  "level":"Level","all":"All","map":"Map","m1":"M1 — Joan","m2":"M2 — Bokjung","m3":"M3 — Waryong","monkey":"Easy Monkey Dungeon","monkey_medium":"Medium Monkey Dungeon","monkey_hard":"Hard Monkey Dungeon","orc":"Orc Valley","desert":"Yongbi Desert","sohan":"Mount Sohan","spider":"Spider Dungeon V1","spider_v2":"Spider Dungeon V2","hwang":"Hwang Temple","heat":"Heatmap","heat_deaths":"Bot deaths","heat_metins":"Metins broken","heat_skills":"Skill-ups","search":"🔍 Find a bot (e.g. botarek)...",
   "solo_bot":"Solo bot","party_bot":"In party (PT)","metin_fight":"Fighting a Metin","loading":"Loading...","world_stats":"World statistics","active_bots":"Active bots",
   "in_parties":"In parties (PT)","avg_level":"Average level","max_level":"Max level","rankings":"Bot rankings","rank_level":"Level","rank_weapon":"Weapon","rank_armor":"Armour",
   "rank_weapon30":"Lv 30 Weapons","rank_items":"Items","rank_horse":"Horse","rank_biologist":"Biologist","rank_hunting":"Hunting","rank_shops":"Open shops","rank_skills":"Skills","rank_plus9":"Item +9","rank_stall_open":"Stall open","rank_empty":"No ranking data.","rank_show":"Show","rank_search":"Search ranking...","none":"None","items_short":"items",
@@ -4464,7 +4464,7 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
         <select id="mapFilter" onchange="setMapFilter(this.value)" style="width:auto;padding:6px 9px;font-size:12px;margin:0">
           <option value="21">{{m.m1}}</option><option value="23">{{m.m2}}</option>
           <option value="24">{{m.m3}}</option><option value="25">{{m.monkey}}</option><option value="108">{{m.monkey_medium}}</option><option value="109">{{m.monkey_hard}}</option>
-          <option value="64">{{m.orc}}</option><option value="63">{{m.desert}}</option><option value="61">{{m.sohan}}</option><option value="104">{{m.spider}}</option>
+          <option value="64">{{m.orc}}</option><option value="63">{{m.desert}}</option><option value="61">{{m.sohan}}</option><option value="104">{{m.spider}}</option><option value="65">{{m.hwang}}</option><option value="71">{{m.spider_v2}}</option>
         </select>
       </div>
 
@@ -4563,6 +4563,9 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
               <option value="30">30</option>
               <option value="50">50</option>
               <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
             </select>
           </label>
         </div>
@@ -5127,7 +5130,7 @@ function setRankCategory(cat, btn) {
 
 function setRankLimit(value) {
   var parsed = parseInt(value, 10);
-  g_rankLimit = [15, 30, 50, 100].indexOf(parsed) >= 0 ? parsed : 15;
+  g_rankLimit = [15, 30, 50, 100, 200, 500, 1000].indexOf(parsed) >= 0 ? parsed : 15;
   fetchRankings();
 }
 
@@ -6428,6 +6431,13 @@ def api_bot_logs(bot_name):
             "/opt/metin2/var/channel1/game2/syslog"
         ]
         matched_lines = []
+        # The whole name and not a prefix of one: "botgrom" used to match
+        # botgrom2..botgrom6 as well (reported as "mixed logs" by an operator
+        # watching one keeper's counter), because bot names are numbered
+        # suffixes of a shared stem. A name in the engine's log is bounded by
+        # a space, "=", ":", "[", a bracket or the line end, never by a letter
+        # or a digit of its own.
+        name_re = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(bot_name) + r"(?![A-Za-z0-9_])", re.IGNORECASE)
         for log_path in log_files:
             if os.path.exists(log_path):
                 try:
@@ -6435,7 +6445,7 @@ def api_bot_logs(bot_name):
                         lines = f.readlines()
                         recent = lines[-800:] if len(lines) > 800 else lines
                         for line in recent:
-                            if bot_name.lower() in line.lower():
+                            if name_re.search(line):
                                 matched_lines.append(line.strip())
                 except Exception:
                     pass
@@ -6459,6 +6469,7 @@ PLAYERBOT_MAP_BOUNDS = {
     63: (204800, 486400, 153600, 153600),   # Yongbi Desert
     61: (358400, 153600, 153600, 153600),   # Mount Sohan (map_n_snowm_01)
     104: (51200, 486400, 76800, 76800),     # Spider Dungeon V1
+    71: (665600, 435200, 102400, 102400),   # Spider Dungeon V2 (metin2_map_spiderdungeon_02)
     65: (537600, 51200, 102400, 102400),    # Hwang Temple (metin2_map_milgyo)
 }
 
@@ -8099,6 +8110,23 @@ PLAYERBOT_MAP_TILES = {
         "Ch5UMB+wda0DLYAWQAugBdACaAG0AFoALYAWQAugBdACaAG0AFoALYAWQAugBdACaAG0AFoALYAWQAugBdACaAG0AFoALYAW"
         "QAugBdACaAG0AFoALYAWQAugBdACaAG0AHat/X8TdGkt0OaVbQAAAABJRU5ErkJggg=="
     ),
+    71: (
+        "iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAQMAAABF07nAAAAABlBMVEXWvpE6LSNguj2SAAADwUlEQVR42u3dUU7qUBAA0Bkw"
+        "0T/cAW8nujNlZ7IT3AH8+RJh3kc1IU8UaSsFOfNH2sDhzpA05U4nK4aNUQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcEpmZmbdSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMCzgrpbDAaqkAAAAAAAAAAAA"
+        "AAAAAAAAAAAAAAAAAGBYQGVGzPMmIiLmmZl5dRor8LdpPlEDAAAAAAAAAG0iD9mSUHu4JQUAAAAAAAAARwJMqqrq6TRWIKuq"
+        "6kUNAAAAAAAAnDHgoP98sgYGfB3tdH19qRq1BChCAAAAAAAAAAAAAAAAAAAAAAAAAACAnYCeujf6X4H19hiRWfPiMSJilaOI"
+        "HP0IYLX1OYoQAAAAAAAA4FcCrr66ANt6MZttXyT1CNi5g2J+3+69NmoAAAAAAACgX8C4qur9GeF3VVWbz07aHHcFmiaXhRoA"
+        "AAAAAAD4JYConfEU09oTi60Lkg7R/q+xaakBAAAAAAAAAAAAAAAAAAAAAAAAAACA3wHYuZ2v2S84fo2IeP4TEW+PW1o399Yn"
+        "y/9PkgIAAAAAAACAcwa02T/Qa4fFdwGpBgAAAAAAAACGBlRV1dv9oOuqqnqUAgAAAAAAgEsBTOslsurHAAfdohnXkVagaXJ5"
+        "PfEaeKhlTLor/QoAAAAAAAAAAAAAAAAAAAAAAAAAAAD2AuZ5E5V5/+HALG9j1X3YyU7ALO/j+ZD37jBrRA0AAAAAAAAAfHeK"
+        "xxCAb0VnpRoAAAAAAAA4e0B2neixd47JQgoAAAAAAACGADxsN3hKwdCA6ftkld152nQFZE+NMzWKUgMAAAAAAAAAAAAAAAAA"
+        "AAAAAAAAAJcGmGVm5uiogHXTyXH74cAqRxG7GlHUAAAAAAAAAMAZAM5mjslnUXpMAAAAAAAALhIwOaUxIk0jyosaAAAAAAAA"
+        "uEhAT50wBwHGVY/xUMsPB64/6wNRAwAAAAAAAAAAAAAAAAAAAAAAAAAAAABnADjoiUzrZv/ldCEFAAAAAAAAAAAAAAAAAAAA"
+        "AAAAAAAAAAAAPUZfQzSkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "AAAAAKB1/APFlzLNc7KcTwAAAABJRU5ErkJggg=="
+    ),
     104: (
         "iVBORw0KGgoAAAANSUhEUgAABAAAAAQAAgMAAAACc8MQAAAACVBMVEXWvpGoj2o6LSNXboASAAAF1klEQVR42u3dTW6CQBgG"
         "YGjsEdx4Gg8hpMfwKD1GAy48FZsewUS7qJghDAGMP4jPu3IqDu2TmUomzEdaJO+djwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -8670,7 +8698,7 @@ def api_bot_safebox(pid):
 def api_bot_rankings():
     rtype = request.args.get("type", "level")
     try:
-        rank_limit = max(15, min(100, int(request.args.get("limit", "15"))))
+        rank_limit = max(15, min(1000, int(request.args.get("limit", "15"))))
     except (TypeError, ValueError):
         rank_limit = 15
     language = lang()

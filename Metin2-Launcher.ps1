@@ -319,6 +319,7 @@ function Rebuild-Server {
         # the second click succeeded. Pull what is not built first; a failure
         # here is not final, `up` tries again.
         docker compose --project-directory $composeDir -f $composeFile pull --ignore-buildable 2>&1 | Out-Null
+        Set-M2PlayerbotsVersionEnvironment -ServerRoot $serverRoot
         docker compose --project-directory $composeDir -f $composeFile up -d --build
         $buildExit = $LASTEXITCODE
     }

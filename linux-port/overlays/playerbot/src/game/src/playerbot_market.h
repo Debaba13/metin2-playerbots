@@ -575,6 +575,13 @@ namespace
 	// what the listing decisions said in between. Read the top of that list
 	// against the drops: a material with thirty bots short and nothing on any
 	// counter is not being held back by the ledger, it is not being found.
+	// Declared in playerbot_economy.h for the junk rule.
+	DWORD GetPlayerBotLedgerDemand(DWORD vnum)
+	{
+		TPlayerBotMarketLedger::const_iterator it = s_mapMarketLedger.find(vnum);
+		return it == s_mapMarketLedger.end() ? 0 : it->second.dwDemandBots;
+	}
+
 	void RefreshPlayerBotMarketLedger(DWORD dwNow)
 	{
 		if (s_dwMarketLedgerTime != 0 &&

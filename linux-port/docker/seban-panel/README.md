@@ -4,9 +4,9 @@ Metin2 Singleplayer Panel to alternatywny panel administracyjny i obserwacyjny d
 
 Projekt korzysta z tej samej bazy, plików statusu Playerbots i kolejki administracyjnej. Nie zastępuje klasycznego panelu ani nie wymaga migracji danych — rozszerza instalację o dodatkowy, nowoczesny widok świata i narzędzia administracyjne. W menu znajduje się opcjonalny odnośnik do Panelu Tieru.
 
-## Wydanie 1.38.2
+## Wydanie 1.40.0
 
-Panel zawiera odizolowany most do aktualizatora Tieru: stan, postęp i log w `/manage`, zlecenie aktualizacji tylko po zalogowaniu oraz bez dostępu Seban Panelu do socketu Dockera. Instrukcję jednorazowego włączenia na VPS zawiera [UPDATER_VPS.md](UPDATER_VPS.md).
+Panel zawiera odizolowany most do aktualizatora Tieru: stan, postęp i log w `/manage`, zlecenie aktualizacji tylko po zalogowaniu oraz bez dostępu Seban Panelu do socketu Dockera. Skrócona instrukcja jest zwijana bezpośrednio w `/manage`, a pełny opis znajduje się w [UPDATER_VPS.md](UPDATER_VPS.md).
 
 ## Co oferuje
 

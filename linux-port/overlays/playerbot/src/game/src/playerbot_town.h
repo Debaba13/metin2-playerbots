@@ -1319,11 +1319,42 @@ namespace
 		const bool bHadShop = ch->GetMyShop() != NULL;
 		if (bHadShop)
 			ch->CloseMyShop();
+		// Did this stand sell anything? The lifetime pass writes bSoldLogged
+		// once per line that left the bag.
+		bool bSoldSomething = false;
+		for (size_t i = 0; i < state.vecShopOffers.size(); ++i)
+			if (state.vecShopOffers[i].bSoldLogged)
+				bSoldSomething = true;
 		state.dwShopOpenedTime = 0;
 		state.dwShopCloseTime = 0;
 		state.vecShopOffers.clear();
-		state.dwNextShopKeepTime = dwNow +
-				number(PLAYERBOT_SHOP_REST_MIN, PLAYERBOT_SHOP_REST_MAX);
+		// A stand that merely ran out of time is followed by another one on
+		// the same pitch - the keeper is standing there, the goods are in the
+		// bag, and the open pass takes "already at the pitch" - up to
+		// PLAYERBOT_SHOP_STANDS_IN_ROW of them, and not after two dry stands in
+		// a row. Anything else (sold out, walked off, refused) rests.
+		const bool bExpired = reason && strcmp(reason, "expired") == 0;
+		const bool bBarren = !bSoldSomething && state.bShopStandsInRow > 0 &&
+				!state.bShopLastStandSold;
+		const bool bAgain = bExpired && !bBarren &&
+				state.bShopStandsInRow + 1 < PLAYERBOT_SHOP_STANDS_IN_ROW &&
+				ShouldPlayerBotKeepShop(ch, state);
+		if (bAgain)
+		{
+			++state.bShopStandsInRow;
+			state.bShopLastStandSold = bSoldSomething;
+			state.dwNextShopKeepTime = dwNow + PLAYERBOT_SHOP_REOPEN_MS;
+			sys_log(0, "PLAYERBOT_SHOP: another stand pid=%u name=%s stand=%d/%d sold=%d",
+					ch->GetPlayerID(), ch->GetName(), (int)state.bShopStandsInRow + 1,
+					PLAYERBOT_SHOP_STANDS_IN_ROW, bSoldSomething ? 1 : 0);
+		}
+		else
+		{
+			state.bShopStandsInRow = 0;
+			state.bShopLastStandSold = false;
+			state.dwNextShopKeepTime = dwNow +
+					number(PLAYERBOT_SHOP_REST_MIN, PLAYERBOT_SHOP_REST_MAX);
+		}
 		if (bHadShop)
 		{
 			// CloseMyShop takes the sign back from whoever is in view at this
@@ -1582,14 +1613,21 @@ namespace
 		// to Joan rather than adding an eighth counter nobody can see past -
 		// which is the only way the second market ever gets stock, since this is
 		// where the bots with something to sell happen to be standing.
+		const int iM2StallCap = MAX(PLAYERBOT_SHOP_M2_MAX_STALLS,
+				GetPlayerBotsAlive() * PLAYERBOT_SHOP_M2_STALLS_PER_MILLE / 1000);
 		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
-				s_iPlayerBotStallsInM2 >= PLAYERBOT_SHOP_M2_MAX_STALLS)
+				s_iPlayerBotStallsInM2 >= iM2StallCap)
 		{
 			// Only a keeper by personality, and only one with nowhere else to
 			// be. This pass runs ahead of the world travel, so a bot bound for
 			// the frontier was walked to the M1 portal instead - every tick,
 			// for as long as it held six surplus books.
-			if (!IsPlayerBotStallKeeper(state) || state.lDepartureMap != 0)
+			// ...and not a bot whose place is the frontier: it stood in
+			// Bokjung on its way to Sohan with "Ide na Gore Sohan" over its
+			// head and rode to the Joan gate instead, which is what "the bots
+			// go to the wrong portal" looked like from the outside.
+			if (!IsPlayerBotStallKeeper(state) || state.lDepartureMap != 0 ||
+					GetPlayerBotFrontierMapForLevel(ch) != 0)
 			{
 				state.dwNextShopKeepTime = dwNow + PLAYERBOT_SHOP_RING_FULL_RETRY;
 				return false;
@@ -1601,9 +1639,10 @@ namespace
 					IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch)))
 				return false;
 			PlayerBotLogThrottled("stall_overflow", dwNow,
-					"PLAYERBOT_SHOP: Bokjung full, taking the stall to Joan pid=%u name=%s stalls=%d lines=%u",
-					ch->GetPlayerID(), ch->GetName(), s_iPlayerBotStallsInM2,
+					"PLAYERBOT_SHOP: Bokjung full, taking the stall to Joan pid=%u name=%s stalls=%d cap=%d lines=%u",
+					ch->GetPlayerID(), ch->GetName(), s_iPlayerBotStallsInM2, iM2StallCap,
 					(unsigned int)worthTaking.size());
+			state.dwStallWalkUntil = dwNow + PLAYERBOT_SHOP_RING_FULL_RETRY;
 			return MovePlayerBotToWorldPortal(ch, state,
 					PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
 					PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_GUARD_X,

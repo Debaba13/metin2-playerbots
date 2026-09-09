@@ -25,6 +25,9 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		bool	IsManaged(DWORD dwPlayerID) const;
 		bool	IsRegistered(DWORD dwPlayerID);
 		size_t	GetCount() const;
+		// Registered identities not spawned right now, ascending, at most
+		// `limit` of them - the F9 panel's "bots ready to spawn" list.
+		void	GetAvailableBots(std::vector<DWORD>& out, size_t limit);
 
 	private:
 		typedef std::map<DWORD, LPDESC> TPlayerBotMap;

@@ -1350,6 +1350,38 @@ void CPlayerBotManager::OnDescriptorDestroyed(LPDESC d)
 	}
 }
 
+// The wait for the engine's equipment window, shared by the two places the
+// gear pass runs. True while the bot should stand and claim the tick: the
+// engine refuses EquipItem within 1.5 s of an attack or a cast, so a piece
+// waiting in the bag needs the fighting to stop for a moment. Bounded by
+// PLAYERBOT_EQUIP_PENDING_MAX_MS, and a window that never comes is not asked
+// for again before PLAYERBOT_EQUIP_PENDING_RETRY_MS.
+static bool HoldPlayerBotForEquipWindow(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+{
+	if (!state.bEquipPending)
+	{
+		state.dwEquipPendingSince = 0;
+		return false;
+	}
+	if (state.dwEquipPendingSince == 0)
+		state.dwEquipPendingSince = dwNow;
+	if (dwNow - state.dwEquipPendingSince > PLAYERBOT_EQUIP_PENDING_MAX_MS)
+	{
+		PlayerBotLogThrottled("equip_pending_abandoned", dwNow,
+				"PLAYERBOT_GEAR: equip window never came pid=%u name=%s map=%ld pos=(%ld,%ld) waited_ms=%u last_attack_ms=%u",
+				ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY(),
+				dwNow - state.dwEquipPendingSince, dwNow - ch->GetLastAttackTime());
+		state.bEquipPending = false;
+		state.dwEquipPendingSince = 0;
+		state.dwNextEquipmentCheckTime = dwNow + PLAYERBOT_EQUIP_PENDING_RETRY_MS;
+		return false;
+	}
+	state.dwTargetVID = 0;
+	ch->SetVictim(NULL);
+	ch->Stop();
+	return true;
+}
+
 void CPlayerBotManager::Update()
 {
 	const DWORD dwNow = get_dword_time();
@@ -1646,6 +1678,23 @@ void CPlayerBotManager::Update()
 		ManagePlayerBotSkillBooks(ch, state, dwNow);
 		ManagePlayerBotSoulStones(ch, state, dwNow);
 		ManagePlayerBotThirdHand(ch, state, dwNow);
+		// The gear pass, early. It used to sit at the bottom of the tick, past
+		// the stall, the loot, the horse, the fishing, the travel, the town
+		// visit and the wander, each of which claims the tick - so a bot that
+		// was always doing one of them never looked at its bag: a warrior of
+		// twenty-eight fought with the level-one sword at +6 (attack 60) with
+		// a Long Sword +4 (82) in the bag, 234 of 970 bots the same way. Not
+		// behind an open counter (the table points at cells), not during a
+		// town visit (the blacksmith phase moves gear itself), not with a rod
+		// in the hand, not at the stable.
+		if (!ch->GetMyShop() && !state.bVisitingShop && !state.bFishingSession &&
+				!state.bVisitingStable)
+		{
+			if (ManagePlayerBotEquipment(ch, state, dwNow))
+				continue;
+			if (HoldPlayerBotForEquipWindow(ch, state, dwNow))
+				continue;
+		}
 		// Opening a chest belongs with the other upkeep, not after it. Down at
 		// the bottom of the tick - past combat, loot, travel, the town and the
 		// wandering, each of which claims the tick - it was reached so rarely
@@ -1946,35 +1995,9 @@ void CPlayerBotManager::Update()
 				ch->GetWear(WEAR_HEAD) == NULL || ch->GetWear(WEAR_FOOTS) == NULL;
 		if (ManagePlayerBotEquipment(ch, state, dwNow))
 			continue;
-		if (bMissingCoreWearSlot && state.bEquipPending)
-		{
-			// A continuous attack cadence never left the 1.7 s native equipment
-			// window open. Pause only when a usable item for a missing core slot is
-			// already waiting in the inventory, then equip it on the next update -
-			// and never for longer than PLAYERBOT_EQUIP_PENDING_MAX_MS: a pause
-			// that claims the tick without a bound is a bot that stands for good.
-			if (state.dwEquipPendingSince == 0)
-				state.dwEquipPendingSince = dwNow;
-			if (dwNow - state.dwEquipPendingSince > PLAYERBOT_EQUIP_PENDING_MAX_MS)
-			{
-				PlayerBotLogThrottled("equip_pending_abandoned", dwNow,
-						"PLAYERBOT_GEAR: equip window never came pid=%u name=%s map=%ld pos=(%ld,%ld) waited_ms=%u last_attack_ms=%u",
-						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY(),
-						dwNow - state.dwEquipPendingSince, dwNow - ch->GetLastAttackTime());
-				state.bEquipPending = false;
-				state.dwEquipPendingSince = 0;
-				state.dwNextEquipmentCheckTime = dwNow + PLAYERBOT_EQUIPMENT_CHECK_INTERVAL;
-			}
-			else
-			{
-				state.dwTargetVID = 0;
-				ch->SetVictim(NULL);
-				ch->Stop();
-				continue;
-			}
-		}
-		else
-			state.dwEquipPendingSince = 0;
+		if (HoldPlayerBotForEquipWindow(ch, state, dwNow))
+			continue;
+		(void)bMissingCoreWearSlot;
 
 		// A buff is a complete action for this AI update.  Continuing into the
 		// attack code used to emit a second skill packet in the very same tick.
@@ -2284,6 +2307,17 @@ bool CPlayerBotManager::IsManaged(DWORD dwPlayerID) const
 size_t CPlayerBotManager::GetCount() const
 {
 	return m_mapBots.size();
+}
+
+void CPlayerBotManager::GetAvailableBots(std::vector<DWORD>& out, size_t limit)
+{
+	out.clear();
+	if (!LoadRegisteredBots())
+		return;
+	for (TRegisteredPlayerBotSet::const_iterator it = m_setRegisteredBots.begin();
+			it != m_setRegisteredBots.end() && out.size() < limit; ++it)
+		if (m_mapBots.find(*it) == m_mapBots.end())
+			out.push_back(*it);
 }
 
 void CPlayerBotManager::OnPlayerShout(LPCHARACTER ch, const char* szText)

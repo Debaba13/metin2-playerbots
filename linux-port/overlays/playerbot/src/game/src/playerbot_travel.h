@@ -245,6 +245,19 @@ namespace
 		TPlayerBotAIStateMap::const_iterator role = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
 		const bool stoneHunter = role != s_mapPlayerBotAIStates.end() &&
 				role->second.bBotRole == BOT_ROLE_METIN_HUNTER;
+		// Fifty-four and up: the second Spider Dungeon takes the draw the
+		// first one had - spiders of sixty to sixty-eight that never attack
+		// first, against V1's fifty to fifty-eight - and a stone hunter
+		// still goes to Sohan, because neither dungeon has a stone.
+		if (level >= PLAYERBOT_SPIDER_V2_MIN_LEVEL)
+		{
+			switch (draw % 3U)
+			{
+				case 0: return stoneHunter ? PLAYERBOT_MAP_SOHAN : PLAYERBOT_MAP_SPIDER_V2;
+				case 1: return PLAYERBOT_MAP_SOHAN;
+				default: return PLAYERBOT_MAP_HWANG;
+			}
+		}
 		if (level >= PLAYERBOT_HWANG_MIN_LEVEL)
 		{
 			switch (draw % 3U)
@@ -430,22 +443,27 @@ namespace
 		BYTE chance = 10;
 		switch (ch->GetJob())
 		{
+			// The medal is the market's short: a battle horse used to end a
+			// bot's trips almost for good (4% a window), and the cohort past
+			// forty-six has one, so the hard dungeon - the only place a medal
+			// drops at full odds for them - saw a few bots an hour. Three
+			// times the after-horse chance, the before-horse ones unchanged.
 			case JOB_WARRIOR:
-				chance = hasCombatHorse ? 4 : (ch->GetHorseLevel() == 0 ? 34 : 26);
+				chance = hasCombatHorse ? 12 : (ch->GetHorseLevel() == 0 ? 34 : 26);
 				break;
 			case JOB_SURA:
 				// Skill group 1 is Weaponry (WP); group 2 is Black Magic.
 				chance = ch->GetSkillGroup() == 1
-						? (hasCombatHorse ? 4 : (ch->GetHorseLevel() == 0 ? 32 : 25))
-						: (hasCombatHorse ? 2 : (ch->GetHorseLevel() == 0 ? 14 : 9));
+						? (hasCombatHorse ? 12 : (ch->GetHorseLevel() == 0 ? 32 : 25))
+						: (hasCombatHorse ? 6 : (ch->GetHorseLevel() == 0 ? 14 : 9));
 				break;
 			case JOB_ASSASSIN:
 				chance = ch->GetSkillGroup() == 2
-						? (hasCombatHorse ? 1 : (ch->GetHorseLevel() == 0 ? 6 : 4))
-						: (hasCombatHorse ? 2 : (ch->GetHorseLevel() == 0 ? 18 : 14));
+						? (hasCombatHorse ? 3 : (ch->GetHorseLevel() == 0 ? 6 : 4))
+						: (hasCombatHorse ? 6 : (ch->GetHorseLevel() == 0 ? 18 : 14));
 				break;
 			case JOB_SHAMAN:
-				chance = hasCombatHorse ? 2 : (ch->GetHorseLevel() == 0 ? 15 : 10);
+				chance = hasCombatHorse ? 6 : (ch->GetHorseLevel() == 0 ? 15 : 10);
 				break;
 		}
 		TPlayerBotAIStateMap::const_iterator stateIt =
@@ -520,7 +538,8 @@ namespace
 		// bot to the gate; a warp out of it becomes the desert's far corner and
 		// the walk back to the Bokjung gate. Both call back in here with the
 		// desert as the target, which neither rule touches.
-		if (targetMap == PLAYERBOT_MAP_SPIDER_V1 && ch->GetMapIndex() != PLAYERBOT_MAP_DESERT)
+		if (IsPlayerBotSpiderMap(targetMap) && ch->GetMapIndex() != PLAYERBOT_MAP_DESERT &&
+				!IsPlayerBotSpiderMap(ch->GetMapIndex()))
 		{
 			state.lDesertCrossingTo = targetMap;
 			state.lDesertCrossingX = targetX;
@@ -529,7 +548,8 @@ namespace
 			return TransitionPlayerBotMap(ch, state, PLAYERBOT_MAP_DESERT,
 					PLAYERBOT_DESERT_ARRIVAL_X, PLAYERBOT_DESERT_ARRIVAL_Y, dwNow, "desert_crossing_to_v1");
 		}
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_SPIDER_V1 && targetMap != PLAYERBOT_MAP_DESERT)
+		if (IsPlayerBotSpiderMap(ch->GetMapIndex()) && targetMap != PLAYERBOT_MAP_DESERT &&
+				!IsPlayerBotSpiderMap(targetMap))
 		{
 			state.lDesertCrossingTo = targetMap;
 			state.lDesertCrossingX = targetX;
@@ -738,6 +758,12 @@ namespace
 						"PLAYERBOT_WORLD: teleporter refuses pid=%u name=%s level=%u gold=%d fee=%d to=%ld reason=%s",
 						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), ch->GetGold(),
 						GetPlayerBotTeleporterFee(ch), targetMap, reason ? reason : "?");
+				// Not again this tick, nor the next thousand: the fee is earned
+				// at a counter or a merchant, and both run only on a tick the
+				// travel pass does not take. A departure held for a purchase
+				// keeps its map (lDepartureMap) and comes back when the wait
+				// is over.
+				state.dwNextWorldTravelTime = dwNow + PLAYERBOT_TELEPORTER_RETRY_MS;
 				return false;
 			}
 		}
@@ -1102,7 +1128,7 @@ namespace
 					return false;
 				}
 			}
-			const bool toV1 = state.lDesertCrossingTo == PLAYERBOT_MAP_SPIDER_V1;
+			const bool toV1 = IsPlayerBotSpiderMap(state.lDesertCrossingTo);
 			// The walk does not own the goal. This leg, and the four others
 			// like it, stamped LEVEL_UP on every tick they ran; the planner put
 			// its own answer back five seconds later, and 350 bots on the
@@ -1390,8 +1416,16 @@ namespace
 			if (!visitExpired && !outOfBand && !needsTown && !wantsMedal && !wantsWeapon)
 				return false;
 
+			// A share of the bots keeps Joan as home: the services trip goes
+			// there, and only the services trip - a medal, a weapon hunt and
+			// a graduation are Bokjung's business.
+			const bool joanHome = needsTown &&
+					(PlayerBotNavHash(ch->GetPlayerID() ^ 0x4a4f414eU) % 1000U) <
+						(DWORD)PLAYERBOT_JOAN_HOME_PER_MILLE;
 			const char* reason = "frontier_visit_complete";
-			if (needsTown)
+			if (joanHome)
+				reason = "frontier_services_to_m1";
+			else if (needsTown)
 				reason = "frontier_services_to_m2";
 			else if (outOfBand)
 				reason = "frontier_level_graduated";
@@ -1401,6 +1435,10 @@ namespace
 				reason = "frontier_weapon_to_m2";
 			long exitX = 0, exitY = 0;
 			GetPlayerBotFrontierExit(mapIndex, exitX, exitY);
+			if (joanHome)
+				return MovePlayerBotToWorldPortal(ch, state, exitX, exitY,
+						PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_RETURN_X, PLAYERBOT_M1_RETURN_Y,
+						dwNow, reason);
 			return MovePlayerBotToWorldPortal(ch, state, exitX, exitY,
 					PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_FROM_M3_X, PLAYERBOT_M2_FROM_M3_Y,
 					dwNow, reason);

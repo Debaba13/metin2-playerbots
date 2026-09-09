@@ -592,7 +592,81 @@ function Sync-M2PlayerbotOverlay {
         Write-Warning "Brak $seedSource - playerbots_seed.sql nie zostal odswiezony."
     }
 
+    # The panel's build context, the same way. start-server.ps1 stages these
+    # too, but below its -IdentityOnly return - and this function is what the
+    # launcher's own build path runs, so a player who only ever clicked GRAJ or
+    # AKTUALIZUJ had a panel built from whatever VERSION and CHANGELOG the
+    # installer left there: ten releases later the classic panel still said
+    # 1.29.0 and offered "Zobacz, co przynosi" for a version it was running.
+    # Rebuilding the image could not help, because the file it bakes in was
+    # the stale one.
+    foreach ($pair in @(
+            @{ From = 'VERSION';                    To = 'linux-port\docker\panel\app\VERSION' },
+            @{ From = 'CHANGELOG.md';               To = 'linux-port\docker\panel\app\CHANGELOG.md' },
+            @{ From = 'files\admin_panel.py';       To = 'linux-port\docker\panel\app\admin_panel.py' },
+            @{ From = 'files\items.json';           To = 'linux-port\docker\panel\app\items.json' },
+            @{ From = 'files\favicon.png';          To = 'linux-port\docker\panel\app\favicon.png' },
+            @{ From = 'files\web_admin_schema.sql'; To = 'linux-port\docker\panel\schema\web_admin_schema.sql' },
+            @{ From = 'files\web_admin.quest';      To = 'linux-port\docker\game\quest\web_admin.quest' },
+            @{ From = 'files\high_risk.quest';      To = 'linux-port\docker\game\quest\high_risk.quest' })) {
+        $panelSource = Join-Path $ServerRoot $pair.From
+        $panelStaged = Join-Path $ServerRoot $pair.To
+        if (-not (Test-Path -LiteralPath $panelSource -PathType Leaf)) { continue }
+        $panelParent = Split-Path -Parent $panelStaged
+        if (-not (Test-Path -LiteralPath $panelParent -PathType Container)) {
+            New-Item -ItemType Directory -Path $panelParent -Force | Out-Null
+        }
+        $panelStagedHash = $null
+        if (Test-Path -LiteralPath $panelStaged -PathType Leaf) {
+            $panelStagedHash = (Get-FileHash -LiteralPath $panelStaged -Algorithm SHA256).Hash
+        }
+        if ($panelStagedHash -ne (Get-FileHash -LiteralPath $panelSource -Algorithm SHA256).Hash) {
+            Copy-Item -LiteralPath $panelSource -Destination $panelStaged -Force
+            $copied++
+        }
+    }
+    $staticSource = Join-Path $ServerRoot 'files\static'
+    $staticStaged = Join-Path $ServerRoot 'linux-port\docker\panel\app\static'
+    if (Test-Path -LiteralPath $staticSource -PathType Container) {
+        foreach ($asset in Get-ChildItem -LiteralPath $staticSource -Recurse -File) {
+            $relative = $asset.FullName.Substring($staticSource.Length).TrimStart('\')
+            $assetStaged = Join-Path $staticStaged $relative
+            $assetParent = Split-Path -Parent $assetStaged
+            if (-not (Test-Path -LiteralPath $assetParent -PathType Container)) {
+                New-Item -ItemType Directory -Path $assetParent -Force | Out-Null
+            }
+            $assetHash = $null
+            if (Test-Path -LiteralPath $assetStaged -PathType Leaf) {
+                $assetHash = (Get-FileHash -LiteralPath $assetStaged -Algorithm SHA256).Hash
+            }
+            if ($assetHash -ne (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash) {
+                Copy-Item -LiteralPath $asset.FullName -Destination $assetStaged -Force
+                $copied++
+            }
+        }
+    }
+
     return $copied
+}
+
+function Set-M2PlayerbotsVersionEnvironment {
+    <#
+        The advanced panel reports the Playerbots release it is looking at from
+        PLAYERBOTS_VERSION, which compose takes from M2_PLAYERBOTS_VERSION or a
+        default written into docker-compose.yml. Nothing on a player's machine
+        ever set the variable, so the panel reported whatever the default was
+        when that compose file was last touched - 1.30.29 for ten releases.
+        Compose reads the process environment before the .env file, so the
+        launcher can say what VERSION on disk says without touching a file
+        it must never rewrite. A value an operator set by hand is left alone.
+    #>
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+
+    if ($env:M2_PLAYERBOTS_VERSION) { return }
+    $versionFile = Join-Path $ServerRoot 'VERSION'
+    if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) { return }
+    $version = ([IO.File]::ReadAllText($versionFile)).Trim()
+    if ($version -match '^\d+\.\d+\.\d+$') { $env:M2_PLAYERBOTS_VERSION = $version }
 }
 
 function Get-M2SanitizedEnv {
@@ -717,6 +791,27 @@ function New-M2SupportBundle {
             }
             Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'compose-logs.txt') -Command {
                 docker compose --project-directory $composeDir -f $composeFile logs --no-color --tail 800
+            }
+            # The core's syslog never reaches the container log - only syserr
+            # does - so a bundle sent about "the bots walk to the wrong portal"
+            # carried nothing about where any bot was going. The travel,
+            # portal, navigation and watchdog lines of the last hours, and the
+            # goal and status lines that say what each bot wanted, filtered
+            # here rather than shipped whole (a busy day's syslog is hundreds
+            # of megabytes). Bots only; a player's chat is not in it.
+            # No double quotes anywhere inside the sh command - not round $f,
+            # not round the grep pattern: Windows PowerShell 5.1 wraps a native
+            # argument in double quotes without escaping the ones it already
+            # holds, so the first embedded quote ended the argument and the
+            # file came back empty on the machine it was made for (1.30.40).
+            # Hence -e per pattern instead of one quoted alternation.
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'playerbot-syslog.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                    'for f in /opt/metin2/var/channel1/game1/log/*/syslog.* /opt/metin2/var/channel1/game1/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e autospawn | tail -n 60000'
+            }
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'playerbot-status.tsv') -Command {
+                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                    'cat /opt/metin2/var/channel1/game1/playerbot_status.tsv 2>/dev/null'
             }
             Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'compose-services.txt') -Command {
                 docker compose --project-directory $composeDir -f $composeFile config --services
@@ -1243,5 +1338,6 @@ Export-ModuleMember -Function @(
     'Get-M2MissingSqlDumps',
     'Test-M2DockerRunning',
     'Sync-M2PlayerbotOverlay',
+    'Set-M2PlayerbotsVersionEnvironment',
     'Invoke-M2EnginePatches'
 )

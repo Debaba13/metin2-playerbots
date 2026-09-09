@@ -243,7 +243,8 @@ namespace
 	bool CanPlayerBotRerollItem(LPITEM item)
 	{
 		return item && item->GetType() != ITEM_COSTUME && !item->isLocked() &&
-				!item->IsExchanging() && item->GetAttributeSetIndex() != -1;
+				!item->IsExchanging() && item->GetAttributeSetIndex() != -1 &&
+				item->GetRefineLevel() >= PLAYERBOT_BONUS_MIN_REFINE;
 	}
 
 	// The stones cannot be dropped, sold, traded or shopped, so there is no market

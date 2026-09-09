@@ -1,4 +1,28 @@
 # Zmiany
+## 2026-09-09 18:10 CEST · 1.40.0
+
+- Dodano zwijany poradnik uruchomienia aktualizatora Tieru na VPS bezpośrednio w Zarządzaniu.
+- Tabele, przyciski, linki, przedziałki i kafelki wskazanych widoków dziedziczą teraz aktywny motyw.
+- Baza przedmiotów pokazuje ikonę rzeczywistego przedmiotu przy każdej kategorii.
+- Konta i profil postaci pokazują flagę oraz nazwę królestwa.
+
+## 2026-09-09 17:45 CEST · 1.39.1
+
+- Karta Playerbots · świat na Dashboardzie dziedziczy pełną kolorystykę aktywnego motywu, także dla etykiet, rat i listy map.
+
+## 2026-09-09 17:30 CEST · 1.39.0
+
+- Kreator GM pozwala wybrać kobietę albo mężczyznę; zapisuje właściwy wariant modelu klienta, zachowując klasyczny wariant jako domyślny.
+- Oryginalne portrety klas są widoczne w profilu postaci, liście graczy, rankingach, karuzeli Dashboardu i rankingu aktualnej mapy.
+- Ranking botów otrzymał kolumnę klasy z portretem i nazwą.
+- Mapa na żywo, filtry, paski aktywności oraz karuzela rankingów dziedziczą teraz pełną paletę motywu Ocean, Ember lub Forest.
+
+## 2026-09-09 16:47 CEST · 1.38.6
+
+- Kreator kont GM zapisuje teraz indeks wyboru postaci (`player.player_index`), więc utworzona postać jest widoczna od razu po zalogowaniu.
+- Nieudana konfiguracja GM sprząta utworzone przez siebie rekordy, także na tabelach MyISAM bez transakcji.
+- Nick GM przyjmuje pojedynczy prefiks w nawiasach, np. `[GM]Seban` lub `[GA]Seban`.
+- Dodano osiem oryginalnych portretów klas z ekranu postaci klienta do `static/class-portraits/`.
 
 ## 2026-09-08 21:45 CEST · 1.38.5
 

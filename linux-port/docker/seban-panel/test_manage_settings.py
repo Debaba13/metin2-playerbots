@@ -33,8 +33,12 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     assert gm_response.status_code == 302 and fake_connection.started and fake_connection.committed
     queries=[query for query,_params in fake_connection.cursor_instance.calls]
     assert any('INSERT INTO player.player' in query for query in queries)
+    assert any('INSERT INTO player.player_index' in query for query in queries)
     player_insert=next(params for query,params in fake_connection.cursor_instance.calls if 'INSERT INTO player.player' in query)
     assert player_insert[:6] == (4242, 'TestGM', 2, 55700, 157900, 21)
+    with patch.object(panel, 'db', return_value=FakeConnection()):
+        tagged_response=client.post('/accounts', data={'login':'ga_test','password':'secret12','email':'','deletion_code':'1234567','empire':'1','authority':'GOD','gm_name':'[GA]Test','gm_job':'0'})
+    assert tagged_response.status_code == 302
     form={'submit_action':'apply','exp':'150','drop':'170','yang':'190','map_21':'1','map_stone_21':'350','map_1':''}
     assert client.post('/manage/restart-config',data=form).status_code==302
     request=Path(tmp)/'server-settings.request'; original=request.read_text()
@@ -100,8 +104,11 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     assert panel.MAP_BOUNDS[61] == (358400, 153600, 153600, 153600)
     assert 61 in panel.MAP_STONE_RESPAWN_IDS and not {25, 104, 108, 109} & panel.MAP_STONE_RESPAWN_IDS
     assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [21, 23, 24, 25, 61, 63, 64, 104, 108, 109]
-    assert panel.changelog_entries()[0]['version'] == '1.38.5'
+    assert panel.changelog_entries()[0]['version'] == '1.40.0'
     assert (Path(panel.__file__).parent / 'static' / 'inventory-background.svg').is_file()
+    assert panel.class_profile(5)['portrait'] == 'assassin_m.bmp' and panel.class_profile(6)['gender'] == 'Kobieta'
+    assert panel.empire_info(2)['name'] == 'Chunjo' and panel.empire_info(999)['flag'] == ''
+    assert (Path(panel.__file__).parent / 'static' / 'empires' / 'chunjo.png').is_file()
     with patch.object(panel, 'rows', return_value=[]) as ranking_rows:
         assert panel.bot_ranking('bosses') == []
         assert "BOSS_KILL" in ranking_rows.call_args.args[0]

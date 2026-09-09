@@ -17,6 +17,301 @@ every version here.
 
 ---
 
+## 1.31.2 — 2026-09-09
+
+### Panel zaawansowany
+
+- **Panel Sebana 1.40.0** (z 1.38.5): zwijany poradnik aktualizatora na
+  VPS w Zarządzaniu, motywy dziedziczone przez tabele i kafelki, ikony
+  przedmiotów w bazie, flagi i nazwy królestw, portrety klas w profilach,
+  listach i rankingach, kreator GM z wyborem płci. Nasze poprawki nałożone
+  na nowo: Świątynia Hwang i Loch Pająków V2 w nazwach, granicach i
+  respawnach, przełącznik „Noc na serwerze”, ranking broni z właściwymi
+  kolumnami średnich i umiejętności (71/72), restart bez helpera Sebana,
+  panel startowy bez błędu w pierwszych minutach świeżej bazy.
+
+- **Opis „Szybkie czytanie ksiąg” mówi to, co robi kod** (Kenny: „na stronie
+  jest co pół godziny, w kodzie czyta od razu”). Od 1.30.30 bot czyta księgę
+  od razu, gdy ją ma; jedyny hamulec to sama gra — 20 000 doświadczenia i
+  rzut przy każdej lekturze. Opis w obu panelach poprawiony.
+
+---
+
+## 1.31.1 — 2026-09-09
+
+> **Ta aktualizacja jest mocno eksperymentalna.** ItemShop i panel GM to
+> nowe, obce nam systemy (autor: OskarPWA) spięte z naszym stosem w jeden
+> wieczór. ItemShop jedzie do każdego w zwykłej aktualizacji serwera (bez
+> zmian w kliencie). Panel GM na F9 wymaga podmiany plików klienta i jest
+> **opcjonalny**: instaluje go osobny przycisk launchera „PANEL GM F9
+> (TEST)”, po ostrzeżeniu, z kopią zapasową poprzednich plików. Zwykła
+> aktualizacja („SPRAWDŹ AKTUALIZACJE”) nie dotyka klienta.
+
+### Panel GM (F9) i klient
+
+- **Panel GM na F9 oraz przyciski EQ/Sprawdź w menu postaci** (autor:
+  OskarPWA). Serwer: 21 komend `gmpanel_*` scalonych z naszym rdzeniem
+  (`cmd_gm.cpp`, `cmd.cpp`, łatka 0009 dla instalacji linuksowych), każda
+  sprawdza poziom GM po stronie serwera; „Spawn Botów” korzysta z naszego
+  `CPlayerBotManager` (nowa metoda `GetAvailableBots`). Klient: cztery pliki
+  (`game.py`, `interfacemodule.py`, `uitarget.py`, `constinfo.py`) w
+  `pack/root.epk` — przepakowane narzędziem `tools/eterpack.py` (własny
+  czytnik i zapis archiwów `.eix/.epk`, klucze stockowe r40250, weryfikacja
+  obiegu: 90 plików, różnią się dokładnie 4 podmienione). Aktualizacja
+  klienta jedzie jako składnik `client` manifestu i launcher nakłada ją na
+  folder klienta. Panel otwiera się klawiszem F9 tylko postacią GM.
+
+### Loch Małp i medale
+
+- **Więcej wypraw po Medal Konny** (na rynku jest ich za mało). Bot z koniem
+  bojowym miał 1–4% szansy na wyprawę w każdym półgodzinnym oknie, a to
+  właśnie boty 46+ z takim koniem chodzą do trudnego lochu, gdzie medal
+  wypada im z pełną szansą. Szansa po koniu bojowym potrojona (wojownik i
+  sura broni 12%, sura magii, ninja sztylet i szaman 6%, łucznik 3%);
+  przed koniem bez zmian. Pasma bez zmian: łatwy do 32, średni 33–45,
+  trudny od 46.
+
+### Naprawy z paczek graczy
+
+- **Koń nie jest dosiadany i zsiadany co sekundę przy Metinie** (Kuszaa,
+  botgrom2 w Lochu Pająków: „mounted_combat” i „near_destination” na zmianę,
+  sto par na minutę). Przejście celowania dosiada konia bojowego do walki, a
+  marsz, który przyprowadził bota pod kamień, zsiadał, bo koniec trasy był
+  blisko. Marsz nie zsiada, gdy bot ma cel, z którym może walczyć z siodła.
+
+- **Straganiarz z pogranicza nie jedzie z towarem do Joan** i spacer z
+  towarem ma własny status „Ide z towarem na targ w Joan” (Kuszaa: botgrom2
+  ze statusem „Ide na Gore Sohan” jechał do bramy M1). Bot, którego miejsce
+  jest na pograniczu, przy pełnym Bokjung czeka zamiast iść do Joan.
+
+- **Launcher GUI nie wysypuje się przy „Zainstaluj/Przygotuj”** (Uxie:
+  „The property 'Count' cannot be found on this object”). Przy niekompletnej
+  paczce lista brakujących plików była pojedynczym tekstem, a tryb ścisły
+  PowerShella nie zna `.Count` na tekście. Teraz pokazuje komunikat
+  o niekompletnej paczce, tak jak miał.
+
+### Ulepszanie
+
+- **Od +7 bot używa Zwoju Boga Smoków, gdy go ma**, zamiast Zwoju
+  Błogosławieństwa (oba działają bez kowala — przejście ze zwojem chodzi
+  tam, gdzie bot stoi). Uwaga do faktów silnika (`char_item.cpp`): Zwój
+  Boga Smoków ma tu 25% przy +7→+8 i 20% przy +8→+9, Zwój Błogosławieństwa
+  40% i 30% (jak u kowala), oba przy porażce cofają o poziom; Podręcznik
+  Kowala 30% i 20%. Wybór zgodnie z prośbą, liczby do wiadomości.
+
+---
+
+## 1.31.0 — 2026-09-09
+
+### ItemShop
+
+- **ItemShop w grze** (autor: OskarPWA; wdrożenie jako usługa w naszym
+  stosie). Kliknięcie monety na pasku otwiera w wbudowanej przeglądarce
+  klienta sklep za Smocze Monety (`account.cash`) i Smocze Znaki
+  (`account.mileage`): kategorie Ulepszanie, Bonusy, Koń i pomoc, Za Smocze
+  Znaki (17 pozycji na start, do urządzenia przez operatora w bazie
+  `itemshop`) oraz koło szczęścia za 10 SM. Zakup trafia do
+  `player.item_award`, a rdzeń db dostarcza przedmiot przy najbliższym
+  logowaniu. Rdzeń r40250 i klient miały już potrzebne części (komenda
+  `in_game_mall` z podpisem, `WebWindow`, mapowanie „mall”) — dochodzi tylko
+  usługa `itemshop` (PHP, port `M2_ITEMSHOP_PUBLIC_PORT`, domyślnie 7791) i
+  schemat nakładany przez `playerbot-migrate` przy każdym starcie
+  (idempotentnie; zasiew tylko do pustego sklepu). Hasło bazy i sekret
+  podpisu idą ze środowiska, nie z plików. Adres sklepu (`MALL_URL`) rdzeń
+  dostaje z `M2_MALL_URL`, a gdy pusty — z `M2_PUBLIC_ADDRESS` i portu.
+  Sprawdzone u nas: podpisany link loguje automatycznie, zły podpis odsyła
+  do logowania. Nie ma jeszcze: panelu GM na F9 i przycisków EQ/Sprawdź z
+  paczki Oskara (wymagają przepakowania `root.epk` w kliencie), dropu
+  Smoczych Monet z metinów i bossów dla botów i graczy, zakupów botów w
+  sklepie — to następne kroki.
+
+---
+
+## 1.30.42 — 2026-09-09
+
+### Loch Pająków 2
+
+- **Boty od 54 poziomu chodzą do Lochu Pająków 2** (mapa 71,
+  `metin2_map_spiderdungeon_02`). Z wiki i plików serwera: trujące pająki
+  60–68 poziomu, które nie atakują pierwsze, bez metinów, na końcu warp do
+  V3 i Elitarna Królowa Pająków (97 lvl, 2,6 mln HP — bez hubu, za silna).
+  Do lochu wchodzi się u Chuk-Sala na końcu V1 za Przepustkę; boty na razie
+  wchodzą bez przepustki, tą samą drogą co do V1: przez pustynię do bramy
+  Kuahlo Dong i dalej po stronie serwera. Losowanie pogranicza od 54 poziomu:
+  V2, Sohan albo Świątynia Hwang (łowca metinów zamiast V2 idzie na Sohan,
+  bo w lochach nie ma kamieni). 11 hubów na prawdziwych punktach spawnu z
+  `regen.txt` (668 punktów przez `group.txt` i `group_group.txt`), punkty
+  przybycia (384,273) i wyjścia sprawdzone na `server_attr` (81/81 wolnych
+  komórek, cała mapa to jeden spójny obszar). Mapa 71 przeniesiona na rdzeń
+  game1, dodana do listy dozwolonych w `apply.sh`, do obu paneli (nazwa,
+  granice, kafelek terenu).
+
+### Ekonomia
+
+- **Bot nie ulepsza tego, co za chwilę sprzeda handlarzowi** (jaksiezabic:
+  Ametystowy Naszyjnik+0 → +1 o 17:58, sprzedany handlarzowi o 18:19; u nas
+  w 6 godzin 12 534 przedmioty ulepszone w plecaku i potem sprzedane).
+  Przejście ulepszania brało z plecaka każdy przedmiot, który bot może
+  założyć, a reguła złomu sprzedawała każdy, który nie jest lepszy od
+  noszonego i ma mniej niż +6. Teraz z plecaka ulepszane jest tylko to, co
+  bot zatrzyma: ulepszenie noszonego, przedmiot wyższego poziomu niż noszony
+  w tym slocie (nowa reguła — najlepszy taki zapas na slot zostaje w
+  plecaku, żeby kowal mógł go doprowadzić do stanu lepszego od noszonego),
+  rezerwa od +6.
+
+- **Przedmiot od +4 nie idzie do handlarza** — to towar na stragan (stragan
+  wystawia od +4), a handlarz brał każdy +4 i +5 (gregory: Szata Zach.
+  Nieba+4, Złote Buty+4 sprzedane zaraz po ulepszeniu).
+
+- **Materiał, na który jest popyt, nie idzie do handlarza** (gregory: Ogon
+  Skorpiona, Worek z Pajęczymi Jajami, Igła Skorpiona sprzedane handlarzowi,
+  podczas gdy boty kupują Ogon Skorpiona na straganach po 58 894). Reguła
+  złomu pyta ledger rynku: materiał z popytem to towar na stragan; do
+  handlarza idzie tylko taki, którego nikt nie potrzebuje, i tylko pod
+  presją plecaka.
+
+### Panel
+
+- **Ranking botów pokazuje do 1000 pozycji** (Iwakura: „poproszę żeby mogło
+  pokazywać więcej niż 100”). Selektor ma 200/500/1000, a API przestało
+  ucinać do 100.
+
+### Podróże
+
+- **30% botów wraca z pogranicza po usługi do Joan, nie do Bokjung**
+  (jaksiezabic: „M1 przy 1000 botów wygląda jak Balmora, a M2 jak Baerim”).
+  Dotąd każdy powrót po zapasy, do kowala czy handlarza szedł do Bokjung.
+  Udział wybierany raz na bota (po pid); Joan ma wszystkie usługi, kosztem
+  jest powrót przez Bokjung do Teleportera. Medal, polowanie na broń i
+  wyrośnięcie z mapy nadal prowadzą do Bokjung. W logu:
+  `frontier_services_to_m1`.
+
+---
+
+## 1.30.41 — 2026-09-09
+
+### Stragany i podróże
+
+- **Limit straganów na Bokjung rośnie z liczbą botów.** Poprawka z 1.30.40
+  trzymała tylko pierwszą serię: po restarcie wszyscy straganiarze otwierali
+  w tym samym ticku (licznik odświeża się co minutę), a potem każde ponowne
+  otwarcie odbijało się o limit 7 straganów na Bokjung — 229 odmów na minutę
+  — i bot szedł z towarem do Joan, gdzie planista wysyłał go po zakupy
+  zamiast na plac. Z 90 straganów po półtorej godziny zostało 28 (6 na
+  Bokjung, 21 w Joan). Limit to teraz 8% żywych botów, nigdy mniej niż 7:
+  80 dla tysiąca, 28 dla 350.
+
+- **Bot bez yangów na Teleporter nie pyta go co tick.** Bot 58 poziomu z 799
+  yang wobec opłaty 11 000 był odrzucany 24 000 razy na minutę, a jego status
+  brzmiał „Ide na Gore Sohan” (Kuszaa: boty, które chcą na Sohan, kręcą się
+  po Bokjung). Po odmowie podróż czeka 5 minut, w tym czasie działa wizyta w
+  mieście i stragan, które zarabiają opłatę; status mówi „Zbieram yang na
+  Teleporter na Gore Sohan (799/11000)”.
+
+### Launcher
+
+- **`playerbot-syslog.txt` w paczce diagnostycznej nie jest już pusty** (Kuszaa,
+  1.30.40). Windows PowerShell 5.1 owija argument natywnego polecenia w
+  cudzysłowy, nie escapując tych, które już w nim są — pierwszy cudzysłów
+  wewnątrz polecenia `sh -c` kończył argument i wycinek wychodził pusty.
+  Polecenie nie ma już żadnego cudzysłowu w środku (wzorce przez `grep -e`).
+  Sprawdzone u nas: 60 000 linii, ~6 MB.
+
+---
+
+## 1.30.40 — 2026-09-09
+
+### Stragany
+
+- **Stragany nie znikają godzinę po restarcie** (jaksiezabic: „na 1000 botów
+  11 sklepów 1 h po restarcie, 5 min po restarcie 50–100”; Oskar: liczba
+  sklepów co jakiś czas spada do zera). Odtworzone u nas: 94 straganiarzy
+  10 minut po restarcie, 33 po 25 minutach, bez żadnego restartu. Mechanizm:
+  stragan stał 10–25 minut, po zamknięciu bot dostawał 30–90 minut przerwy,
+  a ponownie otwierał dopiero po zakończeniu następnej wizyty w mieście —
+  więc po restarcie (każdy straganiarz stoi tam, gdzie miał stragan) otwierali
+  wszyscy naraz, a potem wygasali szybciej, niż wracali. Teraz stragan, który
+  wygasł, otwiera się ponownie na tym samym miejscu (nowa wycena, nowy szyld,
+  towar z plecaka), do 3 stanowisk z rzędu; dwa stanowiska z rzędu bez żadnej
+  sprzedaży kończą serię wcześniej. Dopiero po serii bot bierze 30–90 minut
+  przerwy i idzie grać. W logu: `PLAYERBOT_SHOP: another stand`.
+
+### Launcher
+
+- **Paczka diagnostyczna niesie log podróży botów.** Do kontenera trafia
+  tylko syserr, więc paczka wysłana o „boty idą do złego portalu” (Kuszaa)
+  nie miała ani jednej linii o tym, dokąd bot chciał iść. DIAGNOSTYKA dokłada
+  teraz `playerbot-syslog.txt` (przejścia między mapami, portale, nawigacja,
+  watchdog, cele, stragany, miasto, koń, Loch Małp — tylko linie botów, bez
+  czatu graczy) i `playerbot-status.tsv` (aktualny status każdego bota).
+
+---
+
+## 1.30.39 — 2026-09-09
+
+### Broń
+
+- **Pomiar broni per klasa: procenty średnich i umiejętności mnożą obrażenia
+  broni** (Iwakura: bot z Łukiem z Rogu Jelenia+8 151–244 i +47% średnich w
+  plecaku nosił Miedziany Łuk+4 90–156). Dotąd linia procentowa była
+  płaską sumą kilku tysięcy obok miliona za obrażenia. Teraz obrażenia broni
+  (fizyczne dla wojownika/ninji/sury broni, magiczne dla szamana i sury
+  czarnej magii; sztylet i łuk ×2 jak w silniku) są mnożone przez
+  `100 + średnie·waga + umiejętności·waga`: build zwykłych ciosów czuje
+  100% linii średnich i 35% umiejętności, build umiejętności odwrotnie.
+  Ujemne linie (np. −17% umiejętności) liczą się tak samo. Broń na 30 i 75
+  poziom z liniami nagrody wygrywa z „miedzianym” bez nich o tyle, o ile
+  naprawdę bije mocniej.
+
+- **Lepsza broń w plecaku jest zakładana także w ciągłej walce.** Silnik
+  odmawia założenia w 1,5 s po ataku lub czarze, a bot, który nie przestaje
+  atakować, nigdy nie miał okna — na teście 247 z 970 botów nosiło broń o
+  ⅓ słabszą od tej w plecaku. Dotąd pauza w walce była tylko dla pustego
+  slotu; teraz dla każdego lepszego przedmiotu (do 5 s, najwyżej raz na
+  minutę, gdy okno nie przyszło). Drugi powód: przejście ekwipunku siedziało
+  na końcu ticku, za straganem, lootem, koniem, wędkowaniem, podróżą i
+  wędrówką, z których każde przejmuje tick — bot ciągle czymś zajęty nie
+  zaglądał do plecaka wcale (wojownik 28 lvl bił Mieczem+6 z 1 poziomu mając
+  Długi Miecz+4 w plecaku). Przejście uruchamia się teraz na początku ticku,
+  poza otwartym straganem, wizytą w mieście, wędkowaniem i stajnią.
+
+- **Broń z linią nagrody nie idzie na kowadło bez Zwoju Błogosławieństwa**
+  (Oskar: „51% i spalił u kowala”). W tym silniku każde nieudane ulepszenie
+  niszczy przedmiot (nie ma progu +3), a szanse od +5 to 80/60/50/40/30%.
+  Broń ze średnimi ≥ 20% albo umiejętnościami ≥ 15% bot ulepsza tylko pod
+  zwojem (nieudane = poziom niżej, nie strata), a bez zwoju czeka. To samo
+  dotyczy każdego przedmiotu, który ma już 5 linii bonusów.
+
+- **Wzmocnienie Przedmiotu i Zaczarowanie dopiero od +4.** Bot nie wydaje
+  kamieni na przedmiot poniżej +4 — najpierw ulepszenie (i ryzyko spalenia),
+  potem bony.
+
+### Panel i launcher
+
+- **Panel klasyczny (7788) pokazuje wersję, którą naprawdę ma** (azzyl5021:
+  „Masz uruchomioną 1.29.0. Dostępna jest 1.30.38”, mimo aktualizacji i
+  przebudowy panelu). Plik VERSION i CHANGELOG do obrazu panelu kopiował tylko
+  `start-server.ps1` — za wczesnym `return` gałęzi `-IdentityOnly`, którą
+  wywołuje launcher przed własnym `docker compose up --build`. Kliknięcie
+  GRAJ/AKTUALIZUJ nigdy tam nie docierało, więc obraz panelu był budowany ze
+  starym VERSION i przebudowa nic nie zmieniała. Launcher kopiuje teraz
+  VERSION, CHANGELOG, `admin_panel.py`, `items.json`, schemat i questy panelu
+  do kontekstu budowy w tym samym miejscu, w którym kopiuje źródła botów.
+
+- **Panel zaawansowany (7790) pokazuje wersję z pliku VERSION.** Dotąd brał
+  ją z `M2_PLAYERBOTS_VERSION` w `.env` (którego nikt nie ustawia) albo z
+  domyślnej w `docker-compose.yml`, która stanęła na 1.30.29. Launcher i
+  `start-server.ps1` przekazują ją z VERSION przez środowisko procesu (compose
+  czyta je przed `.env`; sam `.env` nie jest dotykany), a domyślna w compose
+  podniesiona do 1.30.39.
+
+- **Logi na żywo bota pokazują tylko tego bota** (szubartov: przy „botgrom”
+  były też linie botgrom2…botgrom6). Filtr dopasowywał nazwę jako fragment
+  linii; teraz dopasowuje całe słowo — nazwa w logu silnika jest ograniczona
+  spacją, `=`, `:` albo końcem linii, nigdy własną cyfrą.
+
+---
+
 ## 1.30.38 — 2026-09-09
 
 ### Z kanału propozycji

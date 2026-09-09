@@ -791,6 +791,17 @@ if ($missingContext.Count -gt 0) {
 }
 
 Write-Host 'Starting Metin2 services...' -ForegroundColor Cyan
+# What the advanced panel reports as the Playerbots release: compose reads the
+# process environment ahead of .env, and this file is never rewritten by us.
+# See Set-M2PlayerbotsVersionEnvironment in the launcher module - this script
+# does not import it.
+if (-not $env:M2_PLAYERBOTS_VERSION) {
+    $versionFile = Join-Path $PSScriptRoot 'VERSION'
+    if (Test-Path -LiteralPath $versionFile -PathType Leaf) {
+        $versionText = ([IO.File]::ReadAllText($versionFile)).Trim()
+        if ($versionText -match '^\d+\.\d+\.\d+$') { $env:M2_PLAYERBOTS_VERSION = $versionText }
+    }
+}
 Push-Location $composeDirectory
 try {
     $composeArguments = @('compose', 'up', '-d')

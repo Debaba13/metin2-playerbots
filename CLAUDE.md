@@ -233,6 +233,44 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   means: apply it to `linux-port/docker/game/src/server` with `patch -p1`,
   and add every file it touches to that list. 1.29.0 shipped without this and
   nobody got a chest.
+- **The second Spider Dungeon is V1's sibling, entered without the pass.**
+  Map 71 (`metin2_map_spiderdungeon_02`, base 665600,435200, 16x16
+  sectors, one connected component): poison spiders of 60-68 that never
+  attack first, no `stone.txt`, Pung-Ho at the Town.txt cell (384,273) to
+  send people back and a warp to V3 by the Elite Spider Queen (2093, level
+  97, 2.5M hp - no hub). A player enters through Chuk-Sal at the end of V1
+  with a pass; a bot holds no pass and is warped server-side from the
+  Kuahlo gate exactly as into V1 - `IsPlayerBotSpiderMap` is what the
+  desert-crossing rules in `TransitionPlayerBotMap` and the crossing walk
+  test. `PLAYERBOT_SPIDER_V2_MIN_LEVEL` (54) takes V1's draw in
+  `GetPlayerBotFrontierMapForLevel`; the eleven hubs are the richest
+  6400-unit cells of its regen.txt on the actual spawn point nearest each
+  centre, checked free on server_attr (`scratchpad/check_v2_points.py`
+  is the shape of that measurement). Adding it touched: the constants and
+  four helpers in types.h, the draw and both crossing rules in travel.h,
+  the navigation whitelist, status names, the hub table, `MAPS_game1` in
+  m2-render-config (71 came off game2), apply.sh's allowed maps, both
+  panels' names/bounds and the classic panel's tile
+  (`tools/render_map_tiles.py <share>/locale/english/map`, needs Pillow
+  and python-lzo).
+- **What the merchant will take is not worth a refine, and what the
+  counter lists is not merchant scrap.** The refine pass took any bag
+  piece the bot could wear and raised it towards its +6..+9 ambition; the
+  junk rule vendored any bag piece under +6 that was not an upgrade. In six
+  hours 12 534 pieces were refined in the bag and then vendored, of 60 121
+  refines. The bag loop skips `IsPlayerBotJunkItem` now,
+  `IsPlayerBotHigherTierSpare` (one per slot, above the worn piece's level
+  limit) is kept by the junk rule so the blacksmith can make an upgrade of
+  it, and `PLAYERBOT_PRECIOUS_REFINE` is four - the counter's own
+  threshold. Materials ask the ledger: `GetPlayerBotLedgerDemand` (declared
+  in economy.h, defined in market.h) keeps a material anybody is short of
+  off the merchant's table - a Scorpion Tail vendored for pennies beside a
+  stall selling one for 58 894.
+- **Joan is home for a share of the bots.** Every frontier services trip
+  went to Bokjung, so the first town emptied past level thirty.
+  `PLAYERBOT_JOAN_HOME_PER_MILLE` of the bots (by pid) take
+  `frontier_services_to_m1`; the other reasons (medal, weapon hunt,
+  graduation) stay Bokjung's.
 - **The frontier is four maps and one table.** `GetPlayerBotFrontierArrival`,
   `GetPlayerBotFrontierExit` and `GetPlayerBotFrontierName` in
   `playerbot_types.h` answer for Orc Valley, the desert, Mount Sohan (61,
@@ -452,6 +490,69 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   into the "under +4" scrap branch at merchant x2; `PLAYERBOT_PRIOR_LEVEL30_WEAPON`
   floors it at 250 000 and a damage line in the upper half of what rolls
   (average >= 24, skill >= 15) adds `PLAYERBOT_SHOP_BONUS_PRIZE_LINE`.
+- **The ItemShop is a service beside the game, not a patch to it.** The
+  r40250 core already sends `mall http://<MALL_URL>/ishop?pid=..&sas=..`
+  from `ACMD(do_in_game_mall)` with the literal key "GF9001", and the
+  client already maps "mall" to its `WebWindow` (checked against the
+  unpacked root under the client's Eternexus folder: uiweb, uishop,
+  uisafebox, localeinfo identical to Oskar's). What ships is
+  `linux-port/docker/itemshop/` (his PHP app, 17 MB of it icons, password
+  and key from the environment), `mariadb/playerbot/itemshop_schema.sql`
+  (the schema the package never had, derived from what the PHP reads, plus
+  `player.item_award` and a seed that only fills an empty shop) applied by
+  `apply.sh` as root - the metin2 user cannot create a database - and the
+  `M2_MALL_URL` default in compose. A purchase is a row in
+  `player.item_award`; the db core's ItemAwardManager delivers it. Test it
+  with the signed link: `md5(pid . account_id . "GF9001")`.
+- **The client's scripts live in `pack/root.epk`, and `tools/eterpack.py`
+  rewrites it.** The index (`root.eix`) is one LZO object under XTEA with
+  the stock r40250 index key, and each file is an LZO object: in this
+  client type 1 is plain ("MCOZ" + stream, no key), the encrypted form is
+  "MCOZ" + stream padded to eight under the key. The stock TEA variant is
+  XTEA, not TEA, and the first four bytes of a decrypted region are the
+  fourcc again - the two things that cost an hour. `repack` keeps every
+  file and type, swaps in what `linux-port/client-root/` holds, and the round trip
+  is checked by extracting both archives and diffing (only the swapped
+  files may differ). A client change ships as `pack/root.eix`+`.epk` in
+  a `-Type client` package and the `client` component of the manifest,
+  which the launcher applies over the client folder; never the loose .py
+  files, which the client does not read.
+- **The F9 GM panel is Oskar's, merged as text.** His `cmd_gm.cpp` and
+  `cmd.cpp` are our files re-encoded by an editor (the Korean comments no
+  longer round-trip), so they could not be diffed or copied whole; the
+  twenty-one `gmpanel_*` commands and their two helpers are pure ASCII and
+  were appended (`0009-gm-panel-commands.patch`, dry-run clean against
+  `m2src-cache`; both files ship staged too). His `botadmin_*` commands
+  were left out - they call manager methods of his fork. `GetAvailableBots`
+  is the one thing the panel needed from ours.
+- **Scroll odds are the engine's, not the wiki's.** `DoRefineWithScroll`:
+  Blessing Scroll (25040) keeps `refine_proto` prob (40/30 at +7/+8) and
+  hands the piece back a level down; Zwoj Boga Smokow (39022/71032/76009,
+  YONGSIN) 25/20; Podrecznik Kowala (39007/70039, YAGONG) 30/20; Magiczny
+  Kamien (25041/39001, HYUNIRON) destroys on failure. None needs a
+  blacksmith, which is why the scroll pass runs anywhere. The operator
+  asked for the Dragon God scroll from +7 (`FindPlayerBotRefineScrollCell`)
+  and got it, with these numbers on record.
+- **The panel's VERSION is staged on the path the click never runs.**
+  `start-server.ps1` copies VERSION, CHANGELOG.md and the panel sources into
+  `linux-port/docker/panel/app/` - below its `-IdentityOnly` return, which is
+  how the launcher calls it before building on its own. So a player who only
+  ever pressed GRAJ or AKTUALIZUJ had a panel image baked from the VERSION the
+  installer left, and a `--no-cache` rebuild could not help: "Masz uruchomiona
+  1.29.0. Dostepna jest 1.30.38", ten releases in. `Sync-M2PlayerbotOverlay`
+  stages the panel context now, next to the bot sources it always staged. The
+  advanced panel's number is a different pipe: `PLAYERBOTS_VERSION` from
+  compose, whose default nobody bumped after 1.30.29;
+  `Set-M2PlayerbotsVersionEnvironment` puts VERSION into the process
+  environment (compose reads it ahead of `.env`, which is never rewritten)
+  and the release still bumps the default. The live-log filter in the classic
+  panel is the same family of bug from the other side: `"botgrom" in line`
+  matched botgrom2..botgrom6, so one keeper's log was five bots' log.
+  And the support bundle's `playerbot-syslog.txt` shipped empty in 1.30.40:
+  Windows PowerShell 5.1 wraps a native command's argument in double quotes
+  without escaping the ones inside it, so the first `"` in an `sh -c`
+  script ends the argument. No double quotes inside a command handed to
+  docker from PowerShell - `grep -e` per pattern, unquoted `$f`.
 - **A guard belongs on the path that does the thing, not beside it.**
   The build-context check went into `start-server.ps1` and the report came back
   unchanged, because `Metin2-Launcher.ps1` calls that script with
@@ -716,6 +817,36 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `PLAYERBOT_MARKET_REGULATOR_MAX` went from 1.35 to 2.0: a third above the
   prior is not a market answering five hundred bots short of a thing no
   counter carries.
+- **A stall that ran out is followed by another on the same pitch.** A
+  stand of `PLAYERBOT_SHOP_MIN..MAX_DURATION` (10-25 min) was followed by
+  `PLAYERBOT_SHOP_REST_MIN..MAX` (30-90 min), and the open pass only fires
+  when a town visit has just ended or the bot is already at the pitch - so
+  after a restart, with every keeper standing where its last stall was,
+  ninety opened at once, and an hour later eleven were left: a fifth of the
+  keepers, which is what the numbers say. Measured on our own world with no
+  restart: 94 keepers at ten minutes, 33 at twenty-five.
+  `ClosePlayerBotShop` now reopens an expired stand after
+  `PLAYERBOT_SHOP_REOPEN_MS` for up to `PLAYERBOT_SHOP_STANDS_IN_ROW` stands
+  (`bShopStandsInRow`), ends the row after two dry stands
+  (`bShopLastStandSold`), and only then rests. Sold out, off the pitch and
+  a refused open still rest at once. Measure it as keepers in
+  `playerbot_status.tsv` over an hour without a restart, not as the count
+  right after one. And the reopening was only half of it:
+  `PLAYERBOT_SHOP_M2_MAX_STALLS` (seven) counted every stall on the map, so
+  every reopening after the first burst was refused at "Bokjung full" -
+  229 a minute - and the keeper walked its goods to Joan, where the planner
+  sent it shopping; ninety stalls were twenty-eight ninety minutes later
+  with the reopening in place. The cap is a floor under
+  `PLAYERBOT_SHOP_M2_STALLS_PER_MILLE` of `GetPlayerBotsAlive()` now.
+- **A refusal on the travel pass must set the travel clock.** The
+  Teleporter refused a bot short of the fee and returned false, and the
+  travel pass asked again on the next tick: 24 000 refusals a minute from
+  one world, the bots standing in Bokjung with "Ide na Gore Sohan" above
+  their heads - which an operator reads as bots that cannot find the
+  portal. `PLAYERBOT_TELEPORTER_RETRY_MS` on `dwNextWorldTravelTime` lets
+  the town visit and the stall run and earn the fee, and the status says
+  "Zbieram yang na Teleporter". Same shape as "a pass that refuses must
+  also back off" above.
 - **A keeper trades in the town it is standing in.** The stall used to roll
   a town and then refuse to open unless the bot was already there - nine
   rolls in ten chose Joan while the bots with goods stood in Bokjung, so Joan
@@ -1234,6 +1365,39 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `/api/bot_gear_history` reads them by `who` with an IN-list of `how`,
   because the table holds eighteen million rows and GET/SET_SOCKET/GET_GOLD
   are most of them.
+
+- **A weapon's percent lines multiply its own damage, and a better weapon
+  needs a window to go on.** `GetPlayerBotEquipmentScore` scaled attack at a
+  thousand a point and added `APPLY_NORMAL_HIT_DAMAGE_BONUS` at 250-500 a
+  point beside it - a +47% line on a 151-244 bow was worth two percent of
+  the bow. On a weapon those two lines now multiply the attack score by
+  `100 + avg*weight + skill*weight` (`PLAYERBOT_WEAPON_OWN_LINE_PERCENT` /
+  `_OTHER_LINE_PERCENT` by `GetPlayerBotSchoolStyle`), and the flat loop
+  skips them. Separately: `CHARACTER::EquipItem` refuses within 1.5 s of an
+  attack or a cast, the manager only paused combat for an *empty* core slot,
+  and 247 of 970 bots carried a weapon a third stronger than the one in
+  hand. The pause now covers any `bEquipPending`, bounded by
+  `PLAYERBOT_EQUIP_PENDING_MAX_MS` and retried after
+  `PLAYERBOT_EQUIP_PENDING_RETRY_MS`. And the pass itself had to move: at
+  the bottom of the tick it sat behind the stall, the loot, the horse, the
+  fishing, the travel, the town visit and the wander, each of which claims
+  the tick, so a bot always busy with one of them never read its bag at
+  all (a warrior of 28 swinging the level-one sword +6 with a Long Sword +4
+  beside it). It runs in the upkeep group now, the same shape as the chest
+  pass above, guarded against an open counter, a town visit, a rod in the
+  hand and the stable; `HoldPlayerBotForEquipWindow` is the shared wait.
+- **Every failed refine destroys the item.** `CHARACTER::DoRefine` has one
+  failure branch, `RemoveItem(item, "REMOVE (REFINE FAIL)")`, at every
+  grade; only `DoRefineWithScroll` under a Blessing Scroll (25040) hands
+  the item back a level down. `refine_proto` runs 90/90/90/90/80/60/50/40/30
+  from +1 to +9. `IsPlayerBotPrizeWeapon` (average from
+  `PLAYERBOT_BONUS_KEEP_AVERAGE`, skill from
+  `PLAYERBOT_WEAPON_PRIZE_SKILL_PERCENT`) is refined only under a scroll
+  when `prt->prob < 100`; no NPC shop sells the scroll, so it comes from
+  drops and chests and 222 sat in bags. `IsPlayerBotPrizeItem` widens that
+  to any piece with `PLAYERBOT_PRIZE_LINES` lines, and `CanPlayerBotRerollItem`
+  refuses a stone below `PLAYERBOT_BONUS_MIN_REFINE` - lines before the
+  refine are lines a burn takes with it.
 
 ## Engine facts worth not re-deriving
 

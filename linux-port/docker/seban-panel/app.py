@@ -30,7 +30,7 @@ MAP_NAMES = {
     1: "Shinsoo M1", 3: "Shinsoo M2", 21: "Chunjo M1", 23: "Chunjo M2",
     24: "Chunjo M3", 25: "Łatwy Loch Małp", 41: "Jinno M1", 43: "Jinno M2",
     61: "Góra Sohan", 63: "Pustynia Yongbi", 64: "Dolina Orków", 104: "Loch Pająków V1",
-    65: "Świątynia Hwang",
+    65: "Świątynia Hwang", 71: "Loch Pająków V2",
     108: "Loch Małp Normalny", 109: "Loch Małp Trudny",
 }
 MAP_BOUNDS = {
@@ -38,7 +38,7 @@ MAP_BOUNDS = {
     24: (179200, 0, 51200, 51200), 25: (844800, 435200, 76800, 76800),
     61: (358400, 153600, 153600, 153600), 63: (204800, 486400, 153600, 153600),
     64: (256000, 665600, 153600, 153600), 104: (51200, 486400, 76800, 76800),
-    65: (537600, 51200, 102400, 102400),
+    65: (537600, 51200, 102400, 102400), 71: (665600, 435200, 102400, 102400),
     108: (128000, 640000, 76800, 76800), 109: (128000, 716800, 76800, 76800),
 }
 TRACKED_MAP_OPTIONS = tuple((index, MAP_NAMES[index]) for index in MAP_BOUNDS)
@@ -46,11 +46,11 @@ MAP_RESPAWN_OPTIONS = (
     (1, "Shinsoo M1 — Yongan"), (3, "Shinsoo M2"), (21, "Chunjo M1 — Joan"),
     (23, "Chunjo M2"), (41, "Jinno M1"), (43, "Jinno M2"),
     (25, "Łatwy Loch Małp"), (61, "Góra Sohan"), (63, "Pustynia Yongbi"), (64, "Dolina Orków"),
-    (104, "Loch Pająków V1"), (108, "Loch Małp Normalny"), (109, "Loch Małp Trudny"),
+    (104, "Loch Pająków V1"), (71, "Loch Pająków V2"), (108, "Loch Małp Normalny"), (109, "Loch Małp Trudny"),
 )
 # Monkey Dungeons and Spider Dungeon V1 ship no stone.txt, so only their mob
 # respawns can be configured. The explicit allowlist also protects the helper.
-MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {25, 104, 108, 109})
+MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {25, 104, 71, 108, 109})
 STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv"),)
 RATES_SPOOL = Path("/opt/m2spool")
 UPDATE_SPOOL = Path("/opt/m2update")
@@ -89,8 +89,30 @@ BIOLOGIST_FALLBACK_MISSIONS = (
 )
 PANEL_VERSION_FILE = Path(__file__).parent / "VERSION"
 GM_JOB_OPTIONS = ((0, "Wojownik"), (1, "Ninja"), (2, "Sura"), (3, "Szaman"))
+# Race IDs are stored in player.job.  0–3 retain the classic class/gender
+# pair; IDs 4–7 are the alternate client portraits and character models.
+GM_GENDER_OPTIONS = (("classic", "Klasyczna dla klasy"), ("male", "Mężczyzna"), ("female", "Kobieta"))
+GM_RACE_BY_CLASS_GENDER = {
+    (0, "classic"): 0, (1, "classic"): 1, (2, "classic"): 2, (3, "classic"): 3,
+    (0, "male"): 0, (0, "female"): 4,
+    (1, "male"): 5, (1, "female"): 1,
+    (2, "male"): 2, (2, "female"): 6,
+    (3, "male"): 7, (3, "female"): 3,
+}
+CLASS_PROFILES = {
+    0: {"name": "Wojownik", "gender": "Mężczyzna", "portrait": "warrior_m.bmp"},
+    4: {"name": "Wojownik", "gender": "Kobieta", "portrait": "warrior_w.bmp"},
+    1: {"name": "Ninja", "gender": "Kobieta", "portrait": "assassin_w.bmp"},
+    5: {"name": "Ninja", "gender": "Mężczyzna", "portrait": "assassin_m.bmp"},
+    2: {"name": "Sura", "gender": "Mężczyzna", "portrait": "sura_m.bmp"},
+    6: {"name": "Sura", "gender": "Kobieta", "portrait": "sura_w.bmp"},
+    3: {"name": "Szaman", "gender": "Kobieta", "portrait": "shaman_w.bmp"},
+    7: {"name": "Szaman", "gender": "Mężczyzna", "portrait": "shaman_m.bmp"},
+}
 GM_JOB_STARTS = {0: (6, 4, 3, 3, 600, 200), 1: (4, 3, 6, 3, 650, 200), 2: (5, 3, 3, 6, 650, 200), 3: (3, 5, 3, 5, 700, 200)}
 GM_EMPIRE_STARTS = {1: (469300, 964200, 1), 2: (55700, 157900, 21), 3: (969600, 278400, 41)}
+GM_NAME_PATTERN = r"(?:[A-Za-z0-9_]{2,24}|\[[A-Za-z0-9_]{1,6}\][A-Za-z0-9_]{2,16})"
+EMPIRES = {1: {"name": "Shinsoo", "flag": "shinsoo.png"}, 2: {"name": "Chunjo", "flag": "chunjo.png"}, 3: {"name": "Jinno", "flag": "jinno.png"}}
 try:
     PANEL_VERSION = os.environ.get("SEBAN_PANEL_VERSION") or PANEL_VERSION_FILE.read_text(encoding="utf-8").strip()
 except OSError:
@@ -116,7 +138,7 @@ ITEM_TYPE_NAMES = (
     "ITEM_SPECIAL_DS", "ITEM_EXTRACT", "ITEM_SECONDARY_COIN", "ITEM_RING", "ITEM_BELT", "ITEM_PET", "ITEM_MEDIUM", "ITEM_GACHA", "ITEM_SOUL", "ITEM_PASSIVE",
 )
 APPLY_LABELS = {
-    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Obrażenia umiejętności", "%"), 72: ("Średnie obrażenia", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%")}
+    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Średnie obrażenia", "%"), 72: ("Obrażenia umiejętności", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%")}
 # 71 i 72 są w tablicy powyżej, we właściwej kolejności: common/length.h
 # niesie numery we własnych komentarzach - APPLY_SKILL_DAMAGE_BONUS to 71,
 # APPLY_NORMAL_HIT_DAMAGE_BONUS to 72. Stała tu wcześniej poprawka
@@ -328,6 +350,23 @@ def item_base_stats(vnum):
         if defense:
             stats.append(f"Wartość obrony: {defense}")
     return stats
+
+
+def empire_info(empire):
+    try:
+        return EMPIRES.get(int(empire), {"name": "—", "flag": ""})
+    except (TypeError, ValueError):
+        return {"name": "—", "flag": ""}
+
+
+def empire_flag_path(empire):
+    return empire_info(empire)["flag"]
+
+def class_profile(job):
+    try:
+        return CLASS_PROFILES.get(int(job), CLASS_PROFILES[0])
+    except (TypeError, ValueError):
+        return CLASS_PROFILES[0]
 
 
 def parse_skills(raw, job, group):
@@ -875,8 +914,8 @@ def bot_ranking(kind, sort_by="avg"):
             "upgrade": "MOD(i.vnum,10) DESC, avg_damage DESC, skill_damage DESC, p.level DESC",
         }.get(sort_by, "avg_damage DESC, skill_damage DESC, p.level DESC")
         result = rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS item_name,
-            IF(GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)) AS skill_damage,
-            IF(GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)) AS avg_damage
+            IF(GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)) AS avg_damage,
+            IF(GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)) AS skill_damage
             FROM player.item i JOIN player.player p ON p.id=i.owner_id LEFT JOIN player.item_proto ip ON ip.vnum=i.vnum
             WHERE {base} AND ((i.vnum BETWEEN 290 AND 299) OR (i.vnum BETWEEN 1170 AND 1179) OR (i.vnum BETWEEN 2150 AND 2159) OR (i.vnum BETWEEN 3210 AND 3219) OR (i.vnum BETWEEN 5110 AND 5119) OR (i.vnum BETWEEN 7160 AND 7169))
             ORDER BY {weapon30_order} LIMIT 100""")
@@ -966,13 +1005,13 @@ def globals_for_templates():
         return url_for("static", filename=f"icons/{quote(icon)}") if icon else None
     current_settings = settings()
     def job_name(job):
-        try:
-            return JOB_NAMES[int(job) % len(JOB_NAMES)]
-        except (TypeError, ValueError):
-            return "—"
-    return {"tieru_url": tieru_url, "panel_brand": current_settings.get("panel_name", "Metin2 Singleplayer"), "settings": current_settings, "map_name": map_name, "item_icon": item_icon, "job_name": job_name}
-
-
+        return class_profile(job)["name"]
+    def class_portrait(job):
+        return url_for("static", filename=f"class-portraits/{class_profile(job)['portrait']}")
+    def empire_flag(empire):
+        flag = empire_flag_path(empire)
+        return url_for("static", filename=f"empires/{flag}") if flag else ""
+    return {"tieru_url": tieru_url, "panel_brand": current_settings.get("panel_name", "Metin2 Singleplayer"), "settings": current_settings, "map_name": map_name, "item_icon": item_icon, "job_name": job_name, "class_profile": class_profile, "class_portrait": class_portrait, "empire_info": empire_info, "empire_flag": empire_flag}
 @app.route("/login", methods=["GET", "POST"])
 def login():
     current = settings()
@@ -1039,7 +1078,7 @@ def dashboard():
     map_rows = live_map_counts()
     for row in map_rows:
         row["name"] = map_name(row["map_index"])
-    top = rows("SELECT id, name, level, exp, map_index, playtime FROM player.player WHERE name LIKE 'bot%%' ORDER BY level DESC, exp DESC LIMIT 10")
+    top = rows("SELECT id, name, level, exp, job, map_index, playtime FROM player.player WHERE name LIKE 'bot%%' ORDER BY level DESC, exp DESC LIMIT 10")
     global_top_id = top[0]["id"] if top else None
     live = live_statuses()
     live_roster = live_bots()
@@ -1090,9 +1129,14 @@ def dashboard():
                      AND (l.what LIKE '%%ryb%%' OR l.what LIKE '%%fish%%')
                    GROUP BY p.id,p.name ORDER BY score DESC,p.name LIMIT 10""")
     quick_rankings.append({"title": "Ryby", "subtitle": "wyłowione · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in fish]})
+    ranking_ids = {item["id"] for ranking in quick_rankings for item in ranking["items"]}
+    if ranking_ids:
+        placeholders = ",".join(["%s"] * len(ranking_ids))
+        jobs_by_id = {row["id"]: row["job"] for row in rows("SELECT id,job FROM player.player WHERE id IN (" + placeholders + ")", list(ranking_ids))}
+        for quick_ranking in quick_rankings:
+            for item in quick_ranking["items"]:
+                item["job"] = jobs_by_id.get(item["id"], 0)
     return render_template("dashboard.html", totals=totals, bots=bots.get("count", 0), system=system, map_rows=map_rows, top=top, global_top_id=global_top_id, quick_rankings=quick_rankings, world_summary=world_summary, panel_version=PANEL_VERSION, latest_changelog=changelog_entries()[:1])
-
-
 @app.route("/players")
 @login_required
 def players():
@@ -1155,7 +1199,7 @@ def guild(guild_id):
 @app.route("/player/<int:pid>")
 @login_required
 def player(pid):
-    character = one("SELECT id,account_id,name,level,job,exp,gold,hp,mp,x,y,horse_level,alignment,st,ht,dx,iq,stat_point,skill_point,skill_group,skill_level,map_index,playtime FROM player.player WHERE id=%s", (pid,))
+    character = one("SELECT p.id,p.account_id,p.name,p.level,p.job,p.exp,p.gold,p.hp,p.mp,p.x,p.y,p.horse_level,p.alignment,p.st,p.ht,p.dx,p.iq,p.stat_point,p.skill_point,p.skill_group,p.skill_level,p.map_index,p.playtime,COALESCE(NULLIF(a.empire,0),pi.empire,0) AS empire FROM player.player p LEFT JOIN account.account a ON a.id=p.account_id LEFT JOIN player.player_index pi ON pi.id=p.account_id WHERE p.id=%s", (pid,))
     if not character:
         abort(404)
     live = live_statuses().get(pid)
@@ -1167,7 +1211,8 @@ def player(pid):
         character["action"] = live.get("status") or live_label("action", live.get("action"))
     else:
         character.update({"personality": "Bot offline", "ambition": "—", "goal": "—", "action": "—"})
-    character["job_name"] = JOB_NAMES[int(character.get("job") or 0) % 4]
+    character["job_name"] = class_profile(character.get("job"))["name"]
+    character["class_profile"] = class_profile(character.get("job"))
     character["experience"] = experience_progress(character.get("level"), character.get("exp"))
     character["honor"] = honor_rank(character.get("alignment"))
     character["honor"]["css"] = {"Rycerski": "knightly", "Szlachetny": "noble", "Dobry": "good", "Przyjazny": "friendly", "Neutralny": "neutral", "Agresywny": "aggressive", "Nieuczciwy": "dishonest", "Złośliwy": "malicious", "Okrutny": "cruel"}[character["honor"]["title"]]
@@ -1276,7 +1321,7 @@ def items_database():
     records = rows("SELECT p.vnum,p.name,p.locale_name,p.type,p.subtype,p.size,p.gold,p.shop_buy_price FROM player.item_proto p" + predicate + " ORDER BY p.vnum", params)
     for item in records:
         item["name"] = game_text(item.get("locale_name") or item.get("name"))
-    types = rows("SELECT type,COUNT(*) AS count FROM player.item_proto GROUP BY type ORDER BY type")
+    types = rows("SELECT type,COUNT(*) AS count,MIN(vnum) AS icon_vnum FROM player.item_proto GROUP BY type ORDER BY type")
     for category in types:
         index = int(category["type"])
         category["label"] = ITEM_TYPE_NAMES[index] if 0 <= index < len(ITEM_TYPE_NAMES) else f"ITEM_TYPE_{index}"
@@ -1305,15 +1350,20 @@ def accounts():
             gm_job = int(request.form.get("gm_job", 0) or 0)
         except ValueError:
             gm_job = -1
+        gm_gender = request.form.get("gm_gender", "classic")
         if not (3 <= len(login) <= 30 and login.replace("_", "").isalnum() and len(password) >= 6 and authority in authorities):
             flash("Login ma mieć 3–30 znaków (litery, cyfry, _), a hasło minimum 6 znaków.", "error")
         elif not (deletion_code.isdigit() and len(deletion_code) == 7):
             flash("Kod usunięcia postaci ma zawierać dokładnie 7 cyfr.", "error")
-        elif authority != "PLAYER" and not re.fullmatch(r"[A-Za-z0-9_]{2,24}", gm_name):
-            flash("Nick postaci GM ma mieć 2–24 znaki: litery, cyfry lub _.", "error")
+        elif authority != "PLAYER" and not re.fullmatch(GM_NAME_PATTERN, gm_name):
+            flash("Nick postaci GM ma mieć 2–24 znaki. Dozwolony jest też jeden prefiks, np. [GM]Seban lub [GA]Seban.", "error")
         elif authority != "PLAYER" and gm_job not in dict(GM_JOB_OPTIONS):
             flash("Wybierz poprawną klasę postaci GM.", "error")
+        elif authority != "PLAYER" and gm_gender not in dict(GM_GENDER_OPTIONS):
+            flash("Wybierz prawidłową płeć postaci GM.", "error")
         else:
+            account_id = None
+            player_id = None
             try:
                 with db() as con:
                     with con.cursor() as cur:
@@ -1327,10 +1377,18 @@ def accounts():
                             account_id = cur.lastrowid
                             x, y, map_index = GM_EMPIRE_STARTS[empire]
                             st, ht, dx, iq, hp, mp = GM_JOB_STARTS[gm_job]
+                            character_race = GM_RACE_BY_CLASS_GENDER[(gm_job, gm_gender)]
                             cur.execute("""INSERT INTO player.player
                               (account_id,name,job,dir,x,y,map_index,exit_x,exit_y,exit_map_index,hp,mp,stamina,random_hp,random_sp,level,st,ht,dx,iq,stat_point,skill_point,sub_skill_point,part_main,part_base,part_hair,skill_group,horse_hp,horse_stamina,horse_level,horse_hp_droptime,horse_riding,horse_skill_point,bank_value)
                               VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,%s,1000,0,0,1,%s,%s,%s,%s,0,0,0,0,0,0,0,0,0,0,0,0,0,0)""",
-                              (account_id, gm_name, gm_job, x, y, map_index, x, y, map_index, hp, mp, st, ht, dx, iq))
+                              (account_id, gm_name, character_race, x, y, map_index, x, y, map_index, hp, mp, st, ht, dx, iq))
+                            player_id = cur.lastrowid
+                            # Metin reads character slots from player_index.  A player row
+                            # without this entry exists in SQL but is invisible at login.
+                            cur.execute("""INSERT INTO player.player_index (id,pid1,pid2,pid3,pid4,empire)
+                              VALUES (%s,%s,0,0,0,%s)
+                              ON DUPLICATE KEY UPDATE pid1=VALUES(pid1),pid2=0,pid3=0,pid4=0,empire=VALUES(empire)""",
+                              (account_id, player_id, empire))
                             cur.execute("INSERT INTO common.gmlist (mAccount,mName,mContactIP,mServerIP,mAuthority) VALUES (%s,%s,'','ALL',%s)", (login, gm_name, authority))
                         con.commit()
                 if authority != "PLAYER":
@@ -1341,6 +1399,20 @@ def accounts():
             except (pymysql.MySQLError, ValueError) as exc:
                 try: con.rollback()
                 except Exception: pass
+                # The original Metin tables use MyISAM, so a failed multi-table
+                # creation is not rolled back by MariaDB.  Remove only records
+                # made by this request so an empty account is never left behind.
+                if account_id:
+                    try:
+                        with db() as cleanup_con:
+                            with cleanup_con.cursor() as cleanup:
+                                cleanup.execute("DELETE FROM common.gmlist WHERE mAccount=%s AND mName=%s", (login, gm_name))
+                                if player_id:
+                                    cleanup.execute("DELETE FROM player.player WHERE id=%s AND account_id=%s", (player_id, account_id))
+                                cleanup.execute("DELETE FROM player.player_index WHERE id=%s", (account_id,))
+                                cleanup.execute("DELETE FROM account.account WHERE id=%s AND login=%s", (account_id, login))
+                    except pymysql.MySQLError:
+                        pass
                 flash(f"Nie utworzono konta: {exc.args[1] if isinstance(exc, pymysql.MySQLError) and len(exc.args)>1 else exc}", "error")
     account_query = request.args.get("q", "").strip()[:60]
     display = request.args.get("display", "100")
@@ -1358,7 +1430,7 @@ def accounts():
         query_sql += " LIMIT %s"
         params.append(int(display))
     recent = rows(query_sql, params)
-    return render_template("accounts.html", accounts=recent, authorities=authorities, jobs=GM_JOB_OPTIONS, account_query=account_query, display=display)
+    return render_template("accounts.html", accounts=recent, authorities=authorities, jobs=GM_JOB_OPTIONS, genders=GM_GENDER_OPTIONS, account_query=account_query, display=display)
 
 
 @app.route("/maps")
@@ -1440,9 +1512,11 @@ def rankings():
     ranking = bot_ranking(kind, weapon30_sort)
     ids = [row["id"] for row in ranking]
     if ids:
-        progress_rows = rows("SELECT id,level,exp FROM player.player WHERE id IN (" + ",".join(["%s"] * len(ids)) + ")", ids)
+        progress_rows = rows("SELECT id,level,exp,job FROM player.player WHERE id IN (" + ",".join(["%s"] * len(ids)) + ")", ids)
         progress = {row["id"]: experience_progress(row["level"], row["exp"]) for row in progress_rows}
+        jobs = {row["id"]: row["job"] for row in progress_rows}
         for row in ranking:
+            row["job"] = jobs.get(row["id"], 0)
             row["experience"] = progress.get(row["id"], {"percent": 0})
     for row in ranking:
         if kind == "weapon30":
@@ -1640,7 +1714,6 @@ def manage_behavior():
     values["CHAT"] = 1 if "1" in request.form.getlist("CHAT") else 0
     # Preserve the existing switch for a form opened before this field existed.
     values["BOOKS"] = 1 if "BOOKS" not in request.form else (1 if "1" in request.form.getlist("BOOKS") else 0)
-    values["NIGHT"] = values.get("NIGHT", 1) if "NIGHT" not in request.form else (1 if "1" in request.form.getlist("NIGHT") else 0)
     try:
         values["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", values.get("SCRAP", 0)))))
     except (TypeError, ValueError):

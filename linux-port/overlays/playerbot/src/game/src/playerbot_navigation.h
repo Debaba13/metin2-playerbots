@@ -276,6 +276,7 @@ namespace
 						mapIndex != PLAYERBOT_MAP_DESERT &&
 						mapIndex != PLAYERBOT_MAP_SOHAN &&
 						mapIndex != PLAYERBOT_MAP_SPIDER_V1 &&
+						mapIndex != PLAYERBOT_MAP_SPIDER_V2 &&
 						mapIndex != PLAYERBOT_MAP_HWANG)
 					return false;
 

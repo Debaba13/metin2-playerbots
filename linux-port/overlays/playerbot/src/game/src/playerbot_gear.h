@@ -302,7 +302,38 @@ namespace
 			const BYTE weaponSubType = item->GetSubType();
 			if (weaponSubType == WEAPON_DAGGER || weaponSubType == WEAPON_BOW)
 				attack *= 2;
-			score += attack * 1000;
+
+			// The percent lines, as the engine applies them: average damage
+			// multiplies every ordinary hit, skill damage every cast, and both
+			// multiply *this weapon's* damage - so they scale the attack score
+			// rather than adding a flat few thousand beside a million. A
+			// ninja was found wearing a copper bow of 90-156 with a Deer Horn
+			// Bow +8 of 151-244 and +47% average in the bag; by the numbers
+			// the bag one is a third again better before the line is counted.
+			// Negative lines count too: -17% skill damage on that bow is
+			// seventeen percent of every cast.
+			long avgPct = 0, skillPct = 0;
+			for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
+			{
+				const BYTE t = item->GetProto()->aApplies[i].bType;
+				if (t == APPLY_NORMAL_HIT_DAMAGE_BONUS) avgPct += item->GetProto()->aApplies[i].lValue;
+				else if (t == APPLY_SKILL_DAMAGE_BONUS) skillPct += item->GetProto()->aApplies[i].lValue;
+			}
+			for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
+			{
+				const BYTE t = item->GetAttributeType(i);
+				if (t == APPLY_NORMAL_HIT_DAMAGE_BONUS) avgPct += item->GetAttributeValue(i);
+				else if (t == APPLY_SKILL_DAMAGE_BONUS) skillPct += item->GetAttributeValue(i);
+			}
+			const int style = GetPlayerBotSchoolStyle(ch);
+			const int avgWeight = style < 0 ? PLAYERBOT_WEAPON_OWN_LINE_PERCENT
+					: (style > 0 ? PLAYERBOT_WEAPON_OTHER_LINE_PERCENT : 60);
+			const int skillWeight = style > 0 ? PLAYERBOT_WEAPON_OWN_LINE_PERCENT
+					: (style < 0 ? PLAYERBOT_WEAPON_OTHER_LINE_PERCENT : 60);
+			long long multiplier = 100 + (avgPct * avgWeight + skillPct * skillWeight) / 100;
+			if (multiplier < 20)
+				multiplier = 20;
+			score += attack * 1000 * multiplier / 100;
 
 			// A level-30 average-damage weapon used to be handed a flat 350000
 			// here. Damage is scored at a thousand a point, so that was more than
@@ -362,13 +393,23 @@ namespace
 			}
 		}
 
+		// A weapon's two damage-percent lines were folded into its attack
+		// above; everything else is a flat line.
+		const bool bWeaponPctDone = item->GetType() == ITEM_WEAPON;
 		for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
-			score += ScorePlayerBotApply(item->GetProto()->aApplies[i].bType,
-					item->GetProto()->aApplies[i].lValue, ch);
-
+		{
+			const BYTE t = item->GetProto()->aApplies[i].bType;
+			if (bWeaponPctDone && (t == APPLY_NORMAL_HIT_DAMAGE_BONUS || t == APPLY_SKILL_DAMAGE_BONUS))
+				continue;
+			score += ScorePlayerBotApply(t, item->GetProto()->aApplies[i].lValue, ch);
+		}
 		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
-			score += ScorePlayerBotApply(item->GetAttributeType(i),
-					item->GetAttributeValue(i), ch);
+		{
+			const BYTE t = item->GetAttributeType(i);
+			if (bWeaponPctDone && (t == APPLY_NORMAL_HIT_DAMAGE_BONUS || t == APPLY_SKILL_DAMAGE_BONUS))
+				continue;
+			score += ScorePlayerBotApply(t, item->GetAttributeValue(i), ch);
+		}
 
 		if (item->GetImmuneFlag() != 0)
 			score += 1000;
