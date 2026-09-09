@@ -1204,22 +1204,22 @@ namespace
 			return;
 
 		static const char* kPlus7[] = {
-			"%s +7 oldu, demirci bugun sansli",
-			"%s +7 oldu, daha kotusu olabilirdi",
-			"%s +7 oldu, ilk seferde tuttu",
-			"basildi, %s +7 oldu"
+			"%s poszedl na +7, kowal dzis laskawy",
+			"no i mam +7 na %s, moglo byc gorzej",
+			"+7 na %s siadlo za pierwszym razem",
+			"udalo sie, %s na +7"
 		};
 		static const char* kPlus8[] = {
-			"%s +8 oldu! ellerim titredi",
-			"%s +8 oldu, daha ileri basayim mi diye dusunuyorum",
-			"%s +8 oldu, galiba bugun sansliyim",
-			"+8 tuttu, %s hazir"
+			"%s na +8! rece mi sie trzesly",
+			"jest +8 na %s, teraz sie zastanawiam czy pchac dalej",
+			"+8 na %s, chyba mam dzis szczescie",
+			"weszlo na +8, %s gotowy do roboty"
 		};
 		static const char* kPlus9[] = {
-			"%s +9 oldu!!! Inanamiyorum",
-			"%s +9, kim derdi",
-			"%s +9 oldu, bugun benden icecek",
-			"%s +9, bugunluk bu kadar deneme yeter"
+			"%s NA +9!!! nie wierze",
+			"+9 na %s, kto by pomyslal",
+			"dziewiatka na %s, dzis stawiam :D",
+			"%s +9, chyba wystarczy tych probek na dzis"
 		};
 
 		const char** pool = kPlus7;
@@ -1834,22 +1834,22 @@ namespace
 			// a level-30 weapon, a big refine. A poor keeper's counter is a
 			// clearance sale and the sign says that first.
 			const DWORD draw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU);
-			static const char* const s_apszPrefixes[] = { "", "Ucuz: ", "Firsat: ", "Satilik " };
+			static const char* const s_apszPrefixes[] = { "", "Ucuza: ", "Firsat: ", "Satilik: " };
 			static const char* const s_apszBookShops[] = {
-				"Beceri kitaplari", "Her sinifa BK", "Kitaplik - beceri kitaplari", "Kitaplar: %s ve digerleri" };
+				"Skill kitaplari", "Her sinif icin BK", "Skill kitapligi", "Kitaplar: %s ve digerleri" };
 			static const char* const s_apszMaterialShops[] = {
-				"%s malzemeleri", "Demirci malzemeleri", "Post, dis ve kil", "Upletmeler, ucuz" };
+				"%s malzemeleri", "Demirci malzemeleri", "Deriler ve disler", "Gelistirme malzemeleri" };
 			static const char* const s_apszMarketCries[] = {
-				"Bak kanka ne var bende", "Oyuna basladim, bir sey al", "%s - en ucuz fiyat",
-				"Her sey ucuz", "Bedavadan biraz pahali", "Cesit cesit, beklerim",
-				"Ne ariyorsan bende var", "Satilik, pazarlik yok" };
+				"Ne ararsan bende var", "Oyuna basladim, bir sey al",
+				"%s - en dusuk fiyatlar", "Her sey hesapli", "Uygun fiyatlar",
+				"Cesit cesit urunler, beklerim", "Aradigin bende var", "Satilik, pazarlik yok" };
 			const char* pszPrefix = bPoor ? "Indirim: "
 					: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 			const char* pszTemplate = NULL;
 			const char* pszArg = "";
 			if (pszWeapon30)
-				snprintf(body, sizeof(body), "30 level silah: %s", pszWeapon30);
+				snprintf(body, sizeof(body), "30 seviye silah: %s", pszWeapon30);
 			else if (pszPrecious)
 				snprintf(body, sizeof(body), "%s", pszPrecious); // the name carries its +N
 			else if (iBooks > 0 && iBooks * 2 >= (int)tableCount)
@@ -1863,7 +1863,7 @@ namespace
 				pszArg = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ? "M1" : "M2";
 			}
 			else if (iScrap > 0 && iScrap >= (int)tableCount / 2)
-				snprintf(body, sizeof(body), "Basmalik item +0..+3");
+				snprintf(body, sizeof(body), "Satilik dusuk ekipman +0..+3");
 			else if (pszBestName && tableCount > 1 && (draw & 8U) != 0)
 				snprintf(body, sizeof(body), "%s ve digerleri", pszBestName);
 			else if (tableCount > 1)
