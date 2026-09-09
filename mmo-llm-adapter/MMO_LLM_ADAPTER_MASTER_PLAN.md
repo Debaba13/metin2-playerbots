@@ -449,6 +449,12 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
   karşılıklarıyla değiştirildi.
 - Doğrulama: game image yeniden build edildi, game container `healthy` oldu;
   `tests/test_locales.py`: **12 passed**.
-- Canlı oyuncu shout smoke testi (`dolu alinir`, `dolu alin`, `dolu alirim`,
-  `dolu aranir`, `KDP satilir`) ve pazar uygunluk logları bir sonraki canlı
-  oyun oturumunda ayrıca gözlemlenecek.
+- Docker doğrulaması: MariaDB, game ve panel container'ları `healthy`; panel canlı
+  haritada 750 bot gösteriyor.
+- Son 15 dakikalık game loglarında shout/shop event'i yok; bu nedenle oyuncu
+  shout smoke testi henüz gerçek oyun istemcisi mesajıyla tamamlanmış sayılmıyor.
+- Bir sonraki canlı testte şu mesajlar tek tek gönderilecek:
+  `dolu alinir`, `dolu alin`, `dolu alirim`, `dolu aranir`, `KDP satilir`.
+  Aynı anda `PLAYERBOT_INPUT`, `PLAYERBOT_TRADE` ve `PLAYERBOT_SHOP` logları
+  izlenecek; pazar açılmıyorsa uygunluk ve 20 dakikalık bot shout throttling'i
+  ayrıştırılacak.
