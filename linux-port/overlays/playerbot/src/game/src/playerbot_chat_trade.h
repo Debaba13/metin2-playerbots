@@ -114,7 +114,7 @@ namespace
 		TPlayerBotPendingTrade pending;
 		pending.bot = bot;
 		pending.price = price;
-		pending.expires = get_dword_time() + 60000;
+		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = true;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 	}
@@ -531,9 +531,7 @@ namespace
 		{
 			LPCHARACTER bot = CHARACTER_MANAGER::instance().FindByPID(it->first);
 			if (!bot || !bot->IsItemLoaded() || bot->GetMyShop() ||
-					bot->GetMapIndex() != player->GetMapIndex() ||
-					DISTANCE_APPROX(player->GetX() - bot->GetX(),
-							player->GetY() - bot->GetY()) >= EXCHANGE_MAX_DISTANCE)
+					bot->GetMapIndex() != player->GetMapIndex())
 				continue;
 			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
 			{
@@ -581,7 +579,7 @@ namespace
 		pending.bot = bestSeller;
 		pending.cell = bestCell;
 		pending.price = (DWORD)totalPrice;
-		pending.expires = get_dword_time() + 60000;
+		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];
@@ -656,7 +654,7 @@ namespace
 		pending.bot = bestKeeper;
 		pending.cell = inventoryCell;
 		pending.price = std::max<DWORD>(1, bestOffer->dwPrice);
-		pending.expires = get_dword_time() + 60000;
+		pending.expires = get_dword_time() + 120000;
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];

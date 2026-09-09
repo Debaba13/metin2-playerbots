@@ -466,3 +466,13 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
 - Fiyat sorularında item adı, refine, stack ve mevcut bonuslar birlikte gösteriliyor.
 - Bilinmeyen bonus türlerinde görünen genel `bonus` etiketi yalnızca fiyat
   detayında kullanılacak; envanter özeti artık bu etiketi üretmiyor.
+
+## GÜNCELLEME — 2026-09-09: Trade teklifinin kaybolmaması
+
+- Oyuncu bağırışıyla item arayan bot artık yalnızca oyuncuya çok yakın olanı değil,
+  aynı haritadaki uygun iteme sahip en yakın botu seçiyor; botun oyuncuya yaklaşması
+  pending trade onayından sonra devam ediyor.
+- Pending trade süresi 60 saniyeden 120 saniyeye çıkarıldı. Böylece `tamam` ile
+  yaklaşma/trade açma arasında teklifin sessizce düşmesi engellendi.
+- Bu akışta gerçek oyun istemcisiyle `dolu alinir` ve ardından `tamam` testi
+  yapılmadan başarı kesin kabul edilmeyecek.
