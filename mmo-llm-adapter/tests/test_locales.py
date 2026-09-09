@@ -3,6 +3,7 @@ import pytest
 from llm.prompts import PromptManager
 from core.text import (
     add_realistic_typo,
+    clean_model_reply,
     has_bad_turkish_pattern,
     limit_profanity,
     sanitize_game_text,
@@ -66,6 +67,13 @@ def test_bad_turkish_pattern_is_detected():
     assert not has_bad_turkish_pattern("Su an slot kesiyorum")
 
 
+def test_polish_terms_are_translated_before_game_chat():
+    text = clean_model_reply("Wyprzedaz! Kupie KU, teraz czekam na stragan.")
+    assert text == "Indirim! Ariyorum BK, simdi bekliyorum pazarda."
+    assert "wyprzedaz" not in text.casefold()
+    assert "kupie" not in text.casefold()
+
+
 def test_saved_personality_fields_are_included_in_prompt():
     pm = PromptManager(locales_dir=LOCALES_DIR, default_lang="tr")
     prompt = pm.build_system_prompt({
@@ -85,3 +93,11 @@ def test_numeric_saved_personality_is_named_in_prompt():
     pm = PromptManager(locales_dir=LOCALES_DIR, default_lang="tr")
     prompt = pm.build_system_prompt({"name": "Gezgin", "personality_id": 6})
     assert "gezgin" in prompt
+
+
+def test_turkish_prompt_has_explicit_short_reply_contract():
+    pm = PromptManager(locales_dir=LOCALES_DIR, default_lang="tr")
+    prompt = pm.build_system_prompt({"name": "Gezgin"})
+    assert "SON GOREV" in prompt
+    assert "Dusunce sureci, analiz, Ingilizce, JSON" in prompt
+    assert "en fazla" in prompt

@@ -4,7 +4,7 @@
 // What a bot shows above its head, and the words for it.
 //
 // This is the only place a bot is described in a player's language rather than
-// in the code's. Strings here are Polish and ASCII-only: the client renders
+// in the code's. Strings here are Turkish and ASCII-only: the client renders
 // them in a font that has no diacritics, so an accented character comes out as
 // a box.
 //
@@ -49,19 +49,19 @@ namespace
 	{
 		switch (goal)
 		{
-			case BOT_GOAL_SURVIVE: return "regeneracja";
-			case BOT_GOAL_CHOOSE_PROFESSION: return "profesja";
-			case BOT_GOAL_GET_EQUIPMENT: return "ekwipunek";
-			case BOT_GOAL_RESTOCK: return "zapasy";
-			case BOT_GOAL_REFINE: return "ulepszanie";
-			case BOT_GOAL_MASTER_SKILL: return "rozwoj skilla";
-			case BOT_GOAL_HUNT_METIN: return "Metiny";
-			case BOT_GOAL_PARTY_CHALLENGE: return "silne moby PT";
-			case BOT_GOAL_BIOLOGIST: return "Biolog";
-			case BOT_GOAL_HUNTING: return "Polowanie";
-			case BOT_GOAL_HORSE: return "rozwoj konia";
-			case BOT_GOAL_FISHING: return "lowienie ryb";
-			default: return "poziom";
+			case BOT_GOAL_SURVIVE: return "can yenileme";
+			case BOT_GOAL_CHOOSE_PROFESSION: return "meslek secimi";
+			case BOT_GOAL_GET_EQUIPMENT: return "ekipman";
+			case BOT_GOAL_RESTOCK: return "stok";
+			case BOT_GOAL_REFINE: return "basma";
+			case BOT_GOAL_MASTER_SKILL: return "skill gelistirme";
+			case BOT_GOAL_HUNT_METIN: return "Metin avlama";
+			case BOT_GOAL_PARTY_CHALLENGE: return "grup ile guclu mob";
+			case BOT_GOAL_BIOLOGIST: return "Biyolog gorevi";
+			case BOT_GOAL_HUNTING: return "avlanma";
+			case BOT_GOAL_HORSE: return "at gelistirme";
+			case BOT_GOAL_FISHING: return "balik tutma";
+			default: return "seviye kasma";
 		}
 	}
 
@@ -81,11 +81,11 @@ namespace
 			case PLAYERBOT_MAP_MONKEY_EASY: return "Maymun Zindani";
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "Maymun Zindani II";
 			case PLAYERBOT_MAP_MONKEY_HARD: return "Maymun Zindani III";
-			case PLAYERBOT_MAP_DESERT: return "na Pustynie Yongbi";
-			case PLAYERBOT_MAP_ORC_VALLEY: return "do Doliny Orkow";
-			case PLAYERBOT_MAP_SOHAN: return "na Gore Sohan";
+			case PLAYERBOT_MAP_DESERT: return "Yongbi Colu'ne";
+			case PLAYERBOT_MAP_ORC_VALLEY: return "Orkler Vadisi'ne";
+			case PLAYERBOT_MAP_SOHAN: return "Sohan Dagi'na";
 			case PLAYERBOT_MAP_SPIDER_V1: return "Orumcek Zindani";
-			case PLAYERBOT_MAP_HWANG: return "do Swiatyni Hwang";
+			case PLAYERBOT_MAP_HWANG: return "Hwang Tapinagi'na";
 			default: return "";
 		}
 	}
@@ -94,23 +94,23 @@ namespace
 	{
 		switch (action)
 		{
-			case BOT_ACTION_TRAVEL: return "ide";
-			case BOT_ACTION_FIGHT: return "walcze";
-			case BOT_ACTION_LOOT: return "zbieram";
-			case BOT_ACTION_RECOVER: return "odpoczywam";
-			case BOT_ACTION_TRAIN: return "wybieram profesje";
-			case BOT_ACTION_SHOP: return "handluje";
-			case BOT_ACTION_REFINE: return "ulepszam";
-			case BOT_ACTION_READ_BOOK: return "czytam KU";
-			case BOT_ACTION_SOCKET_STONE: return "wkladam KD";
-			case BOT_ACTION_PARTY_ASSEMBLE: return "zbieram PT";
-			case BOT_ACTION_BIOLOGIST: return "robie misje Biologa";
-			case BOT_ACTION_STABLE: return "odwiedzam Stajennego";
-			case BOT_ACTION_STALL: return "prowadze stragan";
-			case BOT_ACTION_MARKET: return "jestem na zakupach";
-			case BOT_ACTION_LURE: return "podciagam moby dla PT";
-			case BOT_ACTION_TOWN_REST: return "chodze po straganach";
-			default: return "mysle";
+			case BOT_ACTION_TRAVEL: return "gidiyorum";
+			case BOT_ACTION_FIGHT: return "savasiyorum";
+			case BOT_ACTION_LOOT: return "topluyorum";
+			case BOT_ACTION_RECOVER: return "dinleniyorum";
+			case BOT_ACTION_TRAIN: return "meslek seciyorum";
+			case BOT_ACTION_SHOP: return "ticaret yapiyorum";
+			case BOT_ACTION_REFINE: return "esya basiyorum";
+			case BOT_ACTION_READ_BOOK: return "BK okuyorum";
+			case BOT_ACTION_SOCKET_STONE: return "KD takiyorum";
+			case BOT_ACTION_PARTY_ASSEMBLE: return "grup topluyorum";
+			case BOT_ACTION_BIOLOGIST: return "Biyolog gorevi yapiyorum";
+			case BOT_ACTION_STABLE: return "Seyis'e gidiyorum";
+			case BOT_ACTION_STALL: return "pazar kuruyorum";
+			case BOT_ACTION_MARKET: return "pazarda alisveris yapiyorum";
+			case BOT_ACTION_LURE: return "grup icin mob cekiyorum";
+			case BOT_ACTION_TOWN_REST: return "pazarlari geziyorum";
+			default: return "takiliyorum";
 		}
 	}
 
@@ -163,7 +163,7 @@ namespace
 			case BOT_TOWN_PHASE_GATE_CROSS_IN: return "Sehre gidiyorum";
 			case BOT_TOWN_PHASE_GATE_OUT:
 			case BOT_TOWN_PHASE_GATE_CROSS_OUT: return "Exp yerine donuyorum";
-			default: return "Zalatwiam sprawy w miescie";
+			default: return "Kentte islerimi hallediyorum";
 		}
 	}
 
@@ -173,7 +173,7 @@ namespace
 		if (!ch || !status || statusSize == 0)
 			return;
 
-		const char* prefix = ch->GetParty() ? "[PT] " : "";
+		const char* prefix = ch->GetParty() ? "[GRUP] " : "";
 		const char* goal = GetPlayerBotGoalLabel(state.bLongTermGoal);
 		if (state.bVisitingShop)
 		{
@@ -190,7 +190,7 @@ namespace
 						(unsigned int)redCount, (unsigned int)blueCount);
 				return;
 			}
-			snprintf(status, statusSize, "%s%s (cel: %s)", prefix,
+			snprintf(status, statusSize, "%s%s (hedef: %s)", prefix,
 					GetPlayerBotTownStatusLabel(state), goal);
 			return;
 		}
@@ -209,10 +209,10 @@ namespace
 			const char* where = state.lDepartureMap != 0
 					? GetPlayerBotMapDestinationPl(state.lDepartureMap) : "";
 			if (where[0])
-				snprintf(status, statusSize, "%sCzekam na trase do handlarza; potem %s",
+				snprintf(status, statusSize, "%sSatici yolunu bekliyorum; sonra %s",
 						prefix, where);
 			else
-				snprintf(status, statusSize, "%sCzekam na trase do handlarza", prefix);
+				snprintf(status, statusSize, "%sSatici yolunu bekliyorum", prefix);
 			return;
 		}
 		// The luring course says which stage it is in, because "walking away
@@ -223,21 +223,21 @@ namespace
 			switch (state.bLureStage)
 			{
 				case LURE_STAGE_PLAN:
-					snprintf(status, statusSize, "%sSzykuje lur dla druzyny", prefix);
+					snprintf(status, statusSize, "%sGrup icin lure hazirliyorum", prefix);
 					return;
 				case LURE_STAGE_RETURN:
 					snprintf(status, statusSize, "%sGruba donuyorum: %d mob cekiyorum",
 							prefix, state.iLureChasing);
 					return;
 				case LURE_STAGE_HANDOFF:
-					snprintf(status, statusSize, "%sPrzekazuje moby: %d przyprowadzonych, %d nadal za mna",
+					snprintf(status, statusSize, "%sMoblari teslim ediyorum: %d getirildi, %d pesimde",
 							prefix, state.iLureDelivered, state.iLureChasing);
 					return;
 				case LURE_STAGE_RECOVER:
-					snprintf(status, statusSize, "%sWstrzymuje lur: druzyna jeszcze walczy", prefix);
+					snprintf(status, statusSize, "%sLure ara: grup hala savasiyor", prefix);
 					return;
 				default:
-					snprintf(status, statusSize, "%sLuruje dla PT: %u/%u grupy, sciga mnie %d",
+					snprintf(status, statusSize, "%sGrup icin lure: %u/%u grup, pesimde %d",
 							prefix, (unsigned int)state.bLureGroupsTagged,
 							(unsigned int)state.bLureGroupsPlanned, state.iLureChasing);
 					return;
@@ -284,25 +284,25 @@ namespace
 								target->GetName());
 					else if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_PARTY_DEFENSE)
-						snprintf(status, statusSize, "%sPomagam druzynie: %s", prefix,
+						snprintf(status, statusSize, "%sGruba yardim ediyorum: %s", prefix,
 								target->GetName());
 					else if (state.bLastCombatReason ==
 							(BYTE)playerbot_combat_value::ALLOW_MATERIAL)
-						snprintf(status, statusSize, "%sZbieram material z %s", prefix,
+						snprintf(status, statusSize, "%s%s malzemesini topluyorum", prefix,
 								target->GetName());
 					else if (distance > range)
-						snprintf(status, statusSize, "%sGonie %s", prefix, target->GetName());
+						snprintf(status, statusSize, "%s%s'nin pesindeyim", prefix, target->GetName());
 					else
-						snprintf(status, statusSize, "%sWalcze z %s", prefix, target->GetName());
+						snprintf(status, statusSize, "%s%s ile savasiyorum", prefix, target->GetName());
 				}
 				else
-					snprintf(status, statusSize, "%sSzukam przeciwnika", prefix);
+					snprintf(status, statusSize, "%sRakip ariyorum", prefix);
 				break;
 			case BOT_ACTION_LOOT:
-				snprintf(status, statusSize, "%sPodnosze lup", prefix);
+				snprintf(status, statusSize, "%sGanimet topluyorum", prefix);
 				break;
 			case BOT_ACTION_RECOVER:
-				snprintf(status, statusSize, "%sRegeneruje HP", prefix);
+				snprintf(status, statusSize, "%sCan dolduruyorum", prefix);
 				break;
 			case BOT_ACTION_TRAIN:
 				if (state.bVisitingShop &&
@@ -322,10 +322,10 @@ namespace
 				snprintf(status, statusSize, "%sBeceri kitabi okuyorum", prefix);
 				break;
 			case BOT_ACTION_SOCKET_STONE:
-				snprintf(status, statusSize, "%sWkladam kamien duszy", prefix);
+				snprintf(status, statusSize, "%sRuh Tasi takiyorum", prefix);
 				break;
 			case BOT_ACTION_PARTY_ASSEMBLE:
-				snprintf(status, statusSize, "%sSzukam celu dla grupy", prefix);
+				snprintf(status, statusSize, "%sGrup icin hedef ariyorum", prefix);
 				break;
 			case BOT_ACTION_BIOLOGIST:
 			{
@@ -338,9 +338,9 @@ namespace
 								ch->GetY() - PLAYERBOT_BIOLOGIST_Y) > 850)
 					snprintf(status, statusSize, "%sBiologa gidiyorum: %s", prefix, mission->itemLabel);
 				else if (state.bVisitingBiologist)
-					snprintf(status, statusSize, "%sOddaje Biologowi: %s", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sBiyologa teslim ediyorum: %s", prefix, mission->itemLabel);
 				else
-					snprintf(status, statusSize, "%sZbieram dla Biologa: %s", prefix, mission->itemLabel);
+					snprintf(status, statusSize, "%sBiyolog icin topluyorum: %s", prefix, mission->itemLabel);
 				break;
 			}
 			case BOT_ACTION_STABLE:
@@ -358,7 +358,7 @@ namespace
 				else if (bFar)
 					snprintf(status, statusSize, "%sMadalyayla seyise gidiyorum", prefix);
 				else
-					snprintf(status, statusSize, "%sOddaje medal konny (%u/21)", prefix,
+					snprintf(status, statusSize, "%sAt madalyasi veriyorum (%u/21)", prefix,
 							(unsigned int)ch->GetHorseLevel());
 				break;
 			}
@@ -371,25 +371,25 @@ namespace
 						PLAYERBOT_FISHING_BANK_RADIUS)
 					snprintf(status, statusSize, "%sNehirde balik tutmaya gidiyorum", prefix);
 				else if (state.bIsFishing)
-					snprintf(status, statusSize, "%sLowie ryby - czekam na branie", prefix);
+					snprintf(status, statusSize, "%sBalik tutuyorum - oltayi bekliyorum", prefix);
 				else if (!IsPlayerBotHoldingRod(ch))
 					// The old text here was a plain else, so an angler standing at
 					// the water with no rod on its back announced that it was
 					// baiting one - which is what got reported as "bots put bait
 					// on weapons". Nothing was ever put on a weapon; the label
 					// was simply wrong about what the bot was doing.
-					snprintf(status, statusSize, "%sSzukam wedki", prefix);
+					snprintf(status, statusSize, "%sOlta ariyorum", prefix);
 				else
-					snprintf(status, statusSize, "%sZakladam przynete na wedke", prefix);
+					snprintf(status, statusSize, "%sYemi oltaya takiyorum", prefix);
 				break;
 			case BOT_ACTION_TOWN_REST:
-				snprintf(status, statusSize, "%sOgladam stragany", prefix);
+				snprintf(status, statusSize, "%sPazar tezgahlarini geziyorum", prefix);
 				break;
 			case BOT_ACTION_MARKET:
 				if (state.dwMarketStallVID != 0)
-					snprintf(status, statusSize, "%sOgladam stragan", prefix);
+					snprintf(status, statusSize, "%sPazari inceliyorum", prefix);
 				else
-					snprintf(status, statusSize, "%sSzukam czegos na straganach", prefix);
+					snprintf(status, statusSize, "%sPazarlarda bir sey ariyorum", prefix);
 				break;
 			case BOT_ACTION_TRAVEL:
 				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
@@ -456,7 +456,7 @@ namespace
 						snprintf(status, statusSize, "%s%s gidiyorum (hedef: %s)", prefix,
 								where, goal);
 					else
-						snprintf(status, statusSize, "%sSzukam lepszego miejsca (cel: %s)",
+						snprintf(status, statusSize, "%sDaha iyi bir yer ariyorum (hedef: %s)",
 								prefix, goal);
 				}
 				break;
@@ -464,10 +464,10 @@ namespace
 				// The head carries the sign in the world; the panel read
 				// "Planuje: poziom" for a keeper at its counter and an operator
 				// counted thirty-nine idle bots in the Joan square.
-				snprintf(status, statusSize, "%sProwadze stragan", prefix);
+				snprintf(status, statusSize, "%sPazar kuruyorum", prefix);
 				break;
 			default:
-				snprintf(status, statusSize, "%sPlanuje: %s", prefix, goal);
+				snprintf(status, statusSize, "%sPlanliyorum: %s", prefix, goal);
 				break;
 		}
 	}

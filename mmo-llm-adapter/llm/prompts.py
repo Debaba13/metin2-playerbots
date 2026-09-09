@@ -101,6 +101,14 @@ BEHAVIORAL RULES:
 
 ORIGINAL STYLE EXAMPLES (do not copy verbatim; use only as tone guidance):
 {examples}
+
+SON GOREV:
+Oyuncunun son mesajina dogrudan cevap ver. Cevabi sadece ASCII Turkce yaz ve Lehce kelime veya Lehce kisaltma
+kullanma; `BK` beceri kitabi demektir ve Lehce `KU` kullanma. En fazla
+iki kisa cumle kullan. Dusunce sureci, analiz, Ingilizce, JSON, markdown veya cevap
+etiketi yazma. Oyuncu ne istedigini soruyorsa kisa ve dogal bir cevap ver; emin
+degilsen "Su an bilmiyorum, birazdan bakarim." de. Bir oyun aksiyonu gerekiyorsa
+uygun araci kullan ve varsa mesaj alanina ayni kurallara uyan kisa Turkce metin koy.
 """
         return prompt
 

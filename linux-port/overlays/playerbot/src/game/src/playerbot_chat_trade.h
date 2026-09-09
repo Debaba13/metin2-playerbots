@@ -42,7 +42,11 @@ namespace
 	// A player gets one whispered answer this often, so a shout repeated
 	// twice does not bring two bots to the same door.
 	const DWORD PLAYERBOT_TRADE_REPLY_INTERVAL = 8000;
-	const DWORD PLAYERBOT_PLAYER_MESSAGE_HOLD_TIME = 15;
+	// get_dword_time() is expressed in milliseconds.
+	const DWORD PLAYERBOT_PLAYER_MESSAGE_HOLD_TIME = 15000;
+	// World coordinates use roughly 10 units per metre; keep a contacted bot
+	// within about ten metres before it stops for the conversation hold.
+	const int PLAYERBOT_PLAYER_MESSAGE_APPROACH_DISTANCE = 100;
 	// Fewer letters than this after the verb is not a thing anybody meant.
 	const size_t PLAYERBOT_TRADE_QUERY_MIN = 3;
 	// The skill books the proto names one skill each - "Instr. Aura Miecza",
@@ -54,14 +58,16 @@ namespace
 	DWORD s_dwPlayerBotTradeShoutTime = 0;
 	std::map<DWORD, DWORD> s_mapPlayerBotTradeShoutTime;
 	std::map<DWORD, DWORD> s_mapPlayerBotConversationHoldUntil;
+	std::map<DWORD, LPCHARACTER> s_mapPlayerBotConversationPlayer;
 
-	void HoldPlayerBotForPlayerMessage(LPCHARACTER bot)
+	void HoldPlayerBotForPlayerMessage(LPCHARACTER bot, LPCHARACTER player = NULL)
 	{
 		if (!bot)
 			return;
-		bot->Stop();
 		s_mapPlayerBotConversationHoldUntil[bot->GetPlayerID()] =
 				get_dword_time() + PLAYERBOT_PLAYER_MESSAGE_HOLD_TIME;
+		if (player)
+			s_mapPlayerBotConversationPlayer[bot->GetPlayerID()] = player;
 	}
 
 	bool IsPlayerBotConversationHeld(DWORD playerID, DWORD dwNow)
@@ -70,7 +76,25 @@ namespace
 				s_mapPlayerBotConversationHoldUntil.find(playerID);
 		return it != s_mapPlayerBotConversationHoldUntil.end() && it->second > dwNow;
 	}
+
+	LPCHARACTER GetPlayerBotConversationPlayer(DWORD playerID)
+	{
+		std::map<DWORD, LPCHARACTER>::const_iterator it =
+				s_mapPlayerBotConversationPlayer.find(playerID);
+		return it != s_mapPlayerBotConversationPlayer.end() ? it->second : NULL;
+	}
 	std::map<DWORD, DWORD> s_mapPlayerBotTradeReplyTime;
+	struct TPlayerBotDeferredPriceQuestion
+	{
+		LPCHARACTER player;
+		LPCHARACTER bot;
+		char text[CHAT_MAX_LEN + 1];
+		TPlayerBotDeferredPriceQuestion() : player(NULL), bot(NULL)
+		{
+			text[0] = 0;
+		}
+	};
+	std::map<DWORD, TPlayerBotDeferredPriceQuestion> s_mapPlayerBotDeferredPriceQuestions;
 	struct TPlayerBotPendingTrade
 	{
 		LPCHARACTER bot;
@@ -78,8 +102,9 @@ namespace
 		DWORD price;
 		DWORD expires;
 		bool botBuys;
+		bool confirmed;
 		TPlayerBotPendingTrade()
-			: bot(NULL), cell(0), price(0), expires(0), botBuys(false) {}
+			: bot(NULL), cell(0), price(0), expires(0), botBuys(false), confirmed(false) {}
 	};
 	std::map<DWORD, TPlayerBotPendingTrade> s_mapPlayerBotPendingTrades;
 	void RememberPlayerBotPendingBuy(LPCHARACTER player, LPCHARACTER bot, DWORD price)
@@ -177,7 +202,7 @@ namespace
 	{
 		if (!bot || !to || !to->GetDesc() || !text || !*text)
 			return;
-		HoldPlayerBotForPlayerMessage(bot);
+		HoldPlayerBotForPlayerMessage(bot, to);
 		const size_t len = std::min<size_t>(strlen(text), CHAT_MAX_LEN);
 		TPacketGCWhisper pack;
 		pack.bHeader = HEADER_GC_WHISPER;
@@ -240,7 +265,7 @@ namespace
 			return;
 		char text[CHAT_MAX_LEN + 1];
 		FormatPlayerBotText(text, sizeof(text), "",
-				"Kupie %s - kto ma, niech wystawi w %s", proto->szLocaleName,
+				"%s ariyorum - kimde varsa %s'te pazara koysun", proto->szLocaleName,
 				GetPlayerBotTownName(ch->GetMapIndex()));
 		ShoutPlayerBotTrade(ch, text, get_dword_time());
 	}
@@ -285,6 +310,41 @@ namespace
 			return false;
 		char name[64];
 		FoldPlayerBotChatText(item->GetProto()->szLocaleName, name, sizeof(name));
+		if (item->GetType() == ITEM_SKILLBOOK &&
+				(!strcmp(foldedQuery, "bk") || !strcmp(foldedQuery, "ku") ||
+				 !strcmp(foldedQuery, "beceri kitabi") ||
+				 !strcmp(foldedQuery, "skill kitabi") ||
+				 !strcmp(foldedQuery, "skill book")))
+			return true;
+		struct TTurkishMarketAlias
+		{
+			const char* alias;
+			const char* names[5];
+		};
+		static const TTurkishMarketAlias aliases[] = {
+			{ "kdp", { "kirmizi demir pala", "red iron blade",
+				"czerwone ostrze", "czerwony miecz", NULL } },
+			{ "gby", { "geyik boynuzu yay", "horn bow",
+				"luk z jeleniego rogu", "rog jelenia", NULL } },
+			{ "syh", { "siyah yaprak hanceri", "black leaf dagger",
+				"czarny sztylet", "czarny lisc", NULL } },
+			{ "kutsama", { "kutsama kagidi", "blessing paper",
+				"papier egzorcyzmu", "papier blogoslawienstwa", NULL } },
+			{ "kagit", { "kutsama kagidi", "exorcism scroll",
+				"blessing paper", "papier egzorcyzmu", NULL } },
+			{ "dolu", { "dolunay", "dolunay kilici", "full moon sword",
+				"miecz pelni ksiezyca", NULL } },
+			{ "dolunay", { "dolunay", "dolunay kilici", "full moon sword",
+				"miecz pelni ksiezyca", NULL } }
+		};
+		for (size_t i = 0; i < sizeof(aliases) / sizeof(aliases[0]); ++i)
+		{
+			if (strcmp(foldedQuery, aliases[i].alias) != 0)
+				continue;
+			for (size_t k = 0; k < sizeof(aliases[i].names) / sizeof(aliases[i].names[0]); ++k)
+				if (aliases[i].names[k] && strstr(name, aliases[i].names[k]))
+					return true;
+		}
 		if (strstr(name, foldedQuery) != NULL)
 			return true;
 		char acronym[32];
@@ -372,10 +432,20 @@ namespace
 			return verb;
 		while (*p && IsPlayerBotChatSeparator(*p))
 			++p;
-		if (strncmp(p, "ku ", 3) == 0)
+		if (strncmp(p, "ku ", 3) == 0 || strncmp(p, "bk ", 3) == 0 ||
+				strncmp(p, "beceri kitabi ", 14) == 0 ||
+				strncmp(p, "skill kitabi ", 13) == 0 ||
+				strncmp(p, "skill book ", 12) == 0)
 		{
 			outBook = true;
-			p += 3;
+			if (strncmp(p, "beceri kitabi ", 14) == 0)
+				p += 14;
+			else if (strncmp(p, "skill kitabi ", 13) == 0)
+				p += 13;
+			else if (strncmp(p, "skill book ", 12) == 0)
+				p += 12;
+			else
+				p += 3;
 		}
 		else if (strncmp(p, "ksiege ", 7) == 0 || strncmp(p, "ksiega ", 7) == 0 ||
 				strncmp(p, "ksiegi ", 7) == 0)
@@ -498,21 +568,23 @@ namespace
 			SendPlayerBotWhisper(bestSeller, player, reply);
 			return true;
 		}
-		const DWORD basePrice = std::max<DWORD>(1,
-				(DWORD)std::max<long long>(1,
-					GetPlayerBotVnumSaleValue(bestItem->GetVnum(), get_dword_time())));
-		const DWORD askingPrice = std::max<DWORD>(1, basePrice * 120 / 100);
+		const DWORD unitPrice = std::max<DWORD>(1, GetPlayerBotShopAskingPrice(bestItem));
+		const unsigned long long totalPrice =
+				std::min<unsigned long long>(2000000000ULL,
+					std::max<unsigned long long>(1ULL,
+						(unsigned long long)unitPrice * 110ULL / 100ULL));
 		TPlayerBotPendingTrade pending;
 		pending.bot = bestSeller;
 		pending.cell = bestCell;
-		pending.price = askingPrice;
+		pending.price = (DWORD)totalPrice;
 		pending.expires = get_dword_time() + 60000;
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];
 		FormatPlayerBotText(reply, sizeof(reply), "",
-				"Selam kanka, bende %s var. %u yang, istersen trade acalim",
-				bestItem->GetProto()->szLocaleName, askingPrice);
+				"Selam kanka, bende %s x%u var. %u yang, istersen trade acalim",
+				bestItem->GetProto()->szLocaleName,
+				std::max<DWORD>(1, bestItem->GetCount()), pending.price);
 		SendPlayerBotWhisper(bestSeller, player, reply);
 		return true;
 	}
@@ -563,15 +635,35 @@ namespace
 		}
 		if (!bestKeeper || !bestOffer || !bestItem)
 			return false;
+		WORD inventoryCell = 0;
+		bool foundInventoryCell = false;
+		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		{
+			if (bestKeeper->GetInventoryItem(cell) == bestItem)
+			{
+				inventoryCell = cell;
+				foundInventoryCell = true;
+				break;
+			}
+		}
+		if (!foundInventoryCell)
+			return false;
+		TPlayerBotPendingTrade pending;
+		pending.bot = bestKeeper;
+		pending.cell = inventoryCell;
+		pending.price = std::max<DWORD>(1, bestOffer->dwPrice);
+		pending.expires = get_dword_time() + 60000;
+		pending.botBuys = false;
+		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];
 		if (bestOffer->wCount > 1)
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Mam %s x%u na straganie w %s, %u yang za calosc",
+					"Pazarda %s x%u var, %s'te. Hepsi %u yang",
 					bestItem->GetProto()->szLocaleName, (unsigned int)bestOffer->wCount,
 					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
 		else
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Mam %s na straganie w %s, %u yang",
+					"Pazarda %s var, %s'te. Fiyati %u yang",
 					bestItem->GetProto()->szLocaleName,
 					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
 		SendPlayerBotWhisper(bestKeeper, player, reply);
@@ -671,7 +763,6 @@ namespace
 			if (wantedVnum == 0)
 				return false;
 		}
-		else
 		{
 			for (DWORD vnum = PLAYERBOT_TRADE_SKILL_BOOK_FIRST;
 					vnum <= PLAYERBOT_TRADE_SKILL_BOOK_LAST && wantedVnum == 0; ++vnum)
@@ -775,6 +866,7 @@ namespace
 		char folded[CHAT_MAX_LEN + 1];
 		FoldPlayerBotChatText(text, folded, sizeof(folded));
 		return strstr(folded, "elinde") || strstr(folded, "ustunde") ||
+				strstr(folded, "uzerinde") ||
 				strstr(folded, "envanter") || strstr(folded, "silah") ||
 				strstr(folded, "zirh") || strstr(folded, "itemlerin");
 	}
@@ -842,6 +934,23 @@ namespace
 	{
 		if (!player || !targetBot || !text)
 			return false;
+		if (targetBot->GetMapIndex() != player->GetMapIndex() ||
+				DISTANCE_APPROX(player->GetX() - targetBot->GetX(),
+						player->GetY() - targetBot->GetY()) >= EXCHANGE_MAX_DISTANCE)
+		{
+			HoldPlayerBotForPlayerMessage(targetBot, player);
+			TPlayerBotDeferredPriceQuestion deferred;
+			deferred.player = player;
+			deferred.bot = targetBot;
+			strlcpy(deferred.text, text, sizeof(deferred.text));
+			s_mapPlayerBotDeferredPriceQuestions[targetBot->GetPlayerID()] = deferred;
+			char reply[CHAT_MAX_LEN + 1];
+			FormatPlayerBotText(reply, sizeof(reply), "",
+					"Yanina geliyorum, sonra %s icin fiyat soyleyeyim",
+					text);
+			SendPlayerBotWhisper(targetBot, player, reply);
+			return true;
+		}
 		char folded[CHAT_MAX_LEN + 1];
 		FoldPlayerBotChatText(text, folded, sizeof(folded));
 		const char* markers[] = {
@@ -874,22 +983,72 @@ namespace
 				if (!item || item->IsEquipped() || !PlayerBotItemNameMatches(item, folded))
 					continue;
 				const DWORD basePrice = std::max<DWORD>(1,
-						(DWORD)std::max<long long>(1,
-							GetPlayerBotVnumSaleValue(item->GetVnum(), get_dword_time())));
+						GetPlayerBotShopAskingPrice(item));
+				const unsigned long long totalPrice =
+						std::min<unsigned long long>(2000000000ULL,
+							std::max<unsigned long long>(1ULL,
+								(unsigned long long)basePrice * 110ULL / 100ULL));
 				TPlayerBotPendingTrade pending;
 				pending.bot = bot;
 				pending.cell = cell;
-				pending.price = std::max<DWORD>(1, basePrice * 120 / 100);
+				pending.price = (DWORD)totalPrice;
 				pending.expires = get_dword_time() + 60000;
 				pending.botBuys = false;
 				s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 				char reply[CHAT_MAX_LEN + 1];
 				FormatPlayerBotText(reply, sizeof(reply), "",
-						"%s icin %u yang. Uygunsa tamam yaz, trade acayim",
-						item->GetProto()->szLocaleName, pending.price);
+						"%s x%u icin %u yang. Uygunsa tamam yaz, trade acayim",
+						item->GetProto()->szLocaleName,
+						std::max<DWORD>(1, item->GetCount()), pending.price);
 				SendPlayerBotWhisper(bot, player, reply);
 				return true;
 			}
+		}
+		return false;
+	}
+
+	bool CompletePlayerBotDeferredPriceQuestion(LPCHARACTER bot)
+	{
+		if (!bot)
+			return false;
+		std::map<DWORD, TPlayerBotDeferredPriceQuestion>::iterator it =
+				s_mapPlayerBotDeferredPriceQuestions.find(bot->GetPlayerID());
+		if (it == s_mapPlayerBotDeferredPriceQuestions.end())
+			return false;
+		TPlayerBotDeferredPriceQuestion deferred = it->second;
+		s_mapPlayerBotDeferredPriceQuestions.erase(it);
+		if (!deferred.player || !deferred.player->GetDesc() ||
+				deferred.player->IsDead() || deferred.player->GetMapIndex() != bot->GetMapIndex())
+			return false;
+		if (DISTANCE_APPROX(deferred.player->GetX() - bot->GetX(),
+				deferred.player->GetY() - bot->GetY()) >= EXCHANGE_MAX_DISTANCE)
+		{
+			s_mapPlayerBotDeferredPriceQuestions[bot->GetPlayerID()] = deferred;
+			return false;
+		}
+		return AnswerPlayerBotItemPriceQuestion(deferred.player, bot, deferred.text);
+	}
+
+	bool OpenPlayerBotPendingTrade(LPCHARACTER player);
+
+	bool CompletePlayerBotDeferredTradeConfirmation(LPCHARACTER bot)
+	{
+		if (!bot)
+			return false;
+		for (std::map<DWORD, TPlayerBotPendingTrade>::iterator it =
+				s_mapPlayerBotPendingTrades.begin();
+				it != s_mapPlayerBotPendingTrades.end(); ++it)
+		{
+			TPlayerBotPendingTrade& pending = it->second;
+			if (!pending.confirmed || pending.bot != bot)
+				continue;
+			LPCHARACTER player = CHARACTER_MANAGER::instance().FindByPID(it->first);
+			if (!player || !player->GetDesc() || player->IsDead() ||
+					player->GetMapIndex() != bot->GetMapIndex())
+				continue;
+			if (DISTANCE_APPROX(player->GetX() - bot->GetX(),
+					player->GetY() - bot->GetY()) < EXCHANGE_MAX_DISTANCE)
+				return OpenPlayerBotPendingTrade(player);
 		}
 		return false;
 	}
@@ -908,11 +1067,37 @@ namespace
 			return false;
 		}
 		TPlayerBotPendingTrade pending = it->second;
-		if (!pending.bot || (!pending.botBuys &&
+		if (!pending.bot)
+		{
+			sys_log(0, "PLAYERBOT_TRADE: exchange start failed player=%s bot=? botBuys=%d",
+					player->GetName(), pending.botBuys ? 1 : 0);
+			return false;
+		}
+		if (pending.bot->GetMyShop())
+		{
+			TPlayerBotAIStateMap::iterator stateIt =
+					s_mapPlayerBotAIStates.find(pending.bot->GetPlayerID());
+			if (stateIt != s_mapPlayerBotAIStates.end())
+				ClosePlayerBotShop(pending.bot, stateIt->second, get_dword_time(),
+						"player_trade");
+			else
+				pending.bot->CloseMyShop();
+		}
+		if (DISTANCE_APPROX(player->GetX() - pending.bot->GetX(),
+				player->GetY() - pending.bot->GetY()) >= EXCHANGE_MAX_DISTANCE)
+		{
+			pending.confirmed = true;
+			it->second = pending;
+			HoldPlayerBotForPlayerMessage(pending.bot, player);
+			char reply[CHAT_MAX_LEN + 1];
+			FormatPlayerBotText(reply, sizeof(reply), "",
+					"Yanina geliyorum, yaklasinca trade acilacak");
+			SendPlayerBotWhisper(pending.bot, player, reply);
+			return true;
+		}
+		if ((!pending.botBuys &&
 				(pending.bot->GetInventoryItem(pending.cell) == NULL ||
 				pending.bot->GetInventoryItem(pending.cell)->IsEquipped())) ||
-				DISTANCE_APPROX(player->GetX() - pending.bot->GetX(),
-						player->GetY() - pending.bot->GetY()) >= EXCHANGE_MAX_DISTANCE ||
 				!pending.bot->ExchangeStart(player))
 		{
 			sys_log(0, "PLAYERBOT_TRADE: exchange start failed player=%s bot=%s botBuys=%d",
@@ -930,6 +1115,14 @@ namespace
 			sys_log(0, "PLAYERBOT_TRADE: exchange offer failed player=%s bot=%s item=%d gold=%d",
 					player->GetName(), pending.bot->GetName(),
 					itemAdded ? 1 : 0, goldAdded ? 1 : 0);
+			if (pending.bot->GetExchange())
+				pending.bot->GetExchange()->Cancel();
+			return false;
+		}
+		if (!pending.bot->GetExchange()->Accept(true))
+		{
+			sys_log(0, "PLAYERBOT_TRADE: bot accept failed player=%s bot=%s",
+					player->GetName(), pending.bot->GetName());
 			if (pending.bot->GetExchange())
 				pending.bot->GetExchange()->Cancel();
 			return false;
@@ -979,7 +1172,7 @@ namespace
 	{
 		if (!player || !bot || !text)
 			return;
-		HoldPlayerBotForPlayerMessage(bot);
+		HoldPlayerBotForPlayerMessage(bot, player);
 		sys_log(0, "PLAYERBOT_INPUT: player whisper from=%s to=%s text=\"%s\"",
 				player->GetName(), bot->GetName(), text);
 		const DWORD dwNow = get_dword_time();
@@ -1038,7 +1231,7 @@ namespace
 		{
 			// Fallback if bridge is not available
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung");
+					"Su an ticaret yapmiyorum, avlaniyorum. Joan ve Bokjung pazarlarina bak");
 			SendPlayerBotWhisper(bot, player, reply);
 		}
 	}

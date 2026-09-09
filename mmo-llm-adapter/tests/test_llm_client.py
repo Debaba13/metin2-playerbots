@@ -43,7 +43,7 @@ async def test_openai_compatible_sends_think_false_when_enabled(monkeypatch):
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
     _mock_client_factory(monkeypatch, handler)
-    provider = OpenAICompatibleProvider(model="playerbot-4b", disable_thinking=True)
+    provider = OpenAICompatibleProvider(model="qwythos-9b:latest", disable_thinking=True)
     await provider.generate_response(messages=[{"role": "user", "content": "hi"}])
 
     assert captured["payload"]["think"] is False
@@ -88,7 +88,7 @@ async def test_ollama_native_reproduces_thinking_model_bug_on_openai_route(monke
         })
 
     _mock_client_factory(monkeypatch, handler)
-    provider = OllamaNativeProvider(model="playerbot-4b", think=False)
+    provider = OllamaNativeProvider(model="qwythos-9b:latest", think=False)
     result = await provider.generate_response(messages=[{"role": "user", "content": "Selam"}])
 
     assert result.content.startswith("Selam!")
@@ -105,7 +105,7 @@ async def test_ollama_native_accepts_v1_base_url(monkeypatch):
         return httpx.Response(200, json={"message": {"content": "ok"}})
 
     _mock_client_factory(monkeypatch, handler)
-    provider = OllamaNativeProvider(base_url="http://localhost:11434/v1", model="playerbot-4b")
+    provider = OllamaNativeProvider(base_url="http://localhost:11434/v1", model="qwythos-9b:latest")
     await provider.generate_response(messages=[{"role": "user", "content": "hi"}])
 
     assert seen_urls == ["http://localhost:11434/api/chat"]
@@ -125,7 +125,7 @@ async def test_ollama_native_parses_tool_calls(monkeypatch):
         })
 
     _mock_client_factory(monkeypatch, handler)
-    provider = OllamaNativeProvider(model="playerbot-4b")
+    provider = OllamaNativeProvider(model="qwythos-9b:latest")
     result = await provider.generate_response(messages=[{"role": "user", "content": "hi"}])
 
     assert len(result.tool_calls) == 1
@@ -141,7 +141,7 @@ async def test_connect_error_returns_offline_message_for_both_providers(monkeypa
     _mock_client_factory(monkeypatch, handler)
 
     openai_provider = OpenAICompatibleProvider(model="qwen2.5:7b")
-    native_provider = OllamaNativeProvider(model="playerbot-4b")
+    native_provider = OllamaNativeProvider(model="qwythos-9b:latest")
 
     r1 = await openai_provider.generate_response(messages=[{"role": "user", "content": "hi"}])
     r2 = await native_provider.generate_response(messages=[{"role": "user", "content": "hi"}])

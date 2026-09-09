@@ -1436,7 +1436,21 @@ void CPlayerBotManager::Update()
 			ManagePlayerBotStatusOverhead(ch, state, dwNow);
 		if (IsPlayerBotConversationHeld(it->first, dwNow))
 		{
-			ch->Stop();
+			LPCHARACTER player = GetPlayerBotConversationPlayer(it->first);
+			if (player && player->GetDesc() && !player->IsDead() &&
+					player->GetMapIndex() == ch->GetMapIndex() &&
+					DISTANCE_APPROX(player->GetX() - ch->GetX(),
+							player->GetY() - ch->GetY()) >
+							PLAYERBOT_PLAYER_MESSAGE_APPROACH_DISTANCE)
+			{
+				MovePlayerBot(ch, player->GetX(), player->GetY(), dwNow, 100, true, false);
+			}
+			else
+			{
+				ch->Stop();
+				CompletePlayerBotDeferredPriceQuestion(ch);
+				CompletePlayerBotDeferredTradeConfirmation(ch);
+			}
 			continue;
 		}
 

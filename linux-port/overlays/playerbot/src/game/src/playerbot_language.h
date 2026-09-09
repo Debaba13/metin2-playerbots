@@ -18,7 +18,7 @@ namespace
                 if (strcmp(key, "ulepszanie") == 0) return "basma";
                 if (strcmp(key, "rozwoj skilla") == 0) return "skill kasiyorum";
                 if (strcmp(key, "Metiny") == 0) return "Metin kesiyorum";
-                if (strcmp(key, "silne moby PT") == 0) return "PT ile guclu mob kesiyorum";
+                if (strcmp(key, "silne moby PT") == 0) return "Grup ile guclu mob kesiyorum";
                 if (strcmp(key, "Biolog") == 0) return "Biyolog";
                 if (strcmp(key, "Polowanie") == 0) return "avlaniyorum";
                 if (strcmp(key, "rozwoj konia") == 0) return "at gelistiriyorum";
@@ -32,9 +32,9 @@ namespace
                 if (strcmp(key, "wybieram profesje") == 0) return "meslek seciyorum";
                 if (strcmp(key, "handluje") == 0) return "ticaret yapiyorum";
                 if (strcmp(key, "ulepszam") == 0) return "esya basiyorum";
-                if (strcmp(key, "czytam KU") == 0) return "SK okuyorum";
+                if (strcmp(key, "czytam KU") == 0) return "BK okuyorum";
                 if (strcmp(key, "wkladam KD") == 0) return "Ruh Tasi takiyorum";
-                if (strcmp(key, "zbieram PT") == 0) return "PT topluyorum";
+                if (strcmp(key, "zbieram PT") == 0) return "Grup topluyorum";
                 if (strcmp(key, "robie misje Biologa") == 0) return "Biyolog gorevi yapiyorum";
                 if (strcmp(key, "odwiedzam Stajennego") == 0) return "Seyis'e gidiyorum";
                 if (strcmp(key, "prowadze stragan") == 0) return "pazar kuruyorum";
@@ -67,9 +67,9 @@ namespace
                 if (strcmp(key, "Regeneruje HP") == 0) return "can dolduruyorum";
                 if (strcmp(key, "Wybieram profesje") == 0) return "meslek seciyorum";
                 if (strcmp(key, "Handluje") == 0) return "ticaret yapiyorum";
-                if (strcmp(key, "Czytam ksiege umiejetnosci") == 0) return "SK okuyorum";
+                if (strcmp(key, "Czytam ksiege umiejetnosci") == 0) return "BK okuyorum";
                 if (strcmp(key, "Wkladam kamien duszy") == 0) return "Ruh Tasi takiyorum";
-                if (strcmp(key, "Szukam celu dla grupy") == 0) return "PT icin hedef ariyorum";
+                if (strcmp(key, "Szukam celu dla grupy") == 0) return "Grup icin hedef ariyorum";
                 if (strcmp(key, "Wracam od Biologa") == 0) return "Biyologdan donuyorum";
                 if (strcmp(key, "Ide do Biologa z: %s") == 0) return "Biyologa gidiyorum: %s";
                 if (strcmp(key, "Oddaje Biologowi: %s") == 0) return "Biyologa teslim ediyorum: %s";
@@ -93,7 +93,7 @@ namespace
                 if (strcmp(key, "Kupie %s - kto ma, niech wystawi w %s") == 0) return "%s ariyorum - %s'te pazara koyun";
                 if (strcmp(key, "Mam %s x%u na straganie w %s, %u yang za calosc") == 0) return "Pazarda %s x%u var, yer: %s, toplam %u yang";
                 if (strcmp(key, "Mam %s na straganie w %s, %u yang") == 0) return "Pazarda %s var, yer: %s, %u yang";
-                if (strcmp(key, "Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja") == 0) return "SK %s ariyorum - Joan veya Bokjung'da pazara koyun, botlar alir";
+                if (strcmp(key, "Kupie KU %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja") == 0) return "BK %s ariyorum - Joan veya Bokjung'da pazara koyun, botlar alir";
                 if (strcmp(key, "Kupie %s - wystaw na straganie w Joan albo Bokjung, boty tam kupuja") == 0) return "%s ariyorum - Joan veya Bokjung'da pazara koyun, botlar alir";
                 if (strcmp(key, "Stoje ze straganem w %s, mam: %s") == 0) return "%s'te pazarim acik, elimde: %s";
                 if (strcmp(key, "Wlasnie ide na targ w %s") == 0) return "%s'te pazara gidiyorum";
@@ -118,7 +118,7 @@ namespace
                 if (strcmp(key, "Wracam do druzyny: prowadze %d mobow") == 0) return "Gruba donuyorum: %d mob getiriyorum";
                 if (strcmp(key, "Przekazuje moby: %d przyprowadzonych, %d nadal za mna") == 0) return "Moblar teslim ediliyor: %d getirildi, %d hala pesimde";
                 if (strcmp(key, "Wstrzymuje lur: druzyna jeszcze walczy") == 0) return "Lure ara verildi: grup hala savasiyor";
-                if (strcmp(key, "Luruje dla PT: %u/%u grupy, sciga mnie %d") == 0) return "PT icin lure: %u/%u grup, pesimde %d";
+                if (strcmp(key, "Luruje dla PT: %u/%u grupy, sciga mnie %d") == 0) return "Grup icin lure: %u/%u grup, pesimde %d";
                 if (strcmp(key, "Odpoczywam po smierci") == 0) return "Olumden sonra dinleniyorum";
                 if (strcmp(key, "Rozbijam %s") == 0) return "%s kiriyorum";
                 if (strcmp(key, "Polowanie: %s (zostalo %d)") == 0) return "Av: %s (kalan %d)";

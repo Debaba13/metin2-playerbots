@@ -294,7 +294,7 @@ namespace
 					// Safe fallback when adapter is unreachable
 					char reply[CHAT_MAX_LEN + 1];
 					FormatPlayerBotText(reply, sizeof(reply), "",
-						"Nie handluje teraz, poluje. Zajrzyj na stragany w Joan i Bokjung");
+						"Su an ticaret yapmiyorum, avlaniyorum. Joan ve Bokjung pazarlarina bak");
 					SendPlayerBotWhisper(bot, player, reply);
 				}
 			}

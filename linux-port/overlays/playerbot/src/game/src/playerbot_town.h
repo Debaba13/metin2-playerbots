@@ -1797,14 +1797,14 @@ namespace
 			const DWORD draw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU);
 			static const char* const s_apszPrefixes[] = { "", "Ucuz: ", "Firsat: ", "Satilik " };
 			static const char* const s_apszBookShops[] = {
-				"Beceri kitaplari", "Her sinifa KU", "Kitaplik - beceri kitaplari", "Kitaplar: %s ve digerleri" };
+				"Beceri kitaplari", "Her sinifa BK", "Kitaplik - beceri kitaplari", "Kitaplar: %s ve digerleri" };
 			static const char* const s_apszMaterialShops[] = {
 				"%s malzemeleri", "Demirci malzemeleri", "Post, dis ve kil", "Upletmeler, ucuz" };
 			static const char* const s_apszMarketCries[] = {
 				"Bak kanka ne var bende", "Oyuna basladim, bir sey al", "%s - en ucuz fiyat",
 				"Her sey ucuz", "Bedavadan biraz pahali", "Cesit cesit, beklerim",
 				"Ne ariyorsan bende var", "Satilik, pazarlik yok" };
-			const char* pszPrefix = bPoor ? "Wyprzedaz: "
+			const char* pszPrefix = bPoor ? "Indirim: "
 					: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 			char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 			const char* pszTemplate = NULL;

@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from core.agent import PlayerBotAgent, AgentProfile, AgentControlState
 from llm.base import BaseLLMProvider, LLMResponse
 from llm.prompts import PromptManager
+from core.text import clean_model_reply
 
 LOCALES_DIR = os.path.join(os.path.dirname(__file__), "..", "locales")
 
@@ -77,3 +78,8 @@ async def test_agent_tool_calling_return_to_routine():
     # State transitions back to autonomous immediately on explicit farewell
     assert agent.state == AgentControlState.AUTONOMOUS
 
+
+def test_agent_removes_reasoning_leak_and_limits_chat_reply():
+    assert clean_model_reply(
+        "<think>translate this</think> Assistant: Selam! Naber? Ucuncu cumle."
+    ) == "Selam! Naber?"
