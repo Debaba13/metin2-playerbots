@@ -185,7 +185,7 @@ namespace
 			{
 				size_t redCount = 0, blueCount = 0;
 				CountPlayerBotPotions(ch, redCount, blueCount);
-				snprintf(status, statusSize, "%s%s - potki %u/%u", prefix,
+				snprintf(status, statusSize, "%s%s - iksir %u/%u", prefix,
 						GetPlayerBotTownStatusLabel(state),
 						(unsigned int)redCount, (unsigned int)blueCount);
 				return;
@@ -245,7 +245,7 @@ namespace
 		}
 		if (state.bRecoveringAfterDeath)
 		{
-			snprintf(status, statusSize, "%sOdpoczywam po smierci", prefix);
+			snprintf(status, statusSize, "%sOlumden sonra dinleniyorum", prefix);
 			return;
 		}
 
@@ -255,7 +255,7 @@ namespace
 		{
 			case BOT_ACTION_FIGHT:
 				if (target && target->IsStone())
-					snprintf(status, statusSize, "%sRozbijam %s", prefix, target->GetName());
+					snprintf(status, statusSize, "%s%s kiriyorum", prefix, target->GetName());
 				else if (target && target->IsMonster())
 				{
 					int huntingRemaining = 0;
@@ -263,7 +263,7 @@ namespace
 							ch, &huntingRemaining);
 					if (huntingMob != 0 && target->GetRaceNum() == huntingMob)
 					{
-						snprintf(status, statusSize, "%sPolowanie: %s (zostalo %d)",
+						snprintf(status, statusSize, "%sAv: %s (kalan %d)",
 								prefix, target->GetName(), huntingRemaining);
 						break;
 					}
