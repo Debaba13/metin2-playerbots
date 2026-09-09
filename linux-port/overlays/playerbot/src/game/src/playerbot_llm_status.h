@@ -71,20 +71,20 @@ namespace
 	// Polish declines the destination, so the table carries the phrase that
 	// follows "ide" rather than the bare name: "Ide na Dolina Orkow" is not a
 	// sentence anybody would write.
-	const char* GetPlayerBotMapDestinationPl(long mapIndex)
+	const char* GetPlayerBotMapDestinationTurkish(long mapIndex)
 	{
 		switch (mapIndex)
 		{
-			case PLAYERBOT_MAP_CHUNJO_M1: return "do Joan";
-			case PLAYERBOT_MAP_CHUNJO_M2: return "do Bokjung";
-			case PLAYERBOT_MAP_CHUNJO_M3: return "do Pyungmoo";
+			case PLAYERBOT_MAP_CHUNJO_M1: return "Joan'a";
+			case PLAYERBOT_MAP_CHUNJO_M2: return "Bokjung'a";
+			case PLAYERBOT_MAP_CHUNJO_M3: return "Pyungmoo'ya";
 			case PLAYERBOT_MAP_MONKEY_EASY: return "Maymun Zindani";
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "Maymun Zindani II";
 			case PLAYERBOT_MAP_MONKEY_HARD: return "Maymun Zindani III";
 			case PLAYERBOT_MAP_DESERT: return "Yongbi Colu'ne";
-			case PLAYERBOT_MAP_ORC_VALLEY: return "Orkler Vadisi'ne";
+			case PLAYERBOT_MAP_ORC_VALLEY: return "Orklar Vadisi'ne";
 			case PLAYERBOT_MAP_SOHAN: return "Sohan Dagi'na";
-			case PLAYERBOT_MAP_SPIDER_V1: return "Orumcek Zindani";
+			case PLAYERBOT_MAP_SPIDER_V1: return "Orumcek Zindani'na";
 			case PLAYERBOT_MAP_HWANG: return "Hwang Tapinagi'na";
 			default: return "";
 		}
@@ -207,7 +207,7 @@ namespace
 		if (state.bServicePending)
 		{
 			const char* where = state.lDepartureMap != 0
-					? GetPlayerBotMapDestinationPl(state.lDepartureMap) : "";
+					? GetPlayerBotMapDestinationTurkish(state.lDepartureMap) : "";
 			if (where[0])
 				snprintf(status, statusSize, "%sSatici yolunu bekliyorum; sonra %s",
 						prefix, where);
@@ -451,7 +451,7 @@ namespace
 				{
 					const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
 					const char* where = wantMap != 0 && wantMap != ch->GetMapIndex()
-							? GetPlayerBotMapDestinationPl(wantMap) : "";
+							? GetPlayerBotMapDestinationTurkish(wantMap) : "";
 					if (where[0])
 						snprintf(status, statusSize, "%s%s gidiyorum (hedef: %s)", prefix,
 								where, goal);
