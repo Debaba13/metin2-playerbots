@@ -107,6 +107,31 @@ namespace
 			: bot(NULL), cell(0), price(0), expires(0), botBuys(false), confirmed(false) {}
 	};
 	std::map<DWORD, TPlayerBotPendingTrade> s_mapPlayerBotPendingTrades;
+	std::string DescribePlayerBotItem(LPITEM item);
+
+	std::string FormatPlayerBotYang(DWORD yang)
+	{
+		char formatted[64];
+		if (yang >= 1000000)
+		{
+			const DWORD millions = yang / 1000000;
+			const DWORD thousands = (yang % 1000000) / 1000;
+			if (thousands > 0)
+				snprintf(formatted, sizeof(formatted), "%uM %uk", millions, thousands);
+			else
+				snprintf(formatted, sizeof(formatted), "%uM", millions);
+		}
+		else if (yang >= 1000)
+		{
+			snprintf(formatted, sizeof(formatted), "%uk", yang / 1000);
+		}
+		else
+		{
+			snprintf(formatted, sizeof(formatted), "%u", yang);
+		}
+		return formatted;
+	}
+
 	void RememberPlayerBotPendingBuy(LPCHARACTER player, LPCHARACTER bot, DWORD price)
 	{
 		if (!player || !bot)
@@ -583,10 +608,11 @@ namespace
 		pending.botBuys = false;
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];
+		const std::string itemDetails = DescribePlayerBotItem(bestItem);
+		const std::string priceText = FormatPlayerBotYang(pending.price);
 		FormatPlayerBotText(reply, sizeof(reply), "",
-				"Selam kanka, bende %s x%u var. %u yang, istersen trade acalim",
-				bestItem->GetProto()->szLocaleName,
-				std::max<DWORD>(1, bestItem->GetCount()), pending.price);
+				"Selam kanka, bende %s var. %s yang, istersen trade acalim",
+				itemDetails.c_str(), priceText.c_str());
 		SendPlayerBotWhisper(bestSeller, player, reply);
 		return true;
 	}
@@ -659,15 +685,21 @@ namespace
 		s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 		char reply[CHAT_MAX_LEN + 1];
 		if (bestOffer->wCount > 1)
+		{
+			const std::string priceText = FormatPlayerBotYang(bestOffer->dwPrice);
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Pazarda %s x%u var, %s'te. Hepsi %u yang",
+					"Pazarda %s x%u var, %s'te. Hepsi %s yang",
 					bestItem->GetProto()->szLocaleName, (unsigned int)bestOffer->wCount,
-					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
+					GetPlayerBotTownName(bestKeeper->GetMapIndex()), priceText.c_str());
+		}
 		else
+		{
+			const std::string priceText = FormatPlayerBotYang(bestOffer->dwPrice);
 			FormatPlayerBotText(reply, sizeof(reply), "",
-					"Pazarda %s var, %s'te. Fiyati %u yang",
+					"Pazarda %s var, %s'te. Fiyati %s yang",
 					bestItem->GetProto()->szLocaleName,
-					GetPlayerBotTownName(bestKeeper->GetMapIndex()), bestOffer->dwPrice);
+					GetPlayerBotTownName(bestKeeper->GetMapIndex()), priceText.c_str());
+		}
 		SendPlayerBotWhisper(bestKeeper, player, reply);
 		return true;
 	}
@@ -818,9 +850,10 @@ namespace
 				{
 					char reply[CHAT_MAX_LEN + 1];
 					RememberPlayerBotPendingBuy(player, bot, offerPrice);
+					const std::string priceText = FormatPlayerBotYang(offerPrice);
 					FormatPlayerBotText(reply, sizeof(reply), "",
-							"%s icin %u yang veririm, musaitsen trade ac",
-							pszName ? pszName : query, offerPrice);
+							"%s icin %s yang veririm, musaitsen trade ac",
+							pszName ? pszName : query, priceText.c_str());
 					SendPlayerBotWhisper(bot, player, reply);
 					++offersSent;
 				}
@@ -832,9 +865,10 @@ namespace
 				{
 					char reply[CHAT_MAX_LEN + 1];
 					RememberPlayerBotPendingBuy(player, bot, offerPrice);
+					const std::string priceText = FormatPlayerBotYang(offerPrice);
 					FormatPlayerBotText(reply, sizeof(reply), "",
-							"%s lazim, %u yang veririm. Trade acabiliriz",
-							pszName ? pszName : query, offerPrice);
+							"%s lazim, %s yang veririm. Trade acabiliriz",
+							pszName ? pszName : query, priceText.c_str());
 					SendPlayerBotWhisper(bot, player, reply);
 					++offersSent;
 				}
@@ -844,9 +878,10 @@ namespace
 			{
 				char reply[CHAT_MAX_LEN + 1];
 				RememberPlayerBotPendingBuy(player, bot, offerPrice);
+				const std::string priceText = FormatPlayerBotYang(offerPrice);
 				FormatPlayerBotText(reply, sizeof(reply), "",
-						"%s lazim, %u yang veririm. Trade acabiliriz",
-						pszName ? pszName : query, offerPrice);
+						"%s lazim, %s yang veririm. Trade acabiliriz",
+						pszName ? pszName : query, priceText.c_str());
 				SendPlayerBotWhisper(bot, player, reply);
 				++offersSent;
 			}
@@ -931,7 +966,7 @@ namespace
 			return result;
 		char part[96];
 		int listed = 0;
-		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM && listed < 4; ++i)
+		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 		{
 			const BYTE type = item->GetAttributeType(i);
 			const long value = item->GetAttributeValue(i);
@@ -1068,14 +1103,15 @@ namespace
 				pending.bot = bot;
 				pending.cell = cell;
 				pending.price = (DWORD)totalPrice;
-				pending.expires = get_dword_time() + 60000;
+				pending.expires = get_dword_time() + 120000;
 				pending.botBuys = false;
 				s_mapPlayerBotPendingTrades[player->GetPlayerID()] = pending;
 				char reply[CHAT_MAX_LEN + 1];
 				const std::string itemDetails = DescribePlayerBotItem(item);
+				const std::string priceText = FormatPlayerBotYang(pending.price);
 				FormatPlayerBotText(reply, sizeof(reply), "",
-						"%s icin %u yang. Uygunsa tamam yaz, trade acayim",
-						itemDetails.c_str(), pending.price);
+						"%s icin %s yang. Uygunsa tamam yaz, trade acayim",
+						itemDetails.c_str(), priceText.c_str());
 				SendPlayerBotWhisper(bot, player, reply);
 				return true;
 			}
@@ -1204,9 +1240,10 @@ namespace
 			return false;
 		}
 		char reply[CHAT_MAX_LEN + 1];
+		const std::string priceText = FormatPlayerBotYang(pending.price);
 		FormatPlayerBotText(reply, sizeof(reply), "",
-				"Trade acildi, item ve %u yang hazir. Son onay sende",
-				pending.price);
+				"Trade acildi, item ve %s yang hazir. Son onay sende",
+				priceText.c_str());
 		SendPlayerBotWhisper(pending.bot, player, reply);
 		s_mapPlayerBotPendingTrades.erase(it);
 		return true;

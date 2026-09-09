@@ -476,3 +476,17 @@ devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağr
   yaklaşma/trade açma arasında teklifin sessizce düşmesi engellendi.
 - Bu akışta gerçek oyun istemcisiyle `dolu alinir` ve ardından `tamam` testi
   yapılmadan başarı kesin kabul edilmeyecek.
+
+## GÜNCELLEME — 2026-09-09: Shout item detayları ve kısa yang gösterimi
+
+- Oyuncunun bağırışına verilen item cevabı artık yalnızca item adı değil; refine,
+  stack ve itemde bulunan tüm dolu bonusları gösteriyor (`ortalama`, `beceri`,
+  `can` vb.).
+- Bağırış cevabındaki pending trade, PM fiyat cevabındaki akışla aynı şekilde
+  `tamam` sonrasında exchange açıyor.
+- Oyuncuya gösterilen yang tutarları kısaltıldı:
+  - `345000` -> `345k`
+  - `1300000` -> `1M 300k`
+  - `2000000` -> `2M`
+- Native exchange'e gönderilen gerçek yang değeri değiştirilmedi; yalnızca chat
+  metni kısaltılıyor.
