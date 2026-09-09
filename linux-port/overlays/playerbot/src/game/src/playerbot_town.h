@@ -1206,20 +1206,20 @@ namespace
 		static const char* kPlus7[] = {
 			"%s +7 oldu, demirci bugun sansli",
 			"%s +7 oldu, daha kotusu olabilirdi",
-			"+7 na %s siadlo za pierwszym razem",
-			"udalo sie, %s na +7"
+			"%s +7 oldu, ilk seferde tuttu",
+			"basildi, %s +7 oldu"
 		};
 		static const char* kPlus8[] = {
-			"%s na +8! rece mi sie trzesly",
+			"%s +8 oldu! ellerim titredi",
 			"%s +8 oldu, daha ileri basayim mi diye dusunuyorum",
 			"%s +8 oldu, galiba bugun sansliyim",
-			"weszlo na +8, %s gotowy do roboty"
+			"+8 tuttu, %s hazir"
 		};
 		static const char* kPlus9[] = {
 			"%s +9 oldu!!! Inanamiyorum",
-			"+9 na %s, kto by pomyslal",
-			"dziewiatka na %s, dzis stawiam :D",
-			"%s +9, chyba wystarczy tych probek na dzis"
+			"%s +9, kim derdi",
+			"%s +9 oldu, bugun benden icecek",
+			"%s +9, bugunluk bu kadar deneme yeter"
 		};
 
 		const char** pool = kPlus7;
@@ -1826,7 +1826,7 @@ namespace
 			else if (iScrap > 0 && iScrap >= (int)tableCount / 2)
 				snprintf(body, sizeof(body), "Basmalik item +0..+3");
 			else if (pszBestName && tableCount > 1 && (draw & 8U) != 0)
-				snprintf(body, sizeof(body), "%s i inne", pszBestName);
+				snprintf(body, sizeof(body), "%s ve digerleri", pszBestName);
 			else if (tableCount > 1)
 			{
 				pszTemplate = s_apszMarketCries[draw % 8U];

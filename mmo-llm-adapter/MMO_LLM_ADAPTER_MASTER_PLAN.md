@@ -434,3 +434,21 @@ Faz 1: Trade UX ve item/bonus anlatımı
 
 **Kural:** Deterministik native trade ve movement davranışı hiçbir fazda LLM'ye
 devredilmez; LLM yalnızca niyet/sosyal katman ve whitelist edilmiş tool çağrıları sağlar.
+
+---
+
+## GÜNCELLEME — 2026-09-09: Shout ve pazar metni düzeltmesi
+
+- Oyuncu bağırışlarında `alinir`, `alin`, `alirim`, `aranir` ve `satilir` kalıpları
+  artık teklif metninden ayrıştırılıyor; örneğin `dolu alirim` doğrudan `dolu` item
+  sorgusuna dönüşüyor.
+- Pazar tabelası ve kitap listesinde kalan görünür Lehçe `inne`/`SK` çıktıları
+  Türkçeleştirildi (`ve digerleri`, `BK`).
+- Geliştirme metinlerinde kalan `poziom` görünümü `seviye` olarak düzeltildi.
+- Demirci/pazar +7/+8/+9 shout örneklerindeki Lehçe cümleler Türkçe ASCII
+  karşılıklarıyla değiştirildi.
+- Doğrulama: game image yeniden build edildi, game container `healthy` oldu;
+  `tests/test_locales.py`: **12 passed**.
+- Canlı oyuncu shout smoke testi (`dolu alinir`, `dolu alin`, `dolu alirim`,
+  `dolu aranir`, `KDP satilir`) ve pazar uygunluk logları bir sonraki canlı
+  oyun oturumunda ayrıca gözlemlenecek.

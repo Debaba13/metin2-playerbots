@@ -387,6 +387,7 @@ namespace
 		EPlayerBotTradeVerb suffixType = PLAYERBOT_TRADE_NONE;
 		static const struct { const char* word; EPlayerBotTradeVerb verb; } kSuffixes[] = {
 			{ " alinir", PLAYERBOT_TRADE_BUY }, { " alin", PLAYERBOT_TRADE_BUY },
+			{ " alirim", PLAYERBOT_TRADE_BUY }, { " aranir", PLAYERBOT_TRADE_BUY },
 			{ " satilir", PLAYERBOT_TRADE_SELL }
 		};
 		for (size_t i = 0; i < sizeof(kSuffixes) / sizeof(kSuffixes[0]); ++i)
@@ -411,6 +412,7 @@ namespace
 			{ "kupie", PLAYERBOT_TRADE_BUY }, { "kupuje", PLAYERBOT_TRADE_BUY },
 			{ "szukam", PLAYERBOT_TRADE_BUY }, { "potrzebuje", PLAYERBOT_TRADE_BUY },
 			{ "alinir", PLAYERBOT_TRADE_BUY }, { "alin", PLAYERBOT_TRADE_BUY },
+			{ "alirim", PLAYERBOT_TRADE_BUY }, { "aranir", PLAYERBOT_TRADE_BUY },
 			{ "sprzedam", PLAYERBOT_TRADE_SELL }, { "sprzedaje", PLAYERBOT_TRADE_SELL },
 			{ "satilir", PLAYERBOT_TRADE_SELL },
 			{ "oddam", PLAYERBOT_TRADE_SELL }, { "s>", PLAYERBOT_TRADE_SELL },
@@ -460,7 +462,9 @@ namespace
 		while (n > 0 && IsPlayerBotChatSeparator(outQuery[n - 1]))
 			outQuery[--n] = 0;
 		// "kdp alinir" and "kdp satilir" can contain the verb twice.
-		const char* trailingVerbs[] = { " alinir", " satilir" };
+		const char* trailingVerbs[] = {
+			" alinir", " alin", " alirim", " aranir", " satilir"
+		};
 		for (size_t i = 0; i < sizeof(trailingVerbs) / sizeof(trailingVerbs[0]); ++i)
 		{
 			char* trailing = strstr(outQuery, trailingVerbs[i]);

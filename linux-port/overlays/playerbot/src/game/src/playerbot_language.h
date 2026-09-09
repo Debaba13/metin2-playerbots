@@ -23,7 +23,7 @@ namespace
                 if (strcmp(key, "Polowanie") == 0) return "avlaniyorum";
                 if (strcmp(key, "rozwoj konia") == 0) return "at gelistiriyorum";
                 if (strcmp(key, "lowienie ryb") == 0) return "balik tutuyorum";
-                if (strcmp(key, "poziom") == 0) return "level kasiyorum";
+                if (strcmp(key, "poziom") == 0) return "seviye kasiyorum";
 
                 if (strcmp(key, "ide") == 0) return "gidiyorum";
                 if (strcmp(key, "walcze") == 0) return "savasiyorum";
@@ -104,8 +104,8 @@ namespace
                 if (strcmp(key, "Okazja: ") == 0) return "Firsat: ";
                 if (strcmp(key, "Sprzedam ") == 0) return "Satilik ";
                 if (strcmp(key, "Bron 30: %s") == 0) return "30'luk silah: %s";
-                if (strcmp(key, "Ksiegi: %s i inne") == 0) return "SK: %s ve digerleri";
-                if (strcmp(key, "Ksiega: %s") == 0) return "SK: %s";
+                if (strcmp(key, "Ksiegi: %s i inne") == 0) return "BK: %s ve digerleri";
+                if (strcmp(key, "Ksiega: %s") == 0) return "BK: %s";
                 if (strcmp(key, "Zlom do palenia +0..+3") == 0) return "+0..+3 yakmalik esyalar";
                 if (strcmp(key, "%s i inne") == 0) return "%s ve digerleri";
 
