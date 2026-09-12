@@ -3,6 +3,24 @@
 
 namespace
 {
+	// The pid/poor-status prefix a sign gets, whatever body ends up behind
+	// it - shared by this file's own template builder and by
+	// playerbot_town.h's call into playerbot_shop_signs.h's pool, so a
+	// keeper drawn as poor still reads "Indirim: " over a community-pool
+	// sign and not just over the plainer fallback.
+	void ApplyPlayerBotShopSignPrefix(LPCHARACTER ch, bool bPoor, const char* body,
+			char* sign, size_t signSize)
+	{
+		static const char* const s_apszPrefixes[] =
+				{ "", "Ucuza: ", "Firsat: ", "Satilik: " };
+		const char* pszPrefix = bPoor ? "Indirim: "
+				: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
+		if (strlen(pszPrefix) + strlen(body) <= SHOP_SIGN_MAX_LEN)
+			snprintf(sign, signSize, "%s%s", pszPrefix, body);
+		else
+			snprintf(sign, signSize, "%s", body);
+	}
+
 	// Turkish counterpart of upstream's community sign pool
 	// (playerbot_shop_signs.h): that file's lists are Iwakura's own Polish
 	// market slang, screenshotted off 2010-2012 servers, and are kept as
@@ -11,7 +29,9 @@ namespace
 	// way playerbot_llm_status.h and playerbot_llm_chat_trade.h stand in for
 	// their upstream counterparts. The category set (fish/books/materials/
 	// gear/medals/scrolls/stones) mirrors upstream's EPlayerBotSignKind so a
-	// counter is still named for its majority content.
+	// counter is still named for its majority content. playerbot_town.h
+	// tries playerbot_shop_signs.h's own pool first and only falls back to
+	// this function when nothing in it fits.
 	void BuildPlayerBotTurkishShopSign(LPCHARACTER ch, bool bPoor, DWORD tableCount,
 			const char* pszWeapon30, const char* pszPrecious,
 			int iFish, DWORD dwFishUnitPrice, int iBooks, const char* pszBook,
@@ -20,8 +40,6 @@ namespace
 			int iScrap, const char* pszBestName, DWORD dwDraw,
 			char* sign, size_t signSize)
 	{
-		static const char* const s_apszPrefixes[] =
-				{ "", "Ucuza: ", "Firsat: ", "Satilik: " };
 		static const char* const s_apszBookShops[] = {
 			"Skill kitaplari", "Her sinif icin BK", "Skill kitapligi",
 			"Kitaplar: %s ve digerleri" };
@@ -45,8 +63,6 @@ namespace
 			"%s - en dusuk fiyatlar", "Her sey hesapli", "Uygun fiyatlar",
 			"Cesit cesit urunler, beklerim", "Aradigin bende var",
 			"Satilik, pazarlik yok" };
-		const char* pszPrefix = bPoor ? "Indirim: "
-				: s_apszPrefixes[(ch->GetPlayerID() * 2654435761U >> 8) % 4U];
 		char body[SHOP_SIGN_MAX_LEN * 2 + 1];
 		const char* pszTemplate = NULL;
 		const char* pszArg = "";
@@ -100,10 +116,7 @@ namespace
 		// fish sign can quote it, the way s_apszSignFish's "%C" does), not
 		// because this function needs it today.
 		(void)dwFishUnitPrice;
-		if (strlen(pszPrefix) + strlen(body) <= SHOP_SIGN_MAX_LEN)
-			snprintf(sign, signSize, "%s%s", pszPrefix, body);
-		else
-			snprintf(sign, signSize, "%s", body);
+		ApplyPlayerBotShopSignPrefix(ch, bPoor, body, sign, signSize);
 	}
 }
 

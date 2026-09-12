@@ -357,12 +357,6 @@ class LoginWindow(ui.ScriptWindow):
 
 		self.Show()
 
-		if not app.DEBUG_BUILD and not app.INTERNAL_BUILD:
-			if not constInfo.GATEKEEPER_CHECK and app.RestPOSTRequest("logon.mt2009.pl", "80", "/gatekeeper.php"):
-				print "success!"
-
-			constInfo.GATEKEEPER_CHECK = True
-
 		# connectingIP = self.stream.GetConnectAddr()
 		# if connectingIP:
 		# 	self.__OpenLoginBoard()
@@ -904,7 +898,7 @@ class LoginWindow(ui.ScriptWindow):
 		self.pwdEditLine.SetReturnEvent(ui.__mem_func__(self.__OnClickLoginButton))
 		self.pwdEditLine.SetTabEvent(ui.__mem_func__(self.idEditLine.SetFocus))
 
-		self.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/TieruYT/metin2-playerbots")
+		self.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/Debaba13/metin2-playerbots")
 		self.facebookButton.SAFE_SetEvent(self.OpenURL, "https://buycoffee.to/metin2-playerbots")
 		self.discordButton.SAFE_SetEvent(self.OpenURL, "https://discord.gg/pt5tvnrN6")
 

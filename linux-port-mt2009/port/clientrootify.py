@@ -12,6 +12,8 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * intrologin.py - the three buttons of the login window: the home page is
                     the project's GitHub, the Discord is ours, and the Facebook
                     button - there is no Facebook - opens the buycoffee page;
+                    also drops the gatekeeper ping to the original commercial
+                    site's server on every launch, whose result nothing reads;
   * uiitemshop.py, itemshop_subscriptionwindow.py - "Doladuj SM!" and the
                     subscription button open the buycoffee page, not mt2009.pl;
   * uisystem.py   - the system menu's support button opens our Discord.
@@ -64,11 +66,24 @@ EDITS = {
     ],
     'intrologin.py': [
         (b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://mt2009.pl/")\r\n',
-         b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/TieruYT/metin2-playerbots")\r\n'),
+         b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/Debaba13/metin2-playerbots")\r\n'),
         (b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://www.facebook.com/Metin2009PL")\r\n',
          b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://buycoffee.to/metin2-playerbots")\r\n'),
         (b'\t\tself.discordButton.SAFE_SetEvent(self.OpenURL, "https://discord.gg/RhUaGRYZG7")\r\n',
          b'\t\tself.discordButton.SAFE_SetEvent(self.OpenURL, "https://discord.gg/pt5tvnrN6")\r\n'),
+        # A ping to the original commercial site on every client launch, gated
+        # only on the release-build flags so it fires for every player, and a
+        # synchronous one - a firewalled or offline single-player machine
+        # would stall the login window waiting on it. The result is never
+        # read (only "success!" printed to a console nobody sees), so nothing
+        # depends on this beyond the network call itself.
+        (b'\t\tif not app.DEBUG_BUILD and not app.INTERNAL_BUILD:\r\n'
+         b'\t\t\tif not constInfo.GATEKEEPER_CHECK and app.RestPOSTRequest("logon.mt2009.pl", "80", "/gatekeeper.php"):\r\n'
+         b'\t\t\t\tprint "success!"\r\n'
+         b'\r\n'
+         b'\t\t\tconstInfo.GATEKEEPER_CHECK = True\r\n'
+         b'\r\n',
+         b''),
     ],
 }
 

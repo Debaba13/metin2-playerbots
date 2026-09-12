@@ -2095,10 +2095,40 @@ namespace
 		// pitch is not reading the same line for an hour.
 		const DWORD dwSignDraw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU ^
 				((DWORD)state.bShopStandsInRow * 0x9E3779B9U));
-		BuildPlayerBotTurkishShopSign(ch, bPoor, tableCount, pszWeapon30, pszPrecious,
-				iFish, dwFishUnitPrice, iBooks, pszBook, iMaterials, iGear, pszGear,
-				iMedals, iScrolls, iStones, iScrap, pszBestName, dwSignDraw,
-				sign, sizeof(sign));
+		// What kind of counter this is, by the majority of its lines; the
+		// community-shaped pool (playerbot_shop_signs.h, Turkish wording)
+		// comes first, and the plainer template list only when nothing in
+		// it fits - the same order upstream uses its own pool in.
+		EPlayerBotSignKind signKind = SIGN_UNIVERSAL;
+		bool bSignByKind = tableCount > 0 && !pszWeapon30 && !pszPrecious;
+		if (bSignByKind)
+		{
+			if (iFish > 0 && iFish * 2 >= (int)tableCount) signKind = SIGN_FISH;
+			else if (iBooks > 0 && iBooks * 2 >= (int)tableCount) signKind = SIGN_BOOKS;
+			else if (iMaterials > 0 && iMaterials * 2 >= (int)tableCount) signKind = SIGN_MATERIALS;
+			else if (iGear > 0 && iGear * 2 >= (int)tableCount) signKind = SIGN_GEAR;
+			else if (iMedals > 0 && iMedals * 2 >= (int)tableCount) signKind = SIGN_MEDALS;
+			else if (iScrolls > 0 && iScrolls * 2 >= (int)tableCount) signKind = SIGN_SCROLLS;
+			else if (iStones > 0 && iStones * 2 >= (int)tableCount) signKind = SIGN_STONES;
+			else if (iScrap > 0 && iScrap >= (int)tableCount / 2) bSignByKind = false; // scrap sign below
+			else if (tableCount == 1) bSignByKind = false; // one line: its own name
+		}
+		char signBody[SHOP_SIGN_MAX_LEN + 1];
+		if (bSignByKind && PickPlayerBotShopSign(signBody, sizeof(signBody), signKind, dwSignDraw,
+				ch->GetName(), dwFishUnitPrice, pszGear))
+		{
+			// The pool only picks the body; the pid/poor-status prefix is
+			// shared with the plain-template path so a poor keeper still
+			// reads "Indirim: " over a community-pool sign.
+			ApplyPlayerBotShopSignPrefix(ch, bPoor, signBody, sign, sizeof(sign));
+		}
+		else
+		{
+			BuildPlayerBotTurkishShopSign(ch, bPoor, tableCount, pszWeapon30, pszPrecious,
+					iFish, dwFishUnitPrice, iBooks, pszBook, iMaterials, iGear, pszGear,
+					iMedals, iScrolls, iStones, iScrap, pszBestName, dwSignDraw,
+					sign, sizeof(sign));
+		}
 
 		// Opening a stall costs a shop bundle, exactly as it does for a player:
 		// OpenMyShop consumes one 50200 and refuses outright without it. The other
