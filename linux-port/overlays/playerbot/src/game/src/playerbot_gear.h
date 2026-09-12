@@ -415,24 +415,31 @@ namespace
 			score += 1000;
 
 		// A race-attack bonus is only worth carrying where that race is what you
-		// actually fight. The population learns which monsters live on each map,
-		// so "strong against orcs" counts for far more in Orc Valley than in a
-		// place where nothing orcish ever spawns.
+		// actually fight, and it is worth what share of the map that race is:
+		// "strong against orcs" covers 63% of Orc Valley, "strong against
+		// animals" the whole of a Monkey Dungeon, and nothing at all on the
+		// desert, which is made of a race no item can reach. The share comes
+		// from the same call the reroll scorer uses, so the pass that buys an
+		// item and the pass that rerolls it can no longer disagree about the
+		// line that made the bot pick it up.
 		if (ch)
 		{
-			const int dominant = GetPlayerBotFightingRace(ch);
-			if (dominant != PLAYERBOT_RACE_NONE)
+			int racePercent = 0;
+			const int dominant = GetPlayerBotFightingRace(ch, &racePercent);
+			if (dominant != PLAYERBOT_RACE_NONE && racePercent > 0)
 			{
 				const BYTE wanted = GetPlayerBotRaceApplyType(dominant);
+				const long long perPoint = (long long)PLAYERBOT_GEAR_RACE_LINE_VALUE *
+						racePercent / 100;
 				for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 				{
 					if (item->GetAttributeType(i) == wanted)
-						score += (long long)item->GetAttributeValue(i) * 600;
+						score += (long long)item->GetAttributeValue(i) * perPoint;
 				}
 				for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
 				{
 					if (item->GetProto()->aApplies[i].bType == wanted)
-						score += (long long)item->GetProto()->aApplies[i].lValue * 600;
+						score += (long long)item->GetProto()->aApplies[i].lValue * perPoint;
 				}
 			}
 		}
@@ -490,7 +497,7 @@ namespace
 				LPITEM memberOldItem = member->GetWear(m_wearCell);
 				const long long newItemScore = GetPlayerBotEquipmentScore(m_item, member);
 				long long memberScore = memberOldItem ? GetPlayerBotEquipmentScore(memberOldItem, member) : 0;
-				for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+				for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 				{
 					LPITEM candidate = member->GetInventoryItem(cell);
 					if (!candidate || !IsPlayerBotEquipmentCandidate(member, candidate) ||
@@ -546,10 +553,96 @@ namespace
 		return false;
 	}
 
+	// The Archer's stone weapon (by build, whatever is in the hand - the
+	// IsPlayerBotArcher of playerbot_targeting.h asks for the bow). A bow cannot break a Metin: the stone does
+	// not move, the arrows run out, the shot's rhythm is a fraction of a
+	// swing's, and the bot "fell over x times and gave up" (Kuszaa). A dagger
+	// or a sword the ninja can wear, kept in the bag, goes into the hand for
+	// the stone and comes out afterwards. Both are one item per bot - the
+	// best by the equipment score - and the junk rule and the counter leave
+	// that one alone.
+	bool IsPlayerBotArcherBuild(LPCHARACTER ch)
+	{
+		return ch && ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2;
+	}
+
+	bool IsPlayerBotStoneMeleeWeapon(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || item->GetType() != ITEM_WEAPON)
+			return false;
+		const BYTE sub = item->GetSubType();
+		return (sub == WEAPON_DAGGER || sub == WEAPON_SWORD) && item->CanUsedBy(ch) &&
+				item->GetLevelLimit() <= ch->GetLevel();
+	}
+
+	// The best stone weapon the bot holds: in the bag, or - with includeWorn -
+	// in the hand as well. NULL when there is none. A dagger beats a sword
+	// whatever the score: it swings faster and costs less, and a stone has no
+	// armour worth a heavier blow.
+	LPITEM FindPlayerBotStoneWeapon(LPCHARACTER ch, bool includeWorn)
+	{
+		if (!ch)
+			return NULL;
+		LPITEM best = NULL;
+		long long bestScore = 0;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || !IsPlayerBotStoneMeleeWeapon(ch, item))
+				continue;
+			const bool dagger = item->GetSubType() == WEAPON_DAGGER;
+			const bool bestDagger = best && best->GetSubType() == WEAPON_DAGGER;
+			if (best && bestDagger && !dagger)
+				continue;
+			const long long score = GetPlayerBotEquipmentScore(item, ch);
+			if (!best || (dagger && !bestDagger) || score > bestScore)
+			{
+				best = item;
+				bestScore = score;
+			}
+		}
+		if (includeWorn && !best)
+		{
+			LPITEM worn = ch->GetWear(WEAR_WEAPON);
+			if (worn && IsPlayerBotStoneMeleeWeapon(ch, worn))
+				best = worn;
+		}
+		return best;
+	}
+
+	// What the hand should hold right now: the job's weapon, or the stone
+	// weapon while an Archer is on a stone.
+	bool PlayerBotWeaponFitsNow(LPCHARACTER ch, const TPlayerBotAIState& state, LPITEM item)
+	{
+		if (IsPlayerBotArcherBuild(ch) && state.bMeleeForStone)
+			return IsPlayerBotStoneMeleeWeapon(ch, item);
+		return IsPlayerBotWeapon(ch, item);
+	}
+
 	bool ManagePlayerBotEquipment(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->IsItemLoaded())
 			return false;
+
+		// The Archer's stone mode, decided here because this pass is what
+		// puts a weapon in the hand: on while the target is a standing stone
+		// and a stone weapon is at hand, off the moment it is not - either
+		// flip is looked at on this very tick.
+		if (IsPlayerBotArcherBuild(ch))
+		{
+			LPCHARACTER target = state.dwTargetVID != 0
+					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
+			const bool wantMelee = target && target->IsStone() && !target->IsDead() &&
+					FindPlayerBotStoneWeapon(ch, true) != NULL;
+			if (wantMelee != state.bMeleeForStone)
+			{
+				state.bMeleeForStone = wantMelee;
+				state.dwNextEquipmentCheckTime = dwNow;
+				sys_log(0, "PLAYERBOT_GEAR: archer %s pid=%u name=%s target_vid=%u",
+						wantMelee ? "draws the stone weapon" : "takes the bow back",
+						ch->GetPlayerID(), ch->GetName(), (unsigned int)state.dwTargetVID);
+			}
+		}
 
 		if (dwNow < state.dwNextEquipmentCheckTime && !state.bEquipPending)
 			return false;
@@ -560,10 +653,20 @@ namespace
 		long long bestImprovement = 0;
 		long long bestScore = 0;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		const bool stoneMode = IsPlayerBotArcherBuild(ch) && state.bMeleeForStone;
+		// The one stone weapon the bot has chosen (dagger first), not any
+		// blade in the bag: the score alone would put a heavier sword ahead.
+		LPITEM chosenStoneWeapon = stoneMode ? FindPlayerBotStoneWeapon(ch, false) : NULL;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
-			if (!IsPlayerBotEquipmentCandidate(ch, item))
+			if (!item)
+				continue;
+			const bool stoneWeapon = stoneMode && item == chosenStoneWeapon &&
+					!item->IsExchanging();
+			if (!stoneWeapon && !IsPlayerBotEquipmentCandidate(ch, item))
+				continue;
+			if (item->GetType() == ITEM_WEAPON && !PlayerBotWeaponFitsNow(ch, state, item))
 				continue;
 
 			const int wearCell = item->FindEquipCell(ch);
@@ -574,11 +677,17 @@ namespace
 			if (oldItem && IS_SET(oldItem->GetFlag(), ITEM_FLAG_IRREMOVABLE))
 				continue;
 
-			if (!ch->CanEquipNow(item, TItemPos(INVENTORY, cell)))
+			if (!PlayerBotCanEquipNow(ch, item, TItemPos(INVENTORY, cell)))
 				continue;
 
 			const long long itemScore = GetPlayerBotEquipmentScore(item, ch);
-			const long long oldScore = oldItem ? GetPlayerBotEquipmentScore(oldItem, ch) : 0;
+			// A weapon in the hand that does not fit the moment - the bow while
+			// the Archer is on a stone, the dagger once the stone is gone - is
+			// worth nothing against the one that does.
+			const long long oldScore = oldItem
+					? ((wearCell == WEAR_WEAPON && !PlayerBotWeaponFitsNow(ch, state, oldItem))
+						? 0 : GetPlayerBotEquipmentScore(oldItem, ch))
+					: 0;
 			if (oldItem && itemScore <= oldScore)
 				continue;
 
@@ -630,7 +739,7 @@ namespace
 			}
 		}
 
-		if (ch->EquipItem(bestItem))
+		if (PlayerBotEquipItem(ch, bestItem))
 		{
 			sys_log(0, "PLAYERBOT_AI: equipped upgrade pid=%u name=%s wear=%d old_vnum=%u new_vnum=%u old_score=%lld new_score=%lld",
 					ch->GetPlayerID(), ch->GetName(), bestWearCell, oldVnum, newVnum, oldScore, bestScore);
@@ -766,6 +875,30 @@ namespace
 			const int reqLevel = GetPlayerBotProtoLevelLimit(proto);
 			// Strictly higher, so a level-0 starter belonging to the next class
 			// can never displace a piece this character actually qualifies for.
+			if (reqLevel <= (int)ch->GetLevel() && reqLevel > bestLevel)
+			{
+				bestVnum = candidateVnum;
+				bestLevel = reqLevel;
+			}
+		}
+		return bestVnum;
+	}
+
+	// The dagger ladder, for the Archer's stone weapon.
+	DWORD GetPlayerBotProgressionStoneWeaponVnum(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		const DWORD familyBase = 1000;
+		DWORD bestVnum = familyBase;
+		int bestLevel = -1;
+		for (int tier = 0; tier < 20; ++tier)
+		{
+			const DWORD candidateVnum = familyBase + tier * 10;
+			TItemTable* proto = ITEM_MANAGER::instance().GetTable(candidateVnum);
+			if (!proto)
+				continue;
+			const int reqLevel = GetPlayerBotProtoLevelLimit(proto);
 			if (reqLevel <= (int)ch->GetLevel() && reqLevel > bestLevel)
 			{
 				bestVnum = candidateVnum;
@@ -911,7 +1044,7 @@ namespace
 		const int desiredLevel = GetPlayerBotProtoLevelLimit(desiredProto);
 		for (int pass = 0; pass < 2; ++pass)
 		{
-			const int count = pass == 0 ? 1 : INVENTORY_MAX_NUM;
+			const int count = pass == 0 ? 1 : PLAYERBOT_BAG_CELLS;
 			for (int index = 0; index < count; ++index)
 			{
 				LPITEM item = pass == 0 ? ch->GetWear(wearCell) : ch->GetInventoryItem(index);
@@ -1006,7 +1139,7 @@ namespace
 		const long long wanted = ScorePlayerBotProtoApplies(desired, ch);
 		for (int pass = 0; pass < 2; ++pass)
 		{
-			const int count = pass == 0 ? 1 : INVENTORY_MAX_NUM;
+			const int count = pass == 0 ? 1 : PLAYERBOT_BAG_CELLS;
 			for (int index = 0; index < count; ++index)
 			{
 				LPITEM item = pass == 0 ? ch->GetWear(wearCell)
@@ -1107,7 +1240,7 @@ namespace
 			return false;
 		for (int pass = 0; pass < 2; ++pass)
 		{
-			const int count = pass == 0 ? 1 : INVENTORY_MAX_NUM;
+			const int count = pass == 0 ? 1 : PLAYERBOT_BAG_CELLS;
 			for (int index = 0; index < count; ++index)
 			{
 				LPITEM item = pass == 0 ? ch->GetWear(WEAR_WEAPON) : ch->GetInventoryItem(index);
@@ -1242,6 +1375,38 @@ namespace
 		return 6;
 	}
 
+	// What the village merchants actually stock, and what they charge for it.
+	//
+	// The three shops hold sixty-four rows between them in this world, and
+	// nothing outside them can be bought by a player at any counter. The
+	// progression ladder walks item_proto by vnum stride instead, so it named
+	// pieces no shop has ever sold - and the purchase below simply created
+	// them. What a player saw was a bot in a level-60 Mask of Fear bought for
+	// twenty thousand yang at the armour merchant, with the log line to prove
+	// it (jaksiezabic). A bot buys what a player could buy at the same counter,
+	// at the same price; everything above that comes from drops, the counters
+	// and the blacksmith, exactly as it does for a player.
+	bool FindPlayerBotMerchantOffer(DWORD vnum, long long* priceOut)
+	{
+		static const DWORD merchants[] = { 9001, 9002, 9003 };
+		for (size_t i = 0; i < sizeof(merchants) / sizeof(merchants[0]); ++i)
+		{
+			LPSHOP shop = CShopManager::instance().GetByNPCVnum(merchants[i]);
+			if (!shop)
+				continue;
+			const std::vector<CShop::SHOP_ITEM>& offers = shop->GetItemVector();
+			for (size_t k = 0; k < offers.size(); ++k)
+			{
+				if (offers[k].vnum != vnum)
+					continue;
+				if (priceOut)
+					*priceOut = offers[k].price > 0 ? offers[k].price : 0;
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool BuyPlayerBotProgressionGear(LPCHARACTER ch, DWORD vnum, const char* category)
 	{
 		if (!ch || vnum == 0)
@@ -1250,7 +1415,11 @@ namespace
 		if (!proto || ch->GetEmptyInventory(std::max(1, (int)proto->bSize)) < 0)
 			return false;
 
-		long long price = proto->dwShopBuyPrice > 0 ? proto->dwShopBuyPrice : proto->dwGold;
+		long long price = 0;
+		if (!FindPlayerBotMerchantOffer(vnum, &price))
+			return false;
+		if (price <= 0)
+			price = proto->dwShopBuyPrice > 0 ? proto->dwShopBuyPrice : proto->dwGold;
 		price = std::max<long long>(100, price);
 		if (ch->GetGold() < price)
 			return false;
@@ -1258,7 +1427,7 @@ namespace
 		LPITEM item = ch->AutoGiveItem(vnum, 1, -1, false);
 		if (!item)
 			return false;
-		ch->PointChange(POINT_GOLD, -price);
+		PlayerBotChangeGold(ch, -price);
 		sys_log(0, "PLAYERBOT_GEAR: bought progression %s pid=%u name=%s vnum=%u required_level=%d price=%lld",
 				category ? category : "gear", ch->GetPlayerID(), ch->GetName(), vnum,
 				item->GetLevelLimit(), price);
@@ -1285,7 +1454,7 @@ namespace
 		LPITEM worn = ch->GetWear(WEAR_ARROW);
 		if (IsPlayerBotUsableArrow(ch, worn))
 			count += worn->GetCount();
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (IsPlayerBotUsableArrow(ch, item))
@@ -1302,10 +1471,10 @@ namespace
 		if (worn && worn->GetType() == ITEM_WEAPON && worn->GetSubType() == WEAPON_ARROW &&
 				worn->GetCount() > 0)
 			return true;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
-			if (IsPlayerBotUsableArrow(ch, item) && ch->EquipItem(item, WEAR_ARROW))
+			if (IsPlayerBotUsableArrow(ch, item) && PlayerBotEquipItem(ch, item, WEAR_ARROW))
 				return true;
 		}
 		return false;
@@ -1490,7 +1659,7 @@ namespace
 		LPITEM worn = ch->GetWear((BYTE)wearCell);
 		if (worn && IS_SET(worn->GetFlag(), ITEM_FLAG_IRREMOVABLE))
 			return false;
-		if (!ch->CanEquipNow(item, TItemPos(INVENTORY, cell)))
+		if (!PlayerBotCanEquipNow(ch, item, TItemPos(INVENTORY, cell)))
 			return false;
 		return !worn || GetPlayerBotEquipmentScore(item, ch) >
 				GetPlayerBotEquipmentScore(worn, ch);
@@ -1544,7 +1713,7 @@ namespace
 		if (!ch || supply == PLAYERBOT_POTION_SUPPLY_NONE)
 			return 0;
 		DWORD count = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (item && GetPlayerBotPotionSupply(item->GetVnum()) == supply)
@@ -1593,14 +1762,14 @@ namespace
 			return false;
 		DWORD movedUnits = 0;
 		DWORD removedStacks = 0;
-		for (WORD destinationCell = 0; destinationCell < INVENTORY_MAX_NUM; ++destinationCell)
+		for (WORD destinationCell = 0; destinationCell < PLAYERBOT_BAG_CELLS; ++destinationCell)
 		{
 			LPITEM destination = ch->GetInventoryItem(destinationCell);
 			if (!destination || destination->GetCount() >= 200 ||
 					GetPlayerBotPotionSupply(destination->GetVnum()) == PLAYERBOT_POTION_SUPPLY_NONE)
 				continue;
 			for (WORD sourceCell = destinationCell + 1;
-					sourceCell < INVENTORY_MAX_NUM && destination->GetCount() < 200;
+					sourceCell < PLAYERBOT_BAG_CELLS && destination->GetCount() < 200;
 					++sourceCell)
 			{
 				LPITEM source = ch->GetInventoryItem(sourceCell);
@@ -1650,7 +1819,7 @@ namespace
 			{
 				if (GetPlayerBotPotionSupply(saleOrder[order]) != kind)
 					continue;
-				for (WORD cell = 0; cell < INVENTORY_MAX_NUM && excess > 0; ++cell)
+				for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS && excess > 0; ++cell)
 				{
 					LPITEM item = ch->GetInventoryItem(cell);
 					if (!item || item->GetVnum() != saleOrder[order])
@@ -1660,7 +1829,7 @@ namespace
 						continue;
 					const DWORD count = std::min<DWORD>(excess, item->GetCount());
 					item->SetCount(item->GetCount() - count);
-					ch->PointChange(POINT_GOLD, (long long)unitPrice * count);
+					PlayerBotChangeGold(ch, (long long)unitPrice * count);
 					excess -= count;
 					soldUnits += count;
 					earnedGold += (long long)unitPrice * count;
@@ -1691,7 +1860,7 @@ namespace
 		{
 			const bool bluePotion = v < 4;
 			const DWORD reserve = bluePotion ? 10 : 30;
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM item = ch->GetInventoryItem(cell);
 				if (!item || item->GetVnum() != potionVnums[v] || item->GetCount() <= reserve)
@@ -1706,7 +1875,7 @@ namespace
 				DWORD count = (DWORD)((deficit + price - 1) / price);
 				count = std::max<DWORD>(1, std::min<DWORD>(count, available));
 				item->SetCount(item->GetCount() - count);
-				ch->PointChange(POINT_GOLD, (long long)price * count);
+				PlayerBotChangeGold(ch, (long long)price * count);
 				sys_log(0, "PLAYERBOT_GEAR: emergency sale pid=%u name=%s reason=%s vnum=%u count=%u earned=%lld total_gold=%lld required=%lld",
 						ch->GetPlayerID(), ch->GetName(), reason ? reason : "supply",
 						potionVnums[v], count, (long long)price * count,
@@ -1761,7 +1930,7 @@ namespace
 				PLAYERBOT_WOODEN_ARROW_VNUM, bundle, -1, false);
 		if (!arrows)
 			return false;
-		ch->PointChange(POINT_GOLD, -price);
+		PlayerBotChangeGold(ch, -price);
 		const bool equipped = EnsurePlayerBotArrowsEquipped(ch);
 		sys_log(0, "PLAYERBOT_GEAR: bought wooden arrows pid=%u name=%s vnum=%u count=%d price=%lld equipped=%d",
 				ch->GetPlayerID(), ch->GetName(), PLAYERBOT_WOODEN_ARROW_VNUM,
@@ -1774,14 +1943,14 @@ namespace
 		if (!ch)
 			return false;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!IsPlayerBotWeapon(ch, item))
 				continue;
 
 			const DWORD vnum = item->GetVnum();
-			if (ch->CanEquipNow(item, TItemPos(INVENTORY, cell)) && ch->EquipItem(item))
+			if (PlayerBotCanEquipNow(ch, item, TItemPos(INVENTORY, cell)) && PlayerBotEquipItem(ch, item))
 			{
 				sys_log(0, "PLAYERBOT_AI: equipped weapon pid=%u name=%s vnum=%u",
 						ch->GetPlayerID(), ch->GetName(), vnum);
@@ -1810,8 +1979,8 @@ namespace
 		if (!weapon)
 			return false;
 
-		ch->PointChange(POINT_GOLD, -price);
-		const bool equipped = ch->EquipItem(weapon);
+		PlayerBotChangeGold(ch, -price);
+		const bool equipped = PlayerBotEquipItem(ch, weapon);
 
 		sys_log(0, "PLAYERBOT_AI: bought emergency weapon pid=%u name=%s vnum=%u price=%lld equipped=%d",
 				ch->GetPlayerID(), ch->GetName(), vnum, price, equipped ? 1 : 0);
@@ -1821,7 +1990,10 @@ namespace
 	bool PrepareWeapon(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		LPITEM equippedWeapon = ch->GetWear(WEAR_WEAPON);
-		if (equippedWeapon && IsPlayerBotWeapon(ch, equippedWeapon))
+		// PlayerBotWeaponFitsNow and not IsPlayerBotWeapon: the Archer's dagger
+		// on a stone is the right weapon for the moment, not a profession
+		// mismatch to be taken off.
+		if (equippedWeapon && PlayerBotWeaponFitsNow(ch, state, equippedWeapon))
 		{
 			state.dwEmergencyScavengeUntil = 0;
 			if (equippedWeapon->GetSubType() == WEAPON_BOW)
@@ -1855,7 +2027,7 @@ namespace
 		}
 
 		const DWORD dwStarterChestVnum = GetStarterChestVnum(ch->GetJob());
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -1891,6 +2063,129 @@ namespace
 		return false;
 	}
 
+	// Whether the bag can take everything a chest may hand out, judged the way
+	// the engine places items: a piece needs its height in one column of one
+	// page, a stackable merges into a stack of the same vnum first, and every
+	// reward is placed on a copy of the grid before the next one is asked.
+	//
+	// The engine gives a chest's rewards one by one through AutoGiveItem, which
+	// puts what does not fit on the ground and still reports success - so
+	// "GetEmptyInventory(3) >= 0" before the chest let a full bag spill the
+	// rest of the set (D01 of the 10 September audit: "przedmioty ze skrzyn
+	// wypadaja na ziemie"). The set is the group's own list: for a PCT group
+	// every line may come at once (the starter chests are that), for the others
+	// exactly one line does, so the room asked for is the largest line. mt2009
+	// exposes the type (GetGroupType, added by playerbotify.py) and the lines;
+	// r40250 exposes neither, so that line keeps the old five-cell heuristic,
+	// as does a group the manager does not know.
+	bool PlayerBotBagTakesGroup(LPCHARACTER ch, DWORD dwGroupVnum, int& iCellsNeeded)
+	{
+		iCellsNeeded = 0;
+		if (!ch || !ch->IsItemLoaded())
+			return false;
+		const CSpecialItemGroup* pGroup = ITEM_MANAGER::instance().GetSpecialItemGroup(dwGroupVnum);
+#if !defined(PLAYERBOT_ENGINE_MT2009)
+		// r40250's CSpecialItemGroup has neither GetItems() nor a size, so its
+		// lines cannot be walked from here; that line keeps the old heuristic.
+		pGroup = NULL;
+#endif
+		if (!pGroup)
+		{
+			int freeCells = 0;
+			for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+				if (!ch->GetInventoryItem(cell))
+					++freeCells;
+			return freeCells >= PLAYERBOT_CHEST_FREE_CELLS && ch->GetEmptyInventory(3) >= 0;
+		}
+#if defined(PLAYERBOT_ENGINE_MT2009)
+
+		bool occupied[PLAYERBOT_BAG_CELLS];
+		std::map<DWORD, int> headroom; // vnum -> units a stack of it can still take
+		for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+			occupied[cell] = false;
+		for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM held = ch->GetInventoryItem(cell);
+			if (!held || held->GetCell() != cell)
+				continue;
+			const int size = std::max<int>(1, held->GetSize());
+			for (int k = 0; k < size; ++k)
+				if (cell + k * 5 < PLAYERBOT_BAG_CELLS)
+					occupied[cell + k * 5] = true;
+			if (held->IsStackable() && held->GetCount() < ITEM_MAX_COUNT)
+				headroom[held->GetVnum()] += ITEM_MAX_COUNT - held->GetCount();
+		}
+
+		const std::vector<CSpecialItemGroup::CSpecialItemInfo> lines = pGroup->GetItems();
+		const bool everyLine = pGroup->GetGroupType() == CSpecialItemGroup::PCT;
+		// The rewards to place: (size, units) per line, or one line - the one
+		// that needs the most cells - when only one comes.
+		std::vector<std::pair<int, int> > rewards;
+		int biggestCells = -1;
+		std::pair<int, int> biggest(0, 0);
+		for (size_t i = 0; i < lines.size(); ++i)
+		{
+			const TItemTable* table = ITEM_MANAGER::instance().GetTable(lines[i].vnum);
+			if (!table)
+				continue;
+			int units = std::max(1, lines[i].count);
+			const bool stackable = IS_SET(table->dwFlags, ITEM_FLAG_STACKABLE);
+			if (stackable)
+			{
+				std::map<DWORD, int>::iterator room = headroom.find(lines[i].vnum);
+				if (room != headroom.end())
+				{
+					const int merged = std::min(room->second, units);
+					units -= merged;
+					if (everyLine)
+						room->second -= merged;
+				}
+				if (units <= 0)
+					continue;
+				units = (units + ITEM_MAX_COUNT - 1) / ITEM_MAX_COUNT; // stacks to place
+			}
+			const int size = std::max<int>(1, table->bSize);
+			if (everyLine)
+				rewards.push_back(std::make_pair(size, units));
+			else if (size * units > biggestCells)
+			{
+				biggestCells = size * units;
+				biggest = std::make_pair(size, units);
+			}
+		}
+		if (!everyLine && biggestCells > 0)
+			rewards.push_back(biggest);
+
+		const int rowsPerPage = PLAYERBOT_INVENTORY_PAGE_SIZE / 5;
+		for (size_t r = 0; r < rewards.size(); ++r)
+		{
+			const int size = rewards[r].first;
+			for (int n = 0; n < rewards[r].second; ++n)
+			{
+				int placed = -1;
+				for (int cell = 0; cell < PLAYERBOT_BAG_CELLS && placed < 0; ++cell)
+				{
+					const int row = (cell % PLAYERBOT_INVENTORY_PAGE_SIZE) / 5;
+					if (row + size > rowsPerPage)
+						continue;
+					bool free = true;
+					for (int k = 0; k < size && free; ++k)
+						if (occupied[cell + k * 5])
+							free = false;
+					if (free)
+						placed = cell;
+				}
+				if (placed < 0)
+					return false;
+				for (int k = 0; k < size; ++k)
+					occupied[placed + k * 5] = true;
+				iCellsNeeded += size;
+			}
+		}
+		return true;
+#endif
+	}
+
 	bool ManagePlayerBotProgressionChests(LPCHARACTER ch,
 			TPlayerBotAIState& state, DWORD dwNow)
 	{
@@ -1907,7 +2202,7 @@ namespace
 		// copy of each tier and remove only the artificial duplicates.
 		std::map<DWORD, bool> seenProgressionChests;
 		DWORD removedChestUnits = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -1945,7 +2240,7 @@ namespace
 			return false;
 
 		const DWORD starterVnum = GetStarterChestVnum(ch->GetJob());
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -1957,6 +2252,20 @@ namespace
 					? 1 : (int)(chestVnum - 50187) * 10;
 			if (!classStarter && (!progression || ch->GetLevel() < requiredLevel))
 				continue;
+
+			// The whole set or nothing: a chest whose rewards would spill stays
+			// closed until the town errand for a full bag has made room.
+			int cellsNeeded = 0;
+			if (!PlayerBotBagTakesGroup(ch, chestVnum, cellsNeeded))
+			{
+				if (dwNow >= state.dwNextBagFullLogTime)
+				{
+					state.dwNextBagFullLogTime = dwNow + 60000;
+					sys_log(0, "PLAYERBOT_GEAR: chest waits for room pid=%u name=%s vnum=%u level=%u",
+							ch->GetPlayerID(), ch->GetName(), chestVnum, ch->GetLevel());
+				}
+				continue;
+			}
 
 			if (!ch->UseItem(TItemPos(INVENTORY, cell)))
 				continue;
@@ -1987,7 +2296,7 @@ namespace
 		const DWORD redPotionVnums[] = { 27051, 27001, 27002, 27003, 71018, 71020, 27863, 27865, 27875 };
 		for (size_t potionIndex = 0; potionIndex < sizeof(redPotionVnums) / sizeof(redPotionVnums[0]); ++potionIndex)
 		{
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM item = ch->GetInventoryItem(cell);
 				if (!item || item->GetVnum() != redPotionVnums[potionIndex])
@@ -2027,7 +2336,7 @@ namespace
 		const DWORD bluePotionVnums[] = { 27052, 27004, 27005, 27006, 71020, 27864, 27876 };
 		for (size_t potionIndex = 0; potionIndex < sizeof(bluePotionVnums) / sizeof(bluePotionVnums[0]); ++potionIndex)
 		{
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM item = ch->GetInventoryItem(cell);
 				if (!item || item->GetVnum() != bluePotionVnums[potionIndex])
@@ -2073,7 +2382,7 @@ namespace
 			const DWORD greenPotionVnums[] = { 27102, 27101, 27100, 27053 };
 			for (size_t i = 0; i < sizeof(greenPotionVnums) / sizeof(greenPotionVnums[0]); ++i)
 			{
-				for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+				for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 				{
 					LPITEM item = ch->GetInventoryItem(cell);
 					if (!item || item->GetVnum() != greenPotionVnums[i])
@@ -2105,7 +2414,7 @@ namespace
 			const DWORD purplePotionVnums[] = { 27105, 27104, 27103, 27054 };
 			for (size_t i = 0; i < sizeof(purplePotionVnums) / sizeof(purplePotionVnums[0]); ++i)
 			{
-				for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+				for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 				{
 					LPITEM item = ch->GetInventoryItem(cell);
 					if (!item || item->GetVnum() != purplePotionVnums[i])
@@ -2146,45 +2455,33 @@ namespace
 			return;
 		state.dwNextThirdHandTime = dwNow + PLAYERBOT_THIRD_HAND_INTERVAL;
 
-		// The bot's copy, worn or carried - carried counts, or a bot that could
-		// not put it on this minute would be handed another one every pass.
-		LPITEM hand = ch->GetWear(WEAR_UNIQUE1);
-		if (!hand || hand->GetVnum() != PLAYERBOT_THIRD_HAND_VNUM)
-			hand = ch->GetWear(WEAR_UNIQUE2);
-		if (hand && hand->GetVnum() != PLAYERBOT_THIRD_HAND_VNUM)
-			hand = NULL;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM && !hand; ++cell)
+		// Since patch 0010 every kill's yang goes straight to the purse, for
+		// bots and players alike, so the Third Hand only takes a slot ("da sie
+		// dodac status trzeciej reki bez zajmowania slota w eq?"). Whatever a
+		// bot still wears or carries of the group is taken away.
+		for (int pass = 0; pass < 2; ++pass)
 		{
-			LPITEM item = ch->GetInventoryItem(cell);
-			if (item && item->GetVnum() == PLAYERBOT_THIRD_HAND_VNUM)
-				hand = item;
-		}
-
-		if (!hand)
-		{
-			// AutoGiveItem hands the item over even when there is nowhere to put
-			// it, and it lands on the ground wearing the bot's name - the arrows
-			// and the stall bundles both learned this the hard way. Wait for a
-			// free cell instead.
-			if (ch->GetEmptyInventory(1) < 0)
-				return;
-			hand = ch->AutoGiveItem(PLAYERBOT_THIRD_HAND_VNUM, 1, -1, false);
+			LPITEM hand = NULL;
+			for (BYTE wear = 0; wear < WEAR_MAX_NUM && !hand; ++wear)
+			{
+				LPITEM worn = ch->GetWear(wear);
+				if (worn && worn->GetVnum() >= PLAYERBOT_THIRD_HAND_VNUM_FIRST &&
+						worn->GetVnum() <= PLAYERBOT_THIRD_HAND_VNUM)
+					hand = worn;
+			}
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS && !hand; ++cell)
+			{
+				LPITEM item = ch->GetInventoryItem(cell);
+				if (item && item->GetVnum() >= PLAYERBOT_THIRD_HAND_VNUM_FIRST &&
+						item->GetVnum() <= PLAYERBOT_THIRD_HAND_VNUM && !item->isLocked())
+					hand = item;
+			}
 			if (!hand)
 				return;
-			sys_log(0, "PLAYERBOT_GEAR: third hand made pid=%u name=%s",
-					ch->GetPlayerID(), ch->GetName());
+			sys_log(0, "PLAYERBOT_GEAR: third hand retired pid=%u name=%s vnum=%u worn=%d",
+					ch->GetPlayerID(), ch->GetName(), hand->GetVnum(), hand->IsEquipped() ? 1 : 0);
+			ITEM_MANAGER::instance().RemoveItem(hand, "PLAYERBOT_THIRD_HAND_RETIRED");
 		}
-
-		// CHARACTER::EquipItem refuses within a second and a half of an attack
-		// or a cast, which for a bot is most of its life - the first draft put
-		// the winding below behind a successful equip here and wound eight
-		// clocks out of six hundred. Trying is enough: what this pass does not
-		// manage, ManagePlayerBotEquipment picks out of the bag on its own.
-		if (!hand->IsEquipped())
-			ch->EquipItem(hand);
-
-		if (hand->GetSocket(ITEM_SOCKET_UNIQUE_REMAIN_TIME) < PLAYERBOT_THIRD_HAND_REWIND_BELOW)
-			hand->SetSocket(ITEM_SOCKET_UNIQUE_REMAIN_TIME, PLAYERBOT_THIRD_HAND_MINUTES);
 	}
 }
 

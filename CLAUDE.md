@@ -12,6 +12,7 @@ The engine source is **not in this repository** and never will be — see
 |---|---|
 | `linux-port/overlays/playerbot/src/game/src/` | The playerbot AI, split into implementation fragments (see below). `playerbot_manager.cpp` is the tick and whatever has not been lifted out yet. |
 | `linux-port/overlays/playerbot/src/game/src/playerbot_world_rules.h` | Pure travel policy, no engine types. Unit-tested. The model for extracting logic. |
+| `linux-port/overlays/playerbot/src/game/src/playerbot_empire_rules.h` | The three kingdoms: maps, gates, services, trainers, pitches. Unit-tested against Chunjo's own historical constants. |
 | `linux-port/patches/` | Patches applied to the pristine engine source. |
 | `files/admin_panel.py` | Flask admin panel. The copy under
 `linux-port/docker/panel/app/` is staged there by `prepare-context.sh` and is
@@ -84,6 +85,8 @@ dependency order at the top of `playerbot_manager.cpp`:
 | `playerbot_log.h` | Saying something once for three hundred bots: a tag, a minute, and a count of what was swallowed. |
 | `playerbot_battle_horse.h` | Earning the horse that can fight: the desert trial, and what the stable keeper does at the end of it. |
 | `playerbot_config.h` | The weights an operator moves in the panel while the world runs. Re-read from a file every five seconds; neutral when it is missing. |
+| `playerbot_empire_rules.h` | The three kingdoms as pure policy: which map belongs to whom and what it is for, the town services and gates of all six villages, the Teleporter's per-kingdom arrivals, and how two characters stand to one another. No engine types, unit-tested. |
+| `playerbot_empire_rules.h` | The three kingdoms as pure policy: which maps a kingdom owns, its gates, its town services, its trainers, its market pitch. No engine types, unit-tested. Included first, so anything may ask it. |
 | `playerbot_world_rules.h` | Pure travel policy. No engine types, unit-tested. |
 | `playerbot_navigation.h` | Where a bot may stand and whether two points connect. Calls nothing above it. |
 | `playerbot_world_memory.h` | What the population has learned about the world, as opposed to about itself. |
@@ -140,6 +143,83 @@ which subsystem wins the tick -- then the goal planner, then the subsystem hooks
 (each `continue`s to claim the tick), and target acquisition and attacking run
 **last**. A subsystem that owns the tick therefore also suppresses combat and the
 gear pass.
+
+### Three kingdoms, and nothing may name a village by its index
+
+The world has three kingdoms and each has the same four maps: a first village,
+a second village, a guild map and an easy Monkey Dungeon. Shinsoo is 1/3/4/5 on
+the `first` core, Chunjo 21/23/24/25 on `game1`, Jinno 41/43/44/45 on `game2`.
+The engine's own quests name them - `new_quest_lv52` reads the first villages out
+of `{ "Yongan", "Joan", "Pyongmoo" }` by empire and `new_quest_lv7` names the
+second ones Jayang, Bokjung and Bakra. (Pyongmoo is Jinno's capital. The status
+table used to label Chunjo's guild map with it, which was simply wrong.)
+
+The three are mirrors in what they hold and in nothing else. Each village has
+the same eight service NPCs (9001 Handlarz Bronia, 9002 Zbrojami, 9003
+Roznosci, 9005 Dozorca, 9006 Starsza Pani, 20016 Kowal, 20349 Stajenny, 9012
+Teleporter), the same starter monsters under vnum 500, the same Bestial bosses
+in the second village, the same eight trainers in the first - and puts every one
+of them somewhere else. **A Chunjo coordinate plus an offset is wrong for every
+other kingdom.** So `playerbot_empire_rules.h` answers by map or by empire and
+`playerbot_types.h` carries the per-map tables: services, market pitch,
+trainers (`GetSkillTrainer`, first villages only - the second villages have no
+trainer at all, which is what sends a bot with no skill group back to M1), the
+Biologist, the wander hubs (`GetPlayerBotVillageGround`) and the fishing bank
+(`GetPlayerBotFishingBank`). Chunjo's rows are the hand-made ones unchanged; the
+measurement reproduces them to the unit, which is what says the other rows can
+be trusted, and `tests/playerbot_empire_rules_test.cpp` pins that.
+
+Ask `IsPlayerBotM1Map` / `IsPlayerBotM2Map` / `IsPlayerBotM3Map` /
+`IsPlayerBotVillageMap`, never `== PLAYERBOT_MAP_CHUNJO_M2`. For a leg between
+two of a kingdom's maps ask `GetPlayerBotKingdomLeg`, which gives the gate NPC
+to walk to and the arrival the engine will use, both read from that gate's own
+name. `GetPlayerBotRoadsEmpire` says whose roads a bot is on: the map's owner
+inside a kingdom (the gate in front of the bot is the one it can walk to), the
+bot's own empire everywhere else (there "go home" can only mean its own home).
+
+Tools that measure a map rather than guessing at it:
+`tools/dump_world_catalog.py` (services, gates, spawns, ground),
+`tools/generate_wander_hubs.py` (hunting hubs with their level band) and
+`tools/generate_fishing_bank.py` (stands and the water they face). All three
+read the server's own files. Note that `decode_server_attr.load` returns
+**sectors**, not cells: each is 128x128 cells of fifty units, and scanning
+`range(w) x range(h)` looks at the first sixteen by twenty cells of the map and
+finds a river nowhere.
+
+**One map is hosted by exactly one core, and a bot cannot cross between them.**
+`WarpSet` tells a client to reconnect and a bot has no client, so a map its core
+does not host is a map it can never reach. Every shared map in this world - Orc
+Valley, the desert, Sohan, both Spider Dungeons, Hwang, the two harder Monkey
+Dungeons - is on `game1` with Chunjo. `IsPlayerBotMapHostedHere` filters the
+frontier draw so no bot is sent at one, and `IsPlayerBotGrindAllowedHere` drops
+the second-village ceiling for a kingdom whose core hosts no frontier at all -
+otherwise Shinsoo and Jinno would wedge at level thirty-six with nowhere they
+were allowed to hunt.
+
+What that leaves is a level wall, and the measurement is worth having to hand
+before anybody proposes a fix. Counting every hosted map's spawns through
+`regen.txt` and taking the fifth to ninety-fifth percentile of monster level:
+
+| core | continuous cover | holes |
+|---|---|---|
+| game1, Chunjo | 1-77 | 78, 83-86, 98+ |
+| first, Shinsoo | 1-36, 60-104 | **37-59** |
+| game2, Jinno | 1-35, 57-60, 69-72, 95-100 | **36-56**, 61-68, 73-94 |
+
+The band that fills the hole exists on exactly two maps in this world - Orc
+Valley (34-49) and the Yongbi Desert (37-52) - and both are on Chunjo's core.
+Moving them does not help; it puts the same hole in Chunjo instead. The two ways
+out are to host every kingdom map and the shared world on **one** core so any
+bot can reach anything (at 323 bots a core the tick is 1.6-4.3 s of 60, so one
+core carrying all of them is around 8 s of 60 - affordable, at the cost of the
+three-way parallelism), or to accept that the two new kingdoms are village
+kingdoms that stop at thirty-six. That is a decision about the world rather than
+a bug, so it is not made here.
+
+Separately, Chunjo's own core already hosts five maps this AI has never used -
+217 (60-68), 70 (66-77), 216 (79-82), 73 (87-97) and 69 (9-76) - and Shinsoo's
+and Jinno's each host a high-level set of their own. Adding one is the checklist
+under "The frontier is four maps and one table".
 
 ### The spawn ceiling is the registry, not the slider
 
@@ -216,7 +296,7 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `m2src-cache/tree/port40250/server` with `--fuzz=0` before shipping it. 0006 adds two
   CONFIG tokens (`MOONLIGHT_CHEST_PERMILLE`, `..._STONE_PERMILLE`, rendered by
   `m2-render-config` from `M2_MOONLIGHT_CHEST_*`) and, in `CreateDropItem`,
-  tops a Metin stone up to three skill books and rolls the chest. The chest's
+  tops a Metin stone up to one skill book (three until 2.0.11 - "3 KU z metina na piatym poziomie" from a player of forty-six) and rolls the chest. The chest's
   contents come from `serverfiles/special_item_group.moonlight.txt`; the
   engine keeps the *first* group it reads for a vnum, so the Dockerfile cuts
   the stock 50011 block out before appending ours. `playerbot_consumables.h`
@@ -724,7 +804,15 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   thousand times a minute - one throttled log line a minute with the real count
   hidden in its `[+N more]`. A day of measurements concluded those maps were
   empty for reasons that were never true. The fast build copies
-  `linux-port/docker/game/bin/` now, exactly as the real image does.
+  `linux-port/docker/game/bin/` now, exactly as the real image does. What it
+  still cannot copy is `share/`, and that includes the **compiled quests**: they
+  are built by `qc` in an image stage and never at container start, so a test
+  server kept alive on fast builds runs whatever quest the last real image build
+  compiled. On 10 September that was a `web_admin.quest` three days old, and the
+  panel's mass item grant answered `unknown_cmd` for every bot - which is what
+  "masowe dawanie itemow botom nie dziala" was, for a player as much as here.
+  After changing anything under `files/*.quest`, rebuild the image
+  (`docker compose build game`) before concluding anything about a quest.
 - **A price of one yang is permanent.** `GetPlayerBotNpcSellUnitPrice` returns
   zero for anything `item_proto` prices at zero - the horse medal 50050, every
   chest and casket - so the asking price came out `max(1, 0 * markup)`, and the
@@ -927,18 +1015,16 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   reported that as "OK: Docker Engine odpowiada (wersja Error response...)",
   which also suppressed the WSL remedy - it is only raised when the engine is
   known to be down. A version is digits and dots.
-- **The third hand is 72018, and the group is what the engine reads.**
-  `CHARACTER::RewardGold` gives a kill's yang straight to the killer when
-  `IsEquipUniqueGroup(UNIQUE_GROUP_AUTOLOOT)`, and what group 10011 holds in
-  these serverfiles is 72016..72018 - not the 71010 an item shop sells, which
-  is in no group at all and would do nothing. It is a timed item:
-  `ITEM_MANAGER::CreateItem` seeds `ITEM_SOCKET_UNIQUE_REMAIN_TIME` from
-  VALUE0 (180 for 72018) and `unique_expire_event` counts it down one minute
-  per minute of wear, so `ManagePlayerBotThirdHand` winds it back up rather
-  than buying another. That pass must not put the winding behind its own
-  `EquipItem`: the engine refuses to equip within 1.5 s of an attack or a
-  cast, which is most of a bot's life - the first draft wound eight clocks
-  out of six hundred, and the ordinary equipment pass had put the rest on.
+- **Yang goes straight to the purse, for everybody, by patch 0010.**
+  `CHARACTER::RewardGold` gave a kill's yang to the killer only with the
+  premium or `IsEquipUniqueGroup(UNIQUE_GROUP_AUTOLOOT)` (72016..72018 on
+  these serverfiles - not the 71010 an item shop sells); the bots wore and
+  wound a 72018 for it (`ManagePlayerBotThirdHand`, a timed item whose
+  `ITEM_SOCKET_UNIQUE_REMAIN_TIME` counts down while worn). Since 1.31.6 the
+  patch makes `isAutoLoot` true for every killer, the same pass takes the
+  Third Hand off every bot and removes it, and `char_battle.cpp` ships in
+  `server-update-files.txt` like `char.cpp`. The operator's rule: most
+  servers run this by default, and no bot slot is to be spent on it.
 - **A snapped goal must stay inside the radius that tests arrival.**
   `MovePlayerBotTownLeg` asked for a sixteen-cell target snap and then
   checked arrival at 350 to 850 units. A goal behind a counter snapped
@@ -965,6 +1051,298 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `PLAYERBOT_LOAD` reports `resumed=`; `PLAYERBOT_NAV: far plan` names the
   destination of every plan over 1024 cells, which is how the pattern was
   found (the same hub from the same few hundred metres, every two seconds).
+- **What a bonus line is worth is three of the world's own tables, not taste.**
+  `player.item_attr` says what may roll on which slot and how high, and it is
+  the answer to most questions about gear: health does not roll on a helmet or
+  an earring, critical does not roll on a wrist or an earring, attack value
+  rolls on a body and nowhere else, block only on a shield, and
+  `APPLY_ATTBONUS_MONSTER` and the two damage-percent lines are not in it at
+  all - the first is only in `item_attr_rare` (value ten, what a Magic Metal
+  adds) and the other two come from `item_addon.cpp`. `battle.cpp` says what a
+  line does, and it disagrees with every wiki: the five weapon-type resistances
+  never fire against a monster, because `battle_hit` reads the *attacker's*
+  `WEAR_WEAPON` and a monster wears none; an elemental resistance is applied at
+  thirty percent of its own number; `BLOCK` answers melee (73% of this world's
+  monsters) and `DODGE`/`RESIST_BOW` only ranged (0-24% of a map). And
+  `item_addon.cpp` draws the skill-damage line from a gaussian of sigma five and
+  then sets the average line to **minus twice it** plus noise, so no weapon can
+  carry both - +18% skill is -29% average, and a caster that only ever stopped
+  on the average line never stopped at all. `HasPlayerBotFinishedBonus` used to
+  ask a helmet for health and attack value and an earring for health and
+  critical, none of which can roll there, so those slots could never be finished
+  and were rerolled for as long as their owner had gold.
+- **A race-attack line is worth what share of the map that race is, and on
+  three maps it is worth nothing at all.** `CalcAttBonus` walks the races as an
+  else-if chain (ANIMAL, UNDEAD, DEVIL, HUMAN, ORC, MILGYO, INSECT, FIRE, ICE,
+  DESERT, TREE) so a kill pays exactly one of them, and `char.cpp` maps an
+  APPLY onto only the first six: INSECT, FIRE, ICE, DESERT and TREE have a
+  POINT and a place in the damage formula and nothing an item can put into
+  them. `tools/analyse_map_races.py` counts every spawn point of every map a
+  bot may stand on: Orc Valley 63% orcs, all three second villages 100% human,
+  the first villages 77% animal, the guild maps and all five Monkey Dungeons
+  100% animal, Mount Sohan 46% undead, Hwang 68% mystic - and the Yongbi Desert
+  (DESERT/INSECT) and both Spider Dungeons (INSECT) pay no race line ever.
+  `PLAYERBOT_MAP_RACE_TABLE` in `playerbot_types.h` is that measurement and
+  `GetPlayerBotFightingRace` returns the share with the race, so the equipment
+  pass and the reroll pass cannot disagree - which they did, at 600 points a
+  point against one, so a bot bought a shield for the line and rerolled it off
+  at the next blacksmith.
+- **A bot's name is the one part of its identity nothing depends on, and five
+  places in the seed disagreed.** `LoadRegisteredBots` matches on the account
+  login (`playerbot_NNN`), the social id and the `player_index` row and never
+  reads `p.name`; `CHARACTER::Save` does not write the name column, so a
+  running core will not undo a rename; both panels ask the account. But
+  `generate_seed.py` treated a renamed character as "not the character this
+  registry describes" in five places - a skip rule, its matching assertion, the
+  alias pass, the `player_index` insert and the final row assertion - so the
+  first time nicknames were turned on the whole cohort left the seed's care:
+  "preserving 2500" instead of 668. They all consult
+  `common.playerbot_name_history` now and require both halves to agree, so a
+  second, hand-made rename is still somebody's deliberate choice.
+  `M2_PLAYERBOT_HUMAN_NAMES` is 1/0/`restore`; the pool is
+  `tools/generate_bot_names.py` over `data/bot_names_iwakura.txt` - one written list, no class or sex pairing since 2.0.2, since 2.0.10 dealt by kingdom: the list shuffled once by its own hash and cut into three equal shares (`player_index.empire` says whose a bot is), a kingdom larger than its share (Chunjo, 1500 seeded) continuing with its own names and `2`/`v2`, then `3`/`v3`, then v4 from the whole list; and a pool version that renames every bot named from an older list or by the older scheme. **A waiting bot must never be dealt a name a settled bot wears**: the plan used to number waiting bots from one and free names from the top of the list, excluding only people's characters, so the thousand Shinsoo/Jinno bots seeded by 2.0.8 into an already-named world got the first thousand Chunjo names - 999 duplicates measured. A name worn by a bot with a current history row is not free.
+- **`account.account.empire` is not where a bot's kingdom lives.** The seed
+  wrote a literal 2 into it for the whole cohort while `player_index.empire` -
+  the column the core actually reads - was right, so every Shinsoo and Jinno bot
+  claimed Chunjo to anything that asked the account, and both panels did. Ask
+  `player_index` first and the account only as the fallback for a hand-made
+  character with no index row.
+- **No double quote may reach docker from PowerShell, and the second instance
+  cost a backup.** `Invoke-M2DatabaseImport`'s "does this database exist" probe
+  was `sh -c "mariadb ... -e `"SELECT ...`""`; PowerShell 5.1 wraps a native
+  command's argument in double quotes without escaping the ones inside it, so
+  the first `"` ended the argument, `sh` got a broken script, the probe always
+  came back empty and the "kopia trafi do folderu backups" the confirmation
+  dialog promises was an empty folder at every import anyone ever ran. Invoke
+  `mariadb` directly with the query as its own argument. Same trap as the
+  support bundle's empty `playerbot-syslog.txt`.
+- **The game's language lives in the image, so every update undid it.**
+  `m2-lang` switches four files under `share/` - `conf/item_names.txt`,
+  `conf/mob_names.txt`, `locale/*/translate.lua`, `locale/*/locale_string.txt` -
+  and `share/` is baked into the game image, not on a volume. Every update
+  rebuilds that image, so the English originals came back while the remembered
+  choice, the panel's language page and `lang.status` all went on saying Polish.
+  What a player saw was a world named half in each: our own Polish strings
+  beside "Skill Book" on a bot's stall sign, quests and monsters in English.
+  `cmd_prepare` remembered the choice and never re-applied it; it calls
+  `cmd_apply` now, on every start, which is idempotent and keeps the shipped
+  English file beside the active one as `.m2orig`. Reproduce it by copying
+  `item_names.txt.m2orig` over `item_names.txt` - vnum 50300 goes from
+  "Ksiega Umiejetnosci" to "Skill Book" and back. The db core reads these at
+  boot and pushes them into `player.item_proto.locale_name`, which is what
+  `proto->szLocaleName` - every name a bot says - comes from, so one restart
+  carries the fix all the way to the stall signs.
+- **The panel's passphrase can be a secret from its own operator.**
+  `.env.example` ships `M2_PANEL_PASSWORD` empty; the installer fills it in and
+  every other route to a `.env` does not. The panel's entrypoint then invents
+  twenty characters, stores only the PBKDF2 hash in `m2panel.conf` and prints
+  the plaintext once to a container log nobody reads - so the panel has a
+  password that exists nowhere and `docker compose config` shows
+  `M2_PANEL_PASSWORD: ""` while the operator swears it is set. The launcher
+  fills the blank before Compose sees it (`Assert-PanelPassphrase`), and the
+  panel button offers both the value from `.env` and a reset that deletes
+  `m2panel.conf` so the entrypoint can rebuild it. Nothing in the panel has
+  ever had a hard-coded login or password; there is no login at all.
+- **Half a translation reads worse than either language.** The classic panel
+  puts 446 strings through `t()` and writes about 530 more in Polish where they
+  stand, so an English page is a Polish page with holes - "mam polowe panelu po
+  angielsku polowe po polsku". It used to ask `Accept-Language` first and fall
+  back on English, and a Polish player on an English Windows got English
+  because Chrome sends `en-US,en;q=0.9,pl;q=0.8`. Polish is the default now and
+  the browser is not consulted; the header's switch stores the choice in its
+  own year-long cookie, not in the session, because marking the session
+  permanent would have extended the admin login to a month as a side effect.
+- **A quantity that reaches the engine as a BYTE is a quantity nobody counted.**
+  `pc.give_item2` reads its count as an `int` and hands it to
+  `CHARACTER::AutoGiveItem(DWORD, BYTE bCount, ...)`: 256 becomes 0, 300
+  becomes 44, 65535 becomes 255, and nothing reports it, because a non-zero
+  `item_id` looks like success and the panel writes "Nadano". The panels
+  offered 65535. 200 is the real ceiling for one call - it is a full stack, and
+  what `AutoGiveItem` tops up (`MIN(200 - GetCount(), bCount)`) - so
+  `web_admin.quest` refuses anything above it with `qty_too_big` and compares
+  the bag before and after, because a non-zero pointer does not prove delivery
+  either: with no free cell the same function drops the item on the ground and
+  still returns it. **And a new status word has to be added to the quest's own
+  whitelist** near the end of the handler, or it is rewritten to `unknown_cmd`
+  and the panel reports "quest wymaga aktualizacji" - which is what the first
+  test of this showed.
+- **`GetEmptyInventory(height)` returns a position, not a count.** Two calls
+  beside each other can point at the same cell and reserve nothing, which is
+  what "przedmioty ze skrzyn wypadaja na ziemie" was:
+  `GiveItemFromSpecialItemGroup` hands out its rewards one by one through
+  `AutoGiveItem`, and that drops what does not fit. Count the free cells
+  (`CountPlayerBotFreeInventoryCells`, defined in `playerbot_consumables.h`
+  because that file is included before `playerbot_economy.h`) and require
+  `PLAYERBOT_CHEST_FREE_CELLS`. That was a mitigation; since 2.0.6
+  `PlayerBotBagTakesGroup` (`playerbot_gear.h`) lays the group's whole set out
+  on a copy of the grid the way the engine places items (height in one column
+  of one page, stackables merged into their stacks first) before any chest is
+  used - every line of a `Type Pct` group, the largest line of the others. It
+  needs the group's lines and type, which mt2009 exposes (`GetItems`, and a
+  `GetGroupType` getter playerbotify.py adds); r40250 exposes neither and
+  keeps the five-cell heuristic. The engine still gives one by one, so this is
+  the bot refusing to open, not the engine refusing to spill.
+- **The planner and the pass that acts must ask one function, not two lists.**
+  `HasPlayerBotRefineOpportunity` accepted any bag piece the equipment selector
+  liked; the refining pass then also rejected anything `IsPlayerBotJunkItem`
+  had marked for the merchant. A started blacksmith visit is a commitment the
+  planner will not override, so the bot walked to town for nothing - "mam
+  wszystko +9 zalozone, a bot dalej lezie do kowala". Both ask
+  `IsPlayerBotRefineBagCandidate` now. Worn pieces are outside it: the junk
+  rule does not apply to what a bot is wearing.
+- **`log.log` is declared big5 and the game writes CP1250 into it.** Measured
+  on this world: `TABLE_COLLATION` is `big5_chinese_ci` for `type`, `how`,
+  `hint` and `ip`, and the bytes prove the conversion happened on the way in -
+  "Bojowy Luk Jezdzcy" is stored as `42 6F ... A2 47 75 6B ... 3F ... 3F`,
+  where CP1250's single `0xA3` became the two-byte big5 `A2 47` and every
+  character big5 cannot represent became `0x3F`. 128 573 of the 279 242
+  non-ASCII hints carry that question mark, and it cannot be undone. So
+  changing the declaration fixes what is written next and repairs nothing that
+  exists; transcoding the column would make it worse. The table is 22 million
+  rows and 1.75 GB of MyISAM, so any ALTER is minutes of downtime - it is a
+  planned, versioned migration with a backup, not a drive-by. Only the gear
+  history's item names are affected; nothing in the game reads this column.
+- **The panels' 71 and 72 are the most-repeated mistake in this project.**
+  `APPLY_SKILL_DAMAGE_BONUS` is 71 and `APPLY_NORMAL_HIT_DAMAGE_BONUS` is 72
+  (`common/length.h`). Both panels have had them the wrong way round at least
+  twice, in three different places at once: a tooltip table that was right
+  beside a ranking loop that was wrong, a label dictionary, and the two SQL
+  aliases - and because `ORDER BY` used those aliases, the first hundred rows
+  were chosen by the wrong column, so fixing the Python sort afterwards could
+  not help. Named constants now, on both sides.
+- **A ranking's candidate set decides the ranking.** The skills tab took the
+  400 highest-level bots and looked for the best skill among them, so a bot of
+  thirty with a Master skill stood behind four hundred fifties who had none and
+  never appeared; the +9 tab filtered `vnum < 12000`, which was meant to
+  exclude materials and excluded every shield (13xxx) and all jewellery with
+  them - 9 items found against 17. Ask `item_proto` what is equipment
+  (`type IN (1, 2)`) and score the whole set before paginating.
+- **`item_proto` and `mob_proto` in the database are mirrors, rewritten from the
+  txt at every boot.** `CClientManager::InitializeTables` runs
+  `InitializeMobTable` -> `MirrorMobTableIntoDB` -> `InitializeItemTable` ->
+  `MirrorItemTableIntoDB`, and each mirror is a `REPLACE INTO` of **every row**
+  built from what `share/conf/mob_proto.txt` and `item_proto.txt` just said. So
+  an operator who edits `player.item_proto` in HeidiSQL, ticks the box and
+  restarts gets the shipped values back, every time, and nothing tells them why.
+  Reported by Artur554 as "zmieniam bonusy w bazie ... i wraca do fabrycznych".
+  The split is worth memorising, because it is exactly what he observed:
+
+  | Read from the DATABASE (edit it, it sticks) | Read from `share/conf/*.txt` (editing the DB does nothing) |
+  |---|---|
+  | `refine_proto`, `shop` + `shop_item`, `item_attr`, `item_attr_rare`, `skill_proto`, `banword`, `quest_item_proto` | `item_proto` (item stats, applies, values), `mob_proto` (level, hp, exp, drops' owner) |
+
+  And the txt files are baked into the game image, so editing them inside a
+  running container is undone by the next rebuild - the same shape as the
+  language switch. The only persistent path this project has for a txt table is
+  `m2-rates`: keep what the operator asked for on a state volume and re-apply it
+  before the cores read anything (`$STATE_DIR/wanted`, scaled from a `.m2orig`
+  baseline). Anything that lets an operator change item or mob stats has to be
+  built that way; there is no supported way to do it today, and saying "edit the
+  database" is wrong advice.
+- **Two numbers that mean the same thing must be the same number.**
+  `PLAYERBOT_AUTOSPAWN_COUNT` was clamped to 1000 in `input_db.cpp` while the
+  launcher's slider, its label ("LICZBA BOTOW (0-2500)") and
+  `Set-PlayerbotCount` all offered 2500 - so an operator who raised it past a
+  thousand got exactly a thousand bots and no line anywhere said so. Patch 0013
+  makes the ceiling 2500 and logs `autospawn asked=%d, cut to the ceiling %d`
+  when it fires. The real guard was never this clamp: `SplitPopulation` caps
+  each kingdom at the identities it has and `SpawnRegistered` at what
+  `LoadRegisteredBots` accepted, which is why asking for 3000 on this world
+  yields 2012 (shinsoo=500 chunjo=1012 jinno=500) and not 2500 - the Chunjo
+  cohort is 1500 seeded but 1012 usable, per the registry shortfall above.
+  **Measured at that size**, because "2500 is untested" was the open question:
+  2004 bots live, tick 2.5 s / 12.5 s / 3.2 s of every 60 on first / game1 /
+  game2, and 33 core-seconds a minute for the whole game container - 0.55 of one
+  core, on three cores' worth of world. Splitting the population between
+  kingdoms is what makes that affordable; game1 carries the shared maps and
+  costs four times what a village kingdom does.
+- **A rollback that throws replaces the error that caused it.**
+  `Invoke-M2PackageUpdate` rolled back **every** file in the package, not just
+  the ones it had written - so a refused write to `pack/root.eix` was followed
+  by restoring the backup onto that same unwritable file, which failed the same
+  way, and *that* second exception is what reached the player. The copy loop's
+  careful diagnosis was built and then thrown away one frame later. It took an
+  end-to-end test with a real Deny ACL to see it: the message on screen was
+  identical before and after the diagnosis was added, which reads exactly like
+  "my fix did not work" and is not. Roll back only what was applied, and wrap
+  each restore so the rollback can never be the thing that speaks.
+  Related: `catch [UnauthorizedAccessException]` does **not** fire here.
+  With `$ErrorActionPreference = 'Stop'` PowerShell 5.1 wraps a cmdlet's error
+  in `ActionPreferenceStopException` and the typed catch is skipped - walk
+  `.InnerException` the way `Test-M2AntivirusBlock` does. And `Copy-Item -Force`
+  already overwrites read-only *and* hidden destinations, so neither is the
+  cause of an access denial: what is left is an ACL, Controlled Folder Access,
+  or a process holding the file. `New-M2AccessDeniedError` names which.
+- **A staged engine file must stay in the engine's own encoding.** The
+  engine sources are CP949 and `LC_TEXT("...")` compiles the bytes as written,
+  so a file saved as UTF-8 looks up keys that `locale_string.txt` (CP949) does
+  not contain. `char_battle.cpp` shipped that way from 1.31.6 to 1.33.2:
+  every one of its thirteen Korean messages missed, `locale_find` returned the
+  Korean itself, and the death-with-blessing message logged
+  `LOCALE_ERROR: "용신의 가호로 ..."` 276 times in one support bundle. Check
+  with `raw.decode('cp949')` before shipping a staged file; the patch itself
+  (0010) was fine - it carries CP949 context and applies to the CP949 pristine
+  on Linux, which is why only Windows installs, which get the staged file,
+  saw it.
+- **A count of "users" counts bot descriptors, and the client refuses a FULL
+  channel.** `DESC_MANAGER::FuncWho` counted every descriptor with a character
+  and `P2P_MANAGER` every remote login, so 2500 bots put the channel over
+  `g_iFullUserCount` (1200) and the channel list said FULL ("if u have 2500
+  bots channel is full", Dixdros). Patch 0014: the local count skips
+  `IsBot()`, the P2P count subtracts registered pids at read time
+  (`CountPlayerBots`, via `IsRegisteredBotPID` - which never loads the
+  registry, because `IsRegistered` does and a failed load from a P2P login
+  before `MapLocations` would fail the registry closed for the process), and
+  `UpdateChannelStatus` logs `CHANNEL_STATUS: players= local= status=` every
+  five minutes so the next screenshot has a number behind it. Verified: 969
+  bots live, `players=0 status=1`.
+- **A per-kingdom table can reintroduce a number a constant had already
+  corrected.** `GetTeleportArrival(TELEPORT_GUILD_MAP)` carried the Teleporter
+  quest's empire table, and for Chunjo that is (179500, 1000) - cell (3, 10)
+  of `metin2_map_guild_02`, the unwalkable corner that `PLAYERBOT_M3_ARRIVAL_X`
+  had replaced with Town.txt's (221900, 9200) long before; the three-kingdom
+  travel switched `level30_weapon_to_m3` to the table and every bot sent to
+  M3 stood at the corner with `nav_out=1` until the watchdog reset it, for
+  ever (greess, 11 September, confirmed twice). All three rows are their
+  map's own Town.txt now and the unit test pins them. When a table replaces a
+  constant, diff the two before trusting the table's provenance.
+- **A quest change is only live in the image, and the fast build never
+  rebuilds the image.** Written down once already under "A fast build that
+  ships only the core"; sprung again today: the test server's compiled
+  `web_admin.quest` had no `BULK_ITEM` at all, so the mass-grant reproduction
+  answered `unknown_cmd` for every online bot and `player_offline` for the
+  rest, and read like a stall in the panel. `docker compose build game`
+  before concluding anything about a quest - the second time this cost an
+  hour of measurement.
+- **The GM panel's window must not be able to stop the client loading.**
+  `GMPanelWindow()` was built unconditionally inside `MakeInterface`; any
+  exception in it - a widget a different client binary lacks, a locale key a
+  different locale pack lacks - aborted the whole interface and the loading
+  bar stopped at 100% with nothing on screen (five players on 10-11
+  September; the stock root loaded on the same machines, and what fixed each
+  of them was the stock root put back). The 1.33.3 root builds it in a
+  try/except, writes the reason to `syserr.txt` and loads without it; the
+  three entry points check `wndGMPanel` for None. The cause itself is still
+  unknown - nobody has sent a `syserr.txt` yet - and the fail-safe is what
+  turns the next report into one that carries it.
+- **Bots are named by what the name says.** The pool is two written lists
+  (jaksiezabic's, Iwakura's) plus names composed from *their* words in
+  *their* shapes (`tokens_of`, `vocabulary`, four shapes in measured
+  proportions), never from a hand-made word list - the first draft composed
+  2100 names in one grammar and Iwakura's note was "bardziej rozne". The
+  pairing SQL runs four passes: a name that names a class and a sex goes to
+  that class and sex (`player.job` is the race: `% 4` is the class, 1/3/4/6
+  are the female models), then class only, then sex only, then the rest to
+  anyone. "ninja szamanka ale to sura" was a real screenshot. Underscore is
+  refused because `check_name_alphabet` refuses it at the character screen.
+- **The unsold-stock rule sat below the rule that made it unreachable.**
+  `IsPlayerBotJunkItem` returned false for anything at
+  `PLAYERBOT_PRECIOUS_REFINE` (+4) before it reached "scrap after six unsold
+  stands", so the six-stand rule applied to nothing the counter keeps and a
+  bag of +5 nobody bought was a bag for life - which is the bot that "stands
+  in Joan browsing stalls and never levels" (gregoszky, davids998). The rule
+  runs first now, up to `PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE` (+6); +7 and
+  up is still never scrap.
 - **Measure before tuning a budget.** `CPlayerBotManager::Update` logs
   `PLAYERBOT_LOAD:` once a minute: tick time, plans by distance bucket with
   their cost, deferrals, target searches, snapshot, map scans, saves, watchdog
@@ -1099,9 +1477,126 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   9/10 lvlach nadal psy"). Each carries the median monster level within
   2500 units, measured from `regen.txt` through `group.txt` and
   `group_group.txt` with `mob_proto` levels (the parser shapes in "Engine
-  facts" apply); `IsPlayerBotM1HubForLevel` admits a hub from two under its
-  median to seven over, and the pid spreads the bot over the admitted ones.
-  Re-measure before moving a hub; do not guess a band.
+  facts" apply); `IsPlayerBotM1HubForLevel` admits a hub from two over its
+  median to three under, and the pid spreads the bot over the admitted ones.
+  It admitted seven under until 2.0.12, and the seven were dogs: a bot of
+  nine took the band-three hubs beside the band-nine ones, a third of every
+  fight measured on the test world was six or more levels under the bot,
+  and a level in the teens took two hours. `PERCENT_LVDELTA` is not what
+  limits that - this engine's table still pays 90% at six under - the base
+  experience is (Wild Dog 15, Blue Alpha Wolf 111). When no band holds the
+  level, `CollectPlayerBotM1HubsForLevel` takes the nearest band, never the
+  whole table. Re-measure before moving a hub; do not guess a band.
+- **mt2009's INVENTORY_MAX_NUM is not the bag.** With
+  `ENABLE_EXTEND_INVEN_SYSTEM` it is 135: two pages plus the horse inventory
+  page, which `GetEmptyInventory` places into only for a character whose
+  `GetInventoryMaxCount()` says so - a bot's never does. Every count the
+  fragments made over `INVENTORY_MAX_NUM` saw 45 phantom free cells, so a
+  chest judged to fit (`PlayerBotBagTakesGroup`) spilled on the ground, and
+  bag-full, bag-pressure and stall rules were off by half a bag.
+  `PLAYERBOT_BAG_CELLS` (compat: `INVENTORY_DEFAULT_MAX_NUM` there,
+  `INVENTORY_MAX_NUM` on r40250) is the only bound the fragments use now;
+  an engine array may still be sized by the engine's constant.
+- **The mt2009 item finder searches offline shops; a stall is not one.**
+  `ikashop::CShopManager::RecvShopSearchItemClientPacket` walked `m_mapShops`
+  (ikarus offline shops) and a playerbot's counter is a classic `CShop`
+  (`OpenMyShop`, no duration). The category switch is a template now
+  (`PlayerBotMatchShopCategory`) asked of an offline shop and of
+  `CPlayerBotStallView` - a keeper's `GetItemVector()` seen through the three
+  predicates the switch uses - and `PlayerBotSearchStalls` walks the PC map
+  for keepers with a shop on the map within 7500 units. Inside `namespace
+  ikashop`, `CShop` is the ikarus one: the classic class is `::CShop`.
+- **The classic panel's item tables are r40250's unless the engine says
+  otherwise.** `items.json` and `item_names_pl.txt` are the other engine's
+  names and sizes; on mt2009 `localized_item_name`, the give-item search and
+  `/static/item_defs.json` read `player.item_proto` (`locale_name` is the
+  Polish name on this package, `size` the cells) - lazily, because the panel
+  starts before MariaDB answers. `ENGINE_MT2009` is read near the top of the
+  module for that reason; anything engine-specific above the old definition
+  point used to be impossible. And the two name columns are
+  `cp1250_polish_ci` while the panel's connection is latin1, so a plain
+  SELECT lets the server convert and every letter latin1 lacks arrives as
+  "?" - 2.0.13 shipped "Skrzyd?a Demona" after a check on a name without
+  diacritics. Ask for `CAST(... AS BINARY)` and decode with `log_text`;
+  verify a fix on a name with an l-stroke, never on "Gourou". The tooltip's
+  base lines (attack, defence, fixed applies, level) read the same table
+  through `ITEM_BASE`, and the JS fetches `/static/item_defs.json?v=<panel
+  version>` because the answer is served with a ten-minute max-age - the
+  first check of 2.0.14 showed the old table for exactly that reason.
+- **"Teleport me to this bot" must find the character that is online, and
+  the database cannot say who that is.** `last_play` is written on save,
+  minutes after a login, so "newest last_play" was the previous character;
+  the WARP row waited for somebody offline and stayed pending to fire on
+  their next login. `api_admin_warp_me` queues for every recent human
+  character, takes the first row the quest answers (it answers only for the
+  online one) and deletes the rest. A WARP that times out is deleted too.
+- **The panel's no-passphrase mode is decided by the bind address on the 2.x
+  line.** `local_open()`: `M2PANEL_LOCAL_ONLY` (from `M2_PANEL_LOCAL_ONLY`)
+  when set, else the installer's `local_only` in m2panel.conf, else never
+  when `trust_proxy` (installer's nginx mode), else `M2PANEL_BIND_ADDRESS`
+  is loopback. The launcher writes `M2_HOST_BIND_ADDRESS=127.0.0.1` for a
+  single-player world and that is what opens the panel there.
+- **A per-engine difference in a shared compose service lives in
+  composify.py, not in the compose file.** `port/composify.py` renders the
+  panel, seban, itemshop and updater services from `linux-port/docker/
+  docker-compose.yml` into both mt2009 compose files between its BEGIN/END
+  markers; an edit made to the rendered block is undone by the next render,
+  which is how the updater override was lost once before it was found.
+  `M2PANEL_ENGINE`, `PLAYERBOTS_ENGINE`, the version default and now the
+  updater's entrypoint are all replacements in that script.
+- **The 2.x line on Linux updates from the package zip, never from git.**
+  The repository's root VERSION is the 1.x line's, `installer/install.sh`
+  and the 1.x `m2-updater` stage `linux-port/` over whatever they find, and a
+  2.x server that ran either ended with VERSION 1.33.3, the 1.x `m2-rates`
+  ("the rates are being applied" for ever - the mt2009 game watches event
+  flags instead), and a panel that could not update (l0st3k, 12 September).
+  `linux-port-mt2009/tools/update.sh` is the launcher's package update in
+  POSIX sh (manifest via the contents API, sha256, unpack over the server
+  folder, `compose up -d --build`); the mt2009 updater container runs it in
+  watch mode through composify's override. Test it in `python:3-alpine`
+  with the folder bind-mounted - the Windows `python3` is the Store stub.
+- **The mt2009 counter is ten columns wide, and the bots laid it out five
+  wide.** `SHOP_PLAYER_WIDTH` doubles r40250's `SHOP_DEFAULT_WIDTH`; the
+  right half (x 5-9) is locked rows 0-3 (`SHOP_SLOT_UNLOCK_PROGRESS_FLAG`)
+  and premium rows 4-7, and `CanPlaceOnShopSlot` refuses either with a chat
+  line a bot never reads - so every counter with a sixth line was refused
+  whole, and "2500 botow, 0 sklepow" was true on every mt2009 world.
+  `PLAYERBOT_SHOP_ENGINE_COLUMNS` (compat) is the engine's stride and
+  `PlayerBotShopSlotToEngine` converts the bots' five-wide slot; the buyer
+  side already indexed by the engine's position. The other half was
+  `CanOpenShop()` - level 15 and `PLAYER_STATS_MONSTER_FLAG` >= 800, a rule
+  for people that a bot re-earned after every world reset - which
+  playerbotify.py now exempts a bot descriptor from. The kill flags do
+  persist (`player_special_flag`, loaded on the bot path), so a settled bot
+  passes anyway; a fresh world does not for hours.
+- **InnoDB fsync per commit is the login hang.** The mt2009 line's player
+  tables are InnoDB and the db core queues every save on one SQL_PLAYER
+  connection, the same one a login's `player_index` SELECT goes through.
+  With `innodb_flush_log_at_trx_commit = 1` a Docker Desktop disk managed
+  ~70 fsyncs a second against ~100 writes a second from 2482 bots (special
+  flags, quest flags, items): `return 1890/26/229` in the db syslog is that
+  queue, and the login was answered 14-28 s later, to a client that had
+  gone (`LoginSuccess - cannot find handle`). `99-metin2.cnf` sets 2. Read
+  the db core's `[pulse] return q/r/f async q/r/f` line before blaming
+  MyISAM locks; the db process itself sat at 0% CPU throughout.
+- **A village hub is where a bot is sent, not where it stands.** The
+  search range is `PLAYERBOT_SEARCH_RANGE` (6000) and a hub cell is 6400, so
+  a bot at its own band's hub saw the dogs six kilometres off and the wander
+  pass - which only runs on a tick nothing was worth attacking - never got
+  the tick: 96 of 115 bots on Joan stood more than 2500 units from any hub,
+  chain-killing whatever was next. Tightening the band alone
+  (`IsPlayerBotM1HubForLevel`) doubled the level-ups and moved nobody.
+  `REJECT_OUTGROWN_PREY` in the combat value policy is the other half: on a
+  first village a monster `PLAYERBOT_VILLAGE_OUTGROWN_LEVELS` under the bot
+  and further than `PLAYERBOT_OUTGROWN_CHAIN_RANGE` is refused, so the walk
+  to the hub happens; what is under the bot's feet is still killed on the
+  way, and defence, quest, material and equipment errands come before it.
+  `PERCENT_LVDELTA` could not express this on the mt2009 line - its table
+  still pays 90% at six under - the base experience is what falls (Wild Dog
+  15, Blue Alpha Wolf 111). Measure it as the share of "Walcze z" lines six
+  or more levels under the bot, and as level-ups per ten minutes, never as
+  the exp column over a short window: the db core flushes the player cache
+  minutes apart, so a 2.5-minute window of 350 bots read as +0.
 - **A keeper's status is "Prowadze stragan", never "Planuje: poziom".** The
   overhead sign is what the world sees, but `playerbot_status.tsv` is what
   the panel and an operator see, and thirty-nine keepers at the Joan ring
@@ -1398,6 +1893,415 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   to any piece with `PLAYERBOT_PRIZE_LINES` lines, and `CanPlayerBotRerollItem`
   refuses a stone below `PLAYERBOT_BONUS_MIN_REFINE` - lines before the
   refine are lines a burn takes with it.
+- **An Archer breaks a Metin with a dagger, and the fight asks the hand.**
+  A bow cannot break a stone (Kuszaa: "pada na glebe x razy i rezygnuje"):
+  the stone stands still, the arrows run out, and the shot's rhythm is a
+  fraction of a swing's. `IsPlayerBotArcherBuild` (job and skill group, not
+  the weapon - `IsPlayerBotArcher` in `playerbot_targeting.h` asks for the
+  bow and the lure needs that) plus `bMeleeForStone`: `ManagePlayerBotEquipment`
+  flips it on when the target `IsStone()` and `FindPlayerBotStoneWeapon`
+  finds a dagger or sword (a dagger first, whatever the score), and the
+  candidate loop then scores the bow in hand as nothing. Every combat path
+  judges by the weapon in the hand, so a dagger swings and the bow shoots
+  without a second damage path; the one exception is the attack-skill
+  rotation, which must refuse an Archer without a bow - every Archer skill
+  is `SKILL_FLAG_USE_ARROW_DAMAGE` and `ComputeSkill` sets `atk` to 0 without
+  one. `PrepareWeapon` asks `PlayerBotWeaponFitsNow`, or it would unequip the
+  dagger as a profession mismatch on the next tick. The junk rule and the
+  stall keep the chosen stone weapon; the weapon merchant sells a dagger of
+  the bot's level when the bag has none.
+- **A portal walk asked for once is a route somebody else finishes.**
+  `MovePlayerBotToWorldPortal` plans the route and makes the map change only
+  when the pass that called it calls it again within
+  `PLAYERBOT_PORTAL_SWITCH_DISTANCE`; in between, the odd-tick continuation in
+  the manager and the wander's route continuation walk the route to its last
+  waypoint and hand the bot to the wander. The shopping pass asked for the
+  Joan gate once per `PLAYERBOT_SHOPPING_INTERVAL` ("Joan first") and never
+  again: 152 of 160 walks to the Bokjung gate in ten minutes, one crossing,
+  and a crowd of bots with "Sohan" or "Loch Malp" over their heads riding up
+  to the gate, climbing down, and riding off (Kuszaa's video, twice). Any
+  caller of the portal walk must be a state that re-asks every tick until
+  the map changes - `bMarketToJoan` here, `dwStallWalkUntil` for the stall,
+  the travel pass by construction. `bRouteKeepsHorse` is the other half: a
+  continuation pass passing `keepHorseAtDestination=false` dismounted the
+  rider a kilometre short of a gate the walk meant to ride through. The
+  diagnostic that found it was three throttled lines - who reaches the
+  travel hook at the gate, which branch refuses, and who asked for the
+  portal from where - and it is worth putting back before guessing again.
+- **A fare the bot cannot pay is a hunt it must be allowed.** The Teleporter's
+  refusal set `dwNextWorldTravelTime` since 1.30.42 and the M2 frontier
+  branch never read it, so the wait announced in the changelog was a wait of
+  one tick: 26 000 refusals a minute across the cohort. Underneath, 268 of
+  362 bots of 40+ in Bokjung held less than one fare (79 yang the poorest),
+  because a bot back from the frontier for services spent everything at the
+  blacksmith and above the cohort ceiling `IsPlayerBotGrindAllowedHere` said
+  no - so it could neither pay nor earn. `GetPlayerBotReservedGold` keeps
+  `PLAYERBOT_TELEPORTER_FARE_RESERVE_COUNT` fares for any bot whose
+  `GetPlayerBotFrontierMapForLevel` is not zero (the fare estimate lives in
+  `playerbot_battle_horse.h` because every spender is included before
+  `playerbot_travel.h`), the grind rule makes an exception for a bot short
+  of that, and the frontier branch neither sends a bot short of the fare nor
+  one inside the refusal's wait. Measure with `teleporter refuses [+N more]`.
+- **An item nobody owns is everybody's, and that is the policy.** `CItem::IsOwnership(ch)`
+  returns true for any character once the ten-second ownership event is
+  gone, so a bot picks up a player's leftover drop like any player would.
+  1.31.4 restricted free items to the bot that saw them while owned (a
+  probe-pid trick, because nothing public says whether the event is alive);
+  the operator reverted it in 1.31.5 - a bot taking what a player left is
+  wanted. Do not put it back without asking.
+- **A rider is served at every counter.** The engine refuses a rider only a
+  skill book (`LearnSkillByBook`), a costume and a second mount; the shop,
+  the blacksmith, the storekeeper and every quest NPC answer from the
+  saddle. `MovePlayerBotTownLeg` and the Biologist keep the horse
+  (`keepHorseAtDestination`), the book pass dismounts itself, and the
+  fishing session sends the horse away with `HorseSummon(false)` because
+  `StopRiding()` alone parks it beside the angler for the whole session.
+- **Dead stock is counted by item id across stands.** `mapStallUnsold` in
+  the state: `ClosePlayerBotShop` adds a stand to every line that came home
+  (`FindPlayerBotOfferItem` still finds it), the open pass takes
+  `PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT` per stand off the asked price
+  (after the sale memory has seen the real price), and the junk rule vendors
+  gear under `PLAYERBOT_PRECIOUS_REFINE` after `PLAYERBOT_SHOP_UNSOLD_SCRAP_STANDS`.
+  The map is pruned against the bag past sixty-four entries.
+- **A base image tag moves under you.** `php:8.2-apache` became trixie in
+  2026 and trixie's apt verifies InRelease with sequoia, which failed on a
+  player's Docker Desktop and cancelled the whole compose build ("target
+  itemshop: failed to solve"), leaving him on the old server with no way to
+  update. Pin every Dockerfile to a Debian codename (`-bookworm`) and run
+  no `apt-get` where nothing needs a package - the ItemShop's healthcheck
+  asks PHP itself now.
+- **"Finished" has to mean the same thing for every weapon.**
+  `HasPlayerBotFinishedBonus` called a weapon finished by its average line
+  only for the level-30 family, so a bow of forty-five with a 40% average
+  was rerolled towards `PLAYERBOT_BONUS_KEEP_SCORE` until the average was
+  gone - 37 000 rerolls a day on this world, and "boty zmixowaly wysokie
+  srednie 35+" on the Discord. Any weapon at `PLAYERBOT_BONUS_KEEP_AVERAGE`
+  is finished now, and a level-30 weapon from `PLAYERBOT_SCROLL_REFINE_MIN_PLUS`
+  waits for a scroll whatever its lines.
+- **A skill priority is worth nothing to points already spent.** The
+  players' order (`ApplyPlayerBotSkillPriority`) only steered new points, so
+  a bot with sixteen in the third skill kept them for good.
+  `ReallocatePlayerBotSkillPoint` moves one point per
+  `PLAYERBOT_SKILL_REALLOCATE_INTERVAL` from the lowest-ranked skill above
+  its unlock point to the highest-ranked one short of Master, with a
+  Forgetting Book bought at `PLAYERBOT_SKILL_REALLOCATE_PRICE` -
+  `SkillLevelDown` refunds the point and refuses a skill at Master, which
+  is why Master skills stay where they are. Only when there is no free
+  point: a free point goes to the same place for nothing.
+- **The town crowd is deliberate, and it is not capped - but it is the
+  operator's to switch off.** The share of bots that rest after an errand is
+  the `REST` key of the weights file (`GetPlayerBotRestPercent`, 100 by
+  default, a slider in both panels since 2.0.9), nobody under
+  `PLAYERBOT_TOWN_REST_MIN_LEVEL` (18) rests, and a rest needs counters on
+  the map (`MayPlayerBotRestInTown` is the whole rule, asked when a rest is
+  rolled and on every tick of one). The comment on the level floor does the
+  arithmetic for the angler trigger alone - a session ends about once a minute, so
+  "three or four bots on the square". The same linger is also set by every
+  completed town visit in Joan, and those run twenty-five a minute: measured
+  32-48 bots in `BOT_ACTION_TOWN_REST` at every moment and 74 different ones
+  in three minutes, which is the crowd players photograph ("Bots just running
+  in Safe Zone", twice). 1.31.8 briefly capped it and the operator reverted
+  the cap along with the Bokjung stall cap: a town is meant to fill up, and a
+  keeper refused a pitch is a bot with nothing to do. So the number on the
+  square is a feature - what was actually wrong there was the horses. Do not
+  add a cap back without asking.
+- **A dismount in a town square parks a horse there.** `StopRiding()` summons
+  the horse as a follower, so 295 dismounts on M1 in a quarter of an hour
+  left 295 horses standing in Joan - the herd in every screenshot of the
+  square. `SetPlayerBotRidingForTravel(false)` sends the horse away with
+  `HorseSummon(false)` inside `IsPlayerBotSafeZone` and nowhere else, because
+  on a hunting map the bot wants it back in a minute. `StartRiding()` does
+  not need the horse summoned, so nothing else has to change (the stall
+  opener has done this since it was written).
+- **A boss blinks to its victim's map, not its own.** `char_state.cpp`, the
+  BOSS branch: race 2191 (the desert's Giant Turtle) rolls one in twenty and
+  calls `Show(victim->GetMapIndex(), new_x, new_y, 0, true)`, so a victim that
+  changed map in the meantime - a warp NPC, the Teleporter, or our own
+  server-side `TransitionPlayerBotMap` - drags the boss onto the new map. That
+  is how a desert boss appears in Bokjung, for players as much as for bots.
+  Patch 0011 gates the whole boss branch on `GetVictim()->GetMapIndex() ==
+  GetMapIndex()`, which also stops `__CHARACTER_GotoNearTarget` walking the
+  boss towards coordinates that belong to a map it is not on.
+- **A dry run of one patch is not a dry run of the series.**
+  `prepare-context.sh` rehearsed every engine patch separately against the
+  untouched tree, and 0009's first hunk carries the `#include
+  "playerbot_manager.h"` that 0001 adds as context - so it failed alone and
+  applies perfectly in sequence. Every Linux and VPS install stopped there
+  from 1.31.0 on and could not update; Windows never saw it, because the
+  launcher stages already-patched files. The rehearsal copies the files the
+  series touches into `mktemp -d` (outside the build context, or it ships in
+  the image) and applies the whole series there for real, so a dependent
+  patch passes and the real tree is still all-or-nothing. Proven both ways
+  on a two-patch case with the same dependency.
+- **MyISAM is what this game runs on, and it does not survive a kill.**
+  73 of 75 tables; one unclean stop marks a table crashed and every reader
+  fails from then on. MariaDB's default `myisam_recover_options=BACKUP,QUICK`
+  only rebuilds the index file, so a damaged data file ends as "last
+  (automatic?) repair failed" - which is what a player saw through the panel.
+  `99-metin2.cnf` asks for `BACKUP,FORCE`. To repair an install that is
+  already in that state: `mysqlcheck --auto-repair --check --all-databases`.
+  **`BACKUP,FORCE` does not save an install that has already crashed**: archonek
+  hit it on 1.32.5 with that setting in place, all three `log` tables gone
+  (`log.log`, `log.levellog`, `log.shout_log`) and the server log repeating
+  "last (automatic?) repair failed" - a damaged data file is past what the
+  automatic pass can do. It is also why "update to the newest version" is the
+  wrong advice and was tried first: the damage is in the volume, not the image.
+  The symptom is specific - the **advanced** panel five-hundreds on its front
+  page while the classic one is fine - because `dashboard` reads `log.log` for
+  the fishing ranking and the classic front page never touches it. That page now
+  answers with `handle_crashed_table` naming the table and the repair instead of
+  Flask's bare "Internal Server Error", which is all the screenshot used to
+  carry. The `log` database is history only: nothing in the game reads it, so
+  truncating those three tables is a legitimate last resort, and saying so is
+  what turns a dead server into a five-minute fix.
+- **The three kingdoms are mirrors in shape and nothing else in coordinates.**
+  `map/index` gives M1/M2/M3/easy as 1,3,4,5 (Shinsoo), 21,23,24,25 (Chunjo)
+  and 41,43,44,45 (Jinno) - M3 is the guild map, which is what our
+  `PLAYERBOT_MAP_CHUNJO_M3 = 24` already meant. Measured: each M1 carries
+  ~9200 spawn points of level 1-31, each M2 ~6000 of 18-36, each guild map
+  ~300 of 8-24, and the three easy dungeons are the same 1404 points of
+  22-30 with identical `server_attr`. But every town is laid out differently
+  and the Teleporter (NPC 9012, on all six village maps) lands each kingdom
+  on its **own** point of a shared map - `map_warp.quest` holds a table
+  indexed by empire. So a Shinsoo or Jinno number is never Chunjo's plus an
+  offset. `tools/dump_world_catalog.py` reads all of it out of the game's
+  files; it reproduces four constants the AI has been using for months
+  (both Teleporters, the desert and the valley arrival) to the unit, which
+  is what says the reader agrees with the engine.
+- **The registry says which kingdom a bot belongs to; the caller does not.**
+  `LoadRegisteredBots` reads `pi.empire` with the row and keeps it per PID, and
+  `CPlayerBotManager::Spawn` takes the empire from there - an argument that
+  disagrees is refused with a line in syserr. That is what stops a stray call
+  starting a seeded character into somebody else's kingdom, and it is why
+  `SpawnRegistered` can be asked for one kingdom at a time.
+  `CountRegisteredPerEmpire` **loads the registry itself**: the bootstrap asks
+  it for the counts before it asks for any spawn, and the first version left
+  that out - the core came up with no bots at all and not one PLAYERBOT line
+  in the log, because the split had nothing to divide.
+- **Each core starts the kingdoms whose village it hosts.** `m2-render-config`
+  puts Shinsoo's four maps (1,3,4,5) on `first`, Chunjo's plus every shared map
+  on `game1`, and Jinno's (41,43,44,45) on `game2`, so a kingdom's whole local
+  life fits inside one process and needs no transfer. The bootstrap in
+  `input_db.cpp` therefore loops the three kingdoms and asks `map_allow_find`
+  for each village, instead of naming map 21; the operator's one number is
+  split by `playerbot_empire_rules::SplitPopulation` between the kingdoms that
+  have identities, so with only Chunjo seeded it all still goes to Chunjo.
+  Measured after the change: all three cores load the registry, only game1
+  spawns, 970 of 970 asked for, 968 in the world a minute later.
+  `TopUpMissingBots` counts the world against `m_setScheduledBots` - exactly
+  what this core asked for - and not against the first N of a registry that
+  now holds three kingdoms.
+- **The seed carries the kingdom, and the two new ones are opt-in.**
+  `generate_seed.py` renders one canonical cohort in PID order:
+  Chunjo's original 1500 (PID 4..1503, unchanged to the byte), then 500
+  Shinsoo (1504..2003, map 1) and 500 Jinno (2004..2503, map 41). The spec
+  table carries `empire` and `map_index`, every `pi.empire = 2` in the SQL
+  became `= s.empire`, and the character insert takes its village from the
+  spec. `@playerbot_seed_kingdoms` (set by apply.sh from
+  `M2_PLAYERBOT_KINGDOMS`, default 0) deletes the non-Chunjo rows from the
+  spec before anything is validated, so a player's server keeps the cohort it
+  has until the operator asks for more. Proven on the test database: the
+  identity fingerprints of the 1500 Chunjo characters and their accounts are
+  byte-identical across two runs with the switch on and one with it off, and
+  the second run changes nothing at all.
+  The spawn grids were picked by walking `server_attr`: 500/500 points stand
+  on open ground in both new villages (of Chunjo's 1500, 153 do not).
+- **apply.sh moves a stranded bot to its OWN kingdom.** Its allow-list is what
+  decides where a bot may be parked at start, and it named only Chunjo's maps -
+  every Shinsoo and Jinno bot would have been teleported to Bokjung on every
+  start, into a town with none of its services. The list now holds all twelve
+  kingdom maps and the fallback is a CASE on `pi.empire`; Chunjo keeps the
+  exact point it always used.
+- **The navigation grid is built per map, and it refused eight of the twelve.**
+  `CPlayerBotNavigation::Init` named Chunjo's three maps explicitly, so a bot
+  on map 1 could not plan a single step. It asks
+  `playerbot_empire_rules::IsKingdomMap` now; the shared maps stay named one
+  by one, because only some of them are ours to walk.
+
+- **The mt2009 line has no `m2-rates`, `m2-gm` or `m2-lang` from r40250, and the
+  panels did not know.** The rates page wrote the spool request, said "the
+  server is restarting", and nothing in the mt2009 game image read it; the GM
+  page said "works right away" of a request with no consumer. On this engine a
+  rate is not a rewritten table: `CQuestManager::SetEventFlag` maps the event
+  flags `mob_exp`, `mob_item`, `mob_gold` (and `_buyer` twins for premium) onto
+  `CHARACTER_MANAGER`'s multipliers, and an event flag is a `player.quest` row
+  with `dwPID = 0` (loaded by the db core at boot, pushed to every game core).
+  So `persist_rates_mt2009` writes the six rows, the `web_admin` quest's `RATES`
+  command (server timer, `game.set_event_flag`) makes them live in 2-3 s, and
+  the mt2009 `m2-rates` only restarts the cores when nothing in game answered.
+  GM rights: the list is re-read by `/reload a`, which the quest can run only
+  as an online IMPLEMENTOR (`GM_RELOAD`); otherwise the panel says "after a
+  restart". Before adding a panel feature that talks to the game container,
+  check `linux-port-mt2009/docker/game/bin/` for the consumer.
+
+- **Joan's gate is Joan's, and a first village is not a shape.** The town
+  visit in a first village had an exterior/interior split with one gate leg
+  at `PLAYERBOT_TOWN_GATE_*` - Joan's wall - taken for every first village, so
+  on maps 1 and 41 the leg walked to coordinates that are nowhere and the
+  misc merchant and the blacksmith were never reached: 0 blacksmith visits on
+  `first`/`game2` against 131 on `game1` in eight minutes, bots reading "Ide
+  do kowala" for good. Measured on the mt2009 `server_attr` (BFS at 50 units):
+  on maps 1, 21 and 41 the blacksmith and the misc merchant sit in the weapon
+  merchant's own walkable component, so `IsPlayerBotGatedVillage` names Joan
+  alone and every other village takes the direct phases (`bDirect` in
+  `playerbot_town.h`). When a per-map table replaces a constant, the walk
+  legs *between* the table's points have to be checked too.
+- **A direct village visits its trainer, or a level-five bot never leaves the
+  pitch.** `GetPlayerBotFirstDirectTownPhase` was Bokjung's list - no trainer,
+  no old woman - and 2.0.8 handed it to Yongan and Pyongmoo (`bDirect`). A
+  Shinsoo or Jinno bot at level five, whose only need was the trainer, began
+  a visit with phase NONE, finished it on the same tick, and the manager
+  began it again on the next (`bNeedsProfession` bypasses the shop timer):
+  five hundred bots a core standing at the pitch with `action=TRAVEL
+  goal=CHOOSE_PROFESSION route=0/0`, reset by the watchdog every ninety
+  seconds, never past level five (four Discord threads in one night). The
+  direct list has the trainer and the skill reset first now, the trainer
+  need is only set where `HasSkillTrainers`, and a direct visit with nothing
+  on its list backs off instead of starting. When a phase list is reused for
+  another map, walk every need the manager can set through it.
+- **The support bundle is three cores, not one.** It shipped `game1`'s
+  syslog and status alone, and 800 shared compose lines - fifty seconds on a
+  world whose cores were resetting five hundred bots a minute and whose
+  MariaDB logged an aborted connection every ninety seconds. The one line a
+  crash report needs (`CORE DIED` and the backtrace under it) had scrolled
+  out before the bundle was made. Since 2.0.11: syslog, syserr, status and
+  `crash-*.txt` per core, the db core's syserr, a 6000-line game-only log and
+  a supervisor grep over 200 000 lines.
+- **A function that returns an array of one returns an object, and under
+  StrictMode `.Count` on it throws.** `Get-M2DockerPreflight` took
+  `Get-M2ExcludedPortRanges` bare: a Windows with exactly one reserved port
+  range (or none) got "The property 'Count' cannot be found on this object"
+  from Start, StartDocker and Logs alike, because all three run the
+  preflight. Both launcher modules run `Set-StrictMode -Version 2.0`; wrap
+  every function result you count in `@()`, at the call site, every time.
+- **A crashed core leaves no core file on Docker Desktop.** The WSL kernel's
+  `core_pattern` is a pipe to `/wsl-capture-crash` and the container's core
+  limit is 0, so "(core dumped)" in the supervisor's log is all a support
+  bundle ever carried. `libthecore/src/signal.c` (via `linuxify.py`) catches
+  the fatal signals and writes `backtrace()` to `crash.txt` and stderr; the
+  cores link with `-rdynamic` so the frames carry names; `m2-supervise` prints
+  the file after `CORE DIED` and keeps it as `crash-<stamp>.txt`. Read the
+  frames with `c++filt`. No other way to see where a player's core died.
+- **`M2_PLAYERBOT_KINGDOMS` is 1 by default on the 2.x line since 2.0.8, and
+  an old `.env` is migrated once.** `.env` is written at install and never
+  rewritten, so a default flipped in `.env.example` reaches nobody who already
+  installed; `Assert-KingdomsDefault` in `start-server.ps1` sets 1 and marks
+  `M2_PLAYERBOT_KINGDOMS_DEFAULTED=1` exactly once, before
+  `Add-MissingDotEnvKeys` (which would otherwise add the marker from the
+  example and skip the migration). A 0 set after that is respected.
+- **An update never deletes a file, so removing a quest means removing it from
+  the loop.** 2.0.6 took `linux-port-mt2009/docker/game/quest/high_risk.quest`
+  out of the repository and the Dockerfile's `for q in ...` still named it;
+  every player's tree kept the file from 2.0.0-2.0.5 and compiled it on the
+  next build ("po wgraniu update risk mode nadal jest"). Whatever a build
+  reads from the player's tree is gated by the list in the Dockerfile, never
+  by what the repository happens to contain.
+- **Stock above the merchant's ceiling needs its own exit.** The junk rule
+  scraps gear up to `PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE` after six unsold
+  stands and the counter discounts to four stands; a +5 of another class had
+  neither, so it rode round the stones for life (audit D14). After
+  `PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS` unsold stands, under bag pressure,
+  `CollectPlayerBotSafeboxDeadStock` sends it to the storekeeper with the
+  surplus books - never scrapped, never worn (`IsPlayerBotWearableUpgrade`
+  refuses it first). `mapStockFirstListed` is the registry: when a line first
+  went up, so `PLAYERBOT_STOCK: to safebox` can say how long it was for sale,
+  and the open line says what qualified and stayed in the bag
+  (`no_line`/`no_slot`/`antiflag`). A new way for goods to leave the bag has
+  to erase both maps.
+- **A slider that only gates new decisions leaves the old ones standing.**
+  `ShouldPlayerBotKeepShop` was asked when a stall opened and when a stand
+  expired; a keeper standing on a roll taken under TRADE=250 kept standing
+  after the operator set 25, for up to 25 minutes, and the four exceptions
+  (Merchant, poor, full bag, dropper pressure) were never written down, so
+  "minimalny suwak, a 180 z 280 handluje" had no answer. A stall carries its
+  `EPlayerBotShopReason` now (status, open log, `PLAYERBOT_SHOP: census`
+  every ten minutes), and `ManagePlayerBotShopLifetime` re-asks a rolled
+  reason when `GetPlayerBotWeightsGeneration()` moves, ending a losing stand
+  within `PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS` by pid. Any other decision the
+  weights file steers and then leaves standing for minutes wants the same
+  generation check.
+- **The four GM characters fill the admin account's free slots.**
+  `gm_characters.sql` used to run only for an account with no character at
+  all, so the operator who made his own character on `admin` before 2.0.4
+  never got them ("tylko moja Tieru"). It now builds a temporary list of the
+  classes the account lacks (class = `player.job % 4`), takes as many as the
+  four slots leave free, and rewrites `player_index` with the existing
+  characters first and the new ones after. Temporary tables are qualified
+  (`player.tmp_gm`): apply.sh runs the file with no default database, and
+  an unqualified `CREATE TEMPORARY TABLE` is "No database selected" at line
+  55 with nothing else in the log.
+- **The four GM characters are brought to a profile by a quest, not by the
+  seed.** `gm_characters.sql` only creates what the admin account lacks; it
+  cannot set a skill, wear a piece or fill an elixir, and it never touched a
+  character that already existed - so the operator's own Tieru stayed a
+  level-1 shaman with a fan while the three seeded ones lost pieces nothing
+  put back. `linux-port-mt2009/docker/game/quest/gm_profile.quest` runs on
+  every login of a GM on the `admin` account and, when the character's
+  `gm_profile.version` flag is behind, brings it to the profile through the
+  engine's own paths (`pc.set_level`, `pc.set_skill_level`,
+  `horse.set_level`, `pc.give_item2_select` + `item.set_attr` +
+  `pc.equip_slot`, `item.use`), asking first what is already there, so a
+  second login and a restart change nothing (measured: ITEM_LOAD 21 on
+  three consecutive logins). Bump the version when the profile changes;
+  the seed's rows only make a fresh character complete on the character
+  screen. Five things that cost the first test:
+  `CanEquipNow` admits five equips a half second per player (the
+  `ItemEquip` pulse), and a login can spend them before the login quest
+  runs, so the ninja's five pieces were all refused in one tick with no
+  reason anywhere but a chat line the tester never saw - the worn set is
+  checked piece by piece (`pc.get_wear`, never the return value alone) and
+  what a login refused is worn again from a timer a few seconds later;
+  `sys_log` in a quest is `sys_log(level, text)` and a call with one
+  argument is silently dropped (`_syslog` in questlua_global.cpp), so a
+  quest that seems to run and log nothing usually did run; `qc` refuses any
+  function not in `quest_functions`, which the package left without
+  `pc.equip_slot`, `pc.unequip_slot`, `item.set_attr`, `item.get_max_stack`
+  and `item.use` - the game Dockerfile appends them for the compile; the
+  engine admits one elixir use a second per player (`AutoPotionUse`), so
+  the two are switched on from a timer, one per tick; and
+  `CHARACTER::UseItem` refuses every use while a quest script is running
+  ("You cannot use this item if you're using quests"), which is exactly
+  when a quest asks - `item.use` (`item_use0`, added by playerbotify.py)
+  goes to `UseItemEx` after `CanUsedBy`, not to `UseItem`. Six refused
+  uses in the log, and the elixirs the tester saw switched on were the
+  tester's own clicks.
+- **An auto elixir was born empty on this engine.** `ITEM_MANAGER::CreateItem`
+  set socket 1 (the capacity used) and socket 2 (the capacity) both to
+  `value0`, and the use path calls an elixir whose two are equal empty
+  (`AUTOPOTION_IS_EMPTY`) - a loaded one gets its saved sockets back a
+  moment later and never noticed, so only a fresh one from a quest, the
+  panel or a shop failed. playerbotify.py makes a new one start with nothing
+  used; `gm_profile.quest` sets socket 1 to 0 as well, as the belt to the
+  braces. Socket 0 is the on/off flag; the affect (`AFFECT_AUTO_*_RECOVERY`,
+  `dwFlag` = item id) is what actually heals, and only the use path makes
+  it - writing socket 0 by hand gives an elixir that says "on" and does
+  nothing.
+- **A bot guild's name comes from Iwakura's list.** `data/guild_names_iwakura.txt`
+  is rendered by `tools/generate_guild_names.py` into
+  `playerbot_guild_names.h` (a `playerbot_*` file, so every stage ships
+  it); `GetPlayerBotGuildName(pid, step)` walks the pool from a pid-based
+  offset and `FoundPlayerBotGuild` takes the first name `FindGuildByName`
+  does not know, skipping what `GUILD_NAME_MAX_LEN` refuses (fourteen on
+  mt2009, twelve on r40250). Until 2.0.13 it was two names per kingdom,
+  so six guilds filled the world. The whole system was measured live for
+  the first time then: 100 Chunjo bots raised to level 41 with the fee,
+  seven guilds founded within three seconds of spawn (one in twelve by
+  `PLAYERBOT_GUILD_FOUNDER_SHARE`), 24 members three minutes later through
+  `RequestAddMember`, `player.guild` and `guild_member` filled. `gold=` in
+  the founding line is in thousands.
+- **A queue whose head is offline looks like a queue that stopped.** The
+  grants worker hands `MAX_PENDING` (ten) rows to the game and the quest's
+  player timer serves only a row that names an online character; an offline
+  one sits 30 s for the sweep, 60 s for the worker's withdrawal and comes
+  back two minutes later. Measured with 1500 registered bots and 349 in the
+  world: done=350 in two minutes, then queued=10 for good - the ten places
+  were all offline names, and every online recipient waited behind them.
+  That is the audit's "stops at 333". `pick_waiting` in `item_grants.py`
+  serves the collector's snapshot of live bots first and lets offline probes
+  hold at most `OFFLINE_MAX_PENDING` places; the page shows the worker's
+  heartbeat and the age of the oldest row in each state, so the next report
+  can say which of "worker dead", "nobody in game reads the queue" and "the
+  rest are offline" it is.
 
 ## Engine facts worth not re-deriving
 
@@ -1497,3 +2401,13 @@ implemented differently from what it describes.
   * Tested live with 350 running bots: 14-33 stalls active around the market in Bokjung with zero rejections, and successfully recover after server/container restarts.
 - **Next Roadmap Priorities:**
   * From PLAYERBOTS_FEATURE_SPECS.md: Module 2 (Mounted combat tuning against Metin stones), Module 4 (Bot guilds and guild marks), Module 5 (Live AI Config sliders in admin panel without recompilation), Module 6 (Weekly season analytics).
+
+## The mt2009 tree (second engine)
+
+`linux-port-mt2009/` is the same suite on the mt2009 / Martysama r41023 server
+files: the launcher, the panels and the playerbot overlay are shared, the engine
+port, the container scripts and the database bootstrap are its own. Read
+`linux-port-mt2009/README.md` before touching it - it says which port script
+renders which file, why the player's tree is still called `linux-port` (the
+`ENGINE` marker), and what the overlay does differently under
+`PLAYERBOT_ENGINE_MT2009` (`playerbot_engine_compat.h`).

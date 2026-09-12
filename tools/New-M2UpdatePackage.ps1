@@ -5,7 +5,13 @@ param(
     [Parameter(Mandatory = $true)][string]$SourceRoot,
     [Parameter(Mandatory = $true)][string]$FileList,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [string]$DownloadUrl = ''
+    [string]$DownloadUrl = '',
+    # Source prefix => published prefix, e.g. @{ 'linux-port-mt2009/' = 'linux-port/' }:
+    # the mt2009 tree lives beside the r40250 one in the repository and is
+    # deployed under the r40250 name, so the launcher's paths stay one path.
+    # Applied to every listed path on its way into the zip; the pairing rules
+    # below judge the published names, the copies read the sources.
+    [hashtable]$PathMap = @{}
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +68,24 @@ try {
     }
     $entries = @($expanded | Select-Object -Unique)
 
+    # Published name for a listed (source) path: the first matching prefix of
+    # the map, forward slashes either way.
+    function Get-PublishedPath([string]$Relative) {
+        $normal = $Relative.Replace('\', '/').TrimStart('/')
+        foreach ($prefix in @($PathMap.Keys | Sort-Object { $_.Length } -Descending)) {
+            $from = ([string]$prefix).Replace('\', '/')
+            if ($normal.StartsWith($from, [StringComparison]::OrdinalIgnoreCase)) {
+                return ([string]$PathMap[$prefix]).Replace('\', '/') + $normal.Substring($from.Length)
+            }
+        }
+        return $normal
+    }
+    # Source path (as listed) for a published name; the pairing checks hash
+    # the sources by the names they will be published under.
+    $sourceOf = @{}
+    foreach ($e in $entries) { $sourceOf[(Get-PublishedPath $e)] = $e }
+    $published = @($sourceOf.Keys)
+
 
     # The overlay sources and the staged build context are two copies of the
     # same files, and a package that carries one without the other is what took
@@ -72,7 +96,7 @@ try {
     $stagedPrefix = 'linux-port\docker\game\src\server\game\src\'
     $overlayNames = @()
     $stagedNames = @()
-    foreach ($relativeInput in $entries) {
+    foreach ($relativeInput in $published) {
         $relative = $relativeInput.Replace('/', '\').TrimStart('\')
         if ($relative.StartsWith($overlayPrefix, [StringComparison]::OrdinalIgnoreCase)) {
             $overlayNames += $relative.Substring($overlayPrefix.Length)
@@ -88,14 +112,19 @@ try {
     # turned into a path when one is needed.
     $seedOverlay = 'linux-port/overlays/playerbot/sql/playerbots_seed.sql'
     $seedMounted = 'linux-port/docker/mariadb/playerbot/playerbots_seed.sql'
-    $shipsOverlaySeed = $entries -contains $seedOverlay
-    $shipsMountedSeed = $entries -contains $seedMounted
-    if ($shipsOverlaySeed -or $shipsMountedSeed) {
+    $shipsOverlaySeed = $published -contains $seedOverlay
+    $shipsMountedSeed = $published -contains $seedMounted
+    # A tree that names its engine (the mt2009 one publishes linux-port/docker/
+    # ENGINE) renders its seed from the overlay's at port time, and the launcher's
+    # Sync-M2PlayerbotOverlay never copies the overlay's over it - so there the
+    # mounted copy alone is the whole story, and the overlay's would be wrong.
+    $shipsEngineMarker = $published -contains 'linux-port/docker/ENGINE'
+    if ($shipsOverlaySeed -or ($shipsMountedSeed -and -not $shipsEngineMarker)) {
         if (-not ($shipsOverlaySeed -and $shipsMountedSeed)) {
             throw "The seed ships in only one of its two locations. Add both $seedOverlay and $seedMounted to $listPath."
         }
-        $seedOverlayPath = Join-Path $source ($seedOverlay -replace '/', [IO.Path]::DirectorySeparatorChar)
-        $seedMountedPath = Join-Path $source ($seedMounted -replace '/', [IO.Path]::DirectorySeparatorChar)
+        $seedOverlayPath = Join-Path $source ($sourceOf[$seedOverlay] -replace '/', [IO.Path]::DirectorySeparatorChar)
+        $seedMountedPath = Join-Path $source ($sourceOf[$seedMounted] -replace '/', [IO.Path]::DirectorySeparatorChar)
         if ((Get-FileHash -LiteralPath $seedOverlayPath -Algorithm SHA256).Hash -ne
             (Get-FileHash -LiteralPath $seedMountedPath -Algorithm SHA256).Hash) {
             throw "The overlay seed and the seed the migrate container mounts differ. Copy it across before packaging."
@@ -121,8 +150,8 @@ try {
         if ($stagedNames -notcontains $name) {
             throw "Playerbot source shipped without its build-context copy: $name. Add $stagedPrefix$name to $listPath."
         }
-        $a = Join-Path $source ($overlayPrefix + $name)
-        $b = Join-Path $source ($stagedPrefix + $name)
+        $a = Join-Path $source $sourceOf[($overlayPrefix + $name).Replace('\', '/')]
+        $b = Join-Path $source $sourceOf[($stagedPrefix + $name).Replace('\', '/')]
         if ((Get-FileHash -LiteralPath $a -Algorithm SHA256).Hash -ne
             (Get-FileHash -LiteralPath $b -Algorithm SHA256).Hash) {
             throw "Playerbot source and its build-context copy differ: $name. Run prepare-context.sh or copy it across before packaging."
@@ -134,7 +163,7 @@ try {
         if ([IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
             throw "Unsafe relative path: $relativeInput"
         }
-        if ($relative -ieq 'linux-port\docker\.env' -or $relative.StartsWith('.git\')) {
+        if ((Get-PublishedPath $relative) -ieq 'linux-port/docker/.env' -or $relative.StartsWith('.git\')) {
             throw "Protected file cannot be published in an update: $relative"
         }
         # PowerShell's automatic pipeline-enumerator variable used to be
@@ -147,7 +176,7 @@ try {
         if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
             throw "Listed file does not exist: $relative"
         }
-        $destination = Join-Path $temp $relative
+        $destination = Join-Path $temp ((Get-PublishedPath $relative).Replace('/', '\'))
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
         Copy-Item -LiteralPath $sourceFile -Destination $destination -Force
     }

@@ -137,7 +137,97 @@ namespace
 		DWORD dwBuffSkills[3];
 		DWORD dwOffensiveSkills[4];
 		DWORD dwPrimaryMaxSkill;
+		// The tier of dwSkills[i] in the players' priority list: two skills of
+		// one tier are "losowo" - either first - and a point is never moved
+		// between them.
+		BYTE abSkillTier[6];
 	};
+
+	// The order the skill points go in, per build, as the Discord's players
+	// wrote it out (sosen, "Priorytety wbijania skilli"): a list of tiers,
+	// each tier one or more skills that the pid draws in a random order. The
+	// first skill of the order is the one raised to Master before any other
+	// gets a second point; the rest follow tier by tier.
+	struct TPlayerBotSkillTier { BYTE bCount; DWORD adwSkills[4]; };
+
+	void FillPlayerBotSkillOrder(TJobSkillBuild& build, const TPlayerBotSkillTier* tiers,
+			BYTE tierCount, DWORD playerID)
+	{
+		BYTE n = 0;
+		for (BYTE t = 0; t < tierCount && n < 6; ++t)
+		{
+			DWORD pick[4];
+			const BYTE count = std::min<BYTE>(tiers[t].bCount, 4);
+			for (BYTE i = 0; i < count; ++i)
+				pick[i] = tiers[t].adwSkills[i];
+			// A stable shuffle of the tier by pid, so the same bot wants the
+			// same thing tomorrow and two bots of one build differ.
+			for (BYTE i = 0; i + 1 < count; ++i)
+			{
+				const BYTE j = i + (BYTE)(PlayerBotNavHash(playerID ^ (0x534b4c00U + t * 16 + i)) % (count - i));
+				std::swap(pick[i], pick[j]);
+			}
+			for (BYTE i = 0; i < count && n < 6; ++i)
+			{
+				build.abSkillTier[n] = t;
+				build.dwSkills[n++] = pick[i];
+			}
+		}
+		build.bSkillCount = n;
+		build.dwPrimaryMaxSkill = n > 0 ? build.dwSkills[0] : 0;
+	}
+
+	void ApplyPlayerBotSkillPriority(TJobSkillBuild& build, BYTE bJob, BYTE bGroup, DWORD playerID)
+	{
+		// Vnums as skill_proto has them; the Polish names are the players'.
+		static const TPlayerBotSkillTier warriorBody[] = {
+			{ 1, { 4 } },            // Aura Miecza
+			{ 2, { 3, 2 } },         // Berek / Wir Miecza
+			{ 2, { 5, 1 } } };       // Szarza / Trojstronne Ciecie
+		static const TPlayerBotSkillTier warriorMental[] = {
+			{ 1, { 19 } },           // Silne Cialo
+			{ 2, { 16, 17 } },       // Duchowe Uderzenie / Walniecie
+			{ 1, { 18 } },           // Tapniecie
+			{ 1, { 20 } } };         // Uderzenie Miecza
+		static const TPlayerBotSkillTier ninjaDagger[] = {
+			{ 2, { 35, 31 } },       // Trujaca Chmura / Zasadzka
+			{ 2, { 33, 32 } },       // Wirujacy Sztylet / Szybki Atak
+			{ 1, { 34 } } };         // Krycie sie
+		static const TPlayerBotSkillTier ninjaArcher[] = {
+			{ 1, { 48 } },           // Ognista Strzala
+			{ 1, { 50 } },           // Trujaca Strzala
+			{ 3, { 46, 49, 47 } } }; // Powtarzalny Strzal / Bezszelestny Chod / Deszcz Strzal
+		static const TPlayerBotSkillTier suraWeapon[] = {
+			{ 1, { 63 } },           // Czarowane Ostrze
+			{ 4, { 65, 64, 62, 61 } }, // Czarowana Zbroja / Strach / Smoczy Wir / Uderzenie Palcem
+			{ 1, { 66 } } };         // Rozproszenie Magii - last while there is no pvp
+		static const TPlayerBotSkillTier suraMagic[] = {
+			{ 1, { 78 } },           // Ognisty Duch
+			{ 1, { 79 } },           // Mroczna Ochrona
+			{ 4, { 77, 81, 76, 80 } } }; // Ogniste Uderzenie / Mroczna Sfera / Mroczne Uderzenie / Duchowy Cios
+		static const TPlayerBotSkillTier shamanDragon[] = {
+			{ 1, { 96 } },           // Pomoc Smoka
+			{ 2, { 94, 93 } },       // Blogoslawienstwo / Smoczy Skowyt
+			{ 2, { 91, 92 } },       // Latajacy Talizman / Strzelajacy Smok
+			{ 1, { 95 } } };         // Odbicie
+		static const TPlayerBotSkillTier shamanHealer[] = {
+			{ 1, { 109 } },          // Leczenie
+			{ 3, { 110, 108, 107 } }, // Zwinnosc / Przywolanie Blyskawicy / Burzowy Szpon
+			{ 2, { 106, 111 } } };   // Rzut Piorunem / Zwiekszenie Ataku
+		const TPlayerBotSkillTier* tiers = NULL;
+		BYTE count = 0;
+		switch (bJob)
+		{
+			case JOB_WARRIOR: tiers = bGroup == 1 ? warriorBody : warriorMental;
+				count = bGroup == 1 ? 3 : 4; break;
+			case JOB_ASSASSIN: tiers = bGroup == 1 ? ninjaDagger : ninjaArcher; count = 3; break;
+			case JOB_SURA: tiers = bGroup == 1 ? suraWeapon : suraMagic; count = 3; break;
+			case JOB_SHAMAN: tiers = bGroup == 1 ? shamanDragon : shamanHealer;
+				count = bGroup == 1 ? 4 : 3; break;
+			default: return;
+		}
+		FillPlayerBotSkillOrder(build, tiers, count, playerID);
+	}
 
 	TJobSkillBuild GetPlayerBotSkillBuild(BYTE bJob, BYTE bGroup, DWORD playerID = 0)
 	{
@@ -282,6 +372,10 @@ namespace
 			}
 		}
 
+		// The buff and offensive lists above are the fight's; the order the
+		// points go in is the players' (sosen's list), and it overrides
+		// dwSkills and dwPrimaryMaxSkill for every build.
+		ApplyPlayerBotSkillPriority(build, bJob, bGroup, playerID);
 		return build;
 	}
 
@@ -399,7 +493,7 @@ namespace
 			return false;
 		if (GetPlayerBotStuckSkill(ch) == 0 || ch->GetPoint(POINT_SKILL) > 0)
 			return false;
-		return (long long)ch->GetGold() >=
+		return (long long)ch->GetGold() - GetPlayerBotReservedGold(ch) >=
 				GetPlayerBotSkillResetCost(ch) + PLAYERBOT_SKILL_RESET_GOLD_MARGIN;
 	}
 
@@ -415,7 +509,7 @@ namespace
 			return false;
 		const DWORD dwStuck = GetPlayerBotStuckSkill(ch);
 		const BYTE bOldGroup = ch->GetSkillGroup();
-		ch->PointChange(POINT_GOLD, (int)-cost);
+		PlayerBotChangeGold(ch, (int)-cost);
 		ch->ClearSkill();
 		ch->SetSkillGroup(0);
 		state.dwNextSkillResetTime = dwNow + PLAYERBOT_SKILL_RESET_COOLDOWN;
@@ -433,7 +527,7 @@ namespace
 	{
 		if (!ch || dwSkillVnum == 0 || !ch->IsItemLoaded())
 			return false;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetVnum() != PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
@@ -461,7 +555,7 @@ namespace
 			return false;
 		if (ch->GetLevel() <= PLAYERBOT_SKILL_RESET_MAX_LEVEL)
 			return false;
-		if ((long long)ch->GetGold() <
+		if ((long long)ch->GetGold() - GetPlayerBotReservedGold(ch) <
 				PLAYERBOT_SKILL_FORGET_SCROLL_PRICE + PLAYERBOT_SKILL_FORGET_SCROLL_GOLD_MARGIN)
 			return false;
 		// AutoGiveItem drops what the bag cannot take at the bot's feet and
@@ -471,12 +565,81 @@ namespace
 		LPITEM scroll = ch->AutoGiveItem(PLAYERBOT_SKILL_FORGET_SCROLL_VNUM, 1, -1, false);
 		if (!scroll)
 			return false;
-		ch->PointChange(POINT_GOLD, -(int)PLAYERBOT_SKILL_FORGET_SCROLL_PRICE);
+		PlayerBotChangeGold(ch, -(int)PLAYERBOT_SKILL_FORGET_SCROLL_PRICE);
 		sys_log(0, "PLAYERBOT_SKILL: forget scroll bought pid=%u name=%s level=%u skill=%u skill_level=%u price=%lld gold_left=%d",
 				ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), dwSkillVnum,
 				(unsigned int)ch->GetSkillLevel(dwSkillVnum), PLAYERBOT_SKILL_FORGET_SCROLL_PRICE,
 				ch->GetGold());
 		return true;
+	}
+
+	// The same book, bought for a point that is in the wrong skill. Any level
+	// from five: the old woman's reset costs every skill level the character
+	// has, and a bot of twenty with sixteen points in the wrong place would
+	// rather move them one at a time.
+	bool BuyPlayerBotReallocateBook(LPCHARACTER ch, DWORD dwSkillVnum)
+	{
+		if (!ch || dwSkillVnum == 0 || !ch->IsItemLoaded())
+			return false;
+		if ((long long)ch->GetGold() - GetPlayerBotReservedGold(ch) < PLAYERBOT_SKILL_REALLOCATE_PRICE)
+			return false;
+		if (ch->GetEmptyInventory(1) < 0)
+			return false;
+		LPITEM scroll = ch->AutoGiveItem(PLAYERBOT_SKILL_FORGET_SCROLL_VNUM, 1, -1, false);
+		if (!scroll)
+			return false;
+		PlayerBotChangeGold(ch, -(int)PLAYERBOT_SKILL_REALLOCATE_PRICE);
+		return true;
+	}
+
+	// One point, from the lowest-ranked skill that has more than its unlock
+	// point, to the highest-ranked one still short of Master. Runs only when
+	// the bot has no free points - a free point goes to the same place for
+	// nothing - and never touches a skill already at Master, which the engine
+	// will not lower anyway.
+	void ReallocatePlayerBotSkillPoint(LPCHARACTER ch, TPlayerBotAIState& state,
+			const TJobSkillBuild& build, DWORD dwNow)
+	{
+		if (ch->GetPoint(POINT_SKILL) > 0 || dwNow < state.dwNextSkillReallocateTime)
+			return;
+		DWORD wanted = 0;
+		BYTE wantedIndex = 0;
+		for (BYTE i = 0; i < build.bSkillCount; ++i)
+		{
+			const DWORD v = build.dwSkills[i];
+			if (v != 0 && ch->GetSkillMasterType(v) == SKILL_NORMAL &&
+					ch->GetSkillLevel(v) < PLAYERBOT_SKILL_MASTER_TRY_LEVEL)
+			{
+				wanted = v;
+				wantedIndex = i;
+				break;
+			}
+		}
+		if (wanted == 0)
+			return;
+		DWORD victim = 0;
+		for (int i = (int)build.bSkillCount - 1; i > (int)wantedIndex; --i)
+		{
+			const DWORD v = build.dwSkills[i];
+			if (build.abSkillTier[i] <= build.abSkillTier[wantedIndex])
+				continue; // the same tier: either of them is what the list asked for
+			if (v != 0 && ch->GetSkillLevel(v) > 1 && ch->GetSkillMasterType(v) == SKILL_NORMAL)
+			{
+				victim = v;
+				break;
+			}
+		}
+		if (victim == 0)
+			return;
+		state.dwNextSkillReallocateTime = dwNow + PLAYERBOT_SKILL_REALLOCATE_INTERVAL;
+		const BYTE victimBefore = ch->GetSkillLevel(victim);
+		if (!UsePlayerBotForgetScroll(ch, victim) &&
+				!(BuyPlayerBotReallocateBook(ch, victim) && UsePlayerBotForgetScroll(ch, victim)))
+			return;
+		sys_log(0, "PLAYERBOT_SKILL: point moved pid=%u name=%s from=%u (%u->%u) to=%u (%u) points=%d gold=%d",
+				ch->GetPlayerID(), ch->GetName(), victim, (unsigned int)victimBefore,
+				(unsigned int)ch->GetSkillLevel(victim), wanted, (unsigned int)ch->GetSkillLevel(wanted),
+				ch->GetPoint(POINT_SKILL), ch->GetGold());
 	}
 
 	void ManagePlayerBotSkills(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
@@ -519,6 +682,10 @@ namespace
 				}
 			}
 		}
+
+		// Before the early return below: a bot with no free point is exactly
+		// the bot whose points are in the wrong place.
+		ReallocatePlayerBotSkillPoint(ch, state, build, dwNow);
 
 		if (ch->GetPoint(POINT_SKILL) <= 0)
 			return;

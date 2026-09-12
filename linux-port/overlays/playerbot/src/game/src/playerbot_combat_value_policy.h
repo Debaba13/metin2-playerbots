@@ -31,7 +31,7 @@ enum Reason {
     REJECT_NO_EXP_EVIDENCE, REJECT_ZERO_EXP, REJECT_LOW_EXP,
     ALLOW_SELF_DEFENSE, ALLOW_PARTY_DEFENSE, ALLOW_QUEST,
     ALLOW_MATERIAL, ALLOW_EQUIPMENT, ALLOW_EXP,
-    REJECT_RESIDENCE_POLICY
+    REJECT_RESIDENCE_POLICY, REJECT_OUTGROWN_PREY
 };
 
 struct Policy {
@@ -57,6 +57,10 @@ struct Context {
     // Obtain from the real server's EXP rules, not a copied level table.
     bool expEvidenceKnown;
     int levelExpPercent;
+    // Adapter sets this for a village monster far enough under the bot's
+    // level and far enough away that walking to it is a waste of the walk.
+    // Behind the objectives: an errand is still an errand.
+    bool outgrownPrey;
     // False if the engine's estimate proves the bot cannot receive EXP.
     // True requires at least positive eligible base EXP; see adapter contract.
     bool canReceiveExp;
@@ -65,7 +69,7 @@ struct Context {
         boundedSelfDefense(false), boundedPartyDefense(false),
         activeQuestTarget(false), activeMaterialTarget(false),
         activeEquipmentTarget(false), expEvidenceKnown(false),
-        levelExpPercent(0), canReceiveExp(false) {}
+        levelExpPercent(0), outgrownPrey(false), canReceiveExp(false) {}
 };
 
 struct Decision {
@@ -88,6 +92,7 @@ inline Decision Evaluate(const Context& c, const Policy& p = Policy()) {
     // may still finish an errand here, but experience is not a reason to be
     // here at all.
     if (c.mode == SERVICE_ONLY) return Decision(false, REJECT_RESIDENCE_POLICY);
+    if (c.outgrownPrey) return Decision(false, REJECT_OUTGROWN_PREY);
     if (!c.expEvidenceKnown || c.levelExpPercent < 0)
         return Decision(false, REJECT_NO_EXP_EVIDENCE);
     if (!c.canReceiveExp || c.levelExpPercent == 0)
@@ -112,6 +117,7 @@ inline const char* ReasonName(Reason r) {
         case ALLOW_EQUIPMENT: return "equipment";
         case ALLOW_EXP: return "exp";
         case REJECT_RESIDENCE_POLICY: return "residence_policy";
+        case REJECT_OUTGROWN_PREY: return "outgrown_prey";
     }
     return "unknown";
 }

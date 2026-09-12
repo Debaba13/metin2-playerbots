@@ -48,9 +48,9 @@ diff --git a/game/src/item_manager.cpp b/game/src/item_manager.cpp
  		}
  	}
  
-+	// Three skill books from every Metin stone, whatever its table rolled - the
++	// One skill book from every Metin stone, whatever its table rolled - the
 +	// table gives one at a quarter to a full chance, and a stone is where a
-+	// character learns from, so the count is topped up to three rather than
++	// character learns from, so the count is topped up to one rather than
 +	// added to. Each book takes its skill the way the table's own does.
 +	if (pkChr->IsStone())
 +	{
@@ -58,7 +58,7 @@ diff --git a/game/src/item_manager.cpp b/game/src/item_manager.cpp
 +		for (size_t i = 0; i < vec_item.size(); ++i)
 +			if (vec_item[i] && vec_item[i]->GetVnum() == 50300)
 +				++books;
-+		for (; books < 3; ++books)
++		for (; books < 1; ++books)
 +		{
 +			item = CreateItem(50300, 1, 0, true);
 +			if (item) vec_item.push_back(item);

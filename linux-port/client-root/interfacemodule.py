@@ -93,7 +93,7 @@ GM_PANEL_JOB_NAMES = {
 
 GM_PANEL_PAGE_NAMES = [
 	"page_main", "page_addgm", "page_lookup", "page_createitem",
-	"page_ban", "page_spawnbots", "page_spawnmobs",
+	"page_ban", "page_spawnbots", "page_spawnmobs", "page_serverctrl",
 	# Sub-pages of "Sprawdz Gracza"/"Spawn Mobow" opened by their action
 	# buttons - not real tabs (no tab_* counterpart / no tab button), only
 	# reachable via __SetPage from their parent tab and returning the same
@@ -103,7 +103,7 @@ GM_PANEL_PAGE_NAMES = [
 ]
 GM_PANEL_TAB_NAMES = [
 	"tab_main", "tab_addgm", "tab_lookup", "tab_createitem",
-	"tab_ban", "tab_spawnbots", "tab_spawnmobs",
+	"tab_ban", "tab_spawnbots", "tab_spawnmobs", "tab_serverctrl",
 ]
 
 GM_PANEL_TAB_LABELS = {
@@ -114,7 +114,102 @@ GM_PANEL_TAB_LABELS = {
 	"tab_ban"			: "Blokada Konta",
 	"tab_spawnbots"		: "Spawn Botow",
 	"tab_spawnmobs"		: "Spawn Mobow",
+	"tab_serverctrl"	: "Sterowanie Serwerem",
 }
+
+# Nazwa (w tabeli player.web_admin_rates) -> etykieta pola na karcie
+# "Sterowanie Serwerem" i atrybuty widgetow zbudowane pod ta nazwa
+# (self.serverctrl<Exp/Drop/Yang>Edit/Status - patrz __BuildServerControlPage).
+GM_PANEL_RATE_FIELDS = [
+	("exp",  "Exp",  "Doswiadczenie:"),
+	("drop", "Drop", "Drop Przedmiotow:"),
+	("yang", "Yang", "Drop Yang:"),
+]
+
+# Karta "Sterowanie Serwerem" - waga/przelaczniki z playerbot_weights.tsv,
+# ten sam plik (i te same opisy, kopiowane wprost stad) co strona /ai
+# panelu webowego (admin_panel.py, T["aiw_*"]/T["aih_*"]/T["ai_*_help"]
+# polskie teksty). Core gry czyta ten plik sam co 5 sekund - zadnego
+# restartu, zadnego spool-request jak przy ratach.
+#
+# (key, tytul, opis, rodzaj, min, max):
+#   "bool"  - przycisk ON/OFF (czerwony/zielony), nie suwak - min/max nieuzywane
+#   "weight"- suwak 25-250, neutralnie 100 (dopisek rzadko/jak w grze/czesto)
+#   "scrap" - suwak 0-100 (%), dopisek wylaczone/kazdy straganiarz
+#   "chest" - suwak 1-100 (%) w kliencie; po drucie leci w promilach (x10),
+#             bo tyle rozumie CONFIG i silnik (item_manager.cpp) - patrz
+#             __OnAIWeightSliderMove/SetAIWeightsResult. -1 z serwera =
+#             "nieustawione, uzyj CONFIG", suwak wtedy na 1% z etykieta "-".
+GM_PANEL_AI_WEIGHT_ROWS = [
+	("CHAT", "Boty pisza na czacie", "Napis nad glowa bota (poluje, idzie do "
+		"kowala, lowi). Wylacz dla graczy, ktorym to przeszkadza. Wolanie na "
+		"czacie swiata o ulepszeniu na +7/+8/+9 zostaje niezaleznie od tego.",
+		"bool", 0, 1),
+	("BOOKS", "Czytanie bez opoznienia dnia", "Gra kaze czekac okolo doby "
+		"miedzy dwoma czytaniami tej samej umiejetnosci, wiec bot potrzebuje "
+		"miesiaca, by przeczytac skill z M1 na G1, a ksiegi tymczasem "
+		"zalegaja w plecaku. Wlaczone: bot czyta ksiege od razu, gdy ja ma - "
+		"jedyny hamulec to sama gra. Wylaczone: dobowa przerwa gry bez zmian.",
+		"bool", 0, 1),
+	("NIGHT", "Noc/snieg po 22:00", "Miedzy 22:00 a 05:59 czasu serwera "
+		"rdzen podnosi flage nocy - ta sama, ktora GM ustawia komenda "
+		"/xmas_snow 1 - a rano ja opuszcza. Klient pokazuje nocne niebo i, "
+		"bo to flaga swiateczna, snieg.",
+		"bool", 0, 1),
+	("SCRAP", "Boty zlomiarze", "Udzial straganiarzy, ktorzy wystawiaja na "
+		"lade swoje slabe ulepszenia (+0 do +3) za grosze zamiast sprzedawac "
+		"je NPC - zlom do palenia u kowala, jak na serwerach hard. Domyslnie "
+		"wylaczone.",
+		"scrap", 0, 100),
+	("CHEST", "Szkatulka Ksiezycowa - z zabitego potwora", "Jak czesto "
+		"wypada szkatulka: z zabitego potwora i z rozbitego Metina. "
+		"Domyslnie w grze 1% i 30%; wiecej szkatulek to wiecej zwojow "
+		"bonusow, mikstur szybkosci i Zwojow Blogoslawienstwa u botow. "
+		"Dziala w piec sekund, dla botow i graczy tak samo.",
+		"chest", 1, 100),
+	("CHEST_STONE", "Szkatulka Ksiezycowa - z rozbitego Metina",
+		"Druga polowa ustawienia powyzej - osobna szansa liczona przy "
+		"rozbiciu kamienia Metin, zamiast przy zabiciu zwyklego potwora.",
+		"chest", 1, 100),
+	("RESTOCK", "Kupowanie mikstur", "Powrot do miasta, gdy tylko koncza "
+		"sie czerwone mikstury.",
+		"weight", 25, 250),
+	("REFINE", "Kowal", "Ulepszanie broni i pancerza zamiast polowania.",
+		"weight", 25, 250),
+	("SKILL", "Ksiegi umiejetnosci", "Czytanie ksiag, by pchnac "
+		"umiejetnosc z M w strone G.",
+		"weight", 25, 250),
+	("HORSE", "Kon", "Stajnia i polowanie na medale w Lochu Malp.",
+		"weight", 25, 250),
+	("BIOLOG", "Biolog", "Zbieranie dla Biologa zamiast bicia poziomow.",
+		"weight", 25, 250),
+	("METIN", "Kamienie Metin", "Polowanie na metiny zamiast na zwykle "
+		"potwory.",
+		"weight", 25, 250),
+	("PARTY", "Grupy (PT)", "Walka razem, a nie kazdy bot na wlasna reke.",
+		"weight", 25, 250),
+	("HUNTING", "Misje polowania", "Polowanie na awans na mapie, ktora "
+		"wskazuje misja.",
+		"weight", 25, 250),
+	("LEVEL", "Zwykle bicie potworow", "To, co bot robi, gdy nic innego "
+		"sie nie dopomina. Podnies, a sprawunki przegraja.",
+		"weight", 25, 250),
+	("FISHING", "Wedkowanie", "Ilu botow w ogole lowi. Rozstrzygane raz na "
+		"bota, wiec zmiana obejmuje kolejne pokolenie wedkarzy.",
+		"weight", 25, 250),
+	("TRADE", "Stragany", "Ilu botow trzyma otwarty stragan. Handlarze "
+		"robia to zawsze, niezaleznie od tego suwaka.",
+		"weight", 25, 250),
+]
+
+# Kolejnosc, w ktorej do_gmpanel_getaiweights (cmd_gm.cpp) faktycznie
+# wysyla 17 wartosci - STALA, niezalezna od kolejnosci wyswietlania
+# powyzej (ktora ma byc jak na stronie /ai, nie jak w pliku tsv).
+GM_PANEL_AI_WEIGHT_SERVER_ORDER = [
+	"RESTOCK", "REFINE", "SKILL", "HORSE", "BIOLOG", "METIN", "PARTY",
+	"HUNTING", "LEVEL", "FISHING", "TRADE",
+	"CHAT", "BOOKS", "NIGHT", "SCRAP", "CHEST", "CHEST_STONE",
+]
 
 # Reference-only (client never sends this to the server) - the "Lista
 # komend GM" button on Spawn Mobow just renders this scrollable list as-is,
@@ -300,10 +395,16 @@ GM_COMMANDS_LIST = [
 ]
 
 WINDOW_WIDTH = 680
-WINDOW_HEIGHT = 620
+WINDOW_HEIGHT = 560
 TAB_Y = 44
 TAB_HEIGHT = 22
-CONTENT_Y = TAB_Y + TAB_HEIGHT + 8
+# The 8 tabs add up to more than WINDOW_WIDTH once "Sterowanie Serwerem"
+# joined them (reported live: its own label ran past the panel's right
+# edge). A horizontal scroll slider was tried here and worked, but was
+# simpler to just give "Sterowanie Serwerem" its own second row, left-
+# aligned under "Glowny Panel" - see the tab-building loop below.
+TAB_Y2 = TAB_Y + TAB_HEIGHT + 2
+CONTENT_Y = TAB_Y2 + TAB_HEIGHT + 8
 CONTENT_HEIGHT = WINDOW_HEIGHT - CONTENT_Y - 10
 
 # "Kategoria" dropdown on Utworz Przedmiot - codes match what
@@ -326,6 +427,123 @@ GM_PANEL_LOCATION_LIST = [
 	("inv",		"Ekwipunek"),
 	("safe",	"Magazyn"),
 	("mall",	"Itemshop"),
+]
+
+# "Teleport" grid on Spawn Botow - sends the vanilla "/warp <x> <y>" GM
+# command (cmd_gm.cpp, do_warp - GM_LOW_WIZARD, every GM already has it),
+# which resolves the map from the coordinate itself (SECTREE_MANAGER), so
+# no separate map index has to travel with these. Coordinates are meters
+# (raw game units / 100, matching what do_warp itself expects and prints
+# back as "You warp to (...)").
+#
+# Chunjo/Shinsoo/Jinno "city" entries reuse the exact same tested spot the
+# web panel's own warp menu uses (admin_panel.py, WARP_LOC) - these are
+# each empire's M1 field/town. Chunjo M2 (Bokjung) is that same list's
+# entry too. Shinsoo M2 (a3) and Jinno M2 (c3) have no such reference (the
+# playerbot AI never goes there, only Chunjo) so they are the geometric
+# centre of the map instead, read out of each map's own Setting.txt
+# (BasePosition + MapSize*25600) the same way PLAYERBOT_MAP_BOUNDS is - a
+# few hundred units off the real town center at worst, still solid ground.
+GM_PANEL_TELEPORT_LIST = [
+	("Chunjo M1",	659,	1556),
+	("Chunjo M2",	1455,	2400),
+	("Jinno M1",	9635,	2797),
+	("Jinno M2",	8704,	2560),
+	("Shinsoo M1",	4743,	9548),
+	("Shinsoo M2",	3584,	8704),
+]
+GM_PANEL_TELEPORT_EXTRA_LIST = [
+	("Pustynia Yongbi",	2219,	5027),
+	("Dolina Orkow",	2704,	7399),
+	("Gora Sohan",		3752,	1749),
+	("Kraina Ognia",	5978,	6222),
+]
+
+# Dungeon/instance destinations - global meters = map's own BasePosition
+# (Setting.txt, raw units /100) + its Town.txt safe-spot (already local
+# meters, confirmed against metin2_map_b1's Town.txt "557 555" matching
+# its known spawn exactly) rather than the geometric centre used above:
+# a dungeon's interior is mostly walls, so its actual town/entry marker
+# is the only coordinate guaranteed to be open ground.
+GM_PANEL_TELEPORT_DUNGEON_LIST = [
+	("Loch Pajakow V1",	600,	4966),
+	("Loch Pajakow V2",	7040,	4625),
+	("Latwy loch malp",	7752,	4477),
+	("Normalny loch malp",	1352,	6525),
+	("Trudny loch malp",	1352,	7293),
+	("Swiatynia Hwang",	5537,	1450),
+	("Las Duchow",		2901,	57),
+	("Czerw. Las Duchow",	11196,	700),
+]
+
+# "Bossy" na Spawn Mobow - kazdy z 3 przedzialow ma wlasna, recznie
+# dobrana pule (vnumy sprawdzone w player.mob_proto): 1/5/10 losuje z
+# tego zestawu, po calej puli zanim ktos powtorzy sie drugi raz
+# (gmpanel_spawnrandommobs, cmd_gm.cpp), wiec "10 bossow" nigdy nie
+# znaczy 10 kopii jednego.
+# 25-40 lvl: rodzina Bestii (Best. Zolnierz/Maniak/Specjalista/Kapitan,
+# Bestialski Lucznik).
+GM_PANEL_BOSS_TIER_1 = [531, 532, 533, 534, 591]
+# 45-60: Krolowa Pajakow, Wodz Orkow, Olbrzymi Zolw (najblizszy odpowiednik
+# "Pustynny zolw" w danych gry - takiej nazwy dosl. nie ma).
+GM_PANEL_BOSS_TIER_2 = [2091, 691, 2191]
+# 65-90: Ezot. Przywolywacz, Zjawa Zoltego Tygrysa, Krol Demonow,
+# Umarly Rozpruwacz.
+GM_PANEL_BOSS_TIER_3 = [791, 1304, 1091, 1093]
+
+GM_PANEL_BOSS_TIERS = [
+	("25-40 lvl", GM_PANEL_BOSS_TIER_1),
+	("45-60",     GM_PANEL_BOSS_TIER_2),
+	("65-90",     GM_PANEL_BOSS_TIER_3),
+]
+
+# "Metiny" na Spawn Mobow - w odroznieniu od Bossy powyzej to nie jest
+# zaszyta lista: gmpanel_spawnrandommetin (cmd_gm.cpp) odpytuje
+# player.mob_proto o kamienie Metin (type=STONE) w podanym przedziale
+# poziomow i losuje z calego wyniku, wiec tu wystarcza same widelki.
+GM_PANEL_METIN_TIERS = [
+	("1-20",  5,  20),
+	("25-40", 25, 40),
+	("45-65", 45, 65),
+	("70-90", 70, 90),
+]
+
+# "Marmur Poli" picker on Utworz Przedmiot - the curated creature list from
+# https://pl-wiki.metin2.gameforge.com/index.php/Polimorfia (only mobs the
+# game actually has a valid player-sized polymorph model/motion set for -
+# NOT every mob_proto entry works). vnums cross-checked one by one against
+# player.mob_proto.locale_name on the live DB, not guessed from the wiki's
+# own (unnumbered) table.
+GM_PANEL_POLY_MOB_LIST = [
+	("101", "Dziki Pies"), ("171", "Glodny Zablakany Pies"),
+	("102", "Wilk"), ("172", "Glodny Wilk"),
+	("103", "Alfa Wilk"), ("173", "Glodny Alfa Wilk"),
+	("104", "Niebieski Wilk"), ("174", "Glodny Niebieski Wilk"),
+	("105", "Niebieski Alfa Wilk"), ("175", "Glodny Niebieski Alfa Wilk"),
+	("106", "Szary Wilk"), ("176", "Glodny Szary Wilk"),
+	("108", "Dzik"), ("178", "Glodny Dzik"),
+	("110", "Niedzwiedz"), ("180", "Glodny Niedzwiedz"),
+	("112", "Czarny Niedzwiedz"), ("182", "Glodny Czarny Niedzwiedz"),
+	("113", "Brazowy Niedzwiedz"),
+	("114", "Tygrys"), ("184", "Glodny Tygrys"),
+	("5101", "Slaby Malpi Zolnierz"), ("5102", "Slaby Malpi Miotacz"),
+	("5111", "Malpi Zolnierz"),
+	("5121", "Silny Malpi Zolnierz"), ("5151", "Zly Silny Malpi Zolnierz"),
+	("701", "Ezoteryczny Fanatyk"), ("751", "Wysoki Fanatyk"),
+	("731", "Elitarny Ezoteryczny Fanatyk"),
+	("771", "Bestialski Fanatyk"), ("772", "Bestialski Arahan"),
+	("401", "Zolnierz Czarnego Wiatru"), ("402", "Maniak Czarnego Wiatru"),
+	("451", "Zly Zolnierz Czarnej Burzy"),
+	("501", "Dziki Zolnierz Piechoty"), ("551", "Silny Dziki Piechur"),
+	("502", "Dziki Sluga"), ("552", "Silny Dziki Sluga"),
+	("602", "Ork Zwiadowca"), ("631", "Elitarny Ork"), ("651", "Duzy Lysy Ork"),
+	("2001", "Mlody Pajak"), ("2002", "Trujacy Pajak"), ("2061", "Maly Trujacy Pajak"),
+	("2051", "Podly Mlody Trujacy Pajak"), ("2052", "Podly Smiertelny Trujacy Pajak"),
+	("2131", "Bestialski Czlowiek Skorpion"),
+	("1105", "Mrozny Lodowy Czlowiek"), ("1107", "Lodowy Golem"),
+	("1136", "Podziemne Yeti"),
+	("1402", "Wojownik z Toporem"), ("1403", "Tysieczny Wojownik"), ("1601", "Ogr Wojownik"),
+	("2302", "Duch Pniaka"),
 ]
 
 # Bonus type dropdown source: (APPLY_* numeric id, enum suffix) pairs
@@ -574,12 +792,24 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		self.SetTitleName("Panel GM by OskarPWA")
 		self.SetCloseEvent(self.Hide)
 
-		x = 10
+		# "Sterowanie Serwerem" gets its own second row, left-aligned under
+		# "Glowny Panel" (x=0), instead of joining the first row's x-walk -
+		# that row alone doesn't fit all 8 tabs within WINDOW_WIDTH.
+		x = 0
 		for tabName in GM_PANEL_TAB_NAMES:
-			width = 110 if tabName in ("tab_spawnbots", "tab_spawnmobs") else 82
+			if tabName == "tab_serverctrl":
+				width = 160
+			elif tabName in ("tab_spawnbots", "tab_spawnmobs"):
+				width = 110
+			else:
+				width = 82
 			button = ui.Button()
 			button.SetParent(self)
-			button.SetPosition(x, TAB_Y)
+			if tabName == "tab_serverctrl":
+				button.SetPosition(0, TAB_Y2)
+			else:
+				button.SetPosition(x, TAB_Y)
+				x += width + 2
 			button.SetSize(width, TAB_HEIGHT)
 			button.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 			button.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
@@ -588,7 +818,6 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 			button.SetEvent(self.__MakeSetPageHandler(tabName[len("tab_"):]))
 			button.Show()
 			self.tabs[tabName] = button
-			x += width + 2
 
 		for pageName in GM_PANEL_PAGE_NAMES:
 			page = ui.Window()
@@ -608,6 +837,7 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		self.__BuildBanPage(self.pages["page_ban"])
 		self.__BuildSpawnBotsPage(self.pages["page_spawnbots"])
 		self.__BuildSpawnMobsPage(self.pages["page_spawnmobs"])
+		self.__BuildServerControlPage(self.pages["page_serverctrl"])
 		self.__BuildGiveAmountPage(self.pages["page_giveamount"])
 		self.__BuildSetValuePage(self.pages["page_setvalue"])
 		self.__BuildSetStatPage(self.pages["page_setstat"])
@@ -650,6 +880,19 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 				self.__ProcessItemListQueue()
 		else:
 			self._itemListBusyFrames = 0
+
+		if self._ratesFetchFrames > 0:
+			self._ratesFetchFrames += 1
+			if self._ratesFetchFrames > 180:
+				self._ratesFetchFrames = 0
+				for status in self._serverctrlStatus.values():
+					status.SetText("Brak odpowiedzi serwera, sprobuj ponownie.")
+
+		if self._aiWeightsFetchFrames > 0:
+			self._aiWeightsFetchFrames += 1
+			if self._aiWeightsFetchFrames > 180:
+				self._aiWeightsFetchFrames = 0
+				self.aiWeightsStatus.SetText("Brak odpowiedzi serwera - otworz karte ponownie.")
 
 		picker = self.pages.get("page_picker")
 		if not picker or not picker.IsShow():
@@ -884,12 +1127,12 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		# 512x256 image: "GM Panel" + the real M2Singleplayer logo +
 		# "www.m2singleplayer.pl" composited into one graphic (baked-in
 		# text, not engine TextLine widgets - matches the reference mockup).
-		# No logo. The original loaded d:/ymir work/ui/public/m2sp_logo.tga, a
-		# loose file of one client that no pack we ship carries; and a failed
-		# LoadImage in this engine does not raise where it is called - it leaves
-		# the error set and the interpreter throws it at the next builtin call,
-		# a for loop forty lines further on, past any try/except. The whole
-		# interface then stayed unbuilt and the game hung on the loading screen.
+		logo = ui.ImageBox()
+		logo.SetParent(page)
+		logo.LoadImage("d:/ymir work/ui/public/m2sp_logo.tga")
+		logo.SetPosition((WINDOW_WIDTH - 20 - 512) / 2, 100)
+		logo.Show()
+		self._widgets.append(logo)
 
 	def __BuildPlaceholderPage(self, page):
 		self.__MakeText(page, 10, 10, "W przygotowaniu.")
@@ -1245,6 +1488,31 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 
 		self.createItemStatus = self.__MakeText(page, 140, ay + 14, "")
 
+		# "Marmur Poli" - a second, independent creation flow on the same
+		# tab: pick a creature from the curated Wiki list (GM_PANEL_POLY_
+		# MOB_LIST) and it goes straight into the GM's OWN inventory, not a
+		# named owner's - this is a tool for the GM testing/using it, not
+		# for handing something to a player like the form above it.
+		polyY = ay + 40
+		self.__MakeText(page, 10, polyY + 4, "Marmur Poli:")
+		self.__MakePickerField(page, 100, polyY, 230, "poly_mob", "static",
+				staticItems=GM_PANEL_POLY_MOB_LIST,
+				defaultValue="0", defaultLabel="(wybierz stworzenie)")
+
+		polyCreateButton = ui.Button()
+		polyCreateButton.SetParent(page)
+		polyCreateButton.SetPosition(340, polyY)
+		polyCreateButton.SetSize(90, 22)
+		polyCreateButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		polyCreateButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		polyCreateButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		polyCreateButton.SetText("Utworz")
+		polyCreateButton.SetEvent(self.__OnClickCreatePolyItem)
+		polyCreateButton.Show()
+		self._widgets.append(polyCreateButton)
+
+		self.createPolyItemStatus = self.__MakeText(page, 440, polyY + 4, "")
+
 		# Item lists are NOT fetched here - wndGMPanel is built for every
 		# login regardless of GM status (F9 just gates showing it), so
 		# firing gmpanel_itemlist automatically at construction time meant
@@ -1304,6 +1572,28 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		else:
 			self.createItemStatus.SetText("Blad: %s" % data)
 
+	def __OnClickCreatePolyItem(self):
+		vnum = self.pickerFields["poly_mob"]["value"]
+		if not vnum or vnum == "0":
+			self.createPolyItemStatus.SetText("Wybierz stworzenie.")
+			return
+		self.createPolyItemStatus.SetText("Tworze...")
+		net.SendChatPacket("/gmpanel_polyitem %s" % vnum)
+
+	# Called from game.py's server-command dispatcher with do_gmpanel_polyitem's
+	# response - goes straight into the GM's own inventory, no owner field.
+	def SetPolyItemResult(self, data):
+		if data == "OK":
+			self.createPolyItemStatus.SetText("Marmur dodany do EQ.")
+		elif data == "ERR_BADVNUM":
+			self.createPolyItemStatus.SetText("Nieznane stworzenie.")
+		elif data == "ERR_NOSPACE":
+			self.createPolyItemStatus.SetText("Brak miejsca w EQ.")
+		elif data == "ERR_NOITEM":
+			self.createPolyItemStatus.SetText("Blad: nie mozna utworzyc marmuru.")
+		else:
+			self.createPolyItemStatus.SetText("Blad: %s" % data)
+
 	def __BuildBanPage(self, page):
 		self.__MakeText(page, 10, 6, "Nick:")
 		self.banAccountEdit = self.__MakeEdit(page, 90, 2, 160, 24)
@@ -1336,7 +1626,7 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		kickButton = ui.Button()
 		kickButton.SetParent(page)
 		kickButton.SetPosition(140, 82)
-		kickButton.SetSize(150, 24)
+		kickButton.SetSize(200, 24)
 		kickButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 		kickButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
 		kickButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
@@ -1533,26 +1823,50 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		refreshButton = ui.Button()
 		refreshButton.SetParent(page)
 		refreshButton.SetPosition(10, 104)
-		refreshButton.SetSize(180, 22)
+		refreshButton.SetSize(220, 22)
 		refreshButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 		refreshButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
 		refreshButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
-		refreshButton.SetText("Odswiez liste aktywnych")
+		refreshButton.SetText("Odswiez liste")
 		refreshButton.SetEvent(self.__OnClickRefreshBotList)
 		refreshButton.Show()
 		self._widgets.append(refreshButton)
 
 		availButton = ui.Button()
 		availButton.SetParent(page)
-		availButton.SetPosition(200, 104)
-		availButton.SetSize(220, 22)
+		availButton.SetPosition(240, 104)
+		availButton.SetSize(260, 22)
 		availButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 		availButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
 		availButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
-		availButton.SetText("Lista botow gotowych do spawnu")
+		availButton.SetText("Boty do spawnu")
 		availButton.SetEvent(self.__OnClickShowAvailableBots)
 		availButton.Show()
 		self._widgets.append(availButton)
+
+		# UI_DEF_FONT_LARGE turned out to be a glyph-incomplete resource in
+		# this build (showed border/dingbat placeholders instead of Latin
+		# letters, reported live) - reverted to the default font. SetOutline
+		# is the only safe "make it stand out" left without a confirmed
+		# larger font name; two overlapped copies offset by one pixel fake a
+		# bold weight on top of that, matching how outlined titles read
+		# heavier elsewhere in this engine's own UI.
+		teleportTitle = self.__MakeText(page, 291, 134, "Teleport")
+		teleportTitle.SetOutline(True)
+		teleportTitleBold = self.__MakeText(page, 290, 134, "Teleport")
+		teleportTitleBold.SetOutline(True)
+
+		teleY = 160
+		teleAll = GM_PANEL_TELEPORT_LIST + GM_PANEL_TELEPORT_EXTRA_LIST + GM_PANEL_TELEPORT_DUNGEON_LIST
+		for i in range(0, len(teleAll), 2):
+			left = teleAll[i]
+			self.__MakeTeleportButton(page, 10, teleY, *left)
+			if i + 1 < len(teleAll):
+				right = teleAll[i + 1]
+				self.__MakeTeleportButton(page, 340, teleY, *right)
+			teleY += 26
+
+		self.teleportStatus = self.__MakeText(page, 10, teleY + 6, "")
 
 		# Read-only "field" for the bot list - no widget of its own, it just
 		# reuses the same full-page picker every other list already uses
@@ -1567,6 +1881,31 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		# picker field already uses, just pointed at this edit line).
 		self.pickerFields["__availbots__"] = {"kind": "availbots", "value": "0", "widget": self.spawnPidEdit, "items": None}
 		self._availBotsItems = []
+
+	def __MakeTeleportButton(self, page, x, y, name, xMeters, yMeters):
+		button = ui.Button()
+		button.SetParent(page)
+		button.SetPosition(x, y)
+		button.SetSize(310, 22)
+		button.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		button.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		button.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		button.SetText(name)
+		button.SetEvent(self.__MakeTeleportHandler(name, xMeters, yMeters))
+		button.Show()
+		self._widgets.append(button)
+		return button
+
+	def __MakeTeleportHandler(self, name, xMeters, yMeters):
+		return lambda: self.__OnClickTeleport(name, xMeters, yMeters)
+
+	# /warp is the vanilla GM command (cmd_gm.cpp, do_warp) - it already
+	# answers on its own with "You warp to ( x, y )" in the normal info
+	# chat, so this just gives immediate feedback on the panel itself
+	# without waiting for (or needing) a GMPanel-style server round-trip.
+	def __OnClickTeleport(self, name, xMeters, yMeters):
+		self.teleportStatus.SetText("Teleportuje do: %s" % name)
+		net.SendChatPacket("/warp %d %d" % (xMeters, yMeters))
 
 	def __OnClickSpawnBots(self):
 		self.__SendSpawn("spawn")
@@ -1655,6 +1994,13 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 			self._createItemListsLoaded = True
 			self.__FetchItemList(GM_PANEL_CATEGORY_LIST[0][0], "vnum")
 			self.__FetchItemList("stone", "stone")
+
+		if pageName == "page_serverctrl" and not self._serverctrlRatesLoaded:
+			self._serverctrlRatesLoaded = True
+			self._ratesFetchFrames = 1
+			self._aiWeightsFetchFrames = 1
+			net.SendChatPacket("/gmpanel_getrates")
+			net.SendChatPacket("/gmpanel_getaiweights")
 
 	def __OnClickSearch(self):
 		nick = self.lookupNickEdit.GetText().strip()
@@ -1812,7 +2158,7 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		gmCmdButton = ui.Button()
 		gmCmdButton.SetParent(page)
 		gmCmdButton.SetPosition(10, 130)
-		gmCmdButton.SetSize(170, 24)
+		gmCmdButton.SetSize(190, 24)
 		gmCmdButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 		gmCmdButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
 		gmCmdButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
@@ -1820,6 +2166,119 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		gmCmdButton.SetEvent(self.__OnClickShowGMCommands)
 		gmCmdButton.Show()
 		self._widgets.append(gmCmdButton)
+
+		purgeButton = ui.Button()
+		purgeButton.SetParent(page)
+		purgeButton.SetPosition(210, 130)
+		purgeButton.SetSize(150, 24)
+		purgeButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		purgeButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		purgeButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		purgeButton.SetText("Usun Moby")
+		purgeButton.SetEvent(lambda: net.SendChatPacket("/purge"))
+		purgeButton.Show()
+		self._widgets.append(purgeButton)
+
+		# The reference list calls this "/weak", but the real ACMD is
+		# "/weaken" (cmd_gm.cpp, do_weaken) - drops every mob currently
+		# around the GM to 1 HP, no target needed first.
+		weakenButton = ui.Button()
+		weakenButton.SetParent(page)
+		weakenButton.SetPosition(370, 130)
+		weakenButton.SetSize(150, 24)
+		weakenButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		weakenButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		weakenButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		weakenButton.SetText("Moby 1 hit")
+		weakenButton.SetEvent(lambda: net.SendChatPacket("/weaken"))
+		weakenButton.Show()
+		self._widgets.append(weakenButton)
+
+		self.__BuildBossMetinSection(page, 160)
+
+	# "Bossy" (pule stale, wybrane na karcie - patrz GM_PANEL_BOSS_TIERS) i
+	# "Metiny" (przedzial poziomow, serwer sam dobiera z bazy - patrz
+	# GM_PANEL_METIN_TIERS) ponizej "Lista komend GM". Kazdy przedzial to
+	# napis na srodku + 3 przyciski (1/5/10); klikniecie prosi serwer o tyle
+	# losowych z puli/przedzialu, nigdy same kopie jednego (gmpanel_spawnrandom
+	# mobs/metin w cmd_gm.cpp robi to porzadnie, klient tylko podaje pule i
+	# ilosc).
+	def __BuildBossMetinSection(self, page, top):
+		y = top
+		self.__MakeCenteredText(page, y, "ZUO"); y += 12
+		self.__MakeCenteredText(page, y, "Bossy"); y += 12
+		for label, pool in GM_PANEL_BOSS_TIERS:
+			self.__MakeCenteredText(page, y, label); y += 12
+			self.__MakeSpawnTripleButtons(page, y, "Boss", "Boss",
+					self.__MakeBossSpawnHandler(pool))
+			y += 23
+
+		y += 4
+		self.__MakeCenteredText(page, y, "Metiny"); y += 12
+		for label, lo, hi in GM_PANEL_METIN_TIERS:
+			self.__MakeCenteredText(page, y, label); y += 12
+			self.__MakeSpawnTripleButtons(page, y, "Metin", "Metin",
+					self.__MakeMetinSpawnHandler(lo, hi))
+			y += 23
+
+		self.spawnBossStatus = self.__MakeText(page, 10, y + 4, "")
+
+	def __MakeCenteredText(self, page, y, text):
+		textLine = self.__MakeText(page, 330, y, text)
+		textLine.SetHorizontalAlignCenter()
+		return textLine
+
+	# singularLabel "1 <singularLabel>" (e.g. "1 Boss"), pluralLabel
+	# "5/10 <pluralLabel>" (e.g. "5 Bossow") - onClick(count) sends the
+	# request for whichever button was pressed.
+	def __MakeSpawnTripleButtons(self, page, y, singularLabel, pluralLabel, onClick):
+		specs = [(1, 10, "1 %s" % singularLabel), (5, 220, "5 %s" % pluralLabel),
+				(10, 430, "10 %s" % pluralLabel)]
+		for count, x, text in specs:
+			button = ui.Button()
+			button.SetParent(page)
+			button.SetPosition(x, y)
+			button.SetSize(190, 22)
+			button.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+			button.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+			button.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+			button.SetText(text)
+			button.SetEvent(lambda c=count: onClick(c))
+			button.Show()
+			self._widgets.append(button)
+
+	def __MakeBossSpawnHandler(self, pool):
+		vnumStr = ",".join(str(v) for v in pool)
+		def handler(count):
+			self.spawnBossStatus.SetText("Spawnuje...")
+			net.SendChatPacket("/gmpanel_spawnrandommobs %s|%d" % (vnumStr, count))
+		return handler
+
+	def __MakeMetinSpawnHandler(self, lo, hi):
+		def handler(count):
+			self.spawnBossStatus.SetText("Spawnuje...")
+			net.SendChatPacket("/gmpanel_spawnrandommetin %d|%d|%d" % (lo, hi, count))
+		return handler
+
+	# Called from game.py's dispatcher with do_gmpanel_spawnrandommobs's
+	# response - "OK|<spawned>|<requested>" or an ERR_* code.
+	def SetSpawnBossResult(self, data):
+		if data.startswith("OK|"):
+			parts = data.split("|")
+			if len(parts) == 3:
+				self.spawnBossStatus.SetText("Zespawnowano bossow: %s/%s." % (parts[1], parts[2]))
+				return
+		self.spawnBossStatus.SetText("Blad: %s" % data)
+
+	# Called from game.py's dispatcher with do_gmpanel_spawnrandommetin's
+	# response - same shape as SetSpawnBossResult.
+	def SetSpawnMetinResult(self, data):
+		if data.startswith("OK|"):
+			parts = data.split("|")
+			if len(parts) == 3:
+				self.spawnBossStatus.SetText("Zespawnowano metinow: %s/%s." % (parts[1], parts[2]))
+				return
+		self.spawnBossStatus.SetText("Blad: %s" % data)
 
 	def __OnClickSpawnMob(self):
 		self.__SendSpawnMob(self.spawnMobIdEdit, self.spawnMobCountEdit, self.spawnMobStatus, "mob")
@@ -1855,6 +2314,482 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 			statusText.SetText("Nie znaleziono moba/metina o takim ID.")
 		else:
 			statusText.SetText("Blad: %s" % parts[1])
+
+	# "Sterowanie Serwerem" - 3 mnozniki serwera (exp/drop przedmiotow/drop
+	# yang) w player.web_admin_rates, ta sama tabela ktora czyta i pisze
+	# panel webowy na stronie /rates. "Zapisz" przy kazdym polu zapisuje
+	# TYLKO ta jedna wartosc do bazy - nic to jeszcze nie zmienia na
+	# serwerze, bo exp/drop/gold w mob_proto i tabelach dropu sa przeliczane
+	# raz, przy starcie core'ow. "Zrestartuj serwer" zglasza restart tym
+	# samym mechanizmem co apply_rates.sh (spool w kontenerze gry), ktory
+	# przelicza te tabele z ich *.m2orig baseline i sam restartuje core'y w
+	# bezpiecznej kolejnosci - stad "Nic sie nie usunie" w dopisku.
+	def __BuildServerControlPage(self, page):
+		self._serverctrlEdits = {}
+		self._serverctrlStatus = {}
+		self._serverctrlRatesLoaded = False
+		self._serverctrlLastSaved = None
+		# >0 while a gmpanel_getrates/getaiweights reply is outstanding -
+		# OnUpdate below times this out instead of leaving "Wczytuje..." on
+		# screen forever when a reply never lands (reported live - "czasem
+		# jest napis Wczytuje... i nie wczytuje").
+		self._ratesFetchFrames = 0
+		self._aiWeightsFetchFrames = 0
+
+		y = 10
+		for name, attrSuffix, label in GM_PANEL_RATE_FIELDS:
+			self.__MakeText(page, 10, y + 4, label)
+			edit = self.__MakeEdit(page, 180, y, 60, 5)
+			self._serverctrlEdits[name] = edit
+			setattr(self, "serverctrl%sEdit" % attrSuffix, edit)
+
+			saveButton = ui.Button()
+			saveButton.SetParent(page)
+			saveButton.SetPosition(250, y - 2)
+			saveButton.SetSize(80, 22)
+			saveButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+			saveButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+			saveButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+			saveButton.SetText("Zapisz")
+			saveButton.SetEvent(self.__MakeSaveRateHandler(name))
+			saveButton.Show()
+			self._widgets.append(saveButton)
+
+			status = self.__MakeText(page, 340, y + 4, "")
+			self._serverctrlStatus[name] = status
+			setattr(self, "serverctrl%sStatus" % attrSuffix, status)
+
+			y += 30
+
+		self.__MakeText(page, 10, y + 10,
+				"(Aby zmiany weszly w zycie trzeba zrestartowac serwer (Nic sie nie usunie))")
+
+		# Both buttons now start at x=10 like everything else on this page,
+		# not x=500 - that pushed them past the right edge the moment the
+		# panel got any narrower (reported live: "sterowanie serwerem
+		# wychodzi poza panel"). Stacked side by side from the left margin
+		# instead of a horizontal scrollbar - simpler, and nothing here
+		# needs more width than the page already has.
+		fetchButton = ui.Button()
+		fetchButton.SetParent(page)
+		fetchButton.SetPosition(10, y + 28)
+		fetchButton.SetSize(210, 22)
+		fetchButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		fetchButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		fetchButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		fetchButton.SetText("Pobierz aktualne raty")
+		fetchButton.SetEvent(self.__OnClickFetchRates)
+		fetchButton.Show()
+		self._widgets.append(fetchButton)
+
+		restartButton = ui.Button()
+		restartButton.SetParent(page)
+		restartButton.SetPosition(230, y + 28)
+		restartButton.SetSize(210, 22)
+		restartButton.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+		restartButton.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+		restartButton.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+		restartButton.SetText("Zrestartuj serwer")
+		restartButton.SetEvent(self.__OnClickRestartServer)
+		restartButton.Show()
+		self._widgets.append(restartButton)
+
+		self.serverctrlRestartStatus = self.__MakeText(page, 10, y + 56, "")
+
+		self.__BuildAIWeightsSection(page, y + 82)
+
+	# Ustawienia zachowania botow (playerbot_weights.tsv - te same teksty co
+	# strona /ai panelu webowego) w scrollowalnej liscie - 17 wierszy z
+	# tytulem+opisem+suwakiem (albo przyciskiem ON/OFF dla CHAT/BOOKS/NIGHT)
+	# nie miesci sie na karcie na raz. Ten sam wzorzec "scrollbar nad
+	# slot-boardem" co Lista komend GM (__BuildGMCommandsPage) - wszystkie
+	# wiersze istnieja od razu jako widgety, tylko Show/Hide + przepozycjo-
+	# nowanie zaleznie od przewiniecia (17 wierszy to nadal tanie do
+	# utrzymania w pamieci na raz).
+	def __BuildAIWeightsSection(self, page, top):
+		header = self.__MakeText(page, 250, top, "Zachowanie botow")
+		header.SetOutline(True)
+		headerBold = self.__MakeText(page, 249, top, "Zachowanie botow")
+		headerBold.SetOutline(True)
+
+		listWidth = WINDOW_WIDTH - 20 - 30
+		listHeight = CONTENT_HEIGHT - top - 54
+
+		listBoard = ui.Window()
+		listBoard.SetParent(page)
+		listBoard.SetPosition(10, top + 20)
+		listBoard.SetSize(listWidth + 20, listHeight)
+		listBoard.Show()
+		self._widgets.append(listBoard)
+
+		self.aiWeightsScrollBar = ui.ScrollBar()
+		self.aiWeightsScrollBar.SetParent(listBoard)
+		self.aiWeightsScrollBar.SetPosition(listWidth, 0)
+		self.aiWeightsScrollBar.SetScrollBarSize(listHeight)
+		self.aiWeightsScrollBar.SetScrollEvent(ui.__mem_func__(self.__OnScrollAIWeights))
+		self.aiWeightsScrollBar.Show()
+		self._widgets.append(self.aiWeightsScrollBar)
+
+		self.aiWeightsSlotBoard = ui.Window()
+		self.aiWeightsSlotBoard.SetParent(listBoard)
+		self.aiWeightsSlotBoard.SetPosition(0, 0)
+		self.aiWeightsSlotBoard.SetSize(listWidth, listHeight)
+		self.aiWeightsSlotBoard.Show()
+		self._widgets.append(self.aiWeightsSlotBoard)
+
+		# Local y-offsets within one row block - a dashed rule opens every
+		# row so a glance shows where one setting ends and the next begins
+		# (reported live: rows ran into each other, "nie wiadomo ktore
+		# ustawienie i ktory opis do czego"). Row height is figured PER ROW
+		# from its own help text length (~74 chars/wrapped line, matched
+		# against BOOKS - 292 chars - actually wrapping to 4 lines live) so
+		# the eleven one-line weights stay compact instead of every row
+		# paying for the two or three long paragraphs (CHAT/BOOKS/NIGHT/
+		# SCRAP/CHEST) - reported live as "za duze odstepy... niech pojawiaja
+		# sie po 3". Scrolling is therefore by PIXEL offset, not row index -
+		# __OnScrollAIWeights/__LayoutAIWeightsRows work off
+		# self._aiRowOffsetY (each row's top, in the virtual column) and
+		# self._aiScrollPixels, showing whichever rows actually fall inside
+		# the viewport instead of a fixed count of them.
+		ROW_DIVIDER_Y = 0
+		ROW_TITLE_Y = 12
+		ROW_HELP_Y = 30
+		HELP_CHARS_PER_LINE = 74
+		HELP_LINE_H = 13
+		GAP_HELP_CONTROL = 8
+		CONTROL_H = 22
+		GAP_CONTROL_CAPTION = 4
+		CAPTION_H = 12
+		BOTTOM_MARGIN = 14
+
+		self._aiStartIndex = 0
+		self._aiRows = []       # list of per-row widget dicts
+		self._aiRowHeights = []
+		self._aiLastSent = [None] * len(GM_PANEL_AI_WEIGHT_ROWS)
+		self._aiKeyToIndex = {key: i for i, (key, _t, _h, _k, _mn, _mx)
+				in enumerate(GM_PANEL_AI_WEIGHT_ROWS)}
+
+		dividerText = "-" * max(10, int((listWidth - 10) / 6.2))
+		cumulativeY = 0
+
+		for i, (key, title, help, kind, minV, maxV) in enumerate(GM_PANEL_AI_WEIGHT_ROWS):
+			row = {}
+			helpLines = max(1, (len(help) + HELP_CHARS_PER_LINE - 1) // HELP_CHARS_PER_LINE)
+			controlY = ROW_HELP_Y + helpLines * HELP_LINE_H + GAP_HELP_CONTROL
+			row["controlY"] = controlY
+
+			divider = ui.TextLine()
+			divider.SetParent(self.aiWeightsSlotBoard)
+			divider.SetText(dividerText)
+			divider.Hide()
+			self._widgets.append(divider)
+			row["divider"] = divider
+			row["dividerY"] = ROW_DIVIDER_Y
+
+			titleWidget = ui.TextLine()
+			titleWidget.SetParent(self.aiWeightsSlotBoard)
+			titleWidget.SetText(title)
+			titleWidget.Hide()
+			self._widgets.append(titleWidget)
+			row["title"] = titleWidget
+			row["titleY"] = ROW_TITLE_Y
+
+			valueWidget = ui.TextLine()
+			valueWidget.SetParent(self.aiWeightsSlotBoard)
+			valueWidget.SetText("")
+			valueWidget.Hide()
+			self._widgets.append(valueWidget)
+			row["value"] = valueWidget
+
+			helpWidget = ui.TextLine()
+			helpWidget.SetParent(self.aiWeightsSlotBoard)
+			helpWidget.SetMultiLine()
+			helpWidget.SetLimitWidth(listWidth - 10)
+			helpWidget.SetText(help)
+			helpWidget.Hide()
+			self._widgets.append(helpWidget)
+			row["help"] = helpWidget
+			row["helpY"] = ROW_HELP_Y
+
+			if kind == "bool":
+				toggle = ui.Button()
+				toggle.SetParent(self.aiWeightsSlotBoard)
+				toggle.SetSize(80, 22)
+				toggle.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
+				toggle.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
+				toggle.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
+				toggle.SetEvent(self.__MakeAIToggleHandler(i))
+				toggle.Hide()
+				self._widgets.append(toggle)
+				row["toggle"] = toggle
+				row["slider"] = None
+				row["caption"] = None
+				self.__SetAIToggleVisual(toggle, 1)
+				# Matches the visual default set above - without this a click
+				# before the first fetch reply landed (or if it never does)
+				# would think it was toggling OFF, since None-or-0 reads as
+				# already off, and send ON again instead.
+				self._aiLastSent[i] = 1
+				rowHeight = controlY + CONTROL_H + BOTTOM_MARGIN
+			else:
+				slider = ui.SliderBar()
+				slider.SetParent(self.aiWeightsSlotBoard)
+				slider.SetEvent(self.__MakeAIWeightSliderHandler(i))
+				slider.Hide()
+				self._widgets.append(slider)
+				row["slider"] = slider
+				row["toggle"] = None
+
+				captionY = controlY + CONTROL_H + GAP_CONTROL_CAPTION
+				row["captionY"] = captionY
+				caption = ui.TextLine()
+				caption.SetParent(self.aiWeightsSlotBoard)
+				if kind == "weight":
+					caption.SetText("%d - rzadko      100 - jak w grze      %d - czesto" % (minV, maxV))
+				elif kind == "scrap":
+					caption.SetText("%d - wylaczone      %d - kazdy straganiarz" % (minV, maxV))
+				else:  # chest
+					caption.SetText("%d%%      %d%%" % (minV, maxV))
+				caption.Hide()
+				self._widgets.append(caption)
+				row["caption"] = caption
+				rowHeight = captionY + CAPTION_H + BOTTOM_MARGIN
+
+			self._aiRows.append(row)
+			self._aiRowHeights.append(rowHeight)
+			cumulativeY += rowHeight
+
+		totalHeight = cumulativeY
+		if totalHeight <= listHeight:
+			self.aiWeightsScrollBar.Hide()
+		else:
+			self.aiWeightsScrollBar.SetMiddleBarSize(max(0.05, float(listHeight) / float(totalHeight)))
+			self.aiWeightsScrollBar.Show()
+		self._aiViewportHeight = listHeight
+
+		self.aiWeightsStatus = self.__MakeText(page, 10, top + 20 + listHeight + 6, "")
+
+		self.__LayoutAIWeightsRows()
+
+	# Whole rows only, snapped to row boundaries, never a row sliced by the
+	# viewport edge. Pixel-precise scrolling (an earlier version of this)
+	# let a row straddle the bottom edge and render past it - this window
+	# does not clip its children to its own rectangle, so that half-row hung
+	# outside the list, over whatever sits below it on the page (reported
+	# live: "wychodzi z tabeli", "napisy sa poza panelem"). Starting exactly
+	# at self._aiStartIndex and stacking rows from y=0 until the next one
+	# would no longer fully fit guarantees every visible row sits entirely
+	# inside [0, viewport height].
+	def __LayoutAIWeightsRows(self):
+		viewportH = self._aiViewportHeight
+		yPos = 0
+		for i, row in enumerate(self._aiRows):
+			height = self._aiRowHeights[i]
+			show = (i >= self._aiStartIndex and
+					(i == self._aiStartIndex or yPos + height <= viewportH))
+			if not show:
+				for key in ("divider", "title", "value", "help", "slider", "toggle", "caption"):
+					w = row.get(key)
+					if w is not None:
+						w.Hide()
+				continue
+			row["divider"].SetPosition(2, yPos + row["dividerY"])
+			row["title"].SetPosition(2, yPos + row["titleY"])
+			row["value"].SetPosition(self.aiWeightsSlotBoard.GetWidth() - 90, yPos + row["titleY"])
+			row["help"].SetPosition(2, yPos + row["helpY"])
+			if row["toggle"] is not None:
+				row["toggle"].SetPosition(2, yPos + row["controlY"])
+				row["toggle"].Show()
+			else:
+				row["slider"].SetPosition(2, yPos + row["controlY"])
+				row["slider"].Show()
+				row["caption"].SetPosition(2, yPos + row["captionY"])
+				row["caption"].Show()
+			row["divider"].Show()
+			row["title"].Show()
+			row["value"].Show()
+			row["help"].Show()
+			yPos += height
+
+	def __OnScrollAIWeights(self):
+		rowCount = len(self._aiRows)
+		scrollableRows = max(0, rowCount - 1)
+		startIndex = int(round(scrollableRows * self.aiWeightsScrollBar.GetPos()))
+		if startIndex != self._aiStartIndex:
+			self._aiStartIndex = startIndex
+			self.__LayoutAIWeightsRows()
+
+	def __MakeAIWeightSliderHandler(self, index):
+		return lambda: self.__OnAIWeightSliderMove(index)
+
+	def __MakeAIToggleHandler(self, index):
+		return lambda: self.__OnAIToggleClick(index)
+
+	def __SetAIToggleVisual(self, toggle, value):
+		if value:
+			toggle.SetText("ON")
+			toggle.SetTextColor(0xff00ff00)
+		else:
+			toggle.SetText("OFF")
+			toggle.SetTextColor(0xffff0000)
+
+	def __OnAIToggleClick(self, index):
+		key, title, help, kind, minV, maxV = GM_PANEL_AI_WEIGHT_ROWS[index]
+		current = self._aiLastSent[index] or 0
+		newValue = 0 if current else 1
+		self._aiLastSent[index] = newValue
+		self.__SetAIToggleVisual(self._aiRows[index]["toggle"], newValue)
+		net.SendChatPacket("/gmpanel_setaiweight %s|%d" % (key, newValue))
+
+	# Suwak wysyla tylko gdy przesuniecie faktycznie zmienilo cala liczbe -
+	# jeden suwak od konca do konca to najwyzej ~maxV-minV wywolan, nie jedno
+	# na kazdy piksel przeciagniecia. CHEST/CHEST_STONE: suwak w % (1-100),
+	# ale silnik (CONFIG, item_manager.cpp) rozumie promile 0-1000, wiec w
+	# druta leci value*10.
+	def __OnAIWeightSliderMove(self, index):
+		key, title, help, kind, minV, maxV = GM_PANEL_AI_WEIGHT_ROWS[index]
+		slider = self._aiRows[index]["slider"]
+		pos = slider.GetSliderPos()
+		value = int(round(minV + pos * (maxV - minV)))
+		value = max(minV, min(maxV, value))
+
+		if kind == "scrap":
+			self._aiRows[index]["value"].SetText("%d%%" % value)
+		elif kind == "chest":
+			self._aiRows[index]["value"].SetText("%d%%" % value)
+		else:
+			self._aiRows[index]["value"].SetText(str(value))
+
+		wireValue = value * 10 if kind == "chest" else value
+		if self._aiLastSent[index] == wireValue:
+			return
+		self._aiLastSent[index] = wireValue
+		net.SendChatPacket("/gmpanel_setaiweight %s|%d" % (key, wireValue))
+
+	# Called from game.py's dispatcher with do_gmpanel_getaiweights's
+	# response - 17 wartosci w KOLEJNOSCI SERWERA (GM_PANEL_AI_WEIGHT_
+	# SERVER_ORDER), niezaleznie od kolejnosci wyswietlania na karcie.
+	# -1 na CHEST/CHEST_STONE = "nieustawione, uzyj CONFIG": suwak na 1%,
+	# etykieta "-" zamiast liczby, dopoki GM go nie ruszy.
+	def SetAIWeightsResult(self, data):
+		self._aiWeightsFetchFrames = 0
+		parts = data.split("|")
+		if len(parts) != len(GM_PANEL_AI_WEIGHT_SERVER_ORDER):
+			return
+		for key, part in zip(GM_PANEL_AI_WEIGHT_SERVER_ORDER, parts):
+			i = self._aiKeyToIndex.get(key)
+			if i is None:
+				continue
+			try:
+				raw = int(part)
+			except ValueError:
+				continue
+			_key, title, help, kind, minV, maxV = GM_PANEL_AI_WEIGHT_ROWS[i]
+			row = self._aiRows[i]
+
+			if kind == "bool":
+				value = 1 if raw else 0
+				self._aiLastSent[i] = value
+				self.__SetAIToggleVisual(row["toggle"], value)
+				continue
+
+			if raw < 0:
+				row["slider"].SetSliderPos(0.0)
+				row["value"].SetText("-")
+				self._aiLastSent[i] = None
+				continue
+
+			value = max(1, int(round(raw / 10.0))) if kind == "chest" else raw
+			value = max(minV, min(maxV, value))
+			pos = 0.0 if maxV == minV else float(value - minV) / float(maxV - minV)
+			row["slider"].SetSliderPos(pos)
+			if kind in ("scrap", "chest"):
+				row["value"].SetText("%d%%" % value)
+			else:
+				row["value"].SetText(str(value))
+			self._aiLastSent[i] = raw
+
+	# Called from game.py's dispatcher with do_gmpanel_setaiweight's response.
+	# Quiet on OK (the slider/toggle's own live state is the feedback) - only
+	# surfaces the rare error, so dragging does not spam this line.
+	def SetAIWeightResult(self, data):
+		if data.startswith("OK"):
+			self.aiWeightsStatus.SetText("")
+			return
+		self.aiWeightsStatus.SetText("Blad: %s" % data)
+
+	def __MakeSaveRateHandler(self, rateName):
+		return lambda: self.__OnClickSaveRate(rateName)
+
+	def __OnClickSaveRate(self, rateName):
+		edit = self._serverctrlEdits[rateName]
+		status = self._serverctrlStatus[rateName]
+		value = edit.GetText().strip()
+
+		if not value.isdigit() or not (1 <= int(value) <= 10000):
+			status.SetText("Podaj liczbe 1-10000.")
+			return
+
+		self._serverctrlLastSaved = rateName
+		status.SetText("Zapisuje...")
+		net.SendChatPacket("/gmpanel_setrate %s|%s" % (rateName, value))
+
+	# Called from game.py's server-command dispatcher with do_gmpanel_setrate's
+	# response - "OK|<name>|<value>" on success. An error code alone does not
+	# say which of the 3 fields it came from (the server doesn't echo a name
+	# it never got to validate), so that case falls back to whichever field
+	# was saved most recently.
+	def SetRateSaveResult(self, data):
+		parts = data.split("|")
+		if parts[0] == "OK" and len(parts) == 3 and parts[1] in self._serverctrlStatus:
+			self._serverctrlStatus[parts[1]].SetText("Zapisano (%s%%)." % parts[2])
+			return
+
+		status = self._serverctrlStatus.get(self._serverctrlLastSaved)
+		if not status:
+			return
+		if data == "ERR_RANGE":
+			status.SetText("Serwer odrzucil wartosc (1-10000).")
+		elif data == "ERR_QUERY":
+			status.SetText("Blad zapytania do bazy.")
+		else:
+			status.SetText("Blad: %s" % data)
+
+	def __OnClickFetchRates(self):
+		for status in self._serverctrlStatus.values():
+			status.SetText("Wczytuje...")
+		self._ratesFetchFrames = 1
+		net.SendChatPacket("/gmpanel_getrates")
+
+	def __OnClickRestartServer(self):
+		self.serverctrlRestartStatus.SetText("Zglaszam restart...")
+		net.SendChatPacket("/gmpanel_restartserver")
+
+	# Called from game.py's server-command dispatcher with
+	# do_gmpanel_restartserver's response.
+	def SetRestartServerResult(self, data):
+		if data == "OK":
+			self.serverctrlRestartStatus.SetText(
+					"Zgloszono - serwer sam zrestartuje core'y w kilka-kilkanascie sekund.")
+		elif data == "ERR_SPOOL":
+			self.serverctrlRestartStatus.SetText(
+					"Blad: nie udalo sie zapisac zgloszenia restartu.")
+		else:
+			self.serverctrlRestartStatus.SetText("Blad: %s" % data)
+
+	# Called from game.py's dispatcher with do_gmpanel_getrates's response -
+	# "<exp>|<drop>|<yang>". Fired once automatically the first time this tab
+	# is opened, and again on demand from the "Pobierz aktualne raty" button.
+	def SetRatesResult(self, data):
+		self._ratesFetchFrames = 0
+		parts = data.split("|")
+		if len(parts) != 3:
+			return
+		for value, (name, _attrSuffix, _label) in zip(parts, GM_PANEL_RATE_FIELDS):
+			if name in self._serverctrlEdits:
+				self._serverctrlEdits[name].SetText(value)
+			if name in self._serverctrlStatus:
+				self._serverctrlStatus[name].SetText("Wczytano.")
 
 	def __OnClickShowGMCommands(self):
 		self.__SetPage("page_gmcommands")
@@ -3198,9 +4133,23 @@ class Interface(object):
 		wndChatLog = uiChat.ChatLogWindow()
 		wndChatLog.BindInterface(self)
 
-		wndGMPanel = GMPanelWindow()
-		wndGMPanel.Hide()
-		self.wndGMPanel = wndGMPanel
+		# The GM panel is optional and must never be the reason the game does
+		# not load. Its window is built here, inside MakeInterface, so any
+		# exception in it - a widget this client's binary does not have, a
+		# locale key missing from this client's locale pack - aborted the
+		# whole interface and the loading bar stopped at 100% for good
+		# (Dixdros, jaroszv2, .unright, ligivanastrea, 10-11 September). The
+		# stock root loaded on the same machines. So: build it, and if it
+		# cannot be built, say so in syserr.txt and carry on without it -
+		# every caller below treats wndGMPanel as possibly absent.
+		self.wndGMPanel = None
+		try:
+			wndGMPanel = GMPanelWindow()
+			wndGMPanel.Hide()
+			self.wndGMPanel = wndGMPanel
+		except:
+			import dbg
+			dbg.TraceError("GM panel (F9) could not be built - the game loads without it")
 
 		self.wndCharacter = wndCharacter
 		self.wndInventory = wndInventory
@@ -4000,6 +4949,10 @@ class Interface(object):
 		# przy kazdym nacisnieciu F9, wiec nie ma tu juz zadnej bramki
 		# client-side do sprawdzenia - ta linia w ogole nie wykona sie dla
 		# zwyklego gracza, bo "OpenGMPanelWindow" nigdy do niego nie dotrze.
+		if not self.wndGMPanel:
+			import chat
+			chat.AppendChat(chat.CHAT_TYPE_INFO, "Panel GM nie zaladowal sie w tym kliencie - szczegoly w syserr.txt")
+			return
 		if False == self.wndGMPanel.IsShow():
 			self.wndGMPanel.Show()
 			self.wndGMPanel.SetTop()
@@ -4012,6 +4965,8 @@ class Interface(object):
 	# Called from game.py, wired to uitarget.TargetBoard's "Sprawdz" button
 	# (GM-only, next to Zapr. Grupy - see uitarget.py RefreshButton).
 	def OpenGMLookupFor(self, name):
+		if not self.wndGMPanel:
+			return
 		self.wndGMPanel.Show()
 		self.wndGMPanel.SetTop()
 		self.wndGMPanel.OpenLookupFor(name)

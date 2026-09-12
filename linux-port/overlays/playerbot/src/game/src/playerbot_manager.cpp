@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "playerbot_manager.h"
+#include "playerbot_empire_rules.h"
 #include "playerbot_world_rules.h"
 
 #include "char.h"
@@ -53,6 +54,10 @@ extern int passes_per_sec;
 // client descriptor of its own to send to.
 extern void SendShout(const char* szText, BYTE bEmpire);
 
+// The names the fragments below were written against, on an engine that
+// spells some of them differently. Empty on r40250.
+#include "playerbot_engine_compat.h"
+
 #include "playerbot_types.h"
 #include "playerbot_log.h"
 #include "playerbot_config.h"
@@ -73,6 +78,11 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_travel.h"
 #include "playerbot_planner.h"
 #include "playerbot_guild.h"
+// playerbot_shop_signs.h is upstream's community sign pool (authentic Polish
+// market slang, kept as-is rather than translated); playerbot_llm_shop.h is
+// this fork's Turkish counterpart and is what playerbot_town.h actually
+// calls. See playerbot_llm_shop.h's header comment.
+#include "playerbot_shop_signs.h"
 #include "playerbot_llm_shop.h"
 #include "playerbot_town.h"
 #include "playerbot_market.h"
@@ -442,7 +452,7 @@ namespace
 		LPITEM bestGear = NULL;
 		int bestSocket = -1;
 		int bestScore = INT_MIN;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetType() != ITEM_METIN)
@@ -494,7 +504,7 @@ namespace
 				: after == PLAYERBOT_BROKEN_SOUL_STONE_VNUM ? "CRACKED"
 				: stoneGone ? "CONSUMED" : "REFUSED";
 
-		ch->EquipItem(bestGear);
+		PlayerBotEquipItem(ch, bestGear);
 		SetPlayerBotAction(state, BOT_ACTION_SOCKET_STONE, dwNow);
 		sys_log(0, "PLAYERBOT_AI: soul stone %s pid=%u name=%s kd_vnum=%u gear_vnum=%u socket=%d now=%u score=%d",
 				outcome, ch->GetPlayerID(), ch->GetName(), kdVnum, gearVnum,
@@ -510,7 +520,7 @@ namespace
 		// Reserve equipment sharing is deliberately not restricted to a party.
 		// Solo bots that meet in the field may help a lower-level bot of the same
 		// class/build, while all other useful-item sharing remains party-only.
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetRefineLevel() < PLAYERBOT_RESERVE_GEAR_MIN_REFINE ||
@@ -529,7 +539,7 @@ namespace
 		if (!ch->GetParty())
 			return false;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->IsEquipped() || item->isLocked())
@@ -609,7 +619,7 @@ namespace
 		DWORD bestSkillVnum = 0;
 		int bestPriority = INT_MIN;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetType() != ITEM_SKILLBOOK)
@@ -638,7 +648,7 @@ namespace
 
 		if (get_global_time() < ch->GetSkillNextReadTime(bestSkillVnum))
 		{
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM scroll = ch->GetInventoryItem(cell);
 				if (scroll && (scroll->GetVnum() == 71001 || scroll->GetVnum() == 71094))
@@ -662,7 +672,11 @@ namespace
 		// third of them and still needs ten that land.
 		if (IsPlayerBotFastBooksEnabled() &&
 				get_global_time() < ch->GetSkillNextReadTime(bestSkillVnum))
+#if defined(PLAYERBOT_ENGINE_MT2009)
+			ch->SetSkillNextReadTime(bestSkillVnum, get_global_time(), true);
+#else
 			ch->SetSkillNextReadTime(bestSkillVnum, get_global_time());
+#endif
 		// Still waiting, and no scroll to wave the wait away: asking the engine
 		// anyway cost a refusal every eight seconds and a "read" line that read
 		// nothing - a hundred and ninety of them in eight minutes.
@@ -670,6 +684,13 @@ namespace
 				!ch->FindAffect(AFFECT_SKILL_NO_BOOK_DELAY))
 			return;
 
+		// LearnSkillByBook refuses a rider outright, so the one NPC-less
+		// errand that still needs the ground is this one.
+		if (ch->IsRiding())
+		{
+			SetPlayerBotRidingForTravel(ch, state, false, dwNow, "reading_book");
+			return;
+		}
 		const BYTE oldLevel = ch->GetSkillLevel(bestSkillVnum);
 		if (ch->UseItem(TItemPos(INVENTORY, bestCell)))
 		{
@@ -888,7 +909,6 @@ namespace
 CPlayerBotManager::CPlayerBotManager()
 	: m_dwNextSpawnBatchTime(0),
 	  m_uSpawnBatchSize(0),
-	  m_bPendingSpawnEmpire(0),
 	  m_dwSpawnWindowStarted(0),
 	  m_uSpawnWindowTotal(0),
 	  m_dwNextTopUpTime(0),
@@ -905,8 +925,24 @@ CPlayerBotManager::~CPlayerBotManager()
 
 bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 {
-	if (dwPlayerID == 0 || bEmpire != 2)
+	if (dwPlayerID == 0)
 		return false;
+
+	// The kingdom comes from the registry, never from the caller. A PID whose
+	// seeded character is Jinno starts as Jinno or does not start at all -
+	// this is the guard that stops a bad call turning a character into a bot
+	// of somebody else's empire, and it is why the argument is only checked.
+	const BYTE bRegisteredEmpire = GetRegisteredEmpire(dwPlayerID);
+	if (bRegisteredEmpire == 0)
+		bEmpire = 0;
+	else if (bEmpire != 0 && bEmpire != bRegisteredEmpire)
+	{
+		sys_err("PLAYERBOT_AUTH: refused pid=%u asked empire=%u but the registry says %u",
+				dwPlayerID, bEmpire, bRegisteredEmpire);
+		return false;
+	}
+	else
+		bEmpire = bRegisteredEmpire;
 
 	// A bot descriptor has no authenticated account session.  Never let a raw
 	// PID turn an ordinary player into a server-controlled character: only the
@@ -944,6 +980,16 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 		TAccountTable& table = d->GetAccountTable();
 		table.id = account->second.dwID;
 		strlcpy(table.login, account->second.strLogin.c_str(), sizeof(table.login));
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// Every bot holds the premium subscription (the operator's rule for
+		// this world: "domyslnie wlacz kazdemu obecnemu i nowemu botowi").
+		// The engine reads it once, in SetPlayerProto, from the descriptor's
+		// account table - a human's comes from auth's premium_expire - and
+		// GetPremiumRemainSeconds answers every PREMIUM_* type from it: the
+		// experience and drop bonuses, the extra safebox page, the shop's
+		// premium slots, fishing. Five years, well inside a 32-bit time_t.
+		table.iPremium = get_global_time() + 5 * 365 * 24 * 3600;
+#endif
 	}
 
 	m_mapBots.insert(TPlayerBotMap::value_type(dwPlayerID, d));
@@ -952,6 +998,11 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 	TBotPlayerLoadPacket packet;
 	packet.player_id = dwPlayerID;
 	packet.empire = bEmpire;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	// The db core keys the special flags on (pid or aid); a zero aid there
+	// matched every bot's own flags at once and the load refused them all.
+	packet.account_id = d->GetAccountTable().id;
+#endif
 
 	db_clientdesc->DBPacket(HEADER_GD_BOT_PLAYER_LOAD, d->GetHandle(), &packet, sizeof(packet));
 	sys_log(0, "PLAYERBOT: requested player load pid=%u empire=%u handle=%u",
@@ -972,7 +1023,7 @@ bool CPlayerBotManager::LoadRegisteredBots()
 	m_mapBotAccounts.clear();
 
 	const char* query =
-			"SELECT l.pid, a.id, a.login "
+			"SELECT l.pid, a.id, a.login, pi.empire "
 			"FROM common.playerbot_seed_state AS l "
 			"JOIN player.player AS p ON p.id=l.pid "
 			"JOIN account.account AS a ON a.id=p.account_id "
@@ -1002,7 +1053,7 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			// brings back the same world; newcomers come next, so growing the
 			// slider is how fresh characters enter it; the benched veterans
 			// last. A fresh install is one tier and unchanged.
-			"AND pi.empire=2 ORDER BY "
+			"AND pi.empire IN (1,2,3) ORDER BY "
 			"CASE WHEN p.level>4 AND p.last_play>NOW()-INTERVAL 7 DAY THEN 0 "
 			"WHEN p.level<=4 THEN 1 ELSE 2 END, l.pid";
 
@@ -1020,11 +1071,15 @@ bool CPlayerBotManager::LoadRegisteredBots()
 		DWORD pid = 0;
 		if (row[0])
 			str_to_number(pid, row[0]);
-		if (pid != 0)
+		unsigned int empire = 0;
+		if (row[3])
+			str_to_number(empire, row[3]);
+		if (pid != 0 && empire >= 1 && empire <= 3)
 		{
 			m_setRegisteredBots.insert(pid);
 			TPlayerBotAccount account;
 			account.dwID = 0;
+			account.bEmpire = (BYTE)empire;
 			if (row[1])
 				str_to_number(account.dwID, row[1]);
 			if (row[2])
@@ -1040,8 +1095,13 @@ bool CPlayerBotManager::LoadRegisteredBots()
 		return false;
 	}
 
-	sys_log(0, "PLAYERBOT_AUTH: loaded %u registered bot identities",
-			(unsigned int)m_setRegisteredBots.size());
+	int perEmpire[playerbot_empire_rules::EMPIRE_COUNT];
+	CountRegisteredPerEmpire(perEmpire, playerbot_empire_rules::EMPIRE_COUNT);
+	sys_log(0, "PLAYERBOT_AUTH: loaded %u registered bot identities (shinsoo=%d chunjo=%d jinno=%d)",
+			(unsigned int)m_setRegisteredBots.size(),
+			perEmpire[playerbot_empire_rules::EMPIRE_SHINSOO],
+			perEmpire[playerbot_empire_rules::EMPIRE_CHUNJO],
+			perEmpire[playerbot_empire_rules::EMPIRE_JINNO]);
 	ReportPlayerBotRegistryShortfall((unsigned int)m_setRegisteredBots.size());
 	return true;
 }
@@ -1070,7 +1130,11 @@ void CPlayerBotManager::ReportPlayerBotRegistryShortfall(unsigned int usable)
 			"  LPAD(l.pid-3,GREATEST(3,LENGTH(l.pid-3)),'0'))),"
 			" SUM(a.id IS NOT NULL AND BINARY a.social_id<>BINARY CONCAT('9',LPAD(l.pid-3,12,'0'))),"
 			" SUM(pi.id IS NOT NULL AND (pi.pid1<>l.pid OR pi.pid2<>0 OR pi.pid3<>0 OR pi.pid4<>0)),"
-			" SUM(pi.id IS NOT NULL AND pi.empire<>2) "
+			// Three kingdoms are registered now, so only an empire outside
+			// 1..3 is a rejection. Left at "<> 2" this line reported every
+			// Shinsoo and Jinno identity as refused - a thousand of two
+			// thousand - beside a loader that had just accepted them.
+			" SUM(pi.id IS NOT NULL AND pi.empire NOT IN (1,2,3)) "
 			"FROM common.playerbot_seed_state AS l "
 			"LEFT JOIN player.player AS p ON p.id=l.pid "
 			"LEFT JOIN account.account AS a ON a.id=p.account_id "
@@ -1099,9 +1163,42 @@ void CPlayerBotManager::ReportPlayerBotRegistryShortfall(unsigned int usable)
 			(unsigned int)value[8]);
 }
 
+BYTE CPlayerBotManager::GetRegisteredEmpire(DWORD dwPlayerID)
+{
+	if (!LoadRegisteredBots())
+		return 0;
+	TPlayerBotAccountMap::const_iterator it = m_mapBotAccounts.find(dwPlayerID);
+	return it == m_mapBotAccounts.end() ? 0 : it->second.bEmpire;
+}
+
+void CPlayerBotManager::CountRegisteredPerEmpire(int* out, int size)
+{
+	for (int i = 0; i < size; ++i)
+		out[i] = 0;
+	// The bootstrap asks for these counts before it asks for any spawn, so this
+	// is the call that loads the registry. Without it the split had nothing to
+	// divide and every kingdom was allotted nothing - measured: the core came
+	// up with no bots at all and not one PLAYERBOT line in the log.
+	if (!LoadRegisteredBots())
+		return;
+	for (TPlayerBotAccountMap::const_iterator it = m_mapBotAccounts.begin();
+			it != m_mapBotAccounts.end(); ++it)
+	{
+		const int empire = (int)it->second.bEmpire;
+		if (empire > 0 && empire < size)
+			++out[empire];
+	}
+}
+
 bool CPlayerBotManager::IsRegistered(DWORD dwPlayerID)
 {
 	return LoadRegisteredBots() &&
+			m_setRegisteredBots.find(dwPlayerID) != m_setRegisteredBots.end();
+}
+
+bool CPlayerBotManager::IsRegisteredBotPID(DWORD dwPlayerID) const
+{
+	return m_bRegistryLoaded && m_bRegistryAvailable &&
 			m_setRegisteredBots.find(dwPlayerID) != m_setRegisteredBots.end();
 }
 
@@ -1113,27 +1210,35 @@ bool CPlayerBotManager::IsRegistered(DWORD dwPlayerID)
 // a minute later.
 size_t CPlayerBotManager::SpawnRegistered(size_t count, BYTE bEmpire)
 {
-	if (count == 0 || bEmpire != 2 || !LoadRegisteredBots())
+	if (count == 0 || bEmpire < 1 || bEmpire > 3 || !LoadRegisteredBots())
 		return 0;
 
-	m_dequePendingSpawns.clear();
+	// Only this kingdom's identities, and added to whatever is already waiting
+	// rather than replacing it: a core that hosted two kingdoms' villages would
+	// otherwise throw the first queue away when it asked for the second.
 	size_t selected = 0;
 	for (TRegisteredPlayerBotSet::const_iterator it = m_setRegisteredBots.begin();
-			it != m_setRegisteredBots.end() && selected < count; ++it, ++selected)
+			it != m_setRegisteredBots.end() && selected < count; ++it)
+	{
+		if (GetRegisteredEmpire(*it) != bEmpire)
+			continue;
+		if (m_setScheduledBots.find(*it) != m_setScheduledBots.end())
+			continue;
 		m_dequePendingSpawns.push_back(*it);
+		m_setScheduledBots.insert(*it);
+		++selected;
+	}
 
 	const size_t batches = std::max<size_t>(1, PLAYERBOT_SPAWN_WINDOW / PLAYERBOT_SPAWN_BATCH_INTERVAL);
-	m_uSpawnBatchSize = std::max<size_t>(1, (selected + batches - 1) / batches);
-	m_bPendingSpawnEmpire = bEmpire;
+	m_uSpawnBatchSize = std::max<size_t>(1,
+			(m_setScheduledBots.size() + batches - 1) / batches);
 	m_dwSpawnWindowStarted = get_dword_time();
-	m_uSpawnWindowTotal = selected;
+	m_uSpawnWindowTotal = m_setScheduledBots.size();
 	m_dwNextSpawnBatchTime = 0;
-	sys_log(0, "PLAYERBOT: staggered spawn scheduled=%u batch=%u every=%ums window=%ums",
-			(unsigned int)selected, (unsigned int)m_uSpawnBatchSize,
+	sys_log(0, "PLAYERBOT: staggered spawn empire=%u scheduled=%u total=%u batch=%u every=%ums window=%ums",
+			(unsigned int)bEmpire, (unsigned int)selected,
+			(unsigned int)m_uSpawnWindowTotal, (unsigned int)m_uSpawnBatchSize,
 			PLAYERBOT_SPAWN_BATCH_INTERVAL, PLAYERBOT_SPAWN_WINDOW);
-	// The first batch goes now: Update runs off an event that OnPlayerLoaded
-	// starts, so somebody has to be asked for before anybody can drain the
-	// queue.
 	SpawnPendingBatch(get_dword_time());
 	return selected;
 }
@@ -1150,7 +1255,7 @@ void CPlayerBotManager::SpawnPendingBatch(DWORD dwNow)
 	{
 		const DWORD pid = m_dequePendingSpawns.front();
 		m_dequePendingSpawns.pop_front();
-		Spawn(pid, m_bPendingSpawnEmpire);
+		Spawn(pid, GetRegisteredEmpire(pid));
 		++sent;
 	}
 	if (m_dequePendingSpawns.empty())
@@ -1173,8 +1278,7 @@ void CPlayerBotManager::SpawnPendingBatch(DWORD dwNow)
 // missing bots come back the way they arrived rather than all in one tick.
 void CPlayerBotManager::TopUpMissingBots(DWORD dwNow)
 {
-	// Not while the first fill is still running, and not before there was one.
-	if (m_uSpawnWindowTotal == 0 || !m_dequePendingSpawns.empty())
+	if (m_setScheduledBots.empty() || !m_dequePendingSpawns.empty())
 		return;
 	if (m_dwNextTopUpTime != 0 && dwNow < m_dwNextTopUpTime)
 		return;
@@ -1182,11 +1286,13 @@ void CPlayerBotManager::TopUpMissingBots(DWORD dwNow)
 	if (!LoadRegisteredBots())
 		return;
 
-	size_t considered = 0, live = 0;
+	// Counted against exactly the identities this core asked for. It used to be
+	// "the first N of the registry", which is the same set only while the
+	// registry holds one kingdom - with three it is somebody else's prefix.
+	size_t live = 0;
 	std::deque<DWORD> missing;
-	for (TRegisteredPlayerBotSet::const_iterator it = m_setRegisteredBots.begin();
-			it != m_setRegisteredBots.end() && considered < m_uSpawnWindowTotal;
-			++it, ++considered)
+	for (std::set<DWORD>::const_iterator it = m_setScheduledBots.begin();
+			it != m_setScheduledBots.end(); ++it)
 	{
 		if (CHARACTER_MANAGER::instance().FindByPID(*it) != NULL)
 			++live;
@@ -1198,10 +1304,9 @@ void CPlayerBotManager::TopUpMissingBots(DWORD dwNow)
 
 	m_dequePendingSpawns = missing;
 	m_uSpawnBatchSize = std::max<size_t>(1, m_uSpawnBatchSize);
-	m_bPendingSpawnEmpire = 2;
 	m_dwNextSpawnBatchTime = 0;
 	sys_log(0, "PLAYERBOT: topping up asked=%u live=%u missing=%u",
-			(unsigned int)m_uSpawnWindowTotal, (unsigned int)live,
+			(unsigned int)m_setScheduledBots.size(), (unsigned int)live,
 			(unsigned int)missing.size());
 	SpawnPendingBatch(dwNow);
 }
@@ -1549,9 +1654,7 @@ void CPlayerBotManager::Update()
 		if (ResetPlayerBotIfInactive(ch, state, dwNow))
 			continue;
 
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ||
-				ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 ||
-				ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M3 ||
+		if (playerbot_empire_rules::IsKingdomMap(ch->GetMapIndex()) ||
 				IsPlayerBotMonkeyMap(ch->GetMapIndex()) ||
 				IsPlayerBotFrontierMap(ch->GetMapIndex()))
 		{
@@ -1560,7 +1663,7 @@ void CPlayerBotManager::Update()
 					currentMap);
 			navigation.Init(currentMap);
 			const bool bOutOfBounds = !navigation.IsInsideWorld(ch->GetX(), ch->GetY());
-			const bool bCrossingJoanGate = currentMap == PLAYERBOT_MAP_CHUNJO_M1 &&
+			const bool bCrossingJoanGate = HasPlayerBotTownGate(currentMap) &&
 					state.bVisitingShop && ch->GetX() >= 59500 && ch->GetX() <= 61100 &&
 					ch->GetY() >= 169050 && ch->GetY() <= 170750;
 			const bool bInsideObstacle = !bOutOfBounds &&
@@ -1578,18 +1681,16 @@ void CPlayerBotManager::Update()
 							ch->GetX(), ch->GetY(), 20, safe, ch->GetPlayerID());
 				if (!foundSafe)
 				{
+					// The village or guild map's own entry point, whichever
+					// kingdom this is. GetPlayerBotHomePoint answers for all
+					// twelve; the old code named Joan's square as the default
+					// and would have dropped a Jinno bot into Chunjo.
 					long fallbackX = 60600;
 					long fallbackY = 170900;
-					if (currentMap == PLAYERBOT_MAP_CHUNJO_M2)
-					{
-						fallbackX = PLAYERBOT_M2_ARRIVAL_X;
-						fallbackY = PLAYERBOT_M2_ARRIVAL_Y;
-					}
-					else if (currentMap == PLAYERBOT_MAP_CHUNJO_M3)
-					{
-						fallbackX = PLAYERBOT_M3_ARRIVAL_X;
-						fallbackY = PLAYERBOT_M3_ARRIVAL_Y;
-					}
+					long fallbackMap = 0;
+					if (playerbot_empire_rules::IsKingdomMap(currentMap))
+						GetPlayerBotHomePoint(ch, currentMap, fallbackMap,
+								fallbackX, fallbackY);
 					else if (IsPlayerBotMonkeyMap(currentMap))
 						GetPlayerBotMonkeyArrival(currentMap, fallbackX, fallbackY);
 					else
@@ -1622,7 +1723,7 @@ void CPlayerBotManager::Update()
 
 		// The census, once a minute: why each level-40 bot in Bokjung is there.
 		if (s_bPlayerBotM2CensusPass && ch->GetLevel() >= 40 &&
-				ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+				IsPlayerBotM2Map(ch->GetMapIndex()))
 		{
 			NotePlayerBotM2Stay(ClassifyPlayerBotTownStay(ch, state, dwNow));
 			// A rotating handful explains itself in full. The rotation is by
@@ -1822,15 +1923,14 @@ void CPlayerBotManager::Update()
 		// its 5-10 minute retry cooldown.  Otherwise a bot that cannot yet afford
 		// the next tier loops forever between the weapon and armour merchants and
 		// never returns to combat (or to its local party).
-		const bool bOnTownMap = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ||
-				ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2;
+		const bool bOnTownMap = IsPlayerBotVillageMap(ch->GetMapIndex());
 		if (bOnTownMap && !state.bVisitingShop && !state.bMultiPullActive &&
 				!bFightingMetin &&
 				(bNeedsProfession || dwNow > state.dwNextShopCheckTime))
 		{
 			size_t occupiedItems = 0;
 			size_t occupiedGridCells = 0;
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM it = ch->GetInventoryItem(cell);
 				if (it)
@@ -1845,7 +1945,7 @@ void CPlayerBotManager::Update()
 			// vertical cells.  Keep a generous reserve for a high-rate Metin drop and
 			// visit town before no contiguous 3-cell slot remains.
 			const bool bInventoryFull =
-					occupiedGridCells * 100 >= INVENTORY_MAX_NUM * 45 ||
+					occupiedGridCells * 100 >= PLAYERBOT_BAG_CELLS * 45 ||
 					ch->GetEmptyInventory(3) < 0;
 			// The same question the planner asked. It used to be a different one:
 			// this counted stacks rather than potions, looked at four red vnums
@@ -1907,7 +2007,7 @@ void CPlayerBotManager::Update()
 			ch->SetVictim(NULL);
 			if (state.dwEmergencyScavengeUntil != 0 &&
 					dwNow < state.dwEmergencyScavengeUntil &&
-					ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1)
+					IsPlayerBotM1Map(ch->GetMapIndex()))
 			{
 				// HandleLoot above collects any ownerless nearby drop. Wander between
 				// hunting hubs so the next scans cover new ground instead of idling at
@@ -1915,8 +2015,7 @@ void CPlayerBotManager::Update()
 				SetPlayerBotGoal(ch, state, BOT_GOAL_GET_EQUIPMENT, dwNow);
 				ManagePlayerBotWandering(ch, state, dwNow);
 			}
-			else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 ||
-					ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+			else if (IsPlayerBotVillageMap(ch->GetMapIndex()))
 			{
 				state.dwEmergencyScavengeUntil = 0;
 				StartPlayerBotTownVisit(ch, state, dwNow);
@@ -2022,9 +2121,11 @@ void CPlayerBotManager::Update()
 					ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(),
 					ch->GetX(), ch->GetY(),
 					SECTREE_MANAGER::instance().GetMapIndex(ch->GetX(), ch->GetY()));
-			if (TransitionPlayerBotMap(ch, state, PLAYERBOT_MAP_CHUNJO_M2,
-					PLAYERBOT_M2_FROM_M3_X, PLAYERBOT_M2_FROM_M3_Y, dwNow,
-					"half_warp_recovery"))
+			long recoverMap = 0, recoverX = 0, recoverY = 0;
+			if (GetPlayerBotVillageReturn(ch, playerbot_empire_rules::MAP_ROLE_M2,
+						recoverMap, recoverX, recoverY) &&
+					TransitionPlayerBotMap(ch, state, recoverMap, recoverX, recoverY,
+						dwNow, "half_warp_recovery"))
 				continue;
 		}
 		// Before target acquisition on purpose: a bot that has stood in the same
@@ -2335,4 +2436,19 @@ void CPlayerBotManager::OnPlayerWhisper(LPCHARACTER from, LPCHARACTER bot, const
 	if (!from || !from->GetDesc() || from->GetDesc()->IsBot())
 		return;
 	HandlePlayerWhisperToBot(from, bot, szText);
+}
+
+// --- The F9 panel's two entry points ---------------------------------------
+//
+// Thin on purpose: everything they do is in playerbot_config.h, above, and the
+// only reason these exist is that the fragment lives in this file's anonymous
+// namespace and cmd_gm.cpp is a different translation unit.
+bool PlayerBotBuildWeightReport(char* szOut, size_t len)
+{
+	return BuildPlayerBotPanelWeightReport(szOut, len);
+}
+
+bool PlayerBotSetWeight(const char* szKey, long value)
+{
+	return WritePlayerBotPanelWeight(szKey, value);
 }

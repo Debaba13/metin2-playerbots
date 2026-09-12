@@ -105,9 +105,30 @@ namespace
 	// Yang this bot must not spend on anything else, because something it has
 	// already worked for is waiting to be paid for. Every discretionary spender
 	// subtracts this before deciding it can afford itself.
+	// Defined in playerbot_travel.h, which every spender is included before.
+	long GetPlayerBotFrontierMapForLevel(LPCHARACTER ch);
+
+	// The Teleporter's fare as map_warp.quest computes it: a thousand per five
+	// levels, at least a thousand. Duplicated from playerbot_travel.h, which
+	// is included after every spender that asks for the reserve.
+	int GetPlayerBotTeleporterFareEstimate(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		return std::max(PLAYERBOT_TELEPORTER_FEE_PER_FIVE_LEVELS,
+				((int)ch->GetLevel() / 5) * PLAYERBOT_TELEPORTER_FEE_PER_FIVE_LEVELS);
+	}
+
 	int GetPlayerBotReservedGold(LPCHARACTER ch)
 	{
-		return IsPlayerBotBattleHorseEarned(ch) ? (int)PLAYERBOT_BATTLE_HORSE_FEE : 0;
+		int reserved = IsPlayerBotBattleHorseEarned(ch) ? (int)PLAYERBOT_BATTLE_HORSE_FEE : 0;
+		// A bot whose hunting ground is a frontier map gets there through the
+		// Teleporter and back through it after every town errand. Spending the
+		// fare on a refine left 268 of 362 bots of 40+ stranded in Bokjung,
+		// where the cohort ceiling forbids the hunting that would earn it back.
+		if (ch && GetPlayerBotFrontierMapForLevel(ch) != 0)
+			reserved += GetPlayerBotTeleporterFareEstimate(ch) * PLAYERBOT_TELEPORTER_FARE_RESERVE_COUNT;
+		return reserved;
 	}
 
 	// The stable keeper's side of it. Everything here is what the quest's `buy`
@@ -120,7 +141,7 @@ namespace
 		if (ch->GetGold() < (int)PLAYERBOT_BATTLE_HORSE_FEE)
 			return false;
 
-		ch->PointChange(POINT_GOLD, -(int)PLAYERBOT_BATTLE_HORSE_FEE);
+		PlayerBotChangeGold(ch, -(int)PLAYERBOT_BATTLE_HORSE_FEE);
 		// The ordinary horse's paper goes back, as it does for a player. No bot
 		// has one - nothing in this world hands them out - so this is here for
 		// the day something does, not because it fires today.

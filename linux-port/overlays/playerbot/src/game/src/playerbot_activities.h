@@ -49,9 +49,11 @@ namespace
 
 	bool ManagePlayerBotHorse(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
-		if (!ch || (ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1 &&
-				ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M2) || state.bVisitingShop ||
-				state.bVisitingBiologist)
+		// The stable keeper stands in all six villages, so the horse errand is a
+		// local one wherever the bot lives.
+		playerbot_empire_rules::TTownServices svc;
+		if (!ch || !playerbot_empire_rules::GetTownServices(ch->GetMapIndex(), svc) ||
+				state.bVisitingShop || state.bVisitingBiologist)
 			return false;
 		if (!state.bVisitingStable && dwNow < state.dwNextHorseCheckTime)
 			return false;
@@ -98,9 +100,9 @@ namespace
 		state.dwTargetVID = 0;
 		ch->SetVictim(NULL);
 
-		const bool inM2 = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2;
-		const long stableX = inM2 ? PLAYERBOT_M2_STABLE_BOY_X : PLAYERBOT_STABLE_BOY_X;
-		const long stableY = inM2 ? PLAYERBOT_M2_STABLE_BOY_Y : PLAYERBOT_STABLE_BOY_Y;
+		const bool inM2 = IsPlayerBotM2Map(ch->GetMapIndex());
+		const long stableX = svc.stableKeeper.x;
+		const long stableY = svc.stableKeeper.y;
 		long approachX = 0, approachY = 0;
 		GetPlayerBotNpcApproach(ch->GetPlayerID(), stableX, stableY,
 				inM2 ? 0x4d324853U : 0x484f5253U, approachX, approachY);
@@ -247,9 +249,20 @@ namespace
 		}
 	}
 
-	void GetPlayerBotFishingStand(DWORD playerID, DWORD dwNow, long& standX, long& standY)
+	// Slot ids are per map: three banks numbering their stands from zero would
+	// have an angler in Yongan holding Joan's stand seven.
+	int PlayerBotFishingClaimKey(long mapIndex, int slot)
 	{
-		const int slots = (int)PLAYERBOT_FISHING_STAND_COUNT;
+		return (int)mapIndex * 1000 + slot;
+	}
+
+	void GetPlayerBotFishingStand(DWORD playerID, DWORD dwNow, long mapIndex,
+			long& standX, long& standY)
+	{
+		const TPlayerBotFishingBank* bank = GetPlayerBotFishingBank(mapIndex);
+		if (!bank)
+			return;
+		const int slots = (int)bank->standCount;
 		int mine = -1;
 		for (std::map<int, TPlayerBotFishingStand>::iterator it =
 				s_mapPlayerBotFishingStands.begin();
@@ -270,7 +283,7 @@ namespace
 			const int start = (int)(PlayerBotNavHash(playerID ^ 0x42414e4bU) % (DWORD)slots);
 			for (int step = 0; step < slots && mine < 0; ++step)
 			{
-				const int slot = (start + step) % slots;
+				const int slot = PlayerBotFishingClaimKey(mapIndex, (start + step) % slots);
 				std::map<int, TPlayerBotFishingStand>::const_iterator it =
 						s_mapPlayerBotFishingStands.find(slot);
 				if (it == s_mapPlayerBotFishingStands.end() ||
@@ -280,29 +293,39 @@ namespace
 			// More anglers than stands one day: share a stand rather than refuse
 			// to fish.
 			if (mine < 0)
-				mine = start;
+				mine = PlayerBotFishingClaimKey(mapIndex, start);
 			TPlayerBotFishingStand& claim = s_mapPlayerBotFishingStands[mine];
 			claim.dwPid = playerID;
 			claim.dwTouched = dwNow;
 		}
-		standX = PLAYERBOT_FISHING_STANDS[mine].x;
-		standY = PLAYERBOT_FISHING_STANDS[mine].y;
+		const int index = mine - PlayerBotFishingClaimKey(mapIndex, 0);
+		if (index < 0 || index >= slots)
+			return;
+		standX = bank->stands[index].x;
+		standY = bank->stands[index].y;
 	}
 
 	// The water this stand looks at. Due east was right for the one straight
 	// stretch the first version knew about and wrong for every bend.
-	void GetPlayerBotFishingFacing(DWORD playerID, long& waterX, long& waterY)
+	void GetPlayerBotFishingFacing(DWORD playerID, long mapIndex,
+			long& waterX, long& waterY)
 	{
-		waterX = PLAYERBOT_FISHING_WATER_X;
+		const TPlayerBotFishingBank* bank = GetPlayerBotFishingBank(mapIndex);
+		waterX = bank ? bank->centre.x : PLAYERBOT_FISHING_WATER_X;
 		waterY = 0;
+		if (!bank)
+			return;
 		for (std::map<int, TPlayerBotFishingStand>::const_iterator it =
 				s_mapPlayerBotFishingStands.begin();
 				it != s_mapPlayerBotFishingStands.end(); ++it)
 		{
 			if (it->second.dwPid != playerID)
 				continue;
-			waterX = PLAYERBOT_FISHING_STANDS[it->first].waterX;
-			waterY = PLAYERBOT_FISHING_STANDS[it->first].waterY;
+			const int index = it->first - PlayerBotFishingClaimKey(mapIndex, 0);
+			if (index < 0 || index >= (int)bank->standCount)
+				return;
+			waterX = bank->stands[index].waterX;
+			waterY = bank->stands[index].waterY;
 			return;
 		}
 	}
@@ -329,7 +352,7 @@ namespace
 	int CountPlayerBotRods(LPCHARACTER ch)
 	{
 		int rods = 0;
-		for (WORD cell = 0; ch && cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; ch && cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (item && item->GetType() == ITEM_ROD)
@@ -348,7 +371,7 @@ namespace
 		// The best rod in the bag: the grades are consecutive vnums, so the
 		// highest vnum is the most refined one.
 		LPITEM best = NULL;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (item && item->GetType() == ITEM_ROD && (!best || item->GetVnum() > best->GetVnum()))
@@ -359,7 +382,7 @@ namespace
 		LPITEM worn = ch->GetWear(WEAR_WEAPON);
 		if (worn && !ch->UnequipItem(worn))
 			return false;
-		if (ch->EquipItem(best))
+		if (PlayerBotEquipItem(ch, best))
 		{
 			sys_log(0, "PLAYERBOT_FISHING: rod equipped pid=%u name=%s vnum=%u",
 					ch->GetPlayerID(), ch->GetName(), best->GetVnum());
@@ -392,7 +415,7 @@ namespace
 		if (rod->GetSocket(2) != 0)
 			return true;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetVnum() != PLAYERBOT_FISHING_BAIT_VNUM)
@@ -473,7 +496,7 @@ namespace
 	int CountPlayerBotDeadFish(LPCHARACTER ch)
 	{
 		int count = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (item && item->GetType() == ITEM_FISH && item->GetSubType() == FISH_DEAD)
@@ -489,7 +512,7 @@ namespace
 	{
 		if (!ch || CountPlayerBotDeadFish(ch) == 0)
 			return false;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetVnum() != PLAYERBOT_CAMPFIRE_VNUM)
@@ -520,7 +543,7 @@ namespace
 		if (!finder.m_found)
 			return true; // lit a moment ago, not in the sectree yet
 		int baked = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetType() != ITEM_FISH || item->GetSubType() != FISH_DEAD)
@@ -543,7 +566,7 @@ namespace
 		if (!ch)
 			return false;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -609,7 +632,7 @@ namespace
 	{
 		if (!ch || ch->GetPart(PART_HAIR) != 0)
 			return false;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -653,8 +676,7 @@ namespace
 		// the market ring for a while instead of walking straight back out -
 		// which is the whole of what makes that square look inhabited, since the
 		// bank, the bait merchant and the stalls are all on this one map.
-		if (ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
-				number(1, 100) <= PLAYERBOT_TOWN_LINGER_PERCENT)
+		if (RollPlayerBotTownRest(ch))
 			state.dwTownLingerUntil = dwNow + number(
 					(int)PLAYERBOT_TOWN_LINGER_MIN, (int)PLAYERBOT_TOWN_LINGER_MAX);
 		if (ch)
@@ -748,7 +770,7 @@ namespace
 		}
 		if (!ch->AutoGiveItem(vnum, count, -1, false))
 			return false;
-		ch->PointChange(POINT_GOLD, -price);
+		PlayerBotChangeGold(ch, -price);
 		sys_log(0, "PLAYERBOT_FISHING: bought %s pid=%u name=%s vnum=%u count=%d price=%lld",
 				what, ch->GetPlayerID(), ch->GetName(), vnum, count, price);
 		return true;
@@ -792,7 +814,7 @@ namespace
 						ch->GetEmptyInventory(1) >= 0 &&
 						ch->AutoGiveItem(PLAYERBOT_CAMPFIRE_VNUM, 1, -1, false))
 				{
-					ch->PointChange(POINT_GOLD, -price);
+					PlayerBotChangeGold(ch, -price);
 					sys_log(0, "PLAYERBOT_FISHING: bought campfire pid=%u name=%s price=%lld",
 							ch->GetPlayerID(), ch->GetName(), price);
 				}
@@ -810,7 +832,8 @@ namespace
 			return true;
 		if (!ch || ch->IsDead())
 			return false;
-		if (ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1)
+		const TPlayerBotFishingBank* bank = GetPlayerBotFishingBank(ch->GetMapIndex());
+		if (bank == NULL)
 		{
 			// The rod must not travel to a hunting map in the weapon slot.
 			if (state.bFishingSession)
@@ -875,12 +898,13 @@ namespace
 		long destX = 0, destY = 0;
 		if (needsTackle)
 		{
-			GetPlayerBotNpcApproach(ch->GetPlayerID(), PLAYERBOT_FISHERMAN_X,
-					PLAYERBOT_FISHERMAN_Y, 0x46495348U, destX, destY);
+			GetPlayerBotNpcApproach(ch->GetPlayerID(), bank->fisherman.x,
+					bank->fisherman.y, 0x46495348U, destX, destY);
 		}
 		else
 		{
-			GetPlayerBotFishingStand(ch->GetPlayerID(), dwNow, destX, destY);
+			GetPlayerBotFishingStand(ch->GetPlayerID(), dwNow, ch->GetMapIndex(),
+					destX, destY);
 			// A last check against the navigation's own grid, in case a stand
 			// falls in a cell it refuses - but within two cells, not twelve.
 			// Twelve is six hundred world units against an arrival radius of
@@ -960,7 +984,11 @@ namespace
 			ClearPlayerBotRoute(state, true);
 		}
 
-		SetPlayerBotRidingForTravel(ch, state, false, dwNow, "fishing");
+		if (SetPlayerBotRidingForTravel(ch, state, false, dwNow, "fishing"))
+			// StopRiding leaves the horse standing behind the angler for the
+			// whole session ("wszystkie moje boty lowia z konmi obok"); it is
+			// sent away like a player would, and summoned again for the ride.
+			ch->HorseSummon(false);
 		if (ch->IsStateMove())
 			ch->Stop();
 		ch->SetPosition(POS_STANDING);
@@ -1007,15 +1035,30 @@ namespace
 			return true;
 		}
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// mt2009 fishing is a reaction test and then a minigame, both driven
+		// from the client. The pre-event bites 17 s after the cast: the engine
+		// stamps m_bPlayerFishReactTime and the take has to come 1.7-3.5 s later
+		// (fishing::Take), or four seconds after the bite the cast is failed. A
+		// take in the window rolls the rod's chance; on a hit the minigame
+		// starts: a bar climbing 0..100 at 5-9 per half second, a fish sinking 2
+		// per half second and rising 8 per take, and the fish has to stay inside
+		// the bar until the bar's top reaches 100. The catch itself comes from
+		// the fishing quest, so it is read off the bag exactly as before.
+		const bool bPreCast = ch->m_pkPreFishingEvent != NULL;
+		const bool bCastLive = bPreCast || ch->IsPlayingFishGame();
+#else
 		// The engine holds the whole cast in one event: step 0 is the line in the
 		// water, step 1 means a fish is on and starts the 6 s window to pull.
 		fishing::fishing_event_info* info = ch->m_pkFishingEvent
 				? dynamic_cast<fishing::fishing_event_info*>(ch->m_pkFishingEvent->info)
 				: NULL;
+		const bool bCastLive = info != NULL;
+#endif
 
-		if (!state.bIsFishing || !info)
+		if (!state.bIsFishing || !bCastLive)
 		{
-			if (info)
+			if (bCastLive)
 			{
 				// A cast survived from an earlier pass; adopt it rather than
 				// stacking a second one.
@@ -1033,6 +1076,14 @@ namespace
 				return true;
 			}
 
+			// A catch goes through AutoGiveItem, and AutoGiveItem never refuses a
+			// full bag: it puts the fish on the grass and reports success. That is
+			// what "the anglers drop their catch and every bot runs for it" was
+			// (bierzyn, 10 September, with the photograph). A session with no
+			// cell left ends here; the planner sends the bot to empty the bag.
+			if (ch->GetEmptyInventory(1) < 0)
+				return EndPlayerBotFishingSession(ch, state, dwNow, "bag_full");
+
 			// CHARACTER::fishing() dereferences the sectree map and the tile under
 			// the bot without checking either, so never call it blind.
 			if (!ch->GetSectree() ||
@@ -1045,10 +1096,20 @@ namespace
 			// Face straight across at the river rather than along the bank: the
 			// water lies due east of this stretch.
 			long waterX = 0, waterY = 0;
-			GetPlayerBotFishingFacing(ch->GetPlayerID(), waterX, waterY);
+			GetPlayerBotFishingFacing(ch->GetPlayerID(), ch->GetMapIndex(),
+					waterX, waterY);
 			ch->SetRotationToXY(waterX, waterY != 0 ? waterY : ch->GetY());
+#if defined(PLAYERBOT_ENGINE_MT2009)
+			// The onboarding quest's flag is what fishing() checks; a bot never
+			// talks to the fisherman, so it is set here once.
+			if (ch->GetQuestFlag("fishing_onboarding.completed") < 1)
+				ch->SetQuestFlag("fishing_onboarding.completed", 1);
+			ch->fishing();
+			if (!ch->m_pkPreFishingEvent)
+#else
 			ch->fishing();
 			if (!ch->m_pkFishingEvent)
+#endif
 			{
 				// Blocked tile or missing bait; step away and try again shortly.
 				state.dwNextFishingActionTime = dwNow + number(4000, 8000);
@@ -1059,6 +1120,45 @@ namespace
 			return true;
 		}
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		if (bPreCast)
+		{
+			const DWORD react = ch->m_bPlayerFishReactTime;
+			if (react >= state.dwFishingCastTime && react <= dwNow &&
+					dwNow - react >= PLAYERBOT_MT2009_FISHING_REACT_MIN &&
+					dwNow - react <= PLAYERBOT_MT2009_FISHING_REACT_MAX)
+			{
+				ch->fishing_take();
+				state.dwLastMeaningfulActivityTime = dwNow;
+				return true;
+			}
+			if (dwNow - state.dwFishingCastTime > PLAYERBOT_FISHING_CAST_TIMEOUT)
+			{
+				// A take outside the window cancels both events.
+				ch->fishing_take();
+				state.bIsFishing = false;
+				state.dwNextFishingActionTime = dwNow + number(2000, 4000);
+				sys_log(0, "PLAYERBOT_FISHING: cast timed out pid=%u name=%s",
+						ch->GetPlayerID(), ch->GetName());
+			}
+			return true;
+		}
+
+		// The minigame. This pass runs every quarter second and the bar moves at
+		// most 13 per half second, so a fish put just under the top of the bar
+		// on each pass is still inside it on the next.
+		fishing::fishing_event_info* game = ch->m_pkFishingEvent
+				? dynamic_cast<fishing::fishing_event_info*>(ch->m_pkFishingEvent->info)
+				: NULL;
+		if (game && ch->m_biFishGameState >= PLAYERBOT_MT2009_FISHING_GAME_IN_PROGRESS)
+		{
+			const int top = (int)game->bar_position + (int)game->bar_height;
+			for (int presses = 0; presses < 16 && ch->m_iFish_position + 8 <= top + 2; ++presses)
+				fishing::Take(game, ch);
+		}
+		state.dwLastMeaningfulActivityTime = dwNow;
+		return true;
+#else
 		if (info->step < 1)
 		{
 			// Still waiting for a bite. The engine takes 10-40 s; anything past a
@@ -1091,6 +1191,7 @@ namespace
 		sys_log(0, "PLAYERBOT_FISHING: pulled pid=%u name=%s hooked_ms=%u fish=%d",
 				ch->GetPlayerID(), ch->GetName(), (unsigned int)hooked, info->fish_id);
 		return true;
+#endif
 	}
 }
 

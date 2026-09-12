@@ -270,6 +270,18 @@ namespace
 	// that matters at the anvil - it is refined under a scroll or not at all.
 	const BYTE PLAYERBOT_BONUS_MIN_REFINE = 4;
 	const int PLAYERBOT_PRIZE_LINES = 5;
+	// Above this chance a valuable piece is refined without a scroll.
+	//
+	// refine_proto runs 90/90/90/90/80/60/50/40/30, so this lets a prize item
+	// climb to +5 on its own and demands a scroll only where a failure really
+	// costs something. It used to demand one below 100%, which is every step
+	// there is - and the scroll was only ever looked for from +6 up, so a prize
+	// weapon below that could neither be risked nor protected and simply never
+	// moved. Measured on this world: 451 of 959 bots holding a scroll wore a
+	// weapon stuck at exactly +4, and another 230 at +0, while 1287 Dragon God
+	// and 1002 Blessing scrolls sat in their bags (zglosil sekuras).
+	const int PLAYERBOT_PRIZE_SAFE_REFINE_PROB = 80;
+
 	const int PLAYERBOT_STACK_MERGES_PER_PASS = 4;
 	const int PLAYERBOT_STACK_MAX = 200;
 	const int PLAYERBOT_SHOP_SINGLE_UNITS = 4;
@@ -291,6 +303,15 @@ namespace
 	// books: the roll picked one bot in ten and the books sat with the other
 	// nine.
 	const int PLAYERBOT_SHOP_BOOK_PRESSURE_MIN = 6;
+	// How often a bag of surplus books alone opens a counter, per thousand,
+	// before the TRADE weight is applied. A thousand means "always" at the
+	// neutral weight, which is what this rule did before it answered to the
+	// slider at all - and nothing at the minimum, which is what an operator
+	// dragging the slider down is asking for. Measured on this world: 238 of
+	// 970 bots hold six or more surplus books, so this one clause decided a
+	// quarter of the population whatever the setting said (zglosil Shenyo:
+	// 180 straganow na 288 botow przy suwaku na minimum).
+	const int PLAYERBOT_SHOP_BOOK_ROLL = 1000;
 	const DWORD PLAYERBOT_SOUL_STONE_CHECK_INTERVAL = 10000;
 	// What UseItemEx leaves in the socket when the 30% roll fails. Defined as a
 	// file-local const in char_item.cpp, so it is repeated here.
@@ -387,7 +408,14 @@ namespace
 	// minutes and then rests for three quarters of an hour to two hours, so a
 	// session ends about once a minute across the whole angler cohort - at half
 	// that is three or four bots on the square at a time, which is not a market.
-	const int PLAYERBOT_TOWN_LINGER_PERCENT = 100;
+	// Since 2.0.9 the share is the REST key of the weights file
+	// (GetPlayerBotRestPercent, a hundred by default, zero for an operator who
+	// wants every bot hunting), and nobody under this level rests at all: a
+	// bot of twelve has levels to gain and nothing to browse for, and the
+	// operator who asked for the slider wants the young ones out whatever the
+	// square looks like. A rest also needs counters on the map -
+	// MayPlayerBotRestInTown in playerbot_config.h is the whole rule.
+	const BYTE PLAYERBOT_TOWN_REST_MIN_LEVEL = 18;
 	// Three minutes of walking the counters, not four to ten of standing.
 	//
 	// The first version parked a bot on one spot of the square and left it
@@ -510,6 +538,36 @@ namespace
 	// back to whatever it was doing. Long enough to cross a town, short enough
 	// that a bot which cannot get there loses one errand and not its evening.
 	const DWORD PLAYERBOT_MARKET_TRIP_TIMEOUT = 90000;
+	// What a keeper does with a line it has carried home unsold: ten percent
+	// off per stand, four stands deep, and a piece of gear under the precious
+	// refine is merchant scrap after six ("jakas losowa halabarda +5 to ja
+	// sprzedaje u handlarza" - the +5 stays, PLAYERBOT_PRECIOUS_REFINE is four).
+	const int PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT = 10;
+	const int PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_STANDS = 4;
+	const int PLAYERBOT_SHOP_UNSOLD_SCRAP_STANDS = 6;
+	// Gear the merchant may never have (above PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE
+	// - a shaman's warrior steel +9) used to have no end at all: discounted to
+	// this many stands, then carried round the stones for ever, and a bag of it
+	// is "plecak pelen rzeczy innych klas" (audit D14). After this many stands
+	// unsold it goes to the storekeeper with the surplus books, under bag
+	// pressure - kept, never scrapped, and out of the bag.
+	const int PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS = 8;
+	// ...and up to this refine. The rule used to sit below "+4 and up never
+	// goes to an NPC", so it applied to nothing the counter actually keeps:
+	// a +5 nobody bought in six stands stayed in the bag for good, and a bot
+	// with a bag of them stood in Joan opening stalls instead of hunting -
+	// "ciule wszystko +5 wystawiaja i od wczoraj zaden nie wbil nawet lvla"
+	// (gregoszky), "boty maja zapchane eq, nie wiedza co z tym robic"
+	// (davids998), both on 10-11 September.
+	// The operator's line (11 September evening): the merchant may have gear
+	// up to +4 and nothing above it - a +5 goes on a counter, or to the
+	// blacksmith first and then on a counter. So the unsold-stands rule stops
+	// at +4 too, and PLAYERBOT_MERCHANT_MAX_REFINE is the one number both
+	// rules read.
+	const BYTE PLAYERBOT_MERCHANT_MAX_REFINE = 4;
+	const BYTE PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE = PLAYERBOT_MERCHANT_MAX_REFINE;
+	// The ride from Bokjung's square to the Joan gate is 38 km.
+	const DWORD PLAYERBOT_MARKET_JOAN_WALK_TIMEOUT = 300000;
 	// And how far away the stalls may be before it is not worth setting off:
 	// the whole of the town, so that a bot which has just finished its errands
 	// goes shopping while one that is out hunting stays where it is instead of
@@ -554,7 +612,6 @@ namespace
 	// One eligible bot in twelve founds one. Any more and the world fills with
 	// guilds of one member, which is the opposite of the point.
 	const DWORD PLAYERBOT_GUILD_FOUNDER_SHARE = 12;
-	const size_t PLAYERBOT_GUILD_NAMES_PER_EMPIRE = 2;
 	// The lowest grade, which is what an ordinary member joins at.
 	const int PLAYERBOT_GUILD_MEMBER_GRADE = 15;
 	const int PLAYERBOT_GUILD_INVITE_RANGE = 3000;
@@ -611,6 +668,42 @@ namespace
 	const long PLAYERBOT_BONUS_KEEP_AVERAGE = 20;
 	const long PLAYERBOT_BONUS_KEEP_HP = 1500;
 	const long PLAYERBOT_BONUS_KEEP_CRIT = 5;
+	// The caster's half of the same rule, and it exists because the two damage
+	// lines are one roll rather than two. item_addon.cpp draws the skill line
+	// from a gaussian of sigma five and then sets the average line to minus
+	// twice it plus a little noise, so no weapon can carry both: +18% skill is
+	// -29% average on the same item. Eight is where the skill side is about as
+	// rare as twenty is on the average side - one reroll in eighteen - so a
+	// Shaman stops on a Warrior's odds instead of rerolling for ever.
+	const long PLAYERBOT_BONUS_KEEP_SKILL = 8;
+	// The rest of the finishing rolls, one per slot, each of them the fourth
+	// tier of what `player.item_attr` lets that line reach: block and dodge go
+	// to fifteen, attack speed to eight, movement speed and item drop to twenty,
+	// stolen life to ten, and a race line to twenty (ten on human). Stopping at
+	// the fifth tier would mean stopping almost never.
+	const long PLAYERBOT_BONUS_KEEP_BLOCK = 10;
+	const long PLAYERBOT_BONUS_KEEP_DODGE = 10;
+	const long PLAYERBOT_BONUS_KEEP_ATT_SPEED = 5;
+	const long PLAYERBOT_BONUS_KEEP_MOV = 10;
+	const long PLAYERBOT_BONUS_KEEP_DROP = 8;
+	const long PLAYERBOT_BONUS_KEEP_STEAL = 5;
+	const long PLAYERBOT_BONUS_KEEP_RACE = 10;
+	// What "silny przeciwko X" is worth per point, scaled by how much of the map
+	// that race actually is, and what it is worth on a map that is something
+	// else. Measured by tools/analyse_map_races.py over every map a bot may
+	// stand on: Orc Valley is 63% orcs, all three second villages are 100%
+	// human, the first villages 77% animal, the guild maps and all five Monkey
+	// Dungeons 100% animal, Mount Sohan 46% undead, Hwang 68% mystic - and the
+	// Yongbi Desert and both Spider Dungeons are made of DESERT, INSECT and ICE,
+	// races char.cpp maps no APPLY onto, so on those three no race line can ever
+	// do anything at all. The second number is not zero only because a bot
+	// changes maps.
+	const int PLAYERBOT_BONUS_RACE_ON_MAP = 16;
+	// The same line in the equipment score, which counts in the thousands
+	// because a point of defence does. Scaled by the same share, so a piece is
+	// not bought for a line the reroll pass will then throw away.
+	const int PLAYERBOT_GEAR_RACE_LINE_VALUE = 600;
+	const int PLAYERBOT_BONUS_RACE_OFF_MAP = 2;
 	const int PLAYERBOT_BONUS_STONES_PER_VISIT = 3;
 	// Effectively once per town visit. A four-second cadence like the refiner's
 	// would let one stop at the blacksmith burn a quarter of a million yang.
@@ -763,9 +856,71 @@ namespace
 	const BYTE PLAYERBOT_BATTLE_HORSE_LEVEL = 11;
 
 	const long PLAYERBOT_MAP_CHUNJO_M1 = 21;
+	// Joan's inner town is walled: the misc merchant and the blacksmith stand
+	// behind the gate at PLAYERBOT_TOWN_GATE_*, and the town visit walks that
+	// gate as a leg of its own (GATE_IN / GATE_OUT). Yongan and Pyongmoo keep
+	// the same eight services in open ground - measured on the mt2009
+	// server_attr of maps 1 and 41: the blacksmith and the misc merchant sit in
+	// the weapon merchant's own walkable component - so they take the direct
+	// phases a second village takes. Until 2.0.8 every first village walked
+	// Joan's gate coordinates, which on maps 1 and 41 are nowhere, so no
+	// Shinsoo or Jinno bot ever reached its blacksmith or misc merchant
+	// ("tylko boty z Chunjo ulepszaja ekwipunek", nerrvous_s). Named by map on
+	// purpose: this is one town's wall, not a kingdom's shape.
+	inline bool IsPlayerBotGatedVillage(long mapIndex)
+	{
+		return mapIndex == PLAYERBOT_MAP_CHUNJO_M1;
+	}
 	const long PLAYERBOT_MAP_CHUNJO_M2 = 23;
 	const long PLAYERBOT_MAP_CHUNJO_M3 = 24;
 	const long PLAYERBOT_MAP_MONKEY_EASY = 25;
+
+	// Chunjo's four maps keep their names because a thousand lines were written
+	// against them, but they are one kingdom of three now and nothing may test
+	// a village by its index any more. A rule about "the first village" is a
+	// rule about MAP_ROLE_M1, and it has to answer for Shinsoo and Jinno too -
+	// a Jinno bot walking to Joan's blacksmith because 21 was written into the
+	// town visit is the whole reason this file grew these six questions.
+	bool IsPlayerBotM1Map(long mapIndex)
+	{
+		return playerbot_empire_rules::GetMapRole(mapIndex) ==
+				playerbot_empire_rules::MAP_ROLE_M1;
+	}
+
+	bool IsPlayerBotM2Map(long mapIndex)
+	{
+		return playerbot_empire_rules::GetMapRole(mapIndex) ==
+				playerbot_empire_rules::MAP_ROLE_M2;
+	}
+
+	bool IsPlayerBotM3Map(long mapIndex)
+	{
+		return playerbot_empire_rules::GetMapRole(mapIndex) ==
+				playerbot_empire_rules::MAP_ROLE_M3;
+	}
+
+	// Any village: the six maps that have merchants, a blacksmith and a
+	// Teleporter. This is the guard a town visit wants.
+	bool IsPlayerBotVillageMap(long mapIndex)
+	{
+		return IsPlayerBotM1Map(mapIndex) || IsPlayerBotM2Map(mapIndex);
+	}
+
+	// The map of `role` in the bot's OWN kingdom. The character's empire is the
+	// truth here and the map under its feet is not: a Jinno bot standing in
+	// Bokjung is a visitor, and sending it "home to M1" means Jinno's M1.
+	long GetPlayerBotHomeMap(LPCHARACTER ch, playerbot_empire_rules::EMapRole role)
+	{
+		return ch ? playerbot_empire_rules::GetHomeMap((int)ch->GetEmpire(), role) : 0;
+	}
+
+	// Whether two maps belong to the same kingdom, which is what says a walk
+	// from one to the other is a local errand rather than a journey abroad.
+	bool IsPlayerBotSameKingdom(long a, long b)
+	{
+		const int ea = playerbot_empire_rules::GetMapOwnerEmpire(a);
+		return ea != 0 && ea == playerbot_empire_rules::GetMapOwnerEmpire(b);
+	}
 	const long PLAYERBOT_MAP_MONKEY_MEDIUM = 108;
 	const long PLAYERBOT_MAP_MONKEY_HARD = 109;
 	const long PLAYERBOT_M1_TO_M2_PORTAL_X = 87600;
@@ -1120,6 +1275,82 @@ namespace
 	const long PLAYERBOT_DESERT_FROM_V1_X = 346700;
 	const long PLAYERBOT_DESERT_FROM_V1_Y = 632900;
 	const int PLAYERBOT_CROSSING_STONE_RANGE = 2500;
+
+	// --- What each map is made of --------------------------------------------
+	//
+	// battle.cpp CalcAttBonus walks the races as an else-if chain and stops at
+	// the first flag the monster carries, so a kill pays exactly one of them;
+	// and char.cpp maps an APPLY onto only six of the eleven - ANIMAL, UNDEAD,
+	// DEVIL, HUMAN, ORC, MILGYO. INSECT, FIRE, ICE, DESERT and TREE have a POINT
+	// and a place in the damage formula but nothing an item can put into them,
+	// so on a map made of those a "silny przeciwko" line is decoration.
+	//
+	// The slots are ordered as the engine tests them. OTHER is the fights that
+	// paid nothing, and it is counted rather than dropped: without it a bot on
+	// the desert has an empty histogram and falls back on whatever the map
+	// aggregate says, instead of the truth, which is "nothing here pays".
+	enum EPlayerBotRaceSlot
+	{
+		PLAYERBOT_RACE_ANIMAL = 0,
+		PLAYERBOT_RACE_UNDEAD,
+		PLAYERBOT_RACE_DEVIL,
+		PLAYERBOT_RACE_HUMAN,
+		PLAYERBOT_RACE_ORC,
+		PLAYERBOT_RACE_MILGYO,
+		PLAYERBOT_RACE_OTHER,
+		PLAYERBOT_RACE_SLOTS,
+		PLAYERBOT_RACE_NONE = -1
+	};
+
+	// The measurement, from tools/analyse_map_races.py: every spawn point of
+	// every map a bot may stand on, resolved through group.txt and
+	// group_group.txt, counted by the one race that pays. A share, not a flag,
+	// because a line that covers 46% of Mount Sohan is worth about half what the
+	// same line is worth in a Monkey Dungeon, and a bot should be able to tell.
+	//
+	// Re-measure rather than edit by hand; a map added to the frontier needs a
+	// row here, and with none it simply falls back on what the population has
+	// seen, which is the behaviour this table replaced.
+	struct TPlayerBotMapRaceRow
+	{
+		long lMapIndex;
+		int iRace;
+		int iPercent;
+	};
+	const TPlayerBotMapRaceRow PLAYERBOT_MAP_RACE_TABLE[] = {
+		{ 1, PLAYERBOT_RACE_ANIMAL, 77 },   { 21, PLAYERBOT_RACE_ANIMAL, 77 },
+		{ 41, PLAYERBOT_RACE_ANIMAL, 77 },
+		{ 3, PLAYERBOT_RACE_HUMAN, 100 },   { 23, PLAYERBOT_RACE_HUMAN, 100 },
+		{ 43, PLAYERBOT_RACE_HUMAN, 100 },
+		{ 4, PLAYERBOT_RACE_ANIMAL, 100 },  { 24, PLAYERBOT_RACE_ANIMAL, 100 },
+		{ 44, PLAYERBOT_RACE_ANIMAL, 100 },
+		{ 5, PLAYERBOT_RACE_ANIMAL, 100 },  { 25, PLAYERBOT_RACE_ANIMAL, 100 },
+		{ 45, PLAYERBOT_RACE_ANIMAL, 100 }, { 108, PLAYERBOT_RACE_ANIMAL, 100 },
+		{ 109, PLAYERBOT_RACE_ANIMAL, 100 },
+		{ 61, PLAYERBOT_RACE_UNDEAD, 46 },  // Sohan: the other 54% is ICE
+		{ 64, PLAYERBOT_RACE_ORC, 63 },     // Orc Valley: 35% of it is MILGYO
+		{ 65, PLAYERBOT_RACE_MILGYO, 68 },  // Hwang
+		// 63 Yongbi Desert (DESERT/INSECT), 104 and 71 the Spider Dungeons
+		// (INSECT): no row, because no line reaches those races.
+	};
+
+	// The race a map pays for, and how much of the map it is. Zero percent means
+	// "nothing here", which is a different answer from "not measured".
+	int GetPlayerBotMapRace(long mapIndex, int* percentOut)
+	{
+		for (size_t i = 0; i < sizeof(PLAYERBOT_MAP_RACE_TABLE) /
+				sizeof(PLAYERBOT_MAP_RACE_TABLE[0]); ++i)
+		{
+			if (PLAYERBOT_MAP_RACE_TABLE[i].lMapIndex != mapIndex)
+				continue;
+			if (percentOut)
+				*percentOut = PLAYERBOT_MAP_RACE_TABLE[i].iPercent;
+			return PLAYERBOT_MAP_RACE_TABLE[i].iRace;
+		}
+		if (percentOut)
+			*percentOut = 0;
+		return PLAYERBOT_RACE_NONE;
+	}
 	// An episode of self-defence, so that "it hit me first" cannot become a
 	// permanent licence to grind. The clock starts when the bot accepts an
 	// attacker as a target and is not renewed by another hit from the same one;
@@ -1146,6 +1377,20 @@ namespace
 	// not a rule of the game: quest, material and equipment errands are allowed
 	// through it, and self-defence comes before it.
 	const int PLAYERBOT_COMBAT_MIN_EXP_PERCENT = 20;
+	// A village monster this many levels under the bot is outgrown prey, and
+	// the bot does not cross the field for it. The exp table above cannot say
+	// this: on the mt2009 line it still pays 90% at six under, and the base a
+	// Wild Dog carries is 15 against a Blue Alpha Wolf's 111. With the search
+	// range at PLAYERBOT_SEARCH_RANGE a bot at its own band's hub still saw
+	// the dogs six kilometres off, and 96 of 115 bots on Joan stood nowhere
+	// near any hub, chain-killing whatever was next - a third of every fight
+	// six or more levels under the bot, a level in the teens every two hours.
+	// What is within PLAYERBOT_OUTGROWN_CHAIN_RANGE is killed on the way, as
+	// a player would; beyond it the wander pass gets the tick and walks the
+	// bot to its band's hub. First villages only, where the 1-31 spread is;
+	// defence, quest, material and equipment errands come before it.
+	const int PLAYERBOT_VILLAGE_OUTGROWN_LEVELS = 6;
+	const int PLAYERBOT_OUTGROWN_CHAIN_RANGE = 800;
 	// How often the monster a bot is already fighting is asked again whether
 	// it is still worth fighting. Not every tick: the answer needs the bot's
 	// material shortages, which cost a walk of the bag.
@@ -1420,6 +1665,13 @@ namespace
 	// fifty to a dragon armour with seven more defence and nothing else.
 	const long long PLAYERBOT_ARMOR_OUTGROWN_PERCENT_PER_LEVEL = 5;
 	const DWORD PLAYERBOT_SKILL_FORGET_SCROLL_VNUM = 70037;
+	// Moving a point from a skill the priority list ranks lower to the one it
+	// wants next: one Forgetting Book per point, at this price and this pace
+	// (sosen: a bot with sixteen in Tapniecie put its new points into Duchowe
+	// and left the sixteen where they were). Cheaper than the "stuck at
+	// seventeen" book above because it runs from level five, on M1 purses.
+	const long long PLAYERBOT_SKILL_REALLOCATE_PRICE = 20000;
+	const DWORD PLAYERBOT_SKILL_REALLOCATE_INTERVAL = 30000;
 	// No merchant in this world sells the scroll and nothing drops it, so a
 	// bot past the old woman's thirty bought it nowhere and a skill stuck at
 	// seventeen stayed there for life - 81 bots carried a skill at eighteen or
@@ -1471,6 +1723,22 @@ namespace
 	const DWORD PLAYERBOT_CHEST_INTERVAL = 8000;
 	// How long a box the engine has refused is left alone. A refusal can be
 	// a bag that happened to be full, so it is a wait rather than a verdict.
+	// Wolnych pol, ktore musza byc, zanim bot otworzy skrzynie.
+	//
+	// GetEmptyInventory(n) zwraca POZYCJE wolnego miejsca na przedmiot o tej
+	// wysokosci, a nie ich liczbe - dwa wywolania obok siebie moga wskazac to
+	// samo pole i nie rezerwuja niczego. A GiveItemFromSpecialItemGroup wydaje
+	// nagrody po kolei przez AutoGiveItem, ktory przy braku miejsca kladzie
+	// przedmiot na ziemi i zglasza to jako sukces - wiec nagroda po prostu
+	// znikala. Zgloszone jako "przedmioty ze skrzyn wypadaja na ziemie".
+	//
+	// To zabezpieczenie, nie rozwiazanie: prawdziwa naprawa to wylosowac zestaw
+	// raz, sprawdzic miejsce na CALY zestaw i dopiero potem zuzyc skrzynie -
+	// a to zmiana w silniku, ktora musi dostac wlasny tryb wydania, zeby nie
+	// ruszac zachowania nagrod graczy. Piec pol pokrywa kazdy zestaw, jaki
+	// nasza grupa Moonlight potrafi wylosowac (jedna linia na skrzynie), i
+	// wiekszosc skrzyn bossow.
+	const int PLAYERBOT_CHEST_FREE_CELLS = 5;
 	const DWORD PLAYERBOT_CHEST_REFUSED_RETRY = 600000;
 	const DWORD PLAYERBOT_BOOSTER_INTERVAL = 60000;
 	// The chest's two boosters, and the two grilled fish that work the same
@@ -1486,12 +1754,21 @@ namespace
 	const DWORD PLAYERBOT_CAMPFIRE_VNUM = 27600;
 	const DWORD PLAYERBOT_CAMPFIRE_MOB_VNUM = 12000;
 	const DWORD PLAYERBOT_BAKE_WINDOW = 35000;
-	// The race histogram a bot keeps of what it has been fighting: five race
-	// flags (animal, undead, devil, orc, mystic), halved every ten minutes,
-	// and trusted over the map's aggregate once it holds this many.
-	const int PLAYERBOT_RACE_HISTOGRAM_SLOTS = 5;
+	// The race histogram a bot keeps of what it has been fighting: one slot per
+	// EPlayerBotRaceSlot, halved every ten minutes, and trusted over the map's
+	// own table once it holds this many. Human is in it because all three second
+	// villages are a hundred percent human and it used not to be counted at all;
+	// so is OTHER, which is every fight that paid no race, because a bot on the
+	// desert has to be able to conclude that the answer is none.
+	const int PLAYERBOT_RACE_HISTOGRAM_SLOTS = PLAYERBOT_RACE_SLOTS;
 	const DWORD PLAYERBOT_RACE_HISTOGRAM_DECAY = 600000;
 	const DWORD PLAYERBOT_RACE_HISTOGRAM_MIN_SAMPLES = 20;
+	// How much of a bot's fighting a race has to be before a line against it is
+	// worth anything. It used to be half, which is right for a map that is one
+	// race and wrong for Mount Sohan: the undead are 46% of it and the other 54%
+	// is ice, a race no item can be strong against, so "half must agree" threw
+	// away the only line that works there.
+	const int PLAYERBOT_RACE_WORTH_PERCENT = 25;
 	// A hub where a wanted material has been seen to drop is worth half as
 	// much again to a bot short of it; a cell with this many fights and no
 	// drop of it has told the bot all it needs to know.
@@ -1536,6 +1813,24 @@ namespace
 	// blacksmith's 40 and 30, which the Blessing Scroll keeps; both hand the
 	// piece back a level down on failure. Measured, not assumed.
 	const DWORD PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS[] = { 39022, 71032, 76009 };
+	// Every scroll DoRefineWithScroll knows, by the engine's own switch:
+	// Blessing (25040), Magic Stone (25041, 39001), Blacksmith's Manual
+	// (39007, 70039), War God (39014, 71021), Dragon God (39022, 71032,
+	// 76009). None of them is merchant scrap. The junk rule had no branch for
+	// them and the merchant pays pennies for the one thing a refine above +6
+	// cannot be done without: 471 Blessing Scrolls went over that counter in
+	// a single day (jaroszv2), while the weapons they were meant for waited.
+	bool IsPlayerBotRefineScroll(DWORD vnum)
+	{
+		switch (vnum)
+		{
+			case 25040: case 25041: case 39001: case 39007: case 39014:
+			case 39022: case 70039: case 71021: case 71032: case 76009:
+				return true;
+			default:
+				return false;
+		}
+	}
 	const BYTE PLAYERBOT_DRAGON_GOD_SCROLL_MIN_PLUS = 7;
 	const BYTE PLAYERBOT_SCROLL_REFINE_MIN_PLUS = 6;
 	const DWORD PLAYERBOT_SCROLL_REFINE_INTERVAL = 45000;
@@ -1567,44 +1862,22 @@ namespace
 	// base + cell*100.
 	const long PLAYERBOT_M1_GUARD_X = 63400;
 	const long PLAYERBOT_M1_GUARD_Y = 166300;
-	// How far from the middle a stall may stand. A hundred units is a metre here,
-	// so this is a market four to seventeen metres across instead of the
-	// two-and-a-half-metre huddle it was.
-	//
-	// It cannot be wider. shop_manager.cpp refuses a purchase beyond 2000 units,
-	// so a buyer reaches twenty metres and no further, and PLAYERBOT_SHOPPING_RANGE
-	// is 1800 for the same reason. Spread over forty metres the market looked
-	// roomy and stopped working: stalls at opposite ends were out of each other's
-	// reach and nobody bought anything at all. The ceiling belongs to the engine,
-	// not to us.
-	// How many counters Bokjung's ring may hold before a keeper takes its goods
-	// to Joan instead. Bokjung is where the bots are, so left alone every stall
-	// opens there and the other town's market never happens; a cap is what
-	// pushes the overflow somewhere it is worth walking to.
-	const int PLAYERBOT_SHOP_M2_MAX_STALLS = 7;
-	// ...and that cap is a floor, not the number. Seven for a thousand bots
-	// was the whole reason the market emptied: after a restart every keeper
-	// opened in the same tick (the count lags a minute), then each expired
-	// stand was refused a reopening at "Bokjung full" - 229 refusals a
-	// minute - and walked to Joan, where the planner sent it shopping
-	// instead. Ninety stalls fell to twenty-eight in an hour and a half with
-	// the reopening already in place. The ring takes this share of the
-	// living population, never under the floor: eighty for a thousand bots,
-	// twenty-eight for three hundred and fifty.
-	const int PLAYERBOT_SHOP_M2_STALLS_PER_MILLE = 80;
 	// After the Teleporter refuses a bot for want of yang, how long before
 	// it asks again. It asked on every tick before: one bot of fifty-eight
 	// with 799 yang against an 11 000 fee was refused 24 000 times a minute,
 	// and its status said "Ide na Gore Sohan" all the while. The wait is
 	// what lets the town visit and the stall run and earn the fee.
 	const DWORD PLAYERBOT_TELEPORTER_RETRY_MS = 300000;
-	// How long a keeper that found Bokjung's ring full waits before asking
-	// again. Only a merchant or a dropper carries its goods to Joan when the
-	// ring is full; with every bot holding six surplus books a keeper, that
-	// walk pre-empted the world travel of hundreds of bots - "a bot that
-	// wants Sohan heads for the portal to M1, turns back, circles M2 and
-	// tries again" - on the tick before their own travel could run.
-	const DWORD PLAYERBOT_SHOP_RING_FULL_RETRY = 600000;
+	// A departure held longer than this is reported with what holds it
+	// (PLAYERBOT_DEPARTURE: overdue), once per this interval per bot.
+	const DWORD PLAYERBOT_DEPARTURE_OVERDUE_MS = 600000;
+	// A bot whose next hunting ground lies behind the Teleporter keeps this
+	// many fares out of every discretionary purchase, and one that cannot pay
+	// the fare may hunt in Bokjung - past the cohort ceiling - until it holds
+	// this many. Measured before this: 268 of 362 bots of 40+ in Bokjung held
+	// less than one fare, 79 yang the poorest, and the Teleporter was asked
+	// 26 000 times a minute by bots that could neither pay nor earn.
+	const int PLAYERBOT_TELEPORTER_FARE_RESERVE_COUNT = 3;
 	// How long Bokjung's counters are worth a look after Joan had nothing. Long
 	// enough that a bot which crossed for nothing is not sent straight back,
 	// short enough that Joan stays the first stop.
@@ -1614,6 +1887,18 @@ namespace
 	// keepers in the same minute cannot walk past the cap together. A stale
 	// count can only be too high, which errs towards sending a keeper to Joan.
 	int s_iPlayerBotStallsInM2 = 0;
+	// Counters standing on each map right now, kept the same way. What it
+	// answers is "is there a market here at all": on a young world nothing
+	// can open a stall (mt2009 asks for level fifteen and eight hundred
+	// kills), and a bot that set off to browse counters that did not exist
+	// was reported as "jakie stragany ogladaja jak zadnego nie ma".
+	std::map<long, int> s_mapPlayerBotStallsByMap;
+
+	int GetPlayerBotStallsOnMap(long lMapIndex)
+	{
+		std::map<long, int>::const_iterator it = s_mapPlayerBotStallsByMap.find(lMapIndex);
+		return it == s_mapPlayerBotStallsByMap.end() ? 0 : it->second;
+	}
 	const int PLAYERBOT_SHOP_RING_MIN = 400;
 	const int PLAYERBOT_SHOP_RING_RADIUS = 1700;
 	// The shop bundle (item 50200) carries LIMIT_NONE in item_proto, so the game
@@ -1651,6 +1936,50 @@ namespace
 	// that genuinely kept some of them open.
 	const DWORD PLAYERBOT_SHOP_MIN_DURATION = 600000;    // 10 min
 	const DWORD PLAYERBOT_SHOP_MAX_DURATION = 1500000;   // 25 min
+	// Why a counter is open. The first four are the exceptions the operator's
+	// TRADE slider does not touch - a trader trades, a bot that cannot afford
+	// its potions or has no room left sells, a dropper under bag pressure
+	// sells - and the last three are the rolls the slider stretches. A stall
+	// remembers its reason, shows it in the status ("Prowadze stragan (los)"),
+	// and a rolled one re-asks the roll when the weights file changes, spread
+	// over PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS so a hundred keepers do not
+	// pack up in one second (audit D11: "minimalny suwak, a 180 z 280 botow
+	// handluje" - the stalls that stood were never asked again).
+	enum EPlayerBotShopReason
+	{
+		PLAYERBOT_SHOP_REASON_NONE = 0,
+		PLAYERBOT_SHOP_REASON_MERCHANT,
+		PLAYERBOT_SHOP_REASON_POOR,
+		PLAYERBOT_SHOP_REASON_BAG_FULL,
+		PLAYERBOT_SHOP_REASON_DROPPER_PRESSURE,
+		PLAYERBOT_SHOP_REASON_BOOKS,
+		PLAYERBOT_SHOP_REASON_DROPPER_ROLL,
+		PLAYERBOT_SHOP_REASON_ROLL,
+		PLAYERBOT_SHOP_REASON_MAX
+	};
+	const DWORD PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS = 300000;   // 5 min
+
+	inline bool IsPlayerBotShopReasonRolled(BYTE bReason)
+	{
+		return bReason == PLAYERBOT_SHOP_REASON_BOOKS ||
+				bReason == PLAYERBOT_SHOP_REASON_DROPPER_ROLL ||
+				bReason == PLAYERBOT_SHOP_REASON_ROLL;
+	}
+
+	inline const char* GetPlayerBotShopReasonName(BYTE bReason)
+	{
+		switch (bReason)
+		{
+			case PLAYERBOT_SHOP_REASON_MERCHANT:         return "satici";
+			case PLAYERBOT_SHOP_REASON_POOR:             return "iksir icin yang yok";
+			case PLAYERBOT_SHOP_REASON_BAG_FULL:         return "dolu canta";
+			case PLAYERBOT_SHOP_REASON_DROPPER_PRESSURE: return "dropper, dolu canta";
+			case PLAYERBOT_SHOP_REASON_BOOKS:            return "fazla kitap";
+			case PLAYERBOT_SHOP_REASON_DROPPER_ROLL:     return "dropper";
+			case PLAYERBOT_SHOP_REASON_ROLL:             return "rastgele";
+			default:                                     return "?";
+		}
+	}
 	// What a bot pays itself for the stall it sets up.
 	const DWORD PLAYERBOT_SHOP_BUNDLE_PRICE = 2000;
 	const DWORD PLAYERBOT_SHOP_REST_MIN = 1800000;
@@ -1947,6 +2276,8 @@ namespace
 	// hours of hunting and then nothing. A bot has no item shop to go back to,
 	// so its copy is wound back up instead of re-bought - the same answer
 	// ManagePlayerBotSkillBooks gives to a book's eighteen-hour wait.
+	// The group is 72016..72018; since patch 0010 the bots take these off.
+	const DWORD PLAYERBOT_THIRD_HAND_VNUM_FIRST = 72016;
 	const DWORD PLAYERBOT_THIRD_HAND_VNUM = 72018;
 	const long PLAYERBOT_THIRD_HAND_MINUTES = 525600;
 	const long PLAYERBOT_THIRD_HAND_REWIND_BELOW = 10080;
@@ -2215,9 +2546,11 @@ namespace
 
 	bool IsPlayerBotHuntingMobHosted(DWORD vnum, long lMapIndex = 0)
 	{
-		// Everything the first twenty-five rows ask for lives in Joan and Bokjung.
+		// Everything the first twenty-five rows asks for is starter game, and
+		// every kingdom has its own: the villages are what host mobs under 500,
+		// whichever kingdom the bot belongs to.
 		if (vnum < 500)
-			return lMapIndex == 0 || lMapIndex == PLAYERBOT_MAP_CHUNJO_M1 || lMapIndex == PLAYERBOT_MAP_CHUNJO_M2;
+			return lMapIndex == 0 || IsPlayerBotVillageMap(lMapIndex);
 		for (size_t i = 0; i < sizeof(PLAYERBOT_HUNTING_MOB_HOMES) / sizeof(PLAYERBOT_HUNTING_MOB_HOMES[0]); ++i)
 		{
 			const TPlayerBotMobHome& home = PLAYERBOT_HUNTING_MOB_HOMES[i];
@@ -2290,6 +2623,298 @@ namespace
 		{ 62600, 213600 }, { 88600, 201000 }, { 94000, 164300 },
 		{ 83700, 119300 }, { 67600, 117700 }, { 63500, 133500 }
 	};
+
+	// ---------------------------------------------------------------------
+	// The hunting ground of each village, measured per map.
+	//
+	// Joan's tables above were placed by hand off metin2_map_b1, and for a year
+	// they were the only ones there were - so every branch of the wander pass
+	// tested for map 21, 23 or 24 and a bot anywhere else fell through to a
+	// random walk. Shinsoo and Jinno host the same monsters in the same bands
+	// and put them in entirely different places, so none of these numbers can
+	// be Chunjo's plus an offset; each row was measured from that map's own
+	// regen.txt and stone.txt with tools/generate_wander_hubs.py: the richest
+	// 6400-unit squares, kept apart, each landed on a real spawn point that is
+	// standable on server_attr and outside the safe zone, with the median
+	// monster level within 2500 units as its band.
+	//
+	// Chunjo's rows are the hand-made tables unchanged. The measurement agrees
+	// with them where it can be checked - the three Bokjung bosses come out on
+	// the constants this file has always carried - which is what says the rows
+	// for the other four villages can be trusted.
+	struct TPlayerBotVillageHub { long x; long y; int mobLevel; };
+
+	// Shinsoo M1, metin2_map_a1
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_1[32] = {
+		{ 419700, 904500, 25 }, { 425700, 913000, 25 }, { 431500, 912100, 25 },
+		{ 426000, 918900, 25 }, { 432800, 904900, 25 }, { 456400, 983000, 9 },
+		{ 464400, 910600, 13 }, { 444800, 969600, 9 }, { 422700, 905200, 25 },
+		{ 438900, 937900, 7 }, { 433400, 937400, 10 }, { 464000, 937200, 3 },
+		{ 443900, 963600, 9 }, { 451600, 981600, 10 }, { 463800, 1008100, 13 },
+		{ 451900, 936700, 3 }, { 477000, 980800, 3 }, { 450000, 918800, 9 },
+		{ 464000, 988400, 7 }, { 488700, 969900, 3 }, { 476700, 906400, 18 },
+		{ 469900, 974200, 3 }, { 432900, 949100, 9 }, { 468500, 905300, 13 },
+		{ 427000, 964600, 13 }, { 427400, 925700, 18 }, { 482600, 905000, 24 },
+		{ 438000, 912400, 20 }, { 425000, 937900, 20 }, { 490900, 951300, 3 },
+		{ 490700, 956200, 3 }, { 458200, 917400, 9 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_METINS_1[12] = {
+		{ 470300, 905000 }, { 461900, 967600 }, { 431900, 910800 },
+		{ 417200, 903000 }, { 429900, 905000 }, { 443600, 913400 },
+		{ 483500, 918200 }, { 491800, 922000 }, { 458800, 930100 },
+		{ 439800, 930300 }, { 500600, 930700 }, { 464900, 933200 }
+	};
+
+	// Shinsoo M2, metin2_map_a3
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_3[12] = {
+		{ 394500, 848100, 0 }, { 355800, 855300, 0 }, { 386500, 855000, 0 },
+		{ 368100, 854200, 0 }, { 337000, 899900, 0 }, { 335900, 836400, 0 },
+		{ 348700, 860300, 0 }, { 329200, 842600, 0 }, { 323300, 846100, 0 },
+		{ 329700, 853900, 0 }, { 329100, 887500, 0 }, { 330100, 836000, 0 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_METINS_3[12] = {
+		{ 321300, 886400 }, { 387300, 898400 }, { 320700, 829700 },
+		{ 361100, 831000 }, { 329200, 836600 }, { 368500, 862900 },
+		{ 323900, 865100 }, { 354400, 870300 }, { 345700, 872600 },
+		{ 328900, 877400 }, { 392200, 880100 }, { 340000, 880700 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_BESTIALS_3[2] = {
+		{ 330100, 875300 }, { 339400, 887400 }
+	};
+
+	// Chunjo M2, metin2_map_b3: the twelve spawn clusters Bokjung has rotated
+	// since before this table had a name.
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_23[12] = {
+		{ 173800, 218500, 0 }, { 182500, 224300, 0 }, { 188900, 234700, 0 },
+		{ 190000, 250200, 0 }, { 187300, 263200, 0 }, { 185500, 278700, 0 },
+		{ 175000, 286500, 0 }, { 162200, 288900, 0 }, { 149200, 289900, 0 },
+		{ 136900, 287300, 0 }, { 125700, 286800, 0 }, { 116500, 279800, 0 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_METINS_23[12] = {
+		{ 152600, 225700 }, { 135400, 263200 }, { 161400, 228700 },
+		{ 190000, 236700 }, { 141100, 270500 }, { 179400, 273400 },
+		{ 154300, 274300 }, { 171200, 287400 }, { 130000, 287500 },
+		{ 184800, 289400 }, { 156000, 290900 }, { 179100, 224700 }
+	};
+
+	// Jinno M1, metin2_map_c1
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_41[32] = {
+		{ 975700, 219600, 25 }, { 987800, 316300, 25 }, { 962900, 221200, 20 },
+		{ 968800, 221100, 23 }, { 982600, 222200, 20 }, { 950400, 244700, 3 },
+		{ 956600, 233500, 9 }, { 937600, 309500, 13 }, { 983100, 303600, 10 },
+		{ 970300, 291000, 3 }, { 956600, 246900, 3 }, { 982800, 272200, 3 },
+		{ 988700, 215900, 25 }, { 963800, 240000, 7 }, { 938300, 240000, 9 },
+		{ 937800, 296400, 9 }, { 976500, 291400, 6 }, { 993500, 317300, 25 },
+		{ 988800, 304200, 13 }, { 989000, 284200, 12 }, { 987700, 233900, 18 },
+		{ 986900, 220600, 20 }, { 943500, 284900, 3 }, { 963100, 290900, 3 },
+		{ 969500, 216800, 25 }, { 982700, 216900, 25 }, { 989700, 298000, 18 },
+		{ 940300, 304200, 12 }, { 956700, 225100, 18 }, { 995100, 277700, 13 },
+		{ 983600, 279100, 4 }, { 970400, 296900, 4 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_METINS_41[12] = {
+		{ 954200, 231300 }, { 941000, 284300 }, { 936700, 255300 },
+		{ 955600, 239500 }, { 945300, 217400 }, { 981800, 218600 },
+		{ 992900, 224100 }, { 961100, 233600 }, { 971100, 245600 },
+		{ 991000, 246800 }, { 963300, 250100 }, { 956500, 251700 }
+	};
+
+	// Jinno M2, metin2_map_c3
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_43[12] = {
+		{ 835800, 246500, 0 }, { 906700, 283800, 0 }, { 905700, 279400, 0 },
+		{ 873400, 291600, 0 }, { 834300, 227300, 0 }, { 848300, 290300, 0 },
+		{ 834600, 265800, 0 }, { 835200, 231900, 0 }, { 834900, 239100, 0 },
+		{ 878900, 272800, 0 }, { 892600, 271000, 0 }, { 898600, 285000, 0 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_METINS_43[12] = {
+		{ 886100, 218700 }, { 837900, 219400 }, { 860400, 217600 },
+		{ 867600, 221200 }, { 854700, 229000 }, { 903300, 245400 },
+		{ 883200, 268800 }, { 849300, 269600 }, { 876900, 276100 },
+		{ 847800, 286900 }, { 873300, 291300 }, { 851300, 293700 }
+	};
+	const TPlayerBotMapPoint PLAYERBOT_GROUND_BESTIALS_43[2] = {
+		{ 841100, 270400 }, { 861200, 275300 }
+	};
+
+	// The three guild maps. Same size, same eight monster types, three
+	// different layouts - which is why one table cannot serve all of them.
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_4[10] = {
+		{ 135600, 35400, 0 }, { 144300, 43200, 0 }, { 142000, 35000, 0 },
+		{ 151600, 35400, 0 }, { 150500, 43000, 0 }, { 156900, 23600, 0 },
+		{ 137400, 15500, 0 }, { 143700, 15600, 0 }, { 147800, 9700, 0 },
+		{ 170500, 40500, 0 }
+	};
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_24[10] = {
+		{ 189700, 6000, 0 }, { 196900, 7000, 0 }, { 206800, 7800, 0 },
+		{ 212600, 9400, 0 }, { 204200, 12400, 0 }, { 209200, 18800, 0 },
+		{ 195800, 18100, 0 }, { 187600, 15100, 0 }, { 216000, 15900, 0 },
+		{ 201500, 21700, 0 }
+	};
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_44[10] = {
+		{ 260800, 22100, 0 }, { 264300, 23000, 0 }, { 246900, 8600, 0 },
+		{ 270400, 46600, 0 }, { 234300, 10900, 0 }, { 259700, 29000, 0 },
+		{ 235100, 17400, 0 }, { 243500, 23200, 0 }, { 241000, 8000, 0 },
+		{ 241600, 24700, 0 }
+	};
+
+	// Joan's eight party camps, by hand, with the level band each was measured
+	// at. The other two first villages take the eight densest clusters of their
+	// own grinding table, which is what these eight are.
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_CAMPS_21[8] = {
+		{ 39000, 200200, 9 },  // South-West White Oath Camp
+		{ 37000, 168400, 10 }, // West White Oath Camp
+		{ 84600, 197500, 12 }, // South-East Bear / Tiger Camp
+		{ 61000, 203600, 6 },  // South Dense Boar / Wolf Plains
+		{ 80300, 135700, 9 },  // North-East Plateau Camp
+		{ 61600, 133500, 12 }, // North Meadow Camp
+		{ 35000, 135500, 21 }, // North-West Lykos Territory
+		{ 85800, 169700, 3 }   // East Cursed Beast Camp
+	};
+
+	// Joan's own thirty-two, kept where they were written.
+	const TPlayerBotVillageHub PLAYERBOT_GROUND_HUBS_21[32] = {
+		// 1. North Quadrant (Meadows & North Road)
+		{ 61600, 133500, 12 }, { 55600, 135200, 12 }, { 70600, 135800, 9 }, { 59500, 123600, 18 },
+		// 2. North-East Quadrant (Plateaus & Hills)
+		{ 80300, 135700, 9 }, { 83500, 130000, 12 }, { 75500, 143600, 6 }, { 87200, 147300, 12 },
+		// 3. East Quadrant (Cursed Animals & Tigers)
+		{ 85800, 169700, 3 }, { 80300, 165800, 1 }, { 88600, 162800, 9 }, { 82900, 178300, 3 },
+		// 4. South-East Quadrant (Brown Bears & Tiger Groves)
+		{ 84600, 197500, 12 }, { 78300, 191000, 3 }, { 89800, 195300, 12 }, { 86700, 209800, 20 },
+		// 5. South Quadrant (Wild Boars, Grey Wolves, Tigers)
+		{ 61000, 203600, 6 }, { 52700, 194700, 4 }, { 67400, 194700, 3 }, { 61100, 214300, 21 },
+		// 6. South-West Quadrant (White Oath Camps & Black Bears)
+		{ 39000, 200200, 9 }, { 29900, 196400, 16 }, { 46200, 206200, 10 }, { 33500, 209800, 18 },
+		// 7. West Quadrant (Valley of Mi-Jung, White Oath)
+		{ 37000, 168400, 10 }, { 30200, 164500, 12 }, { 44700, 165800, 3 }, { 32600, 178200, 12 },
+		// 8. North-West Quadrant (Lykos territory, Cursed Wolves)
+		{ 35000, 135500, 21 }, { 40600, 145000, 9 }, { 28500, 146900, 12 }, { 42100, 129300, 18 }
+	};
+
+	struct TPlayerBotVillageGround
+	{
+		long mapIndex;
+		const TPlayerBotVillageHub* hubs;
+		size_t hubCount;
+		const TPlayerBotVillageHub* camps;   // party ground, first villages only
+		size_t campCount;
+		const TPlayerBotMapPoint* metins;
+		size_t metinCount;
+		const TPlayerBotMapPoint* bestials;  // 533/534, second villages only
+		TPlayerBotMapPoint captain;          // 591, second villages only
+	};
+
+	const TPlayerBotVillageGround* GetPlayerBotVillageGround(long mapIndex)
+	{
+		static const TPlayerBotVillageGround rows[] = {
+			{ 1, PLAYERBOT_GROUND_HUBS_1, 32, PLAYERBOT_GROUND_HUBS_1, 8,
+				PLAYERBOT_GROUND_METINS_1, 12, NULL, { 0, 0 } },
+			{ 3, PLAYERBOT_GROUND_HUBS_3, 12, NULL, 0,
+				PLAYERBOT_GROUND_METINS_3, 12, PLAYERBOT_GROUND_BESTIALS_3, { 369700, 906200 } },
+			{ 4, PLAYERBOT_GROUND_HUBS_4, 10, NULL, 0, NULL, 0, NULL, { 0, 0 } },
+			{ 21, PLAYERBOT_GROUND_HUBS_21, 32, PLAYERBOT_GROUND_CAMPS_21, 8,
+				PLAYERBOT_METIN_HOTSPOTS, 12, NULL, { 0, 0 } },
+			{ 23, PLAYERBOT_GROUND_HUBS_23, 12, NULL, 0,
+				PLAYERBOT_GROUND_METINS_23, 12, PLAYERBOT_M2_BESTIAL_HOTSPOTS,
+				{ PLAYERBOT_M2_CAPTAIN_X, PLAYERBOT_M2_CAPTAIN_Y } },
+			{ 24, PLAYERBOT_GROUND_HUBS_24, 10, NULL, 0, NULL, 0, NULL, { 0, 0 } },
+			{ 41, PLAYERBOT_GROUND_HUBS_41, 32, PLAYERBOT_GROUND_HUBS_41, 8,
+				PLAYERBOT_GROUND_METINS_41, 12, NULL, { 0, 0 } },
+			{ 43, PLAYERBOT_GROUND_HUBS_43, 12, NULL, 0,
+				PLAYERBOT_GROUND_METINS_43, 12, PLAYERBOT_GROUND_BESTIALS_43, { 899600, 287800 } },
+			{ 44, PLAYERBOT_GROUND_HUBS_44, 10, NULL, 0, NULL, 0, NULL, { 0, 0 } },
+		};
+		for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
+			if (rows[i].mapIndex == mapIndex)
+				return &rows[i];
+		return NULL;
+	}
+
+	// Yongan's bank and Pyongmoo's, measured the same way Joan's was, with
+	// tools/generate_fishing_bank.py: a dry standable cell centre within two
+	// cells of water, spaced so two anglers never share a tile, each carrying
+	// the water point it faces. Both are anchored on that village's own Rybak,
+	// because the bait trip and the fishing trip have to be one walk.
+	//
+	// They are shorter rows than Joan's eighty. That is the map: Yongan's shore
+	// near its bait merchant runs about three thousand units. More anglers than
+	// stands is a case the claim code already handles - it shares a stand rather
+	// than refusing to fish.
+	const TPlayerBotFishingStandPoint PLAYERBOT_FISHING_STANDS_1[] = {
+		{ 484025, 962025, 484125, 962125 }, { 484125, 962075, 484125, 962175 },
+		{ 484225, 962025, 484175, 962125 }, { 484325, 962075, 484225, 962125 },
+		{ 484425, 962025, 484325, 962125 }, { 484525, 962075, 484425, 962125 },
+		{ 484625, 962025, 484525, 962125 }, { 484725, 962075, 484625, 962125 },
+		{ 484825, 962025, 484725, 962125 }, { 484925, 962075, 484825, 962125 },
+		{ 485025, 962025, 484925, 962125 }, { 485125, 962075, 485025, 962125 },
+		{ 485225, 962025, 485125, 962125 }, { 485325, 962075, 485225, 962125 },
+		{ 485425, 962025, 485325, 962125 }, { 485525, 962075, 485425, 962125 },
+		{ 485625, 962025, 485525, 962125 }, { 485725, 962075, 485625, 962125 },
+		{ 485825, 962025, 485725, 962125 }, { 485925, 962075, 485825, 962125 },
+		{ 486025, 962025, 485925, 962125 }
+	};
+	const TPlayerBotFishingStandPoint PLAYERBOT_FISHING_STANDS_41[] = {
+		{ 964275, 252925, 964375, 253025 }, { 964375, 252975, 964425, 253025 },
+		{ 964525, 252975, 964425, 253075 }, { 964175, 252975, 964275, 253025 },
+		{ 964625, 252925, 964525, 253025 }, { 964125, 253075, 964225, 253025 },
+		{ 964025, 253025, 964125, 253125 }, { 963925, 253075, 964025, 253125 },
+		{ 963825, 253025, 963925, 253125 }, { 963725, 253075, 963825, 253125 },
+		{ 965225, 253025, 965125, 253025 }, { 963625, 253025, 963725, 253125 },
+		{ 963575, 253125, 963675, 253125 }, { 965325, 253075, 965225, 253125 },
+		{ 965425, 253025, 965325, 253125 }, { 963475, 253175, 963575, 253225 },
+		{ 963375, 253125, 963475, 253225 }, { 965525, 253075, 965425, 253125 },
+		{ 965625, 253025, 965525, 253125 }, { 963275, 253175, 963375, 253225 },
+		{ 965675, 252925, 965725, 253025 }, { 963175, 253125, 963275, 253225 },
+		{ 965775, 252975, 965775, 253025 }, { 963075, 253175, 963175, 253225 },
+		{ 965875, 252925, 965825, 253025 }, { 965975, 252975, 965875, 253025 },
+		{ 963025, 253275, 963125, 253225 }, { 966075, 252925, 965975, 253025 },
+		{ 962925, 253225, 963025, 253325 }, { 966175, 252975, 966075, 253025 },
+		{ 962825, 253275, 962925, 253325 }, { 966275, 252925, 966175, 253025 },
+		{ 966375, 252975, 966275, 253025 }, { 962725, 253225, 962825, 253325 },
+		{ 966475, 252925, 966375, 253025 }, { 962625, 253275, 962725, 253325 },
+		{ 966525, 253025, 966425, 253025 }, { 962525, 253225, 962625, 253325 },
+		{ 962425, 253275, 962525, 253325 }, { 966625, 253075, 966525, 253125 },
+		{ 962325, 253225, 962425, 253325 }, { 962275, 253325, 962375, 253325 },
+		{ 966725, 253025, 966625, 253125 }, { 966825, 253075, 966725, 253125 },
+		{ 966925, 253025, 966825, 253125 }, { 962175, 253375, 962275, 253425 },
+		{ 967025, 253075, 966925, 253125 }, { 962075, 253325, 962175, 253425 },
+		{ 962075, 253475, 962175, 253475 }, { 967125, 253025, 967025, 253125 },
+		{ 961975, 253425, 962075, 253525 }, { 967225, 253075, 967125, 253125 },
+		{ 967325, 253025, 967225, 253125 }, { 961875, 253475, 961975, 253525 },
+		{ 967425, 253075, 967325, 253125 }, { 961775, 253425, 961875, 253525 },
+		{ 961775, 253575, 961875, 253575 }, { 967525, 253025, 967425, 253125 },
+		{ 967625, 253075, 967525, 253125 }, { 961675, 253525, 961775, 253625 }
+	};
+
+	struct TPlayerBotFishingBank
+	{
+		long mapIndex;
+		const TPlayerBotFishingStandPoint* stands;
+		size_t standCount;
+		TPlayerBotMapPoint fisherman;   // 9009, the bait and rod merchant
+		TPlayerBotMapPoint centre;      // what "am I at the water yet" measures
+		int radius;
+	};
+
+	const TPlayerBotFishingBank* GetPlayerBotFishingBank(long mapIndex)
+	{
+		static const TPlayerBotFishingBank rows[] = {
+			{ 1, PLAYERBOT_FISHING_STANDS_1,
+				sizeof(PLAYERBOT_FISHING_STANDS_1) / sizeof(PLAYERBOT_FISHING_STANDS_1[0]),
+				{ 482700, 961900 }, { 485025, 962050 }, 2600 },
+			{ 21, PLAYERBOT_FISHING_STANDS, PLAYERBOT_FISHING_STAND_COUNT,
+				{ PLAYERBOT_FISHERMAN_X, PLAYERBOT_FISHERMAN_Y },
+				{ PLAYERBOT_FISHING_BANK_X, PLAYERBOT_FISHING_BANK_Y },
+				PLAYERBOT_FISHING_BANK_RADIUS },
+			{ 41, PLAYERBOT_FISHING_STANDS_41,
+				sizeof(PLAYERBOT_FISHING_STANDS_41) / sizeof(PLAYERBOT_FISHING_STANDS_41[0]),
+				{ 964400, 252800 }, { 964650, 253275 }, 3600 },
+		};
+		for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
+			if (rows[i].mapIndex == mapIndex)
+				return &rows[i];
+		return NULL;
+	}
+
 
 	enum EPlayerBotRole
 	{
@@ -2482,6 +3107,7 @@ namespace
 			dwNextSkillBookTime(0),
 			dwNextSoulStoneTime(0),
 			dwNextThirdHandTime(0),
+			dwNextSkillReallocateTime(0),
 			dwNextProgressionChestCheckTime(0),
 			dwNextBuffCheckTime(0),
 			dwNextSkillCastTime(0),
@@ -2520,6 +3146,8 @@ namespace
 			dwShopCloseTime(0),
 			bShopStandsInRow(0),
 			bShopLastStandSold(false),
+			bShopOpenReason(0),
+			dwShopWeightsGeneration(0),
 			dwNextShopKeepTime(0),
 			dwNextShoppingTime(0),
 			dwMarketTripUntil(0),
@@ -2574,15 +3202,19 @@ namespace
 			bLastStoneAttackerCount(0),
 			bLastPersistedLevel(0),
 			bRouteAllowsHorse(false),
+			bRouteKeepsHorse(false),
 			bRecoveringAfterDeath(false),
 			bTacticalRetreat(false),
 			bMultiPullActive(false),
 			bMultiPullGroups(0),
 			bMultiPullDesiredGroups(0),
 			bLootThreatNearby(false),
+			dwNextBagFullLogTime(0),
 			bEquipPending(false),
+			bMeleeForStone(false),
 			bVisitingShop(false),
 			bMarketTrip(false),
+			bMarketToJoan(false),
 			bTownNeedMisc(false),
 			bTownNeedWeaponMerchant(false),
 			bTownNeedArmorMerchant(false),
@@ -2636,7 +3268,6 @@ namespace
 			dwNextMaterialScanTime(0),
 			dwMaterialHuntVnum(0),
 			dwShopSignClearUntil(0),
-			dwStallWalkUntil(0),
 			dwNextShopSignClearTime(0),
 			dwPortalWalkSince(0),
 			iPortalWalkBest(0),
@@ -2667,6 +3298,7 @@ namespace
 			dwServiceSince(0),
 			dwDepartureSince(0),
 			lDepartureMap(0),
+			dwNextDepartureLogTime(0),
 			bServicePending(false),
 			bLastCombatReason(0),
 			dwLureSessionId(0),
@@ -2714,6 +3346,7 @@ namespace
 		DWORD dwNextSkillBookTime;
 		DWORD dwNextSoulStoneTime;
 		DWORD dwNextThirdHandTime;
+		DWORD dwNextSkillReallocateTime;
 		DWORD dwNextProgressionChestCheckTime;
 		DWORD dwNextBuffCheckTime;
 		DWORD dwNextSkillCastTime;
@@ -2762,6 +3395,10 @@ namespace
 		// one sold anything - see PLAYERBOT_SHOP_STANDS_IN_ROW.
 		BYTE bShopStandsInRow;
 		bool bShopLastStandSold;
+		// EPlayerBotShopReason of the stand that is up, and the weights file
+		// generation it was judged under - see ManagePlayerBotShopLifetime.
+		BYTE bShopOpenReason;
+		DWORD dwShopWeightsGeneration;
 		DWORD dwNextShopKeepTime;
 		DWORD dwNextShoppingTime;
 		// The shopping trip: when it must be over, when the counters may be read
@@ -2776,6 +3413,15 @@ namespace
 		// the initialiser list: it default-constructs empty, which is the state a
 		// bot with no stall is in.
 		std::vector<TPlayerBotShopOffer> vecShopOffers;
+		// Item id -> stands it came home from unsold. Each stand takes
+		// PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT off the asking price, and a
+		// piece of gear under the precious refine that nobody wanted for
+		// PLAYERBOT_SHOP_UNSOLD_SCRAP_STANDS stands goes to the merchant.
+		std::map<DWORD, BYTE> mapStallUnsold;
+		// When each counter line was first put up (item id -> tick time), so
+		// the age of a piece of stock is known when it is discounted, deposited
+		// or scrapped. Pruned with mapStallUnsold.
+		std::map<DWORD, DWORD> mapStockFirstListed;
 		DWORD dwNextShopDebugTime;
 		DWORD dwMonkeyReversePortalBlockUntil;
 		// Since when this bot has been working its current Monkey Dungeon chamber.
@@ -2805,7 +3451,7 @@ namespace
 		DWORD dwStoneProgressVID;
 		DWORD dwStoneBrokenTime;
 		// What this bot has fought lately, by race flag; see the world memory.
-		WORD awRaceHistogram[PLAYERBOT_RACE_HISTOGRAM_SLOTS] = { 0, 0, 0, 0, 0 };
+		WORD awRaceHistogram[PLAYERBOT_RACE_HISTOGRAM_SLOTS] = { 0 };
 		DWORD dwRaceHistogramStamp;
 		// The Metin expedition: until when this bot hunts stones like a hunter,
 		// and when it next rolls for one. See PLAYERBOT_METIN_EXPEDITION_*.
@@ -2834,16 +3480,31 @@ namespace
 		BYTE bLastStoneAttackerCount;
 		BYTE bLastPersistedLevel;
 		bool bRouteAllowsHorse;
+		// The portal walk rides up to the gate; the passes that merely continue
+		// its route must not climb down a kilometre short of it.
+		bool bRouteKeepsHorse;
 		bool bRecoveringAfterDeath;
 		bool bTacticalRetreat;
 		bool bMultiPullActive;
 		BYTE bMultiPullGroups;
 		BYTE bMultiPullDesiredGroups;
 		bool bLootThreatNearby;
+		// When the "bag full, nothing on the ground fits" line may be written
+		// again for this bot: once a minute, not once per drop.
+		DWORD dwNextBagFullLogTime;
 		bool bEquipPending;
+		// An Archer with a Metin stone for a target has its dagger or sword in
+		// hand instead of the bow, and takes the bow back when the stone is
+		// gone. See ManagePlayerBotEquipment.
+		bool bMeleeForStone;
 		bool bVisitingShop;
 		// On a shopping trip: walking to the stalls, or standing among them.
 		bool bMarketTrip;
+		// The trip's first leg is the walk to the Joan gate from Bokjung. A
+		// portal walk is continued by the tick's route passes, not by the pass
+		// that asked for it, so the shopping pass has to keep asking until the
+		// map changes (see ManagePlayerBotShopping).
+		bool bMarketToJoan;
 		bool bTownNeedMisc;
 		bool bTownNeedWeaponMerchant;
 		bool bTownNeedArmorMerchant;
@@ -2938,9 +3599,6 @@ namespace
 		DWORD dwNextMaterialScanTime;
 		DWORD dwMaterialHuntVnum;
 		DWORD dwShopSignClearUntil;
-		// While set, the bot is carrying its goods to the other town's ring
-		// because this one is full - the status says so instead of the goal.
-		DWORD dwStallWalkUntil;
 		DWORD dwNextShopSignClearTime;
 		DWORD dwPortalWalkSince;
 		int iPortalWalkBest;
@@ -3004,6 +3662,8 @@ namespace
 		// a reset may drop a stale route but not the intent behind it.
 		DWORD dwDepartureSince;
 		long lDepartureMap;
+		// When the next "departure overdue" line may be written for this bot.
+		DWORD dwNextDepartureLogTime;
 		bool bServicePending;
 		// Why the monster this bot is fighting was allowed - the combat policy's
 		// own Reason, kept so the line over the bot's head can say what it is

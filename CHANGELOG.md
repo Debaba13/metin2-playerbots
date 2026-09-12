@@ -17,6 +17,1887 @@ every version here.
 
 ---
 
+## 2.0.14 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Panel klasyczny: polskie znaki w nazwach przedmiotów
+
+W 2.0.13 panel czyta nazwy z `item_proto` tego świata, ale kolumna jest w
+CP1250, a połączenie panelu z bazą w latin1 — serwer bazy konwertował
+nazwy po drodze i każda litera, której latin1 nie ma („ł, ś, ż, ę, ń”),
+przychodziła jako „?”: „Skrzyd?a Demona Chakr.”, „Zw?j B?ogos?awie?stwa”.
+Panel prosi teraz o surowe bajty i dekoduje je sam. Sprawdzone na 6001
+nazwach: ani jednego znaku zapytania.
+
+### Panel klasyczny: bazowe statystyki przedmiotu w dymku
+
+Dymek przedmiotu pokazywał linie bonusów i sloty, a wartość ataku, obronę,
+stałe bonusy przedmiotu i wymagany poziom brał ze statycznej tabeli linii
+1.x — dla przedmiotu, który ma tam ten sam numer, były to liczby drugiego
+silnika, dla reszty nic. Na mt2009 te pola też idą z `item_proto` tego
+świata i dymek liczy je jak klient: Lwi Miecz +9 to „Wartość Ataku 226–251”,
+„Wartość Magicznego Ataku 163–209”, „Szybkość Ataku +26%” i „Wymagany
+Poziom 75”, dokładnie jak w grze.
+
+## 2.0.13 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Profil wyposażenia czterech GM na koncie admin
+
+Konto `admin` ma cztery postacie GM — Admin (wojownik), AdminNinja,
+AdminSura i postać operatora — i dotąd tylko generator `gm_characters.sql`
+je wyposażał: raz, przy tworzeniu, bez umiejętności, bez konia w siodle i
+bez eliksirów; postać założoną ręcznie przed dodaniem generatora (Tieru,
+szamanka na poziomie 1 z wachlarzem +0) omijał w całości, a stosy 50 zwojów
+i 50 medali w jednym rekordzie były stosami, których silnik nie utrzymuje
+(proto: 20). Nowy quest `gm_profile` uruchamia się przy każdym logowaniu
+postaci GM z konta `admin` i, gdy wersja profilu postaci jest starsza,
+doprowadza ją do profilu przez własne ścieżki silnika: poziom 90, 500 mln
+yang, grupa umiejętności 1 i umiejętności profesji na P (40), wspólne na
+własnych sufitach (jazda 21, przywołanie konia 10, języki i konne 20),
+koń 21, komplet +9 klasy z bonusami z audytu (`docs/codex-audits/admin-gm-
+mt2009-20260912`) założony na postać, druga broń, 1000 strzał dla ninja,
+plecak (księga wojskowego konia 50053, po 200 dużych eliksirów, zwoje po 20,
+pierścień teleportacji, pełne automatyczne eliksiry 72726/72730 po dwie
+sztuki), a kilka sekund po zalogowaniu włącza po jednym eliksirze każdego
+rodzaju — przez tę samą ścieżkę użycia, którą idzie kliknięcie w kliencie,
+bo tylko ona zakłada efekt regeneracji. Każdy krok pyta najpierw, co postać
+już ma: przedmiot noszony lub leżący w plecaku nie jest dawany drugi raz,
+stosy są dopełniane do minimum, a przy ponownym logowaniu i po restarcie
+nic się nie dubluje (flaga wersji zapisywana na końcu). Starterowy złom —
+broń +0 klasy i małe mikstury — schodzi dopiero, gdy broń profilu jest
+założona; questy startowe dostają znacznik „wydano”, żeby nie nadały go
+ponownie. Dobre przedmioty zostają. Do tego dwie poprawki silnika:
+fabryka przedmiotów tworzyła każdy automatyczny eliksir jako zużyty (gniazdo
+„zużyte” równe pojemności — świeży eliksir z NPC lub z panelu mówił
+„pusty”), a questy dostały `item.use()` (przez `UseItemEx`, bo `UseItem`
+odmawia wszystkiego, gdy działa skrypt questa). Silnik dopuszcza pięć
+założeń na pół sekundy, a logowanie potrafi je zużyć, więc to, czego
+logowanie nie założyło, ubiera timer kilka sekund później.
+`gm_characters.sql` wpisuje stosy zgodne z proto i nie daje medali konnych.
+Sprawdzone na stosie testowym na wszystkich czterech postaciach (w tym
+Tieru z poziomu 1 i ninja z łukiem w ręku): komplet założony, eliksiry
+włączone przez quest, po dwa–trzy logowania i restart rdzenia z tą samą
+liczbą przedmiotów.
+
+### Gildie botów z nazwami od Iwakury
+
+Boty zakładały gildie pod dwiema nazwami na królestwo — sześć gildii na
+świat, a każdy kolejny założyciel zastawał obie nazwy zajęte. Pula to teraz
+sto nazw z listy Iwakury (`data/guild_names_iwakura.txt`, „Shire”,
+„UrzadPracy”, „TotalneBoty”…): założyciel zaczyna od miejsca wyliczonego z
+własnego pid, bierze pierwszą nazwę, której żadna gildia na świecie nie
+nosi, i pomija te dłuższe niż limit silnika (14 znaków na mt2009). Sam
+system — założenie przez bota od 40 poziomu z 200 tys. yang, zaproszenia
+dla botów tego samego królestwa w pobliżu, wspólne polowania na bossa przez
+czat gildii — bez zmian; w tej wersji sprawdzony na żywo na stosie
+testowym: stu botom Chunjo podniesiono poziom do 41, siedem gildii
+powstało w trzy sekundy od startu (Biedronka, TotalneBoty, Vitality,
+BlackWolfs, Zawodowcy, ZakonBigosu, Anarchia), 24 członków po trzech
+minutach, tabele `guild` i `guild_member` wypełnione.
+
+### Linux: aktualizacja z paczki, nie z gita
+
+Na serwerze bez launchera (Debian/VPS) jedyną drogą aktualizacji był
+aktualizator linii 1.x: `installer/install.sh` i kontener `updater`, które
+odświeżają checkout repozytorium i nakładają drzewo `linux-port/` — linii 1.x.
+Na serwerze 2.x kończyło się to wersją 1.33.3 w `VERSION`, stawkami
+zawieszonymi w `state=running` (skrypt stawek 1.x nie zna flag zdarzeń
+mt2009), panelem, który nie rozmawia z grą, i aktualizacją z panelu stojącą
+na 40% (l0st3k, 12 września: „checkout z main melduje 1.33.3”). Nowy
+`linux-port/tools/update.sh` robi na Linuksie to, co launcher na Windows:
+czyta `update-manifest-mt2009.json`, pobiera paczkę tej linii, sprawdza sumę
+SHA-256, rozpakowuje ją na folder serwera (`.env` zostaje) i uruchamia
+`docker compose up -d --build`. Kontener `updater` z profilu `update`
+uruchamia ten skrypt w trybie `watch` (te same pliki `request` i
+`update.status`, które pisze i czyta panel), a przycisk w panelu klasycznym
+pokazuje polecenie dla tej linii. `PACZKA_INFO.txt` ma sekcję dla Linuksa.
+Sprawdzone w kontenerze `python:3-alpine`: pobranie, suma, 6454 plików
+rozpakowanych na miejsce, `.env` nietknięty, tryb `watch` odpowiada na
+żądanie panelu.
+
+### Skrzynie nie wysypują się na ziemię
+
+„Postać nadal źle sprawdza zajętość ekwipunku: otwierając skrzynię, wypada
+to na ziemię” (sizowski, zrzut z Zieloną Siłą i Skrzynią Eksperta I na
+trawie). Na mt2009 stała `INVENTORY_MAX_NUM` to 135 komórek: dwie strony
+plecaka plus strona ekwipunku konia, do której silnik nie wkłada niczego,
+dopóki postać jej nie odblokuje — bot nigdy tego nie robi. Każde liczenie
+wolnych komórek w botach szło po 135, widziało 45 komórek‑duchów i skrzynia
+„mieściła się” w plecaku, którego nie było; to samo przekłamanie siedziało
+w regułach pełnego plecaka, nacisku na plecak i straganu. Boty liczą teraz
+po `INVENTORY_DEFAULT_MAX_NUM` (90) — 84 miejsca w kodzie, jedna stała
+`PLAYERBOT_BAG_CELLS`.
+
+### Wyszukiwarka przedmiotów widzi stragany botów
+
+„Wyszukiwarka pokazuje 0 sklepów, mimo że przedmioty na pewno są na
+straganach” (sizowski). Wyszukiwarka z tych plików przeszukiwała tylko
+sklepy offline (system ikarus); stragan bota to zwykły sklep prywatny, więc
+plac z trzystoma straganami odpowiadał „Znaleziono 0 sklepów”. Ten sam
+przełącznik kategorii pyta teraz także lady każdego bota z otwartym
+straganem na tej mapie w zasięgu wyszukiwarki i oznacza je na mapie jak
+sklepy offline (`ikarus_shop_manager.cpp`, plik w paczce).
+
+### Panel klasyczny: nazwy, dane i rozmiary przedmiotów z tego świata
+
+„Pomieszane nazwy angielskie/polskie, brak danych przedmiotu, miecz na dwa
+sloty widoczny w jednym” (Tieru). Panel czytał nazwy i rozmiary z plików
+linii 1.x (`items.json`, `item_names_pl.txt`) i tłumaczył resztę słowo po
+słowie — stąd „Leather Buty”, „Azure Suit”, „Przedmiot #30347”. Na mt2009
+panel czyta teraz `player.item_proto` tego świata (rdzeń db odświeża ją z
+`item_names.txt` paczki przy każdym starcie): polskie nazwy, typ i rozmiar
+w komórkach; siatka ekwipunku rysuje przedmiot na tyle komórek, ile ma.
+Tabela ładuje się przy pierwszym użyciu i odświeża co godzinę.
+
+### Panel klasyczny bez hasła na serwerze tylko lokalnym
+
+„Nie wiem, gdzie mam hasło admina — może niech każdy będzie automatycznie
+zalogowany, skoro to singleplayer” (Tieru). Panel ma od dawna tryb bez
+hasła, ale włączał go tylko instalator linii 1.x; paczka 2.x nie ma
+instalatora. Panel dostaje teraz adres, na którym go opublikowano
+(`M2_HOST_BIND_ADDRESS`, w paczce 127.0.0.1): na adresie lokalnym nikt poza
+tym komputerem go nie otworzy, więc nie pyta o hasło. Serwer za proxy
+(nginx) też wiąże panel na 127.0.0.1 i jest publiczny — tam operator
+ustawia `M2_PANEL_LOCAL_ONLY=0` w `.env` (nowy klucz, opisany w
+`.env.example`); instalator 1.x z nginx nadal wymusza hasło sam.
+
+### Teleport do bota z panelu klasycznego
+
+„Nie działa teleportowanie do bota” (Tieru). Przycisk wybierał postać
+gracza po najnowszym `last_play`, a ten zapis powstaje przy zapisie
+postaci, minuty po zalogowaniu — wybierał więc postać, która grała
+poprzednio, kolejkował teleport dla kogoś, kto nie jest w grze, odpowiadał
+„timeout” i zostawiał wiersz w kolejce, żeby teleportować tamtą postać przy
+jej następnym logowaniu. Odtworzone na stosie testowym: w grze Tieru, panel
+kolejkował dla AdminSura. Panel pyta teraz wszystkie postacie graczy z
+ostatniego tygodnia naraz, bierze pierwszą odpowiedź (tylko postać online
+ją da) i wycofuje resztę. Sprawdzone: `WarpSet Tieru … target map 1`,
+ponowne logowanie na rdzeniu docelowym w 3 sekundy, kolejka pusta.
+
+### Paczka logów zbiera też linie skrzyń i walk
+
+`PLAYERBOT_CHEST`, `PLAYERBOT_COMBAT` i `PLAYERBOT_STOCK` w filtrze
+sysloga — zgłoszenie o skrzyni na ziemi nie miało w paczce ani jednej
+linii o skrzyniach.
+
+### Dwie tabele logów, których brakowało
+
+„Unknown column 'hwid' in loginlog2” przy każdym logowaniu na świecie
+założonym przed dodaniem tej kolumny (`CREATE TABLE IF NOT EXISTS` nigdy nie
+dokłada kolumny) i „Table 'log.itemshop_dragon_scroll' doesn't exist” przy
+zakupie w ItemShopie (quest paczki pisze do tabeli, której żaden zrzut nie
+definiuje). Migrator dokłada kolumnę i tabelę przy każdym starcie;
+sprawdzone dwukrotnym uruchomieniem na bazie testowej.
+
+## 2.0.12 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Logowanie nie wisi przy dużej liczbie botów
+
+„Po aktualizacji 2.0.11 ciągle wisi na ekranie logowania”, „po zmniejszeniu
+botów do 1500 działa” (sizowski). Odtworzone na stosie testowym z 2482
+botami: rdzeń db odpowiadał na logowanie po 14–28 sekundach, klient dawał
+sobie spokój wcześniej, a w logu rdzenia kanału zostawało
+`LoginSuccess - cannot find handle [admin]`. Powód: tabele gry są na tej
+linii InnoDB, a MariaDB domyślnie czeka na fsync przy każdym zapisie — na
+dysku Docker Desktop to około 70 zapisów na sekundę, a 2482 boty zapisują
+około stu (flagi statystyk, flagi questów, przedmioty). Kolejka zapytań
+rdzenia db rosła do ~1900, a SELECT logowania stał na jej końcu.
+`innodb_flush_log_at_trx_commit = 2` w `99-metin2.cnf`: log InnoDB jest
+zrzucany co sekundę zamiast przy każdym zapisie. Przy awarii zasilania
+przepada najwyżej sekunda zapisów; dla świata jednego gracza to właściwa
+proporcja. Ustawienie wchodzi przy restarcie kontenera bazy (launcher robi
+to przy aktualizacji). Zmierzone po zmianie, ten sam świat i 2482 boty:
+kolejka rdzenia db 0, odpowiedź na logowanie po sekundzie, logowanie z
+klienta przechodzi do wyboru postaci. To samo stało za „teleport na GM-ie
+wywala mnie i nie mogę się zalogować ponownie” (marcol_): teleport między
+rdzeniami to ponowne logowanie kluczem, które czekało w tej samej kolejce.
+
+### Boty na mt2009 wystawiają stragany
+
+„2500 botów — 0 sklepów” (sizowski), „u mnie nie ma sklepów” (namiot_,
+pasywnezarabianie, mlodszygie). Dwie przyczyny, obie po stronie tego silnika:
+
+- Siatka prywatnego sklepu ma tu dziesięć kolumn (`SHOP_PLAYER_WIDTH`), a
+  prawa połowa to sloty zablokowane albo premium. Boty układały linie na
+  pięciu kolumnach jak na r40250 i każdą linię powyżej piątej wysyłały w
+  zablokowaną połowę — silnik odrzucał cały stragan (w logu
+  `PLAYERBOT_SHOP: refused`). Linia trafia teraz w ten sam wiersz i kolumnę
+  siatki silnika.
+- Ten silnik daje prawo do sklepu od 15 poziomu i 800 zabitych potworów
+  (`CanOpenShop`). Reguła dla ludzi; bot po każdym restarcie świata zaczynał
+  liczyć od nowa, więc przez wiele godzin żaden nie handlował. Bot jest z niej
+  zwolniony (zmiana w `char_shop.cpp`, plik w paczce).
+
+Zmierzone na stosie testowym z 2482 botami: przed zmianą 0 straganów w
+godzinę, po zmianie 113 otwartych w pięć minut od startu (13 Yongan, 66
+Joan, 34 Pyongmoo), dwie odmowy silnika na 116 prób.
+
+### Księgi i medale bez czekania
+
+„Księgi co 24 h” (namiot_), prośba operatora: bez limitu czasu na kolejną
+Księgę Umiejętności i na kolejny medal konia. `SKILLBOOK_LEARN_DELAY` (21 h
+w paczce mt2009) jest zerem — dla gracza i dla bota. Stajenny nie każe już
+czekać 18 godzin na kolejny medal: `pony_levelup.quest` z paczki jedzie w
+naszym katalogu questów z wyłączoną bramką `next_time` i jest kompilowany
+przy budowie obrazu na miejsce oryginału.
+
+### M2_PLAYERBOT_KINGDOMS=0 wyłącza Shinsoo i Jinno także po zasiewie
+
+„Ustawiłem KINGDOMS=0, a boty i tak pojawiają się w Jinno i Shinsoo”
+(adijhos). Przełącznik działał tylko na zasiew: świat, który raz ruszył z 1,
+miał tożsamości obu królestw w bazie i każdy rdzeń je startował. Rdzeń czyta
+teraz ten sam przełącznik ze środowiska usługi `game` (linia w logu
+`PLAYERBOT: M2_PLAYERBOT_KINGDOMS=0 …`) i przy 0 nie daje Shinsoo ani Jinno
+żadnego przydziału. Boty zostają w bazie; 1 uruchamia je z powrotem.
+
+### Panel klasyczny sprawdza wersję swojej linii
+
+„Sprawdź najnowszą wersję” mówiło 2.0.5, że jest najnowsza (archded,
+l0st3k). Panel czytał `VERSION` z korzenia repozytorium, czyli wersję linii
+1.x (1.33.3), i porównywał ją ze swoją 2.x. Panel mt2009 czyta
+`linux-port-mt2009/VERSION`; panel 1.x dostaje dodatkowo zdanie, że istnieje
+linia 2.x i że to osobna paczka z Discorda, nie aktualizacja.
+
+### Paczka logów: naprawiony grep, logowanie i rdzeń auth
+
+`game-supervise.txt` w 2.0.11 zawierał tylko błąd PowerShella (brak `grep`
+w Windows). Filtr robi teraz PowerShell. Do paczki wchodzą też linie
+logowania z każdego rdzenia kanału (`login-<rdzeń>.txt`), rdzenia auth
+(`login-auth.txt`, `syserr-auth.txt`) i rdzenia db (`login-db.txt`) — bez
+nich zgłoszenie „wisi na logowaniu” nie miało w paczce ani jednego wiersza.
+
+### Bot w wiosce poluje na potwory swojego poziomu
+
+„Biegają z 16 levelami po 11 h” (l0st3k), „boty biją na 9/10 lvlach nadal
+psy”. Zmierzone na stosie testowym (350 botów, mnożnik expa 100%): jedna
+trzecia walk w pierwszych wioskach toczyła się z potworem o sześć i więcej
+poziomów niższym od bota, poziom w okolicach 8–9 zajmował 40 minut, a 13–15
+około dwóch godzin. Winne było pasmo hubu: bot brał każdy hub, którego
+potwory są do siedmiu poziomów niżej od niego, więc bot na 9 poziomie szedł
+według pid równie chętnie do psów (Dziki Pies, 15 expa) co do wilków swojego
+poziomu (Nieb. Alfa Wilk, 111 expa). Tabela kar za różnicę poziomów w tym
+silniku tego nie ogranicza — sześć poziomów niżej to wciąż 90% — niska jest
+sama baza. Hub jest teraz brany od dwóch poziomów nad botem do trzech pod
+nim, a gdy w wiosce nie ma hubu w tym paśmie, bot bierze huby najbliższego
+pasma zamiast dowolnego (bot na 16 poziomie w Yongan szedł dotąd gdziekolwiek,
+także do tygrysów na 25, których nie pokona, i do psów). Obozy grup wybierane
+są tą samą regułą.
+
+Samo pasmo podwoiło awanse i nie ruszyło nikogo z miejsca: zasięg szukania celu
+to 6000 jednostek, tyle co komórka hubu, więc bot stojący przy wilkach swojego
+poziomu dalej widział psy sześć kilometrów dalej, a wędrówka do hubu — która
+dostaje tick tylko wtedy, gdy nie ma czego bić — nigdy go nie dostawała: 96 ze
+115 botów w Joan stało dalej niż 2500 jednostek od jakiegokolwiek hubu. Druga
+połowa zmiany: w pierwszej wiosce potwór o sześć i więcej poziomów niższy od
+bota i dalej niż 800 jednostek nie jest celem („outgrown_prey” w logu), więc
+bot idzie do swojego hubu, a po drodze bije to, co ma pod nogami. Obrona,
+zadanie, materiał i polowanie na broń mają pierwszeństwo, jak dotąd.
+
+Zmierzone na tym samym świecie w oknach po 10 minut, awanse na królestwo
+(117 botów): Shinsoo 30 → 47, Chunjo 5 → 38, Jinno 37 → 57 — przy rosnących
+poziomach, więc każdy kolejny awans kosztuje więcej expa. Walki z potworem
+o sześć i więcej poziomów niżej: z 36–40% do 9–18% (reszta to obrona i to,
+co stało w zasięgu 800). Tick, liczba szukań celu i resety watchdoga bez
+zmian; odmów „outgrown_prey” 5–40 na minutę na rdzeń.
+
+## 2.0.11 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty Shinsoo i Jinno nie stoją już na 5 poziomie
+
+„W królestwie czerwonym i niebieskim boty na 5 lv się bugują”, „stoją przy
+kowalu i handlarzach”, „2500 botów — 0 sklepów” (greess, martynka19cm,
+mrgixon, sizowski). Od 2.0.8 Yongan i Pyongmoo idą do NPC „wprost”, jak
+Bokjung — ale lista faz „wprost” była listą Bokjung, gdzie nie ma trenera ani
+Starszej Pani. Bot na 5 poziomie potrzebuje trenera (wybór grupy
+umiejętności), zaczynał więc wizytę z pustą listą, kończył ją w tym samym
+ticku i zaczynał od nowa w następnym: stał na placu z celem „wybór profesji”,
+resetowany przez watchdoga co 90 sekund, i nigdy nie wyszedł poza 5 poziom.
+W paczce logów sizowskiego: 500 takich botów na rdzeń. Lista „wprost” ma
+teraz trenera i Starszą Panią na początku, jak lista Joan, a wizyta, której
+lista nie ma czym obsłużyć, w ogóle się nie zaczyna (z linią w logu). Bokjung
+tego nie dotyczy — w drugiej wiosce potrzeba trenera nigdy nie jest ustawiana.
+
+### Jedna Księga Umiejętności z kamienia Metin, nie trzy
+
+„Graczowi lvl 46 lecą 3 KU ze wszystkich metinów w M1” (cyfrowy_mat). Od
+1.29 każdy kamień dawał trzy księgi, obojętnie od poziomu kamienia. Teraz
+kamień dopełnia do jednej: jeśli tabela dropu nic nie wylosowała, jedna
+księga i tak wypada, jeśli wylosowała, zostaje to, co wylosowała. Dotyczy obu
+silników (łatka 0006 i port mt2009).
+
+### Bot przemianowany ręcznie zachowuje nazwę
+
+„Dałem botowi ADAM miecz +9, rano nie było już bota o tym nicku” (gregoszky):
+2.0.10 przemianowało wszystkie boty na nową listę, także te, którym operator
+sam zmienił nazwę w bazie. Nazwa, która nie jest ani z puli, ani z zasiewu,
+jest czyimś wyborem: taki bot nie jest już przemianowywany (przez żadną
+kolejną wersję listy), a jego nazwa nie trafia do nikogo innego. Migrator
+liczy je osobno („N bot(s) renamed by hand keep their names”).
+
+### Paczka logów zbiera wszystkie trzy rdzenie i ślady padów
+
+ZBIERZ / WYŚLIJ LOGI zbierało syslog i status tylko z rdzenia Chunjo
+(`game1`); zgłoszenie o botach Shinsoo i Jinno nie miało ani jednej linii z
+rdzeni, na których stały. Teraz paczka ma osobno syslog, syserr, status i
+pliki `crash-*.txt` (ślad stosu po padzie, od 2.0.8) dla `first`, `game1` i
+`game2`, syserr rdzenia bazy oraz osobny, dłuższy log kontenera gry — wspólne
+800 linii logów compose mieściło 50 sekund, bo zalewały je resety watchdoga i
+komunikaty MariaDB o zerwanych połączeniach, a linia „CORE DIED” ze śladem
+stosu wypadała z okna, zanim paczka powstała.
+
+## 2.0.10 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Bonusy przedmiotów w panelach mają nazwy, nie numery
+
+„Zamiast nazwy bonusu jest numer #139” (djariczek): silnik mt2009 ma 31
+linii bonusów, których stary silnik nie znał — od 138 do 168 w `length.h`
+(regeneracja wytrzymałości, czas trwania umiejętności, silny przeciw
+Metinom/bossom, pochłanianie obrażeń, przełamania odporności…) — i nie mają
+one numeru APPLY, przez który oba panele nazywają linie. Panel klasyczny i
+panel Sebana dostały etykiety dla wszystkich 31 (po polsku i po angielsku,
+z właściwą jednostką); 139 to „Regeneracja wytrzymałości”, 147 „Czas
+trwania umiejętności”. Sprawdzone: tabela etykiet parsuje się (118 wpisów),
+oba panele kompilują się.
+
+### Nowa lista nicków Iwakury, po królestwach, bez duplikatów
+
+Iwakura dopisała listę do 1500 nicków (po 500 na królestwo, w tym nicki
+wspierających; „te generowane przez AI są okropne”, więc wszystko ręcznie)
+i podała zasadę: nicki brane z listy w losowej kolejności, po równo na
+królestwo, a dopiero gdy królestwo ma więcej botów niż nicków, do jego
+nicków dopisywane „2”, „v2”, „3” lub „v3”. Do tej pory pula szła po kolei od
+Chunjo, które brało pierwszy tysiąc nazw, a Shinsoo i Jinno dostawały kopie
+z v2/v3. Teraz lista (1475 poprawnych nazw; odrzucone: same cyfry, „GM…”,
+dwa wulgarne) jest tasowana raz, dzielona na trzy równe udziały po 491, i
+tylko Chunjo — 1500 zasianych postaci — dostaje dalej swoje nazwy z „2”/„v2”,
+potem „3”/„v3”. Każdy bot zostanie przemianowany przy pierwszym starcie po
+aktualizacji (nowa wersja puli); `M2_PLAYERBOT_HUMAN_NAMES=0` zostawia nazwy,
+`restore` przywraca zasiane.
+
+Przy okazji naprawiony błąd, który dotyczy każdego świata po 2.0.8:
+**dosiane boty Shinsoo i Jinno dostały te same nicki co boty Chunjo**. SQL
+numerował czekające boty od jedynki i dawał im nazwy od początku listy, nie
+patrząc, czy inny bot już je nosi — na świecie testowym 999 nazw było
+zdublowanych (np. 000Achtung000 na dwóch postaciach). Nazwa noszona przez
+bota, który nie czeka na nową, nie jest już wolna. Sprawdzone na tym
+świecie: 2499 botów przemianowanych, zero duplikatów, postać gracza na koncie
+admin nietknięta, drugi start nic nie zmienia, trzy boty pozbawione nicku
+dostają wolne nazwy bez kolizji.
+
+## 2.0.9 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Panel Sebana: zakładanie kont znów działa na 2.x
+
+„Nie utworzono konta: Unknown column 'empire' in 'INSERT INTO'” na każdym
+z trzech królestw (NieBijOddam). Tabela kont w plikach mt2009 nie ma kolumny
+`empire` (królestwo konta trzyma `player_index`, a pierwsza postać gracza
+dostaje je od gry), a formularz wstawiał ją zawsze. Na 2.x konto powstaje
+bez tej kolumny; postać GM zakładana z panelu dostaje królestwo w
+`player_index` jak dotąd. Do tego login ma na mt2009 najwyżej 16 znaków
+(tyle mieści kolumna) — formularz mówi to od razu zamiast błędu „Data too
+long” z bazy.
+
+### Suwak „Odpoczynek w mieście”, a poniżej 18 poziomu nikt nie odpoczywa
+
+W obu panelach (Zachowanie botów) jest nowy suwak `REST`, 0–100%, domyślnie
+100: udział botów, które po załatwieniu spraw w pierwszej wiosce zostają na
+rynku około trzech minut i spacerują między straganami. Kto ustawi 0, ma boty
+cały czas na expie — do miasta przychodzą tylko w sprawach (mikstury, kowal,
+handlarz, stragan) i od razu wracają. Suwak działa na żywo: bot, który już
+odpoczywa, kończy odpoczynek przy najbliższym ticku po zmianie na 0.
+Niezależnie od suwaka dwie nowe reguły: **bot poniżej 18 poziomu nie
+odpoczywa nigdy** (ma poziomy do zdobycia i nic do oglądania), a **bez
+wystawionego straganu na mapie nikt nie „ogląda straganów”** — do tej pory
+bot spacerował między pustymi stanowiskami pod napisem „Odpoczywam w
+mieście”, co na młodym świecie wyglądało jak bezczynność (`MayPlayerBotRestInTown`
+w `playerbot_config.h` jest całą regułą; licznik straganów pochodzi z księgi
+rynku, odświeżanej co minutę). Sprawdzone na stosie testowym po przebudowie:
+przy 353 botach poniżej 18 poziomu żaden nie odpoczywa, a rdzeń przy zmianie
+suwaka pisze `PLAYERBOT_CONFIG: town rest N%`.
+
+### Cztery postacie GM także na koncie, na którym już ktoś gra
+
+„Na moim koncie admin nie ma postaci GM, tylko moja Tieru” — skrypt z 2.0.4
+tworzył Admin, AdminNinja, AdminSura i AdminSzaman tylko wtedy, gdy konto
+`admin` nie miało **żadnej** postaci, więc kto założył sobie postać wcześniej,
+nie dostawał ich nigdy. Teraz skrypt dosiewa brakujące klasy do wolnych
+miejsc (konto ma cztery), pomija klasę, którą ktoś na koncie już gra, i nie
+rusza tego, co na koncie jest; ekran wyboru postaci pokazuje stare postacie
+na swoich miejscach, a nowe za nimi. Nowe postacie stoją w pierwszej wiosce
+swojego królestwa (Joan, Yongan albo Pyongmoo), bo konto ma jedno królestwo.
+Sprawdzone na świecie testowym z jedną szamanką na koncie: powstały Admin,
+AdminNinja i AdminSura, drugi start nic już nie zmienia. Dzieje się przy
+najbliższym starcie serwera po aktualizacji.
+
+### Launcher: trzy wiersze wersji na dole
+
+Stopka launchera pokazuje osobno serwer, launcher i klienta — zainstalowaną
+i najnowszą wersję każdego z nich (launcher jest częścią paczki serwera, więc
+jego „najnowsza” to wersja serwera; po aktualizacji w tej samej sesji stopka
+mówi, że na dysku jest nowsza i trzeba uruchomić launcher ponownie). Do tego
+zabezpieczenie: gdy launcher nie wystartuje albo któryś przycisk wyrzuci
+wyjątek, treść błędu trafia do `launcher-logs` i do okna z komunikatem — po
+restarcie z 2.0.8 jeden z graczy zobaczył okno błędu, którego log nie
+zawierał, bo urywał się na „Uruchamiam launcher ponownie”. Odtworzenie tej
+ścieżki (prawdziwa aktualizacja serwera → Tak → restart) przeszło bez błędu;
+następny raport będzie miał treść.
+
+### Sprawdzanie wersji bez pięciominutowego opóźnienia
+
+Launcher czyta manifest aktualizacji najpierw przez API GitHuba (świeże w
+minutę), a dopiero potem z raw.githubusercontent.com, którego CDN trzyma
+stary plik przez pięć minut — stąd „Masz już najnowszą wersję (2.0.7)” w
+pięć minut po wydaniu 2.0.8.
+
+## 2.0.8 — 2026-09-11
+
+### Boty Shinsoo i Jinno wreszcie chodzą do kowala i handlarki różności
+
+„Tylko boty z Chunjo ulepszają ekwipunek, do kowala nie podbiega żaden z
+innych królestw” (nerrvous_s, potwierdzone na 2.0.6). Odtworzone na stosie
+testowym z trzema królestwami: w osiem minut rdzeń Chunjo miał 131 wizyt u
+kowala i 3918 ulepszeń, rdzenie Shinsoo i Jinno zero — przy wizytach u
+handlarzy broni i zbroi u wszystkich. Przyczyna: wizyta w pierwszej wiosce
+ma osobną nogę „brama” do wnętrza Joan (handlarka różności i kowal stoją za
+murem), a jej współrzędne są Joan (60300, 169400) — na mapach 1 i 41 to
+nigdzie, więc noga kończyła się „unreachable” i faz wnętrza nigdy nie było.
+Zmierzone na `server_attr` mt2009: w Yongan i Pyongmoo kowal i handlarka
+różności stoją w tym samym spójnym obszarze co handlarz broni, bez muru,
+więc te wioski idą wprost do każdego NPC, jak druga wioska
+(`IsPlayerBotGatedVillage` — brama zostaje tylko dla Joan). Zmierzone po poprawce na tym samym stosie, dziewięć minut od startu:
+Shinsoo 308 wizyt u kowala i 4792 ulepszenia, Jinno 329 i 5475, Chunjo 134
+i 3920 — a handlarka różności odpowiednio 297, 309 i 169 wizyt.
+
+### Trzy królestwa domyślnie u każdego, boty dzielone po równo
+
+Do 2.0.7 `M2_PLAYERBOT_KINGDOMS=0` był domyślny, więc każdy świat 2.x miał
+boty tylko w Chunjo (paczka logów procedera: `shinsoo=0 chunjo=1500
+jinno=0`). Teraz domyślnie 1: migrator dosiewa kohorty Shinsoo i Jinno (po
+500, raz, także na istniejącym świecie — chwilę dłuższy start), a każdy
+rdzeń uruchamia swoje królestwo; liczba botów z suwaka dzieli się po równo
+(zmierzone: 970 → 324/323/323). Plik `.env` gracza jest pisany raz i nigdy
+nadpisywany, więc launcher przełącza stare `0` na `1` dokładnie raz i
+zapisuje to w `M2_PLAYERBOT_KINGDOMS_DEFAULTED`; kto potem ustawi 0, zostaje
+przy 0. „Żółci mają przewagę” (sosen94) bierze się z liczby powyżej 1500:
+Shinsoo i Jinno mają po 500 postaci, reszta idzie do Chunjo — do 1500 botów
+podział jest równy. Ściana poziomów Shinsoo/Jinno (36 lvl) bez zmian.
+
+### Padający rdzeń zapisuje własny backtrace
+
+„Wywala co 2 minuty” (proceder): rdzeń `ch1-game1` padał z sygnałem 11
+83–86 s po każdym starcie, a w paczce logów było tylko „Segmentation fault
+(core dumped)” — Docker Desktop kieruje zrzuty pamięci do WSL
+(`/wsl-capture-crash`), a limit rdzenia w kontenerze to 0, więc nie ma
+czego oglądać. Od teraz `libthecore` przechwytuje SIGSEGV/SIGBUS/SIGFPE/
+SIGILL/SIGABRT, zapisuje ślad stosu (`backtrace()`) do `crash.txt` w katalogu
+rdzenia i na stderr, po czym oddaje sygnał domyślnej obsłudze; rdzenie są
+linkowane z `-rdynamic`, więc ramki niosą nazwy funkcji (zmanglowane —
+`c++filt`). `m2-supervise` po „CORE DIED” drukuje ślad do logu kontenera
+(trafia do paczki logów) i odkłada go jako `crash-<data>.txt` obok syserr.
+Przyczyna padu u procedera nie jest jeszcze znana — następna paczka logów ją
+pokaże.
+
+### Launcher: „The property 'Count' cannot be found on this object”
+
+Start, URUCHOM DOCKER i paczka logów kończyły się tym błędem u co najmniej
+dwóch graczy (sykesal420). Wszystkie trzy uruchamiają sprawdzenie Dockera,
+które pyta Windows o zarezerwowane zakresy portów; funkcja zwracająca
+dokładnie jeden zakres (albo żadnego) oddaje pojedynczy obiekt (albo nic)
+zamiast tablicy, a moduł działa w trybie strict, w którym `.Count` na takim
+obiekcie to ten właśnie błąd. Wynik jest teraz zawsze tablicą. Osobna sprawa
+u drugiego gracza — „The Compose app is no longer running” — to uszkodzony
+Docker Desktop, nie launcher.
+
+### Dane do Navicat i inne drobiazgi
+
+Bez zmian w danych; patrz 2.0.7.
+
+---
+
+## 2.0.7 — 2026-09-11
+
+### Risk mode naprawdę znika (2.0.6 tylko usunęło plik)
+
+Sizowski po 2.0.6: „risk mode nadal jest”. Aktualizacja nigdy nie kasuje
+plików, więc każde drzewo z 2.0.0–2.0.5 wciąż ma `quest/high_risk.quest`, a
+pętla kompilacji w obrazie gry nadal miała `high_risk` na liście — 2.0.6
+zdjęło plik z repozytorium i nic więcej, więc u graczy quest kompilował się
+dalej. Bramką jest lista w Dockerfile, nie katalog: `high_risk` zniknęło z
+listy, a plik zostawiony w drzewie gracza jest ignorowany. Po tej aktualizacji
+nowe konto nie dostaje już wyboru High Risk / No Risk.
+
+### Launcher sam pyta o aktualizację przy starcie
+
+Po otwarciu okna launcher czyta kanał aktualizacji (jak dotąd, raz na sesję)
+i gdy serwer w kanale jest nowszy niż zainstalowany, pyta od razu: „Znaleziono
+nowszą wersję serwera X — czy chcesz dokonać aktualizacji teraz? Tak / Nie”.
+TAK uruchamia tę samą aktualizację, co przycisk AKTUALIZUJ; NIE odkłada
+pytanie do następnej wersji (zapamiętane w `.m2launcher-offers.json`), a
+przycisk działa zawsze. To samo dla klienta na linii 2.x: po aktualizacji
+serwera (albo od razu, gdy serwer jest aktualny) pyta o nowszą wersję
+klienta i podmienia packi przyciskiem AKTUALIZUJ KLIENTA. Świeża instalacja z
+pełnej paczki wie, jaki klient dostała: plik `CLIENT_VERSION` obok `VERSION`
+(dotąd launcher mówił „nieznana” i pytałby o klienta, który już jest);
+instalacje z 2.0.0–2.0.6 nie mają tego pliku, więc pytanie o klienta 2.0.3
+pojawi się u nich raz — TAK jest nieszkodliwe (podmienia te same packi),
+NIE zapamiętuje.
+
+### Dane do Navicat sprawdzone i uzupełnione
+
+Sprawdzone na plikach 2.x: host 127.0.0.1, port z `M2_DB_PUBLISH_PORT`
+(domyślnie 3306), konto root z `M2_DB_ROOT_PASSWORD`, konto gry (`M2_DB_USER`,
+domyślnie `metin2`) z `M2_DB_PASSWORD` — wszystko czytane z `.env` tej
+instalacji, więc zgadza się z tym, na czym stoi baza. Dopisana uwaga, której
+brakowało osobom edytującym bazę ręcznie: na 2.x przedmioty i potwory
+(`item_proto`, `mob_proto`) są w bazie `world`, a `player.item_proto` i
+`player.mob_proto` to tylko widoki; zmiany w `world` zostają po restarcie
+(inaczej niż na 1.33, gdzie tabele były nadpisywane z plików txt).
+
+### Suwak „Stragany” ma jawną umowę i dosięga stojących straganów (audyt D11)
+
+„Minimalny suwak, a 180 z 280 botów handluje”: stragan, który już stał, nigdy
+nie był pytany ponownie, a cztery wyjątki od suwaka nie były nigdzie
+opisane. Teraz stragan pamięta powód otwarcia — Handlarz, brak yang na
+mikstury, pełny plecak, dropper pod presją plecaka (te cztery suwak omija,
+bo lada to jedyny sposób opróżnienia plecaka), nadmiar ksiąg, los droppera,
+„jeden na dziesięciu” (te trzy suwak rusza). Status bota mówi „Prowadze
+stragan (los)” zamiast samego „Prowadze stragan”, log otwarcia niesie powód,
+a co dziesięć minut rdzeń pisze spis `PLAYERBOT_SHOP: census` z liczbą
+straganów według powodu i obowiązującą wagą. Po zmianie suwaka każdy
+stojący stragan z losowanego powodu jest sądzony ponownie pod nową wagą
+(los jest po PID, więc odpowiedź jest ta sama, jaką dostałby nowy stragan)
+i ten, który przegrał, zwija się w ciągu pięciu minut, rozłożonych po PID,
+zamiast wszystkie w jednej sekundzie. Opis suwaka w obu panelach mówi to
+samo, co kod.
+
+### Martwy zapas ma koniec: magazyn, nie handlarz (audyt D14)
+
+„Szaman trzyma stal wojownika +9, sura przedmioty innych klas”: ekwipunek
+powyżej +4, którego handlarz nigdy nie bierze, po czterech stoiskach bez
+kupca miał już pełny rabat i żadnej dalszej drogi — jechał w plecaku po
+kamieniach do końca życia bota. Teraz każdy wiersz lady ma zapisany czas
+pierwszego wystawienia (`mapStockFirstListed`), a przedmiot niesprzedany
+przez osiem stoisk (`PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS`) idzie pod
+presją plecaka do magazynu razem z nadwyżką ksiąg — zachowany, nigdy
+złomowany, poza plecakiem; log `PLAYERBOT_STOCK: to safebox` mówi ile
+stoisk i minut za sobą miał. Przedmiot, który bot powinien nosić, nigdy nie
+trafia do magazynu. Linia otwarcia straganu mówi też, co się nie zmieściło
+i dlaczego (`left_behind no_line= no_slot= antiflag=`), czyli rejestr
+powodów niewystawienia z audytu. Skompilowane na obu silnikach; na
+serwerach testowych z młodymi botami (poziom 2–4, brak straganów) nie
+zaobserwowane w ruchu.
+
+### Masowe nadawanie nie zatrzymuje się na botach offline (audyt D02)
+
+Zmierzone na 1500 zarejestrowanych botach, z których 349 było w świecie:
+paczka dla wszystkich doszła do 350 nadanych w dwie minuty i stanęła na
+`queued=10` na stałe. Dziesięć miejsc kolejki gry (`MAX_PENDING`) zajmowały
+postacie offline — każda czeka 30 s na sweep questa, 60 s na wycofanie przez
+workera i wraca po dwóch minutach — więc dziesięć nieobecnych nazwisk
+blokowało każdego obecnego za nimi. To „zatrzymanie po 333” z audytu: nie
+stan końcowy, tylko kolejka z głową offline. Worker czyta pięciominutową
+migawkę kolektora (kto jest w świecie), obecnych wysyła pierwszych, a sondy
+dla nieobecnych zajmują najwyżej cztery z dziesięciu miejsc, po dwie na tick.
+Zmierzone po zmianie: 40 obecnych botów nadanych w 15 s przy 1146
+nieobecnych w ogonie, `pending` w kolejce gry nie przekracza czterech.
+
+Strona nadawania pokazuje stan workera: bicie serca co tick (kontener
+`seban-item-grants` stoi → wprost, z poleceniem uruchomienia), ostatni błąd,
+liczby i wiek najstarszego zlecenia w każdym stanie, oraz ostrzeżenie, gdy
+zlecenie w kolejce gry leży ponad 45 s bez odbioru (pomocnik w grze budzi się
+przy pierwszym logowaniu po starcie).
+
+---
+
+## 2.0.6 — 2026-09-11
+
+### Panel klasyczny: przedmioty, teleport, szybkość, poziom znów działają na 2.x
+
+Każde polecenie z panelu klasycznego (nadanie przedmiotu, yang, poziom,
+teleport, szybkość biegu) kończyło się na 2.0.x komunikatem „Nic w grze nie
+odpowiedziało” (czerwcuu, u4nt). Quest `web_admin` czyta kolejkę panelu przez
+`mysql_direct_query()`, a ta funkcja nie jest jedna na obu silnikach: na
+r40250 (nasza łatka) zwraca wiersze jako tabelę, na mt2009 zwraca NAJPIERW
+liczbę zmienionych wierszy, a wiersze jako drugą wartość. Quest brał pierwszą
+wartość za tabelę i nigdy nie widział polecenia. Wspólna owijka bierze tę z
+dwóch wartości, która jest tabelą. To samo naprawia masowe nadawanie z panelu
+zaawansowanego, bo idzie tą samą kolejką.
+
+### Mnożniki EXP, dropu i yang naprawdę działają na 2.x
+
+Strona mnożników obu paneli mówiła na zielono „Zapisano! Serwer właśnie się
+restartuje”, a na serwerze nic się nie zmieniało (wątek z 11 września: „panel
+www niby na zielono informuje o zmianie różnych parametrów, a one się nie
+zmieniają”). Na r40250 mnożnik to przepisanie `mob_proto.txt` i tabel dropu
+przez `m2-rates` w kontenerze gry — obraz mt2009 nie miał tego programu, więc
+zlecenie panelu leżało w kolejce i nikt go nie czytał. Silnik mt2009 ma
+mnożniki własne: flagi zdarzeń `mob_exp`, `mob_item`, `mob_gold` (i bliźniacze
+`_buyer` dla kont premium), przez które `CHARACTER_MANAGER` mnoży
+doświadczenie, szansę dropu i ilość yang. Flaga to wiersz `player.quest` z
+`dwPID = 0`, wczytywany przez rdzeń bazy przy starcie i rozsyłany do rdzeni
+gry. Panel klasyczny zapisuje sześć wierszy, a potem prosi pomocnika w grze
+(`web_admin`, polecenie `RATES` na timerze serwera, `game.set_event_flag`) o
+ustawienie ich na żywo — zmierzone 2–3 s, bez restartu, we wszystkich trzech
+rdzeniach naraz. Gdy nikt nie jest zalogowany i pomocnik nie odpowie, panel
+zleca restart jak dotąd, a obraz mt2009 dostał własny `m2-rates`, który nic
+nie przepisuje, tylko restartuje rdzenie i raportuje wynik (zmierzone 35 s od
+zlecenia do „wszystkie rdzenie działają”, flagi wczytane z bazy). Panel
+zaawansowany zapisuje te same wiersze i idzie ścieżką restartu; oba panele
+pokazują te same liczby. Wartości 100% oznaczają grę bez zmian.
+
+### Nadanie rangi GM na 2.x mówi prawdę
+
+Silnik mt2009 nie ma gniazda administracyjnego, więc `m2-gm` (przeładowanie
+listy GM na żywo) nie istnieje w tym obrazie, a panel i tak pisał „Działa od
+razu, w grze”. Listę odczytuje na nowo `/reload a` — polecenie, które pomocnik
+w grze może wykonać tylko jako zalogowany IMPLEMENTOR. Panel próbuje tego
+przez kolejkę (`GM_RELOAD`), a gdy żaden IMPLEMENTOR nie jest w grze, mówi:
+uprawnienia wczytają się przy najbliższym restarcie albo po `/reload a`
+wpisanym przez zalogowanego GM.
+
+### Tryb ryzyka (Risk mode) zdjęty z linii 2.x
+
+Quest `high_risk` z plików 1.33 (wybór „High Risk / No Risk” przy logowaniu)
+przyszedł do obrazu mt2009 razem z resztą i nie powinien tu być. Nie jest już
+kompilowany; kto wybrał tryb wcześniej, ma go zwyczajnie wyłączonego.
+
+### Zamiar wyjazdu gaśnie po dotarciu (audyt D12)
+
+`lDepartureMap` — „ten bot ma wyjechać na mapę X, gdy skończy sprawunki” —
+był ustawiany raz i nigdy zerowany. Bot raz wstrzymany w Bokjung nosił go do
+końca życia: po powrocie do miasta po zapasy odmawiał każdego polowania na
+materiał i każdej wyprawy do Joan, a nad głową miał cel wyjazdu, na który
+już dawno dotarł. Zamiar gaśnie po przejściu na docelową mapę (albo na
+dowolne pogranicze, gdy pasmo poziomu przesunęło cel w międzyczasie), a
+wstrzymany dłużej niż dziesięć minut jest raportowany raz na dziesięć minut
+(`PLAYERBOT_DEPARTURE: overdue`) z tym, co go trzyma: broń, zbroja,
+mikstury, strzały, miejsce w plecaku, wizyta w mieście, złoto.
+
+### Skrzynia otwiera się tylko wtedy, gdy zmieści się cała paczka (audyt D01)
+
+Silnik wydaje nagrody ze skrzyni po jednej przez `AutoGiveItem`, a to, co się
+nie mieści, kładzie na ziemi i zgłasza sukces. Bot pytał przed skrzynią o
+pięć wolnych kratek i jedno miejsce na trzy pola — dla paczki z sześciu
+przedmiotów to za mało („boty mając pełne EQ otwierają skrzynie ucznia i
+wszystko wylatuje na glebę”). Teraz przed każdą skrzynią — ucznia, Moonlight,
+skrzynką bossa i skrzynią na klucz — bot układa całą paczkę grupy na kopii
+swojej siatki tak, jak robi to silnik: przedmiot potrzebuje swojej wysokości
+w jednej kolumnie jednej strony, stos dokłada się do stosu tego samego vnumu,
+każda nagroda zajmuje miejsce przed sprawdzeniem następnej. Dla grupy typu
+Pct (skrzynie ucznia) liczą się wszystkie linie naraz, dla pozostałych jedna,
+największa. Gdy się nie mieści, skrzynia czeka (raz na minutę
+`PLAYERBOT_GEAR: chest waits for room`), a plecak opróżnia wizyta w mieście.
+Na mt2009 typ grupy odsłania jednolinijkowy getter dodawany przez
+`playerbotify.py`; na r40250 liczone są wszystkie linie.
+
+### Launcher mówi, ile trwała każda faza
+
+Skarga „aktualizacja i start trwają bardzo długo” nie miała do tej pory
+liczby, którą dałoby się sprawdzić: log launchera znał tylko początek i koniec
+akcji. Launcher pisze teraz linie `[faza] … (+N s od początku akcji)` po
+sprawdzeniu Dockera, po przygotowaniu kontekstu budowania, przy starcie i
+końcu `docker compose up --build`, po pobraniu pakietu (rozmiar i czas) i po
+podmianie plików; `start-server.ps1` podaje czas samego `docker compose up`,
+czyli od bazy przez migrator do zdrowej gry. Okno launchera pokazuje bieżącą
+fazę w pasku stanu. Zmierzone na maszynie deweloperskiej dla 2.0.5: start
+zatrzymanego serwera 52 s, aktualizacja z zbudowanymi obrazami około minuty,
+pełna budowa obrazu gry od zera (bez cache kompilatora) 5 min 9 s, z czego
+2 min to pakiety Ubuntu i biblioteki zewnętrzne, 94 s rdzeń gry, 31 s apt
+obrazu docelowego. Na czterordzeniowym laptopie należy się spodziewać trzech,
+czterech razy tyle; to czas pierwszego uruchomienia, aktualizacja kompiluje
+tylko zmienione pliki botów przez ccache.
+
+---
+
+## 2.0.5 — 2026-09-11
+
+### Postacie GM w zestawie, który klient umie pokazać
+
+Zbroja 90 poziomu i broń 87 poziomu z 2.0.4 istnieją w `item_proto` serwera,
+ale nie w kliencie: jego `pc2/*.msm` znają kształty zbroi 0–12, 14–22 i 24
+(Pancerz Diabelskiego Rogu to 13, Zbroja z Niebieskiej Stali to 26), a
+pakiet `item` ma modele broni tylko do zestawu 75 poziomu. Postać w takiej
+zbroi była niewidzialna i nie mogła się ruszać (Iwakura). Czwórka GM nosi
+teraz zbroję 66 poziomu +9 swojej klasy (Zbroja z Czarnej Stali, Ubranie
+Czarnego Wiatru, Zbroja Płytowa Czarnej Magii, Czarna Szata) i broń 75
+poziomu +9 (Zatruty Miecz, Skrzydła Demona Chakram, Lwi Miecz, Bambusowy
+Dzwon; w plecaku Miecz Żalu, Stalowy Łuk Kruka, Wachlarz Ośmiu Trigramów),
+a do tego Olejek Wygnania do zmiany królestwa. Świat, który dostał czwórkę w
+2.0.4, ma podmieniane te same sloty przy najbliższym starcie — bonusy
+zostają, zmienia się tylko vnum.
+
+### Panel: ikony przedmiotów u każdego, historia ekwipunku działa
+
+Panel klasyczny pokazywał u każdego gracza przekreślony obrazek zamiast
+ikony przedmiotu: 1572 ikony generował na 1.33 instalator na maszynie
+operatora i nigdy nie były w repozytorium ani w paczce, a linia 2.x nie
+generowała ich nigdzie. Ikony są teraz robione z pakietu `icon` klienta
+mt2009 (`port/iconify.py`: 1557 ikon per-item z klienta plus 253 ze starego
+zestawu dla przedmiotów, których klient trzyma tylko w atlasach — mikstury
+startowe, księga umiejętności, skrzynie ucznia) i jadą w `files/static/icons`
+(8,6 MB w każdej aktualizacji serwera). Przedmiot bez ikony (741 z 6001
+vnumów świata, prawie żaden w obiegu) dostaje szare pole zamiast
+przekreślonego obrazka.
+
+„Historia ekwipunku” pokazywała `startswith first arg must be bytes…`: na
+mt2009 kolumny `how`, `hint` i `type` w `log.log` są `varbinary` i przychodzą
+jako bajty. Oba panele dekodują je teraz (CP1250) przed użyciem.
+
+### Pełny plecak: bot nie udaje, że podnosi, i robi miejsce
+
+Bot z zerem wolnych kratek podchodził do każdego dropu, pokazywał „Podnosze
+lup”, dostawał odmowę od silnika i próbował następnego — a między tym
+polował dalej („bot dropi, itemki pod nim leżą, mówi że podnosi łup, ale nie
+robi nic, bo nie ma miejsca” — JaroszV2). Zbieracz łupu pomija teraz
+przedmioty, które nie zmieszczą się w plecaku (zostaje tylko to, co dołoży
+się do istniejącego stosu), a raz na minutę pisze do logu
+`PLAYERBOT_LOOT: bag full pid= name= drops_in_reach= can_open_shop=`.
+
+Handlarz może dostać ekwipunek tylko do +4 — także z reguły „niesprzedane
+przez sześć straganów” (dotąd do +6). +5 i wyżej nigdy nie idzie do NPC: to
+towar na stragan, a co bot nosi sam, kowal podnosi dalej. Gdy plecak jest
+pod presją (8 wolnych kratek lub mniej) i bot nie może otworzyć straganu (na
+mt2009 przed 15 poziomem i 800 zabiciami), ekwipunek do +4, którego sam by
+nie założył, i nadwyżka materiałów idą do handlarza — wcześniej „towar na
+ladę” bez lady był plecakiem na zawsze.
+
+---
+
+## 2.0.4 — 2026-09-11
+
+Czwarta poprawka pierwszego dnia: cztery wyposażone postacie GM i skrzynia
+startowa dla gracza. Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Cztery postacie GM z pełnym wyposażeniem
+
+Zamiast jednej postaci Admin konto `admin` ma cztery, po jednej na klasę:
+**Admin** (wojownik), **AdminNinja**, **AdminSura** i **AdminSzaman**, każda
+90 poziomu z uprawnieniami IMPLEMENTOR. Każda nosi najlepszy zestaw +9, jaki
+ma ta paczka dla jej klasy (broń 87 poziomu, zbroja 90, hełm 80, Tarcza
+Tytanów, granatowa biżuteria, buty 65) z mocnymi bonusami — w tym linią
+średnich obrażeń 45% i obrażeń umiejętności 20% na broni — a w plecaku drugą
+broń (dwuręczna, łuk ze strzałami, wachlarz), po 200 mikstur XL, zwoje
+błogosławieństwa, Boga Smoków i teleportu, medale konne, 500 milionów yang,
+konia 21 poziomu i Księgę Wojskowego Konia do jego przywołania. Postacie
+powstają na świeżym świecie, a na istniejącym przy najbliższym starcie, o ile
+konto `admin` nie ma jeszcze żadnej postaci; konto, na którym ktoś już gra,
+zostaje jak było (jego pierwsza postać dostała GM w 2.0.2). PID-y 9001–9004,
+poza zakresem seeda botów.
+
+### Nowa postać gracza dostaje Skrzynię Ucznia
+
+Boty zaczynają ze Skrzynią Ucznia I w plecaku, gracz zaczynał z niczym
+(„gracz jest gorszy niż bot” — sizowski). Quest `starter_chest` daje ją przy
+pierwszym wejściu do gry postaci do 5 poziomu, według klasy (wojownik i sura
+50187, ninja 50212, szaman 50213) — dalsze skrzynie łańcucha otwierają się jak
+u botów, od 10 poziomu. Bot do 5 poziomu też dostanie jedną przy najbliższym
+logowaniu; quest nie odróżnia bota od gracza, a to garść skrzyń więcej.
+
+---
+
+## 2.0.3 — 2026-09-11
+
+Trzecia poprawka pierwszego dnia: konto premium dla botów i tooltipy dla
+GM-a. Serwer: ZAINSTALUJ AKTUALIZACJE; klient: AKTUALIZUJ KLIENTA (pakiet
+`root`).
+
+### Każdy bot ma konto premium
+
+Ten silnik ma abonament premium (50% więcej doświadczenia, podwójna szansa
+na drop przedmiotów i yang, automatyczne podnoszenie yang, dodatkowa strona
+magazynu, więcej miejsc w sklepie, lepsze wyławianie ryb). Bot nie loguje się
+przez serwer auth, więc nigdy go nie miał. Od tej wersji każdy bot — obecny
+i każdy nowy — dostaje abonament przy wejściu do gry, bez wpisów w bazie:
+premium siedzi w tabeli konta deskryptora, z której silnik czyta je przy
+ładowaniu postaci (`SetPlayerProto`), i stamtąd odpowiadają wszystkie
+sprawdzenia `GetPremiumRemainSeconds`. Ważne pięć lat od każdego startu.
+
+### GM widzi tooltipy przedmiotów
+
+Postać z uprawnieniami GM nie widziała nazwy ani statystyk żadnego
+przedmiotu po najechaniu („Nie widać nazw itemów” — davids998; „tylko gdy
+jesteś GM” — sizowski). Gałąź GM w tooltipie klienta iteruje po
+`auxiliaryDict.items()`, a `auxiliaryDict` jest w tym roocie pustym napisem
+(jego przypisanie jest wykomentowane), więc każdy tooltip umierał na
+`AttributeError`, zanim został pokazany. Gałąź jest teraz strzeżona; GM
+widzi zwykły tooltip plus linie VNUM/TYPE/SOCKET. Zmiana w kliencie:
+AKTUALIZUJ KLIENTA.
+
+---
+
+## 2.0.2 — 2026-09-11
+
+Druga poprawka z pierwszego dnia: zgłoszenia z Discorda po południu, nowa
+pula nicków i aktualizacja klienta (przycisk „AKTUALIZUJ KLIENTA” w
+launcherze — dwa pliki pakietu `root`).
+
+### Konto admin ma postać GM
+
+Paczka mt2009 przychodzi z pustą listą GM i bez żadnej postaci na koncie
+`admin`, więc kto zalogował się na konto testowe, dostawał zwykłego gracza
+(archded: „loguję się admin admin, a tam nie ma postaci GM”). Świeży świat
+tworzy teraz na tym koncie postać **Admin** (wojownik 90 poziomu, stoi w
+Joan) z uprawnieniami IMPLEMENTOR. Świat założony na 2.0.0 lub 2.0.1 dostaje
+to przy najbliższym starcie: pierwsza postać konta `admin` zostaje GM (jeśli
+na koncie nie ma jeszcze postaci — pierwsza, którą utworzysz, po kolejnym
+starcie). Nadanie jest jednorazowe i tylko na pustej liście; świat, który
+kiedykolwiek miał własnego GM, zostaje jak był.
+
+### „Doładuj SM!” prowadzi na buycoffee, nie na mt2009.pl
+
+Przycisk „Doładuj SM!” w sklepie z przedmiotami i przycisk w oknie
+abonamentu otwierały stronę publicznego serwera mt2009 (sizowski, matthaeu;
+„powinno przenosić na buycoffee” — kuszaa). Oba prowadzą teraz na
+https://buycoffee.to/metin2-playerbots, a „Wsparcie” w menu systemowym na nasz
+Discord. To zmiana w kliencie: w launcherze kliknij „AKTUALIZUJ KLIENTA”.
+Smoczych Monet na tym serwerze nikt nie sprzedaje — dopisujesz je sobie w
+bazie (`account.account.cash`).
+
+### Boty nie oglądają straganów, których nie ma
+
+Po załatwieniu spraw w mieście bot chwilę zostaje na placu, a nad głową
+miał „Ogladam stragany” — także na świecie, na którym żaden bot nie dorósł
+jeszcze do otwarcia sklepu („jakie stragany oglądają jak żadnego nie ma” —
+.christoff). Bez lady na mapie mówi teraz „Odpoczywam w miescie”. To samo z
+zakupami: wyprawa na targ („Szukam czegos na straganach”) rusza tylko wtedy,
+gdy na tej mapie albo w pierwszej wiosce królestwa stoi jakiś stragan;
+wcześniej bot szedł na pusty pitch i przeglądał powietrze.
+
+### Panel: ranking nie wisi na „Ładowanie…”
+
+Lista rankingu w panelu klasycznym zmieniała się tylko po udanej odpowiedzi
+API, a pierwsze pobranie ruszało dopiero po pozycjach botów — na świecie,
+który jeszcze nie miał botów w grze, albo po błędzie API napis „Ładowanie…”
+zostawał na zawsze (davids998). Odmowa API jest teraz wypisywana w miejscu
+listy, a ranking pobiera się od razu.
+
+### Nicki botów: lista Iwakury, w całości i tylko ona
+
+Iwakura spisał 1000 nicków z polskich serwerów z lat 2010–2012 („tu jest
+postaranie”). Ta lista jest teraz jedyną pulą: znika poprzednia (lista
+jaksiezabica, pierwsza lista Iwakury i nicki składane z ich słów) i znika
+dopasowanie do klasy i płci — nazwy idą po kolei według PID, jak zostały
+napisane. Każdy bot, który nosił nick ze starej puli, dostaje nowy przy
+najbliższym starcie serwera (pula ma wersję; historia w
+`common.playerbot_name_history` pamięta nazwę z seeda, więc „restore” dalej
+działa). Gdy botów jest więcej niż nazw, lista idzie drugi raz z „v2” na
+końcu, potem „v3”; Iwakura dopisze kolejne nicki w tygodniu. Odrzucone: dwa
+wulgarne, dwa udające GM i pięć złożonych z samych cyfr. Podkreślniki są
+wycinane, bo klient ich nie przyjmuje.
+
+---
+
+## 2.0.1 — 2026-09-11
+
+Pierwsza poprawka linii 2.x, z pierwszego dnia instalacji u graczy.
+
+### Budowa nie stoi już na `deps 7/7`
+
+Pierwsza budowa pobiera pakiety Ubuntu, a archive.ubuntu.com serwowało dziś z
+Polski kilka kilobajtów na sekundę: 10 MB szło kilkanaście minut, budowa
+„wisiała” na `deps 7/7` po 20–40 minut (jaksiezabic, drip9660, matthaeu,
+u4nt). Wpisanie w `.env` polskiego mirrora skracało to do dwóch minut
+(piotrekf3). Ten mirror (`http://ubuntu.task.gda.pl/ubuntu/`) jest teraz
+domyślny: pusty `M2_APT_MIRROR` w istniejącym `.env` też go dostaje, więc
+nikt nie musi niczego edytować. Inny kraj wpisuje bliższy mirror w
+`M2_APT_MIRROR`.
+
+### Nazwy straganów od społeczności
+
+Iwakura spisał nazwy sklepów z polskich serwerów z lat 2010–2012, z podziałem
+na kategorie. Stragan botów ma teraz szyld według tego, co przeważa na ladzie:
+ryby i małże („Sklep Rybny u Janusza ;]”, „Malze po 3000 sztuka!”), księgi
+umiejętności („Makulatura po dziadku”), ulepszacze („Zolc i skora
+niedzwiedzia”), ekwipunek („Zbroje na chude klaty”), medale konne, zwoje
+błogosławieństwa, kamienie duchów — a stragan mieszany bierze jedną z
+kilkudziesięciu uniwersalnych („TANIEJ NIZ OBOK >>>>>”, „ZBANUJCIE TE
+BOTY!!!”). Broń 30 poziomu i duży ulepszony przedmiot dalej idą na szyld pod
+własną nazwą. Szyld zmienia się z każdym kolejnym straganem tego samego bota.
+
+### Stragan dopiero od 15 poziomu i 800 zabitych potworów
+
+Ten silnik pozwala otworzyć sklep dopiero od 15 poziomu i 800 zabić
+(`CanOpenShop`); młodszy bot dostawał od silnika odmowę przy każdej próbie —
+39 z rzędu w młodym świecie. Bot pyta o to przed wyjściem na pitch i wraca po
+dziesięciu minutach.
+
+---
+
+## 2.0.0 — 2026-09-11
+
+**Nowa linia serwera: pliki serwerowe mt2009 (Martysama r41023) zamiast r40250.**
+To osobna, pełna paczka — klient i serwer razem — i osobny kanał aktualizacji.
+Instalacja 1.33.x niczego z tej wersji nie dostanie i nie powinna: stary
+launcher i stary klient nie pasują do nowych plików. Pełną paczkę pobierasz z
+Discorda (discord.gg/pt5tvnrN6), a od tej chwili aktualizacje serwera i klienta
+przychodzą już przez launcher, jak dotąd.
+
+### Podziękowania
+
+To wydanie powstało dzięki ostatnim wpłatom. Bez nich nie byłoby czasu ani
+środków na to, co się tu wydarzyło: dziesiątki tysięcy linii kodu, zmiana
+architektury serwera i zbudowanie jej od nowa na innym silniku — przy
+zachowaniu wszystkiego, co boty i panele potrafiły do tej pory. Dziękuję.
+Wsparcie projektu: buycoffee.to/metin2-playerbots.
+
+### Serwer
+
+- Silnik mt2009 przeniesiony na Linuksa i budowany w Dockerze tak jak
+  dotąd: cztery etapy obrazu, protosy w bazie (`PROTO_FROM_DB`), sześć baz na
+  MariaDB 11.8, te same porty, ten sam launcher.
+- Port jest zapisany jako skrypty, nie jako ręczne poprawki: każdy plik
+  silnika, bazy, compose i share, który różni się od paczki, jest renderowany
+  z oryginału r40250 albo z pakietu i da się odtworzyć jedną komendą.
+- Świat startuje otwarty. Pakiet uruchamiał każdy serwer w „przerwie
+  technicznej” do czasu, aż GM wpisze `/maintenance 0`; zwykłe konto widziało
+  na ostatnim kroku logowania „Obecnie trwa przerwa techniczna”.
+- Schemat logów uzupełniony o 23 tabele, które silnik zapisuje, a których
+  pakiet nie miał; `account.social_id` poszerzony do 18 znaków (identyfikatory
+  botów były ucinane); kolumny `mileage`/`jackpot` dla ItemShopu.
+- Skrzynie startowe botów, skrzynia księżycowa i drop broni 30 poziomu na
+  mapie gildii dopisane do plików pakietu; brakujący przedmiot w takiej
+  grupie wywraca cały plik przy starcie, więc render sprawdza vnumy względem
+  zrzutu świata.
+
+### Playerbots
+
+- Cała logika botów bez zmian w zachowaniu. Różnice silnika są zamknięte w
+  jednym nagłówku (`playerbot_engine_compat.h`): numeracja bonusów
+  (`POINT_*` zamiast `APPLY_*`), nazwy afektów, złoto (`ChangeGold` zamiast
+  `PointChange`, który tu jest odrzucany), zakładanie przedmiotów, flagi
+  specjalne postaci, wędkowanie.
+- Zakładanie ekwipunku: mt2009 odpowiada na `CanEquipNow` sześć razy na pół
+  sekundy na postać, a przebieg ekwipunku pytał o każdy przedmiot w torbie —
+  63 tysiące odrzuconych ulepszeń na godzinę. Zegar jest zerowany przed
+  każdym pytaniem; po poprawce 6940 założeń i 213 odmów w tym samym czasie.
+- Flagi specjalne postaci (statystyki `stat_*`) ładują się dla botów: pakiet
+  ładowania bota niesie id konta, bez którego rdzeń db odpowiadał flagami
+  wszystkich botów naraz i gra je odrzucała.
+- Panele klasyczny, Sebana i ItemShop działają na obu silnikach z jednym
+  przełącznikiem (`M2PANEL_ENGINE` / `PLAYERBOTS_ENGINE`); ranking broni
+  liczy właściwe linie obrażeń.
+
+### Klient
+
+- Klient w paczce jest gotowy do gry na tym komputerze (127.0.0.1); launcher
+  znajduje go sam w folderze `Klient` obok `Serwer` i nie pyta o plik EXE.
+- Własny regulamin w oknie logowania: co to za projekt, zasady, wsparcie na
+  buycoffee, Discord, prywatność. Przyciski okna logowania prowadzą do
+  GitHuba projektu, buycoffee i naszego Discorda.
+- Narzędzie do packów klienta rozumie układ PackMakerLite: ten klient
+  sprawdza CRC32 każdego pliku typu 2 i root spakowany po staremu nie
+  uruchamiał gry (`RunMain Error`).
+
+### Launcher i paczka
+
+- Jeden zip na hosting (`Metin2-Singleplayer-2.0.0.zip`): `Klient\`,
+  `Serwer\` i `CZYTAJ.txt`. Bez haseł, tożsamości instalacji, logów i kopii —
+  launcher tworzy je przy pierwszym starcie.
+- Launcher rozpoznaje silnik po pliku `linux-port\docker\ENGINE`: własny
+  kanał aktualizacji (`update-manifest-mt2009.json`), lista zrzutów, brak
+  łatek r40250, lista modułów kontekstu budowania.
+- Adopcja istniejącej instalacji Dockera tylko tego samego silnika: kto
+  przechodzi z r40250, ma na dysku jedną instalację — starą — i launcher
+  podpiąłby nowy serwer pod jej bazę. Teraz stara instalacja zostaje obok,
+  nietknięta, a nowa dostaje własną.
+- Przycisk „PANEL GM F9” na tej linii to zwykłe „AKTUALIZUJ KLIENTA”.
+
+### Czego jeszcze nie ma
+
+- Panel GM F9 (część serwerowa i kliencka) — celowo pominięty, żeby nie
+  kolidować z klientem; wróci osobno.
+- Misje poziomowe botów: ten pakiet nie ma questa `levelup`, boty pomijają
+  ten etap rozwoju.
+- Wędkowanie: silnik wymaga 50 poziomu i przepustki wędkarskiej; boty na razie
+  nie łowią.
+
+---
+
+## 1.33.3 — 2026-09-11
+
+Poranek po nocy zgłoszeń: siedem poprawek, każda sprawdzona na żywym serwerze
+testowym. Tym razem **zmienia się też klient** — paczka klienta 1.33.3.
+
+### Panel GM nie może już zatrzymać ładowania gry
+
+Po zainstalowaniu panelu GM u części graczy pasek ładowania stawał na 100% i
+gra nie wchodziła (Dixdros, jaroszv2, .unright, ligivanestrea). Okno panelu
+było budowane bezwarunkowo w środku budowy całego interfejsu, więc jakikolwiek
+wyjątek w nim — kontrolka, której nie ma w innej wersji klienta, klucz, którego
+nie ma w innym pakiecie językowym — przerywał budowę wszystkiego. Stockowy root
+wchodził na tych samych maszynach.
+
+Teraz panel buduje się w osobnym bloku: jeśli się nie zbuduje, gra wchodzi bez
+niego, a powód trafia do `syserr.txt` w folderze klienta. F9 mówi wtedy na
+czacie, że panelu nie ma i gdzie szukać przyczyny. **Sama przyczyna jest wciąż
+nieznana** — nikt jeszcze nie przysłał `syserr.txt`. To zabezpieczenie zamienia
+„gra nie wchodzi" w zgłoszenie, które niesie odpowiedź.
+
+### Pełny kanał przy 2500 botach
+
+Lista kanałów pokazywała FULL, a klient odmawiał wejścia, gdy botów było więcej
+niż 1200 — silnik liczył boty jak graczy, i przy statusie kanału, i przy limicie
+logowania. Boty nie są graczami w tej rachubie: liczone są tylko postacie ludzi,
+także te zalogowane na innych rdzeniach. Rdzeń wypisuje co pięć minut
+`CHANNEL_STATUS: players=… status=…`, więc następny zrzut ekranu będzie miał
+liczbę.
+
+### Boty przestały grzęznąć w M3
+
+Po wejściu na mapę gildii bot lądował w punkcie (179500, 1000) — to komórka
+(3, 10) mapy, nieprzechodni północno-zachodni róg. Nie miał trasy do niczego,
+watchdog resetował go co półtorej minuty w tym samym miejscu i nic nie mogło go
+ruszyć; teleport z panelu też nie, bo bot nie ma klienta, który mógłby przeżyć
+zmianę mapy po stronie klienta. Zgłoszone z logiem przez greessa, potwierdzone
+przez dwie kolejne osoby.
+
+Ten punkt pochodził z tabeli questu Teleportera; stała w kodzie miała już od
+dawna właściwy, z `Town.txt` mapy. Tabela dla trzech królestw przywróciła stary
+numer. Wszystkie trzy mapy gildii lądują teraz na własnym punkcie z `Town.txt`
+i test jednostkowy to przypina. Sprawdzone: ten sam bot, który rano utknął w
+rogu, po poprawce wylądował na (221900, 9200), zaatakował i dosiadł konia.
+
+### Koreański tekst zamiast „nie straciłeś doświadczenia"
+
+Jeden plik silnika trafił do paczki przekodowany na UTF-8. Gra szuka
+komunikatów po ich koreańskim kluczu, bajt w bajt, a pliki tłumaczeń są w
+kodowaniu koreańskim — więc trzynaście komunikatów z tego pliku nie trafiało w
+tłumaczenie i wracało po koreańsku, a każda śmierć z błogosławieństwem Boga
+Smoków zostawiała błąd w logu (276 w jednym zgłoszeniu). Od 1.31.6. Plik wrócił
+do właściwego kodowania; po restarcie zero takich błędów.
+
+### Wędkarze nie rozrzucają ryb po trawie
+
+Złowiona ryba idzie do plecaka funkcją, która pełnego plecaka nie odmawia —
+kładzie rybę na ziemi i zgłasza sukces. Stąd zdjęcie od bierzyna: wędkarze
+„upuszczają drop", a potem wszystkie boty biegną po niego. Sesja wędkowania
+kończy się teraz, gdy w plecaku nie ma wolnego pola, i bot idzie go opróżnić.
+
+### Nicki botów: 1000 od Iwakury, klasa i płeć się zgadzają
+
+Iwakura przysłał tysiąc nicków z prośbą, żeby były „bardziej różne". Po
+odsianiu duplikatów i tego, czego silnik nie przyjmie, 747 nowych trafiło do
+puli. Reszta puli jest składana ze słów wyjętych z obu list i w ich kształtach —
+poprzednia wersja składała wszystko w jednej gramatyce z czterdziestu słów.
+
+Nick, który mówi o klasie — Włócznia, Szaman, Sura, Woj, Fms, Ninja — trafia do
+bota tej klasy, a nick wyraźnie kobiecy — Szamanka, Królowa, Marysia — do postaci
+kobiecej. „Ninja szamanka, ale to sura" było prawdziwym zrzutem ekranu. Zmierzone
+na 2500 botach: wojownicy dostali wojownicze nicki w 80%, nicki kobiece trafiły
+wyłącznie na postacie kobiece. Boty, które nick już mają, zachowują go.
+
+### Martwy towar w końcu idzie do handlarza
+
+Reguła „czego nikt nie kupił przez sześć stoisk, to złom" stała pod regułą „+4
+i wyżej nigdy do NPC", więc nigdy nie dotyczyła tego, co stragan naprawdę
+trzyma. Plecak pełen +5, których nikt nie kupuje, był plecakiem na zawsze — i to
+jest bot, który „siedzi w M1, ogląda stragany i od wczoraj nie wbił poziomu".
+Reguła działa teraz do +6; +7 i wyżej nadal nigdy nie idzie do NPC.
+
+### ItemShop: moneta i zdrowie kontenera
+
+Adres sklepu z gry miał na końcu losowy bajt zamiast kodu kraju, bo zmienna nie
+była zainicjalizowana dla locale spoza listy silnika — Apache odpowiadał 400,
+zanim PHP w ogóle wystartowało (archded, z logiem). Ma teraz wartość domyślną.
+Do tego błąd PHP zwraca 500 zamiast 200 z treścią błędu, więc healthcheck
+przestaje nazywać zepsuty sklep zdrowym, a wbudowana przeglądarka klienta nie
+zapamiętuje strony błędu na stałe.
+
+---
+
+## 1.33.2 — 2026-09-11
+
+Trzy zgłoszenia z Discorda z jednego wieczoru. Wszystkie sprawdzone odtworzonym
+błędem, nie z lektury kodu. Klient bez zmian — aktualizuje się tylko serwer.
+
+### Suwak liczby botów wreszcie znaczy to, co pokazuje
+
+Suwak w launcherze sięga 2500 i tak jest podpisany, a rdzeń gry ścinał tę liczbę
+do 1000. Kto ustawił więcej, dostawał dokładnie tysiąc botów i nigdzie nie było
+powiedziane dlaczego — ani w logu, ani w panelu.
+
+Sufit w rdzeniu to teraz też 2500, a gdy liczba z `.env` jest większa, rdzeń
+wypisuje, co uciął. Prawdziwym ograniczeniem nigdy nie był ten sufit, tylko liczba
+tożsamości botów w bazie: prośba o 3000 daje na naszym świecie 2012 botów
+(shinsoo 500, chunjo 1012, jinno 500) i tak ma być.
+
+**Zmiana suwaka działa dopiero po restarcie serwera** — rdzeń czyta tę liczbę raz,
+przy starcie. To było prawdą od zawsze, ale nigdzie nie napisane.
+
+Zmierzone przy pełnej kohorcie: 2004 boty w świecie, 33 sekundy rdzenia na minutę
+dla całego kontenera gry — niecałe 0,6 jednego rdzenia. Rozdzielenie botów między
+trzy królestwa jest tym, co czyni to tanim: królestwo z mapami współdzielonymi
+kosztuje czterokrotnie tyle, co królestwo wioskowe.
+
+### Launcher mówi, dlaczego nie mógł zapisać pliku klienta
+
+„Odmowa dostępu do ścieżki" to zdanie, którym Windows opisuje co najmniej cztery
+różne problemy, a launcher przepisywał je bez zmian. Gracz, który próbował
+zainstalować panel GM dziewięć razy w ciągu dnia, dziewięć razy dostawał to samo
+zdanie i nie miał z czym pójść dalej.
+
+Teraz launcher sprawdza i nazywa przyczynę: proces trzymający plik, atrybut
+tylko-do-odczytu (zdejmowany automatycznie), Ochrona folderów w Windows
+Defenderze, albo uprawnienia NTFS — z rozróżnieniem, czy nie da się pisać do
+całego folderu, czy tylko do jednego pliku.
+
+Przy okazji wyszło coś gorszego: wycofywanie nieudanej aktualizacji przywracało
+kopię zapasową na ten sam plik, którego przed chwilą nie dało się zapisać,
+dostawało tę samą odmowę — i to jej komunikat wychodził na wierzch, kasując
+właściwą diagnozę. Wycofywane jest teraz wyłącznie to, co naprawdę zapisano,
+a żadne przywracanie nie może już przesłonić przyczyny.
+
+**Uwaga dla graczy z panelem GM na F9:** przycisk PANEL GM to po prostu
+aktualizacja klienta. Jeśli wyskakuje odmowa dostępu, to nie panel jest zepsuty,
+tylko launcher nie może podmienić dwóch plików w folderze gry.
+
+### Zaawansowany panel mówi, że tabela jest uszkodzona
+
+Panel odpowiadał samym „Internal Server Error", bez żadnej wskazówki. Pod spodem
+były uszkodzone tabele bazy `log` — silnik gry używa MyISAM, a te nie przeżywają
+nagłego zatrzymania: wystarczy zamknięcie Dockera w trakcie zapisu albo zanik
+zasilania.
+
+Stąd bardzo mylący objaw: **zwykły panel działa, a zaawansowany nie** — ten drugi
+czyta tabelę logów na samej stronie głównej, do rankingu wędkarzy. I stąd druga
+myląca rzecz: **aktualizacja tego nie naprawia**, bo uszkodzenie jest w danych na
+dysku, a nie w programie.
+
+Panel pokazuje teraz stronę, która nazywa uszkodzoną tabelę, podaje gotową
+komendę naprawy, mówi wprost, że aktualizacja nie pomoże, i wskazuje opróżnienie
+tabel `log` jako ostateczność — to wyłącznie historia, gra jej nie czyta i żadna
+postać ani przedmiot od niej nie zależą. Inne błędy bazy przechodzą dalej bez
+zmian, żeby ta strona nie zasłaniała prawdziwych awarii.
+
+---
+
+## 1.33.1 — 2026-09-10
+
+Poprawki z audytu zgłoszeń z Discorda. Wszystkie sprawdzone na żywym serwerze
+testowym, nie tylko skompilowane.
+
+### Masowe nadawanie przedmiotów gubiło sztuki i mówiło, że się udało
+
+Panel przyjmował do 65535 sztuk, a silnik czyta tę liczbę jako jeden bajt:
+300 stawało się 44, 256 stawało się zerem, 65535 stawało się 255. Nikt się o tym
+nie dowiadywał, bo paczka kończyła się statusem „Nadano”.
+
+Prawdziwy sufit jednego wydania to 200 sztuk — pełny stos, i tyle silnik potrafi
+dodać za jednym razem. Powyżej tej liczby panel odmawia teraz wprost, a po
+wydaniu porównuje zawartość plecaka przed i po, bo samo „silnik coś zwrócił” nie
+dowodzi dostarczenia: przy braku miejsca ten sam kod kładzie przedmiot na ziemi
+i też zgłasza sukces.
+
+**Do wiadomości operatorów:** kto dotąd wpisywał 300, dostawał 44 i widział
+„Nadano”. Teraz zobaczy czytelną odmowę. Limit 200 na jedno żądanie jest nowy.
+
+### Nagrody ze skrzyń przestają lądować na ziemi
+
+Bot sprawdzał miejsce w plecaku dwoma pytaniami o to samo pole — silnikowa
+funkcja zwraca *pozycję* wolnego miejsca, a nie ich liczbę, więc dwa wywołania
+obok siebie mogą wskazać tę samą kratkę i nie rezerwują niczego. Skrzynia wydaje
+nagrody po kolei, a to, co się nie mieści, spada na trawę. Teraz liczone są
+rzeczywiste wolne pola i skrzynia otwiera się dopiero, gdy jest ich pięć.
+
+To zabezpieczenie, nie pełne rozwiązanie: docelowo zestaw nagród trzeba wylosować
+raz, sprawdzić miejsce na całość i dopiero potem zużyć skrzynię, a to zmiana
+w silniku, która musi dostać własny tryb „do plecaka albo wcale”, żeby nie ruszyć
+nagród graczy.
+
+### Bot przestał chodzić do kowala po nic
+
+Planer i wykonawca oceniały zawartość plecaka inaczej: planer przyjmował wszystko,
+co bot potrafi założyć, a wykonawca odrzucał to, co reguła złomu przeznaczyła dla
+handlarza. Rozpoczęta wizyta w mieście jest zobowiązaniem, którego planer nie
+cofnie, więc bot szedł przez pół mapy i wracał z niczym — zgłoszone jako „mam
+wszystko +9 założone, a bot dalej lezie do kowala”. Obie strony pytają teraz
+jednej funkcji.
+
+### Świeża instalacja bazy nie zbuduje się już w połowie
+
+Skrypt startowy bazy sprawdzał istnienie plików z danymi świata, a potem próbował
+je przeczytać kontem `mysql` przez katalog wpięty z dysku hosta. Paczka
+rozpakowana pod ścisłą maską uprawnień na Linuksie dawała prawa, których to konto
+nie miało — import przerywał się w połowie, już po utworzeniu baz i użytkownika,
+a katalog danych przestawał być pusty. Ten krok wykonuje się raz na wolumen
+i nigdy więcej, więc świat zostawał na stałe w połowie zbudowany, za zdrowym
+healthcheckiem.
+
+Każdy z pięciu plików jest teraz czytany na jeden bajt, zanim powstanie
+cokolwiek trwałego, a komunikat nazywa po imieniu plik brakujący, nieczytelny
+i pusty. Instalator Linuksa przy okazji normalizuje uprawnienia całego kontekstu
+budowy, żeby ta sytuacja nie powstała.
+
+### Sklep z przedmiotami odpowiadał 403
+
+`COPY` w obrazie zachowuje uprawnienia źródła, więc pliki sklepu skopiowane
+z katalogu o ścisłych prawach były nieczytelne dla serwera WWW w środku
+kontenera. Uprawnienia są teraz normalizowane w obrazie.
+
+### Migrator bazy przestał czekać pół godziny na złe hasło
+
+Błędne hasło do bazy jest odpowiedzią ostateczną, a nie chwilową niedostępnością
+— migrator ponawiał je przez trzydzieści minut i kończył komunikatem o czasie
+oczekiwania, który niczego nie tłumaczył. Po pięciu odmowach uwierzytelnienia
+z rzędu kończy teraz pracę i pisze, co jest nie tak. Zmierzone: 9 sekund zamiast
+pół godziny.
+
+### Rankingi w panelach pokazywały nie to, co obiecywały
+
+Trzy osobne błędy w tej samej okolicy:
+
+- **Obrażenia od umiejętności i średnie były zamienione miejscami.** Numery 71
+  i 72 stały odwrotnie w obu panelach, w panelu zaawansowanym w trzech miejscach
+  naraz — w tym w nazwach kolumn, po których sortuje baza, więc pierwsza setka
+  wyników była wybierana według niewłaściwej wartości.
+- **Ranking +9 nie widział tarcz ani biżuterii.** Filtr odcinał wszystko powyżej
+  pewnego numeru przedmiotu, co miało wykluczyć materiały, a wykluczało również
+  tarcze. Panel pyta teraz bazę, co jest wyposażeniem: 17 przedmiotów zamiast 9.
+- **Ranking umiejętności brał pod uwagę tylko czterystu najwyższych poziomem.**
+  Bot trzydziestego poziomu z mistrzowską umiejętnością nie miał szans się
+  pojawić. Liczony jest cały zbiór.
+
+Do tego dwie osobowości botów były podpisane nawzajem: handlarz jako wędrowiec
+i odwrotnie.
+
+### Czego to wydanie nie naprawia
+
+- **Nazwy przedmiotów w historii ekwipunku.** Tabela logów jest zadeklarowana
+  w chińskim kodowaniu, a gra pisze do niej po polsku. 128 573 z 279 242 wpisów
+  spoza ASCII ma w tym miejscu nieodwracalny znak zapytania — zmiana deklaracji
+  naprawi to, co zostanie zapisane dalej, i nie odzyska niczego. Tabela ma
+  22 miliony wierszy i 1,75 GB, więc każda zmiana to minuty przerwy w działaniu.
+  To zaplanowana migracja z kopią zapasową, a nie poprawka przy okazji. Dotyczy
+  wyłącznie historii — nic w grze tej kolumny nie czyta.
+- **Cztery zgłoszenia czekają na powtórzenie:** wyjątki suwaka straganów, bot
+  krążący po pierwszej wiosce mimo celu na pustyni, boty zamarzające lub
+  znikające, oraz cenne przedmioty innych klas zapychające plecak. Każde z nich
+  wymaga najpierw diagnostyki, nie ślepej poprawki.
+
+---
+
+## 1.33.0 — 2026-09-10
+
+### Gra znowu jest po polsku po każdej aktualizacji
+
+Przełącznik języka podmienia cztery pliki w `share/`: nazwy przedmiotów, nazwy
+potworów i dwa pliki tłumaczeń. `share/` jest wpieczone w obraz gry, a każda
+aktualizacja ten obraz przebudowuje — więc angielskie oryginały wracały na
+miejsce, podczas gdy zapamiętany wybór, strona języka w panelu i status dalej
+mówiły „polski". Świat był nazwany po połowie w każdym języku: nasze polskie
+napisy obok „Skill Book" na szyldzie straganu, misje i potwory po angielsku.
+
+Kontener nakłada teraz zapamiętany język przy każdym starcie. Jedno uruchomienie
+naprawia instalację, która dziś jest po angielsku — nie trzeba niczego migrować.
+
+### Hasło do panelu przestało być tajemnicą przed właścicielem serwera
+
+`M2_PANEL_PASSWORD` bywało puste — plik `.env` przepisany z przykładu, przerwana
+instalacja, serwer odpalony samym `docker compose`. Panel wymyślał wtedy
+dwudziestoznakowe hasło, zapisywał sam jego skrót i wypisywał je raz do logu
+kontenera, którego nikt nie czyta. Od tej chwili panel miał hasło, które nie
+istniało nigdzie.
+
+Launcher wypełnia teraz tę lukę, zanim Docker ją zobaczy, i pokazuje hasło.
+A przycisk OTWÓRZ PANEL WWW ma trzecią pozycję — „Nie mogę się zalogować" —
+która pokazuje hasło z `.env` i proponuje reset, gdy panel pamięta starsze.
+Baza, świat, postacie i boty nie są tym ruszane.
+
+### Strona panelu domyślnie po polsku
+
+Panel pytał najpierw przeglądarkę i spadał na angielski, więc Polak na
+angielskim Windowsie dostawał angielski. To, co widział, było gorsze od obu
+języków osobno: ten panel jest przetłumaczony w połowie, więc angielska strona
+to polska strona z dziurami. Teraz domyślny jest polski, a wybór z przełącznika
+w nagłówku jest pamiętany przez rok.
+
+### Boty noszą ludzkie nicki
+
+Trzy tysiące sześćset nicków: 1491 napisanych przez jaksiezabica dla tego
+serwera, reszta złożona z tego samego słownictwa. Bot utworzony minutę wcześniej
+dostaje nick na tym samym starcie. `M2_PLAYERBOT_HUMAN_NAMES`: 1 nadaje
+(domyślnie), 0 nie rusza niczego, „restore" przywraca stare nazwy — stara nazwa
+jest zapamiętana, więc to odwracalne.
+
+Nazwa jest jedyną częścią tożsamości bota, od której nic nie zależy: rdzeń
+dopasowuje postać po loginie konta, a oba panele robią to samo. Nasiona wymagały
+poprawki w pięciu miejscach, żeby przemianowany bot nadal był ich botem.
+
+### Bonusy wyceniane według map i slotów
+
+Linia „silny przeciwko orkom" mnoży cały atak przeciwko każdemu potworowi tej
+rasy. Pas ekwipunku wyceniał ją wysoko, a pas mixowania na jeden punkt — bot
+kupował tarczę dla tej linii i zrzucał ją u pierwszego kowala. Teraz obie strony
+pytają o to samo i skalują udziałem rasy w mapie, zmierzonym po wszystkich
+punktach odrodzenia: Dolina Orków to 63% orków, każda druga wioska 100% ludzi,
+Lochy Małp 100% zwierząt, Sohan 46% nieumarłych. Na Pustyni i w obu Lochach
+Pająków żadna taka linia nie działa i bot już o tym wie.
+
+Druga rzecz: reguła „przedmiot skończony" pytała hełm o życie i wartość ataku, a
+kolczyki o życie i krytyczne — żadna z tych linii nie może wypaść na tych
+slotach, więc hełm, kolczyk i bransoleta były mixowane bez końca. Każdy slot ma
+teraz warunek z linii, które na nim faktycznie wypadają.
+
+### Flaga królestwa przy nicku bota
+
+W obu panelach. Przy okazji wyszło, że konta botów Shinsoo i Jinno twierdziły,
+że są z Chunjo — nasiona wpisywały tam dosłownie 2 dla całej kohorty. Naprawione
+także dla kont już założonych.
+
+### Kopia świata w launcherze
+
+Przycisk KOPIA ŚWIATA: zapisz, przywróć, zacznij od zera. Kopia to pięć zrzutów
+SQL, plik z datą i liczbą postaci oraz jeden zip w folderze `backups`.
+Przywracanie zapisuje najpierw obecny świat do własnej kopii. Reset odmawia,
+dopóki pliki, z których powstaje nowa baza, nie leżą na dysku.
+
+Przy okazji: obietnica z okna importu — „kopia trafi do folderu backups" — nie
+była prawdziwa. Sonda sprawdzająca istnienie bazy miała cudzysłów w miejscu, w
+którym PowerShell go nie przepuszcza, więc folder z kopią był pusty przy każdym
+imporcie, jaki ktokolwiek wykonał.
+
+### Panel GM (F9): osiem nowych komend
+
+Nowa wersja panelu OskarPWA dostała stronę serwera: losowe bossy i metiny (pula
+metinów budowana z plików serwera, nie z zaszytej listy), marmur przemiany,
+siedemnaście suwaków AI zapisywanych do tego samego pliku co panel webowy, trzy
+raty i restart. Klientowa połowa jedzie w paczce klienta tej wersji.
+
+---
+
+## 1.32.5 — 2026-09-10
+
+### Suwak straganiarzy znowu coś znaczy
+
+Bot z sześcioma nadmiarowymi książkami umiejętności otwierał stragan
+bezwarunkowo, z pominięciem suwaka handlu — i było to w kodzie zapisane jako
+zamierzone. Rzecz w tym, że książki po kilku godzinach polowania na metiny ma
+praktycznie każdy świat, więc ta jedna reguła decydowała o udziale straganiarzy,
+a suwak nie ruszał niczego. Zgłosił Shenyo: 180 straganów na 288 botów przy
+suwaku ustawionym na minimum.
+
+Zmierzone u nas: 238 botów z 970 ma sześć lub więcej nadmiarowych książek, czyli
+czwarta część populacji kwalifikowała się bez względu na ustawienie. Teraz i ta
+reguła pyta o wagę handlu. Przy ustawieniu domyślnym zachowanie jest takie jak
+dotąd — sprawdzone po wdrożeniu — a przy minimum stragany faktycznie przestają
+powstawać.
+
+### Panel nie każe instalować czegoś, czego tu nie ma
+
+Konsola ustawień w panelu zaawansowanym pokazywała ostrzeżenie „Zainstaluj
+integrację `m2-server-settings` i `m2-supervise`". Ta wersja serwera takiej
+integracji nie zawiera i nie potrzebuje: restart serwera oraz zmiana rat działają
+bez niej i zawsze działały. Niedostępna jest wyłącznie zmiana respawnów map, i
+tylko to komunikat mówi teraz.
+
+---
+
+## 1.32.4 — 2026-09-10
+
+### Boty oddają wreszcie okazy Biologowi
+
+Bot z dwoma Zębami Orka w plecaku przechodził obok Biologa i je zatrzymywał.
+Próg czterech sztuk, który miał sens jako powód do wyprawy z frontu do M1,
+stosował się też do bota, który już stoi w swojej wiosce — a quest przyjmuje
+jedną sztukę na raz, więc nie było na co czekać.
+
+Zmierzone przed poprawką: 656 botów od trzydziestego poziomu nie oddało ani
+jednej sztuki, niosąc między sobą 577 zębów. Po niej, w dziesięć minut: 1766
+przyjętych okazów i 778 wizyt u Biologa.
+
+Przy okazji Shinsoo i Jinno dostały swoich Biologów. Warunek sprawdzający mapę
+Chunjo przetrwał w tym miejscu przenosiny na katalog królestw i odcinał oba nowe
+królestwa od ich własnego NPC.
+
+### Ulepszanie broni ruszyło z miejsca
+
+Cenny przedmiot był wstrzymywany, gdy szansa powodzenia wynosiła mniej niż sto
+procent, czyli na każdym kroku tabeli ulepszeń, a zwoju szukano dopiero od +6.
+Poniżej +6 przedmiot nie mógł więc być ani ryzykowany, ani chroniony i nie
+ruszał się wcale (zgłosił sekuras).
+
+Zmierzone: 451 z 959 botów posiadających zwój nosiło broń dokładnie na +4, a 230
+na +0, przy 1287 Zwojach Boga Smoków i 1002 Zwojach Błogosławieństwa w
+plecakach. Teraz zwoju wolno szukać przy każdym poziomie ulepszenia, a
+wstrzymanie zostaje tylko tam, gdzie porażka naprawdę kosztuje. Po wdrożeniu:
+6361 prób ulepszenia w pięć minut wobec praktycznego zastoju wcześniej.
+
+Uczciwie o drugiej połowie tego zgłoszenia: pomiar pokazał, że większość botów
+stojących na +4 nie ma po prostu materiału. Krok z +4 na +5 wymaga dwóch sztuk
+Nieznanego Lekarstwa+, a w całym świecie jest ich 586 na około 360 takich botów.
+Tego kod nie naprawi, to kwestia dropu i rynku.
+
+### Skrzynie nie wysypują się już na ziemię
+
+Przed otwarciem skrzyni sprawdzane było miejsce na jeden mały przedmiot, a
+skrzynia wydaje kilka — sama broń zajmuje trzy komórki. Silnik nie odmawia przy
+pełnym plecaku, tylko rzuca resztę na ziemię i zgłasza sukces, więc zawartość
+lądowała pod nogami bota na oczach wszystkich (zgłosił archonek2137). Teraz bot
+pyta o miejsce na broń, zanim otworzy.
+
+### Boty kupują tylko to, co handlarz naprawdę ma
+
+Bot nie kupował drogich broni — on je tworzył. Zakup przedmiotu z drabinki
+rozwoju wywoływał silnikowe „daj przedmiot" i liczył cenę z tabeli
+przedmiotów, nie zaglądając wcale do asortymentu NPC. Stąd bot w Masce Strachu
+na sześćdziesiąty poziom kupionej za 20 000 yang u handlarza zbrojami, choć
+żaden sklep w tym świecie jej nie ma (zgłosił jaksiezabic, z linią logu na
+dowód).
+
+Teraz bot kupuje wyłącznie to, co stoi na ladzie u handlarza bronią, zbrojami
+albo różności, i po cenie sklepu. Warto wiedzieć, co to znaczy: te trzy sklepy
+mają razem 64 pozycje, broń do 36 poziomu, zbroje do 26, hełmy tylko startowe.
+Wszystko powyżej ma pochodzić z dropu, straganów i kowala — dokładnie tak, jak
+u gracza.
+
+---
+
+## 1.32.3 — 2026-09-10
+
+### Trzy królestwa dało się włączyć tylko na świeżej instalacji
+
+Plik `.env` powstaje raz i nigdy nie jest przepisywany, bo trzyma Wasze hasła,
+których nikt inny nie ma. Skutkiem ubocznym było to, że każdy przełącznik
+dodany do wzorca po Waszej instalacji po prostu u Was nie istniał, a rada
+„ustaw `M2_PLAYERBOT_KINGDOMS=1`" dotyczyła linii, której w pliku nie ma
+(zgłosił jaksiezabic). Nic nie wywalało błędu, bo Docker ma własną wartość
+domyślną. Po prostu nie było czym włączyć królestw.
+
+Launcher dopisuje teraz do `.env` wyłącznie ustawienia, których w nim nie ma, i
+zawsze z wartością domyślną z pliku wzorcowego. Nie rusza żadnej istniejącej
+linii i nigdy nie tyka haseł ani kluczy. Sprawdzone na prawdziwym `.env`
+starszej instalacji: dopisało siedem ustawień, które narosły przez ostatnie
+wydania, i nie zmieniło ani jednej linii, która już tam była.
+
+### Panel zaawansowany po nieczystym zatrzymaniu serwera
+
+Siedemdziesiąt trzy z siedemdziesięciu pięciu tabel tej gry to MyISAM, a jedno
+nieczyste zatrzymanie wystarczy, żeby oznaczyć tabelę jako uszkodzoną. Od tej
+chwili każdy, kto z niej czyta, dostaje błąd, więc klasyczny panel działa
+normalnie (czyta pliki), a zaawansowany wywala się na „Internal Server Error"
+(czyta wyłącznie bazę). Zgłosił archonek2137, z wklejonym błędem — co skróciło
+szukanie do minuty.
+
+Automatyczna naprawa w konfiguracji obejmuje tylko tabele otwierane po tym, jak
+ustawienie weszło w życie, więc baza, która już chodziła w chwili aktualizacji,
+zostawała na starym zachowaniu aż do restartu. Teraz przy każdym starcie serwera
+idzie przebieg naprawczy, który ogląda wyłącznie tabele niezamknięte poprawnie i
+naprawia uszkodzone, zanim cokolwiek z nich przeczyta. Na zdrowym świecie
+kosztuje 417 milisekund przy tabeli `log` wielkości 1130 MB i 21,7 miliona
+wierszy, więc startu nie opóźnia, a błąd nigdy nie zatrzymuje uruchamiania.
+
+### ItemShop odpowiadał błędem 400
+
+Rdzeń składa link, który otwiera klient, jako `http://` plus zawartość
+`M2_MALL_URL`. Adres wpisany razem ze schematem dawał więc
+`http://http://127.0.0.1:7791/ishop?...`, a wbudowana przeglądarka klienta
+odpowiadała gołym HTTP 400, o którym w logach serwera nie ma ani słowa (zgłosił
+jaroszv2). Napisanie `http://` przed adresem jest odruchem, więc adres jest
+teraz przyjmowany w każdej postaci, a schemat i końcowy ukośnik są zdejmowane
+przy starcie.
+
+Przy okazji: `M2_MALL_URL` występował w pliku wzorcowym dwa razy. Docker bierze
+ostatnie wystąpienie, więc kto przeczytał opis przy pierwszym i tam wpisał swój
+adres, nie dostawał z tego nic. Został jeden wpis, ten z opisem.
+
+---
+
+## 1.32.2 — 2026-09-10
+
+### Suwak liczby botów sięga teraz 2500
+
+Przy włączonych trzech królestwach dosiew tworzy 2500 botów, a suwak w
+launcherze kończył się na 1500. Tysiąca dosianych botów nie dało się w ogóle
+poprosić z poziomu okienka. Zgłosił xewi zaraz po 1.32.0.
+
+Limit siedział w dwóch miejscach i podniesienie samego suwaka nic by nie dało:
+funkcja zapisująca liczbę do `.env` zaciskała ją z powrotem do 1500, więc
+widzielibyście 2500, a do pliku poszłoby 1500. Poprawione są oba miejsca, a
+także tryb konsolowy i pozycja w menu.
+
+Dla samego Chunjo, czyli przy domyślnych ustawieniach, sufitem dalej jest 1500,
+bo tyle tożsamości tworzy ziarno. Proszenie o więcej, niż świat ma, było i jest
+bezpieczne: rdzeń uruchamia tyle botów, ile ma w rejestrze, i wypisuje w logu
+ile poproszono, ile jest zarejestrowanych i ile wystartowało.
+
+### Masowe dawanie przedmiotów botom
+
+Nic tu nie zmieniamy w kodzie, ale warto wiedzieć, skąd się brało „nie działa"
+(zgłosili zombian. i archded). Panel zleca nadanie przez wiersz w bazie, a
+podejmuje go pomocniczy quest w grze. Quest jest kompilowany przy budowaniu
+obrazu gry, nigdy przy starcie kontenera, więc serwer, którego obraz zbudowano
+przed 7 września, ma starszego questa i na każde zlecenie odpowiada „Quest
+wymaga aktualizacji". Wystarczy zaktualizować i kliknąć GRAJ, czekając aż
+przejdzie budowanie obrazu.
+
+Sprawdzone po przebudowaniu: zlecenie kończy się statusem „Nadano" w trzy
+sekundy, a log gry pokazuje utworzenie przedmiotu na koncie bota.
+
+---
+
+## 1.32.1 — 2026-09-10
+
+### Sprawdzanie aktualizacji mówi prawdę
+
+Przez dwadzieścia minut po wydaniu 1.32.0 launcher pokazywał wszystkim naraz
+dwa sprzeczne komunikaty: w stopce „Najnowsza wersja: nie udało się sprawdzić",
+a w okienku „Kanał aktualizacji nie ma obecnie nowej wersji serwera". Żaden z
+nich nie był prawdziwy. Nowa wersja była, tylko launcher nie potrafił odczytać
+pliku, w którym o niej pisze. Zgłosili to kiciamol i jaksiezabic, jeden był o
+krok od skasowania instalacji i postawienia jej od zera.
+
+Winny był plik manifestu, który poszedł ze znacznikiem BOM na początku —
+żaden wcześniejszy go nie miał. Sam manifest został poprawiony od razu i
+naprawa nie wymagała żadnej aktualizacji po Waszej stronie. To wydanie
+naprawia drugą połowę problemu, czyli to, że launcher w ogóle mógł tak
+skłamać:
+
+- **Manifest jest teraz czytany i rozbierany u nas, a nie przez
+  `Invoke-RestMethod`.** Ta komenda nie zgłasza błędu, gdy odpowiedź nie jest
+  poprawnym JSON-em: po cichu oddaje surowy tekst zamiast obiektu. Launcher
+  pytał wtedy taki tekst o wersję serwera, nie znajdował jej i uznawał, że
+  aktualizacji nie ma.
+- **Znacznik BOM jest zdejmowany przed odczytem**, więc ta sama pomyłka nie
+  zablokuje już nikomu aktualizacji.
+- **Pusta odpowiedź, strona HTML podstawiona przez proxy albo firmową sieć i
+  każdy inny plik, który nie jest manifestem, kończą się teraz czytelnym
+  błędem**, który wprost mówi, że problem jest po stronie kanału aktualizacji,
+  a nie Waszej instalacji.
+- Komunikat o braku wersji mówi „kanał nie podał wersji serwera" zamiast
+  twierdzić, że nowej wersji nie ma.
+
+Sprawdzone w tym samym Windows PowerShellu 5.1, w którym chodzi launcher:
+poprawny plik i żywy adres dają wersję, plik z BOM przechodzi, a strona HTML i
+pusta odpowiedź dają nazwany błąd.
+
+---
+
+## 1.32.0 — 2026-09-10
+
+### Trzy królestwa
+
+Dotąd cały świat botów był jednym królestwem: Chunjo, jego dwie wioski i jego
+mapy. Shinsoo i Jinno stały puste. Od tego wydania boty mogą żyć we wszystkich
+trzech królestwach naraz, każde w swoich wioskach, u swoich kupców i na swoich
+łowiskach.
+
+**Domyślnie nic się nie zmienia.** Przełącznik `M2_PLAYERBOT_KINGDOMS` w
+`.env` jest ustawiony na `0`, więc świat, który masz, zostaje dokładnie taki,
+jaki był: 1500 botów Chunjo, te same postacie, te same poziomy, ten sam
+ekwipunek. Żeby dołożyć dwa nowe królestwa, ustaw `M2_PLAYERBOT_KINGDOMS=1` i
+uruchom serwer ponownie. Dosiewane jest wtedy 500 botów Shinsoo i 500 Jinno
+obok istniejących; nic z tego, co już masz, nie jest ruszane ani przepisywane.
+
+Co dostaje każde królestwo:
+
+- **Własne wioski.** Yongan i Jayang dla Shinsoo, Joan i Bokjung dla Chunjo,
+  Pyongmoo i Bakra dla Jinno. Nazwy są te, których używają questy silnika, a
+  nie zgadywane.
+- **Własne usługi.** Handlarz bronią, handlarz zbrojami, handlarka różności,
+  dozorca, kowal, stajenny, starsza pani i Teleporter tej wioski, w której bot
+  stoi. Wcześniej bot Shinsoo pisał nad głową „Ide do kowala" i szedł do kowala
+  osiemdziesiąt kilometrów dalej, bo w kodzie były wpisane współrzędne Chunjo.
+- **Własnych trenerów zawodu.** Ośmiu w każdej pierwszej wiosce. Drugie wioski
+  nie mają żadnego i nigdy nie miały, i właśnie dlatego bot bez grupy
+  umiejętności wraca do M1.
+- **Własnego Biologa**, własny rynek ze straganami i własne łowisko z Rybakiem.
+- **Własne tereny łowieckie.** Huby, pasma poziomów, punkty metinów i Bestialni
+  bossowie każdej drugiej wioski, zmierzone z plików mapy tego królestwa.
+- **Własne bramy.** Każdy przeskok między mapami królestwa czyta bramę i punkt
+  lądowania z nazwy samego NPC, tak jak robi to silnik. Sprawdzone: wszystkie
+  osiemnaście bram prowadzi tam, gdzie ma prowadzić, i wypuszcza postać na
+  gruncie, po którym da się chodzić.
+
+Chunjo nie został ruszony. Pomiar odtwarza jego stare, ręcznie wpisane
+współrzędne co do jednostki — łącznie z trzema bossami Bokjung i ośmioma
+trenerami Joan — i test pilnuje, żeby tak zostało.
+
+### Panele widzą cały świat
+
+- **Klasyczny panel** dostał granice i mapy terenu ośmiu nowych map, nazwy
+  wiosek w filtrze i w rankingu. Do tej pory boty Shinsoo i Jinno były żywe i
+  niewidoczne.
+- **Panel zaawansowany** dostał te same granice, więc jego żywa mapa i lista
+  śledzonych map obejmują nowe królestwa, a konsola respawnu ziemie klanowe.
+- Mapa 24 była podpisana „Pyungmoo" i „Waryong". Pyongmoo to stolica Jinno, nie
+  ziemia klanowa Chunjo; obie nazwy poprawione.
+
+### Czego nowe królestwa jeszcze nie mają
+
+Wspólne mapy świata — Dolina Orków, Pustynia Yongbi, Góra Sohan, oba Lochy
+Pająków, Świątynia Hwang i dwa trudniejsze Lochy Małp — są hostowane przez ten
+sam rdzeń co Chunjo, a bot nie może przejść na mapę, której jego rdzeń nie
+hostuje (przeniesienie postaci między rdzeniami wymaga ponownego połączenia
+klienta, a bot klienta nie ma). Dlatego Shinsoo i Jinno mają na razie własne
+cztery mapy, które niosą je mniej więcej do trzydziestego szóstego poziomu.
+
+Żeby to nie kończyło się botami stojącymi bezczynnie: bot nie jest wysyłany na
+mapę spoza swojego rdzenia, a królestwo bez frontu może polować w swojej drugiej
+wiosce także powyżej trzydziestego piątego poziomu. Rozwiązanie docelowe to
+decyzja o tym, jak ma być poukładany serwer, i czeka na Ciebie.
+
+### Drobne
+
+- **Raport rejestru mówił nieprawdę.** Liczył tożsamość jako odrzuconą, gdy jej
+  królestwo nie było Chunjo, więc wypisywał „wrong_empire=1000" obok modułu,
+  który przed chwilą przyjął wszystkie tysiąc. Teraz odrzuceniem jest tylko
+  królestwo spoza zakresu 1-3.
+
+### Pomiar
+
+Na serwerze testowym, 970 botów w trzech królestwach naraz:
+
+| co | ile |
+|---|---|
+| procesor | 12,59 s rdzenia na 65 s ściany, czyli 19,4% jednego rdzenia |
+| tick, rdzeń Shinsoo | 1,45 s z 60 |
+| tick, rdzeń Chunjo | 2,16 s z 60 |
+| tick, rdzeń Jinno | 1,41 s z 60 |
+| resety watchdoga | 0, 1, 0 |
+
+Budżet, którego pilnujemy, to 40% rdzenia przy 850 botach. W cztery minuty nowe
+królestwa zrobiły po ponad 600 wizyt u własnych kupców i po ponad 300 u własnych
+trenerów.
+
+---
+
+## 1.31.8 — 2026-09-10
+
+### Boss z pustyni w Bokjung
+
+- **Boss nie skacze już za ofiarą na inną mapę** (zgłosił Pasywny: komuś
+  przeteleportował się Olbrzymi Żółw z Pustyni Yongbi do M2). Błąd jest w
+  samym silniku, w `char_state.cpp`: żółw (rasa 2191) co jakiś czas
+  przeskakuje pod swoją ofiarę przez `Show(victim->GetMapIndex(), ...)`,
+  a więc bierze mapę **ofiary**, nie swoją. Gdy ofiara w tym czasie przeszła
+  przez bramę albo zapłaciła Teleporterowi, boss szedł za nią i lądował w
+  mieście. Łatka 0011 pozwala bossowi gonić i przeskakiwać tylko do ofiary
+  na tej samej mapie; ta sama poprawka usuwa bezsensowną pogoń za
+  współrzędnymi z mapy, której ofiara już nie ma. Dotyczy też graczy, nie
+  tylko botów. Plik `char_state.cpp` jedzie w aktualizacji jak `char.cpp`.
+
+### Aktualizacja na Linuksie i VPS
+
+- **Aktualizacja nie zatrzymuje się już na łatce 0009** (zgłosił archded, wraz
+  z trafną diagnozą). `prepare-context.sh` sprawdzał każdą łatkę osobno, na
+  nietkniętym drzewie — a to inne pytanie niż to, o które chodzi: pierwszy
+  hunk łatki 0009 ma w kontekście `#include "playerbot_manager.h"`, który
+  dokłada łatka 0001. Osobno nie przechodzi, po kolei przechodzi bez zarzutu.
+  Każda instalacja na Linuksie i VPS stawała w tym miejscu („Hunk #1 FAILED at
+  37") i nie dało się zaktualizować; Windows tego nie widział, bo tam launcher
+  wykłada pliki już połatane. Teraz próba jest kumulacyjna: pliki, których
+  dotyka seria, lądują w katalogu roboczym poza kontekstem budowy i cała seria
+  jest tam nakładana naprawdę. Prawdziwe drzewo zostaje ruszone dopiero wtedy,
+  gdy próba przejdzie do końca — zasada „albo wszystkie, albo żadna" zostaje.
+
+### Baza danych
+
+- **Uszkodzona tabela naprawia się sama** (zgłosił cyckiseusmaz: „Błąd: (144,
+  Table './player/quest' is marked as crashed and last (automatic?) repair
+  failed")). Siedemdziesiąt trzy z siedemdziesięciu pięciu tabel gry to MyISAM,
+  który nie znosi nagłego zatrzymania — wyciągnięta wtyczka, ubity kontener
+  albo pełny dysk zostawiają tabelę oznaczoną jako uszkodzona i od tej chwili
+  wszystko, co ją czyta, pada. Domyślne `BACKUP,QUICK` naprawia tylko plik
+  indeksu, więc gdy uszkodzony jest plik danych, automat się poddaje — i to
+  właśnie mówi ten komunikat. Ustawiamy `BACKUP,FORCE`: pełna naprawa przy
+  otwarciu, z kopią uszkodzonego pliku obok, żeby nic nie znikło po cichu.
+  **Kto ma ten błąd teraz**, naprawi go jednym poleceniem, zanim zaktualizuje:
+  `docker compose exec mariadb mysqlcheck -uroot -p"$M2_DB_ROOT_PASSWORD" --auto-repair --check --all-databases`
+
+### Boty i ulepszacze
+
+- **Bot nie sprzedaje już zwojów ulepszeń handlarzowi** (zgłosił jaroszv2).
+  Reguła złomu nie miała dla nich żadnej gałęzi, a handlarz płaci grosze za
+  jedyną rzecz, bez której nie da się ulepszać powyżej +6: u nas przez dobę
+  poszło tak 471 Zwojów Błogosławieństwa, podczas gdy bronie na nie czekały.
+  Objęte są wszystkie zwoje, które zna silnik: Błogosławieństwa, Magiczny
+  Kamień, Podręcznik Kowala, Zwój Boga Wojny i Zwój Boga Smoków. Na straganie
+  nadal mogą stać — inny bot też ich potrzebuje.
+
+### Miasta
+
+- **Zdjęte limity straganów i zwiedzających.** Bokjung miał limit straganów
+  (8 promili żywych botów), a straganiarz, który zastał pełny rynek, szedł
+  z towarem do Joan. Jedno i drugie zniknęło: miasto ma się zaludniać, a
+  odprawiony straganiarz to bot bez zajęcia. Joan bierze stragany od botów,
+  które w Joan stoją.
+- **Bot odsyła konia, gdy zsiada w strefie bezpiecznej.** `StopRiding`
+  zostawia konia jako towarzysza, więc każde zsiadanie w mieście dokładało
+  wierzchowca do tłumu na placu (u nas 295 zsiadań na M1 w kwadrans).
+  Sprawdzone w `server_attr`: oba rynki, w Joan i w Bokjung, mają flagę
+  strefy bezpiecznej, więc koń znika dokładnie tam, gdzie stoi tłum. Na
+  mapach łowieckich koń zostaje, bo bot zaraz znów go dosiądzie.
+
+---
+
+## 1.31.7 — 2026-09-10
+
+### Boty w grze (sosen, „Ulepszanie broni na 30 lvl oraz zmiany w umiejętnościach”)
+
+- **Punkty skilli przenoszone Księgą Zapomnienia.** Po wprowadzeniu
+  priorytetów bot z szesnastoma punktami w Tąpnięciu wkładał nowe punkty w
+  Duchowe, a stare zostawały. Teraz bot bez wolnych punktów zdejmuje jeden
+  punkt Księgą Zapomnienia z najniżej stojącego skilla, który ma ich więcej
+  niż jeden, i wkłada go w najwyżej stojący jeszcze bez Mistrza — jeden punkt
+  na 30 s, księga za 20 000 yang, od piątego poziomu. Skille już na Mistrzu
+  zostają, bo silnik ich nie obniża.
+- **Każda broń ze średnią ≥ 20% jest gotowa i nie jest przelosowywana.**
+  Reguła „gotowa broń” działała tylko dla rodziny broni 30 lv, więc np. łuk
+  45 lv ze średnią 40% był losowany Zaczarowaniem, aż dobił wynik punktowy,
+  a średnia znikała. To były te „zmiksowane średnie 35+”.
+- **Broń 30 lv od +6 w górę tylko na zwoju.** Bez Zwoju Błogosławieństwa
+  (albo lepszego) bot nie niesie jej do kowala, tylko czeka — dotąd czekała
+  tylko broń z nagrodowymi liniami.
+
+---
+
+## 1.31.6 — 2026-09-10
+
+### Yang prosto do sakiewki, dla każdego
+
+- **Yang z zabójstwa trafia prosto do sakiewki każdemu — graczom i botom —
+  bez Trzeciej Ręki** (Invisible: „czy da się dodać status trzeciej ręki bez
+  zajmowania slota w eq?”; Tieru: „na większości serwerów tak jest
+  domyślnie”). Łatka silnika 0010 w `CHARACTER::RewardGold` uznaje każdego
+  zabójcę za wyposażonego w automatyczne zbieranie; Trzecia Ręka i premium
+  nadal są honorowane, ale niepotrzebne. Plik `char_battle.cpp` jedzie w
+  aktualizacji jak `char.cpp`.
+- **Boty zdejmują i oddają Trzecią Rękę** (72016–72018): pass, który do tej
+  pory ją tworzył, zakładał i nakręcał, teraz ją usuwa, żeby nie zajmowała
+  slota. Gracze swoje egzemplarze zachowują.
+
+---
+
+## 1.31.5 — 2026-09-10
+
+### Boty w grze
+
+- **Bot znów zbiera cudzy drop, gdy ma okazję** (decyzja Tieru). Blokada z
+  1.31.4 („przedmiot bez właściciela podnosi tylko bot, który widział go,
+  gdy był jego”) cofnięta: po dziesięciu sekundach drop przestaje mieć
+  właściciela i bot bierze go jak każdy gracz, który stoi obok. Reszta
+  1.31.4 bez zmian.
+
+---
+
+## 1.31.4 — 2026-09-10
+
+### Aktualizacja, która się nie budowała
+
+- **Obraz ItemShopu bez `apt-get`** (Marcol, paczka z 23:43: „target itemshop:
+  failed to solve … Splitting of clearsigned file failed”). Obraz `php:8.2-apache`
+  przeszedł na Debiana trixie, którego `apt` weryfikuje repozytorium przez
+  sequoia i na niektórych Docker Desktopach pada; jedna nieudana warstwa
+  anulowała całą budowę i serwer zostawał na starej wersji. ItemShop jest
+  teraz przypięty do bookworm i nie stawia żadnej paczki Debiana (healthcheck
+  pyta samo PHP), a panel klasyczny też jest przypięty do bookworm. Jeśli u
+  kogoś strona ItemShopu „się nie ładuje” (sosen), to najpewniej ten sam
+  powód: kontener sklepu nigdy nie powstał.
+
+### Boty w grze
+
+- **NPC z siodła** (Tieru). Bot nie zsiada już z konia przy sklepie, kowalu,
+  dozorcy, Biologu ani przy portalu — silnik obsługuje jeźdźca przy każdej
+  ladzie, odmawia tylko czytania księgi (tu bot zsiada) i stroju. Zsiadanie
+  przy każdym NPC i wsiadanie zaraz potem było najbardziej widoczną częścią
+  wizyty w mieście.
+- **Koń odwołany na czas łowienia** (cyfrowy_mat: „wszystkie moje boty łowią
+  z końmi obok”). Zsiadając przy wodzie bot odsyła konia, jak gracz, i
+  przywołuje go do jazdy.
+- **Bot nie zbiera cudzego dropu** (Kuszaa: „bije metina w M1, podchodzi
+  jakiś koks i zbiera mój złom”). Silnik po dziesięciu sekundach zdejmuje
+  własność z przedmiotu i od tej chwili każdemu odpowiada „twój”; pass lootu
+  brał to dosłownie. Teraz przedmiot bez właściciela podnosi tylko bot, który
+  widział go, gdy jeszcze był jego.
+- **Martwy towar na straganie** (sekuras, cyfrowy_mat, jaksiezabic). Linia,
+  która wróciła z lady niesprzedana, jest na następnym stoisku o 10% tańsza
+  (do 40% po czterech), a broń albo zbroja poniżej +4, której nikt nie chciał
+  przez sześć stoisk, idzie do handlarza. Od +4 w górę nic się nie zmienia —
+  tego handlarz od bota nie dostaje.
+
+- **Priorytety wbijania skilli według listy sosena** (wątek „Priorytety
+  wbijania skilli przez botów”). Każdy build ma teraz kolejność punktów:
+  Wojownik Body: Aura, potem Berek/Wir (losowo), potem Szarża/Trójstronne;
+  Mental: Silne Ciało, Duchowe/Walnięcie, Tąpnięcie, Uderzenie Miecza; Sura
+  WP: Czarowane Ostrze, potem cztery losowo, Rozproszenie na końcu; Sura BM:
+  Ognisty Duch, Mroczna Ochrona, potem cztery losowo; Szaman Smok: Pomoc
+  Smoka, Błogosławieństwo/Skowyt, Talizman/Strzelający Smok, Odbicie;
+  Healer: Leczenie, Zwinność/Błyskawica/Szpon, Piorun/Zwiększenie Ataku;
+  Ninja Dagger: Chmura/Zasadzka, Sztylet/Szybki Atak, Krycie; Archer: Ognista,
+  Trująca, potem trzy losowo. „Losowo” to stały los per bot, więc dwa boty
+  jednego buildu różnią się, a jeden bot jutro chce tego samego. Pierwszy
+  skill z listy idzie do Mistrza przed drugim punktem w czymkolwiek innym.
+
+### ItemShop
+
+- **Księga Zapomnienia (70037) w ItemShopie** (sosen): cofa punkt wybranej
+  umiejętności, dla skilla, który utknął na 17 po trzydziestym poziomie.
+  Trafia też do sklepów już założonych, raz, pod kolejnym wolnym numerem.
+
+---
+
+## 1.31.3 — 2026-09-09
+
+### Łucznik kontra Metin
+
+- **Łucznik bije kamienie Metin sztyletem albo mieczem, nie łukiem** (Kuszaa,
+  „Archer vs metin”: łucznik przewracał się przy kamieniu kilka razy i
+  odpuszczał). Kamień nie rusza się z miejsca, strzały się kończą, a strzał z
+  łuku to ułamek uderzenia wręcz. Łucznik trzyma teraz w torbie jedną broń na
+  kamienie — sztylet przed mieczem, bo jest szybszy i tańszy; miecz tylko
+  gdy sztyletu brak — dobiera ją, gdy celem jest Metin, i wraca do łuku,
+  gdy kamień pęknie. Bez łuku w ręce nie
+  rzuca umiejętności (silnik liczy je ze strzały: bez łuku dają 0), tylko
+  zwykłe ciosy. Kupiec broni sprzedaje mu sztylet na jego poziom, gdy w
+  torbie nie ma żadnego; ani stragan, ani sprzedawca tej broni nie zabierają.
+  Panel klasyczny: pod znacznikami `PLAYERBOT_GEAR: archer draws the stone
+  weapon` / `takes the bow back` w logu.
+
+### Boty przy bramie do Joan w Bokjung
+
+- **Boty nie kotłują się już przy bramie do Joan** (Kuszaa, nagranie z
+  1.31.1: boty ze statusem „Ide na Gore Sohan”, „Ide do Lochu Malp”, „Ide do
+  kowala” dojeżdżają do bramy, zsiadają z konia, po chwili wsiadają i
+  odjeżdżają, a po kilku minutach wracają). Diagnostyka na naszym serwerze:
+  152 ze 160 marszów pod tę bramę w dziesięć minut to targ — bot bez
+  straganu w zasięgu miał „najpierw zajrzeć do Joan”, ale pass targu prosił
+  o portal raz na dwie–pięć minut, więc trasę do bramy dokańczały zwykłe
+  passy ruchu, a przy samej bramie nikt już o przejście nie prosił; bot
+  oddawał tick wędrówce i odjeżdżał, a po następnym pytaniu targu wracał.
+  Teraz marsz na targ w Joan jest zobowiązaniem: bot prosi o portal co tick,
+  aż zmieni mapę, a bot, którego miejsce jest na pograniczu (albo którego
+  wyjazd wstrzymał sprawunek), w ogóle tam nie idzie — kupuje w zasięgu w
+  Bokjung. Do tego passy, które tylko kontynuują trasę do portalu, nie
+  zsiadają już z konia kilometr przed bramą.
+
+### Bot bez yangów na Teleporter
+
+- **Bot, którego nie stać na Teleporter, poluje w Bokjung na opłatę, zamiast
+  pytać Teleportera co tick.** Pomiar u nas: 268 z 362 botów 40+ w Bokjung
+  miało mniej yangów niż jedna opłata (najbiedniejszy 79), a Teleporter
+  odpowiadał odmową 26 000 razy na minutę — bo odczekanie z 1.30.42 ustawiało
+  zegar, którego gałąź wyjazdu na pogranicze nigdy nie czytała, a powyżej
+  pułapu Bokjung bot nie miał prawa polować, więc nie miał z czego zapłacić.
+  Teraz: (1) po odmowie bot naprawdę czeka pięć minut; (2) bot bez opłaty
+  nie idzie do Teleportera, tylko poluje w Bokjung, aż uzbiera trzy opłaty
+  (status „Zbieram yang na Teleporter”); (3) kowal, zmiana bonusów, targ,
+  reset umiejętności i Zwój Zapomnienia zostawiają w sakiewce trzy opłaty
+  dla bota, którego łowisko leży za Teleporterem — to wydawanie wszystkiego u
+  kowala po powrocie z pogranicza robiło z botów nędzarzy.
+
+---
+
 ## 1.31.2 — 2026-09-09
 
 ### Panel zaawansowany

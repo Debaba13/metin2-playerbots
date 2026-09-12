@@ -27,6 +27,7 @@ files/static/*
 linux-port/docker/docker-compose.yml
 linux-port/docker/.env.example
 linux-port/docker/mariadb/initdb.d/10-import-dumps.sh
+linux-port/docker/mariadb/conf.d/99-metin2.cnf
 # Waits for the database before seeding. Its timeout decides whether a slow
 # recovery fails the whole compose "up".
 linux-port/docker/mariadb/playerbot/apply.sh
@@ -47,6 +48,14 @@ linux-port/overlays/playerbot/sql/playerbots_seed.sql
 # starts compose directly is not silently seeding an August-era registry.
 linux-port/docker/mariadb/playerbot/playerbots_seed.sql
 linux-port/overlays/playerbot/tools/generate_seed.py
+# The nickname pool, and the two copies it lives in for the same reason
+# the seed does: the overlay is the source, mariadb/playerbot is what the
+# migrate container mounts, and an update that refreshed only one of them
+# would run a pool nobody generated.
+linux-port/overlays/playerbot/sql/playerbot_names.sql
+linux-port/docker/mariadb/playerbot/playerbot_names.sql
+linux-port/overlays/playerbot/tools/generate_bot_names.py
+linux-port/overlays/playerbot/data/bot_names_iwakura.txt
 # The overlay sources, and the staged build context they are compiled from.
 # Wildcards, not lists: splitting a source file must not require editing this
 # file, and forgetting to is what shipped a manager without its own headers in
@@ -59,6 +68,17 @@ linux-port/docker/game/src/server/game/src/playerbot_*
 # only lives under overlays/playerbot/patches reaches nobody; the staged,
 # patched file does - the same way the playerbot sources do.
 linux-port/docker/game/src/server/game/src/char.cpp
+linux-port/docker/game/src/server/game/src/char_battle.cpp
+# Patch 0014: the channel status and the login limit count players, not
+# bots (desc_manager, p2p, desc_client). Patch 0015: country_code in
+# do_in_game_mall has a default (cmd_general). Staged like the rest.
+linux-port/docker/game/src/server/game/src/desc_manager.cpp
+linux-port/docker/game/src/server/game/src/desc_client.cpp
+linux-port/docker/game/src/server/game/src/p2p.cpp
+linux-port/docker/game/src/server/game/src/p2p.h
+linux-port/docker/game/src/server/game/src/cmd_general.cpp
+linux-port/docker/game/src/server/game/src/char_state.cpp
+linux-port/docker/game/src/server/game/src/input_db.cpp
 linux-port/docker/game/src/server/game/src/cmd.cpp
 linux-port/docker/game/src/server/game/src/cmd_gm.cpp
 linux-port/docker/game/src/server/game/src/item_manager.cpp

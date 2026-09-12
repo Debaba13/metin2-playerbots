@@ -168,6 +168,32 @@ cmd_prepare() {
         chown metin2:metin2 "$LOG" 2>/dev/null
         chmod 0640 "$LOG" 2>/dev/null
     fi
+    # And put that language back in place, every start.
+    #
+    # This is the whole of the bug behind "u mnie bylo po polsku, postawilem od
+    # nowa i mam po angielsku". The four files this switch replaces live under
+    # share/, share/ is baked into the game image, and every update rebuilds
+    # that image - so a rebuild silently restored the English files while the
+    # remembered choice, the panel's language page and lang.status all went on
+    # saying Polish. What a player then saw was a world named half in each: our
+    # own Polish strings beside "Skill Book" on a bot's stall sign, quests in
+    # English, monsters in English.
+    #
+    # Remembering the choice was fixed once before (the WANTED file above);
+    # re-applying it never was, and remembering without applying is what made
+    # it look like the setting had simply stopped working.
+    #
+    # cmd_apply is idempotent - it copies the wanted file over the active one
+    # and keeps the shipped English original beside it as .m2orig - so running
+    # it on every start costs four file copies and cannot drift. It is called
+    # before the chown below, because the files it moves into place are created
+    # here as root.
+    #
+    # A failure is never fatal: the entrypoint logs it and the server starts in
+    # whatever language the image carries, which is what happened before this
+    # existed at all.
+    cmd_apply || warn "could not put the game into the remembered language"
+
     # The four active files and the directories holding them: this runs as the
     # service account and has to be able to replace them in place.
     targets | while IFS='|' read -r active _p _s; do

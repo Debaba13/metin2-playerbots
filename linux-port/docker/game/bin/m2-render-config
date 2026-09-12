@@ -51,6 +51,23 @@ is_ipv4() {
   return 0
 }
 
+# The ItemShop address is host:port and nothing else.
+#
+# cmd_general.cpp builds the link the client opens as
+#   "mall http://%s/ishop?pid=..&c=..&sid=..&sas=.."
+# with MALL_URL substituted whole, so a value that already carries a scheme
+# becomes http://http://127.0.0.1:7791/ishop?... and the client's built-in
+# browser answers with a bare HTTP 400. Nothing in the server logs says a word
+# about it, and the operator sees only "itemshop sie wysypal" (jaroszv2,
+# 10 September). Writing http:// in front of an address is the natural thing to
+# do, so accept it and take it off rather than let it break the link.
+if [ -n "${M2_MALL_URL:-}" ]; then
+  M2_MALL_URL="${M2_MALL_URL#http://}"
+  M2_MALL_URL="${M2_MALL_URL#https://}"
+  M2_MALL_URL="${M2_MALL_URL%/}"
+  export M2_MALL_URL
+fi
+
 # PROXY_IP takes either form: a literal address is used as-is, a hostname is
 # resolved by config.cpp at load time (with the ported NULL guard, so a name
 # that does not resolve is a warning rather than a startup crash).

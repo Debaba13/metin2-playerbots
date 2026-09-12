@@ -1944,11 +1944,19 @@ class GameWindow(ui.ScriptWindow):
 			"GMPanelSetStatResult"		: self.__GMPanelSetStatResult,
 			"GMPanelSetSkillResult"		: self.__GMPanelSetSkillResult,
 			"GMPanelCreateItemResult"	: self.__GMPanelCreateItemResult,
+			"GMPanelPolyItemResult"	: self.__GMPanelPolyItemResult,
 			"GMPanelItemListChunk"	: self.__GMPanelItemListChunk,
 			"GMPanelAccountResult"	: self.__GMPanelAccountResult,
 			"GMPanelAddGMResult"	: self.__GMPanelAddGMResult,
 			"GMPanelSpawnResult"	: self.__GMPanelSpawnResult,
 			"GMPanelSpawnMobResult"	: self.__GMPanelSpawnMobResult,
+			"GMPanelSpawnBossResult"	: self.__GMPanelSpawnBossResult,
+			"GMPanelSpawnMetinResult"	: self.__GMPanelSpawnMetinResult,
+			"GMPanelRatesResult"	: self.__GMPanelRatesResult,
+			"GMPanelSetRateResult"	: self.__GMPanelSetRateResult,
+			"GMPanelRestartResult"	: self.__GMPanelRestartResult,
+			"GMPanelAIWeightsResult"	: self.__GMPanelAIWeightsResult,
+			"GMPanelSetAIWeightResult"	: self.__GMPanelSetAIWeightResult,
 
 			"OpenPlayerbotAdminWindow"			: self.__PlayerbotAdmin_Open,
 			"PlayerbotAdminStats"				: self.__PlayerbotAdmin_Stats,
@@ -2271,6 +2279,10 @@ class GameWindow(ui.ScriptWindow):
 		if self.interface.wndGMPanel:
 			self.interface.wndGMPanel.SetCreateItemResult(data)
 
+	def __GMPanelPolyItemResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetPolyItemResult(data)
+
 	def __GMPanelItemListChunk(self, data):
 		if self.interface.wndGMPanel:
 			self.interface.wndGMPanel.SetItemListChunk(data)
@@ -2290,6 +2302,34 @@ class GameWindow(ui.ScriptWindow):
 	def __GMPanelSpawnMobResult(self, data):
 		if self.interface.wndGMPanel:
 			self.interface.wndGMPanel.SetSpawnMobResult(data)
+
+	def __GMPanelSpawnBossResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetSpawnBossResult(data)
+
+	def __GMPanelSpawnMetinResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetSpawnMetinResult(data)
+
+	def __GMPanelRatesResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetRatesResult(data)
+
+	def __GMPanelSetRateResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetRateSaveResult(data)
+
+	def __GMPanelRestartResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetRestartServerResult(data)
+
+	def __GMPanelAIWeightsResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetAIWeightsResult(data)
+
+	def __GMPanelSetAIWeightResult(self, data):
+		if self.interface.wndGMPanel:
+			self.interface.wndGMPanel.SetAIWeightResult(data)
 
 	def __PlayerbotAdmin_Open(self):
 		self.interface.OpenPlayerbotAdminWindow()

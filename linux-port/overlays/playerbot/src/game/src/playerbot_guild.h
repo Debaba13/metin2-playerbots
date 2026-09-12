@@ -1,6 +1,8 @@
 #ifndef __INC_METIN2_PLAYERBOT_GUILD_H__
 #define __INC_METIN2_PLAYERBOT_GUILD_H__
 
+#include "playerbot_guild_names.h"
+
 // Guilds, and who a bot has got on with.
 //
 // The engine's CGuildManager::CreateGuild imposes no level of its own - the
@@ -100,20 +102,24 @@ namespace
 
 	// ----------------------------------------------------------------- guilds
 
-	// Two names per empire. Twelve characters is the engine's limit
-	// (GUILD_NAME_MAX_LEN); "KrwawiRycerze" was thirteen and would have been
-	// refused had a Shinsoo bot ever founded a guild, which none does.
-	const char* GetPlayerBotGuildName(BYTE bEmpire, size_t index)
+	// The names come from Iwakura's list (data/guild_names_iwakura.txt,
+	// rendered into playerbot_guild_names.h). Until 2.0.13 there were two
+	// hand-made names per kingdom, so a world could hold six bot guilds and
+	// every later founder found both of its kingdom's names taken. One pool
+	// for the whole world now: a founder starts at an offset drawn from its
+	// pid, takes the first name no guild wears, and skips what the engine's
+	// own limit refuses (GUILD_NAME_MAX_LEN is fourteen on mt2009 and twelve
+	// on r40250, and check_name wants letters and digits, which the list is).
+	// A name is worn once: FindGuildByName is the engine's own register.
+	const char* GetPlayerBotGuildName(DWORD dwPID, size_t step)
 	{
-		static const char* kChunjo[] = { "BialyLotos", "CichyOrszak" };
-		static const char* kShinsoo[] = { "CzerwSmoki", "KrwawyRycerz" };
-		static const char* kJinno[] = { "NiebWilki", "SrebrnaStal" };
-		const char** pool = kChunjo;
-		if (bEmpire == 1)
-			pool = kShinsoo;
-		else if (bEmpire == 3)
-			pool = kJinno;
-		return index < PLAYERBOT_GUILD_NAMES_PER_EMPIRE ? pool[index] : NULL;
+		if (step >= PLAYERBOT_GUILD_NAME_POOL_SIZE)
+			return NULL;
+		const size_t index = (PlayerBotNavHash(dwPID ^ 0x4e414d45U) + step) % PLAYERBOT_GUILD_NAME_POOL_SIZE;
+		const char* szName = PLAYERBOT_GUILD_NAME_POOL[index];
+		if (strlen(szName) > GUILD_NAME_MAX_LEN)
+			return "";
+		return szName;
 	}
 
 	// Founding is rare on purpose. Every eligible bot starting a guild of its
@@ -139,10 +145,12 @@ namespace
 			return false;
 
 		CGuildManager& gm = CGuildManager::instance();
-		for (size_t i = 0; i < PLAYERBOT_GUILD_NAMES_PER_EMPIRE; ++i)
+		for (size_t i = 0; i < PLAYERBOT_GUILD_NAME_POOL_SIZE; ++i)
 		{
-			const char* szName = GetPlayerBotGuildName(ch->GetEmpire(), i);
-			if (!szName || gm.FindGuildByName(szName) != NULL)
+			const char* szName = GetPlayerBotGuildName(ch->GetPlayerID(), i);
+			if (!szName)
+				break;
+			if (!*szName || gm.FindGuildByName(szName) != NULL)
 				continue;
 
 			TGuildCreateParameter cp;
@@ -157,7 +165,7 @@ namespace
 			// The engine charges this in CInputMain::GuildCreate, not in
 			// CreateGuild, so a caller that is not the packet handler has to pay
 			// it - otherwise a bot founds a guild for nothing.
-			ch->PointChange(POINT_GOLD, -(int)PLAYERBOT_GUILD_CREATE_FEE);
+			PlayerBotChangeGold(ch, -(int)PLAYERBOT_GUILD_CREATE_FEE);
 			sys_log(0, "PLAYERBOT_GUILD: founded pid=%u name=%s guild=%s id=%u gold=%d",
 					ch->GetPlayerID(), ch->GetName(), szName, dwGuildID,
 					(int)(ch->GetGold() / 1000));

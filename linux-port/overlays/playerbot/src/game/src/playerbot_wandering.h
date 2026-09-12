@@ -306,14 +306,42 @@ namespace
 		return bFound;
 	}
 
-	// Whether a Joan hub whose monsters sit at mobLevel is ground for a bot of
-	// this level: the target scorer's sweet spot is a monster within -2..+5
-	// of the bot, so a hub is taken from two levels under its median up to
-	// seven over it. Above the map's top band every hub of the top band is
-	// open, and the frontier gates take the bot off the map soon anyway.
+	// Whether a village hub whose monsters sit at mobLevel is ground for a
+	// bot of this level: the target scorer's sweet spot is a monster within
+	// -2..+5 of the bot, so a hub is taken from two levels under its median
+	// to three over it. It used to be seven over, and what the seven bought
+	// was dogs: a bot of nine qualified for the band-three hubs beside the
+	// band-nine ones and was sent to them by pid, where a Wild Dog pays 15
+	// experience against a Blue Alpha Wolf's 111 - a third of every fight
+	// measured on the test world was six or more levels under the bot, and a
+	// level in the teens took two hours. (PERCENT_LVDELTA is not what limits
+	// it: this engine's table still pays 90% at six under. The base is.)
 	bool IsPlayerBotM1HubForLevel(int botLevel, int mobLevel)
 	{
-		return botLevel >= mobLevel - 2 && botLevel <= mobLevel + 7;
+		return botLevel >= mobLevel - 2 && botLevel <= mobLevel + 3;
+	}
+
+	// The hubs of a table whose band holds the bot's level, or - when none
+	// does - the hubs of the band nearest to it. Falling back on the whole
+	// table put a bot of sixteen on Yongan, between the thirteens and the
+	// eighteens, anywhere at all, including the twenty-fives it cannot fight
+	// and the threes not worth fighting. Returns how many were written.
+	int CollectPlayerBotM1HubsForLevel(int botLevel, const TPlayerBotVillageHub* hubs,
+			int hubTotal, int* out, int cap)
+	{
+		int count = 0;
+		for (int h = 0; h < hubTotal && count < cap; ++h)
+			if (IsPlayerBotM1HubForLevel(botLevel, hubs[h].mobLevel))
+				out[count++] = h;
+		if (count > 0)
+			return count;
+		int best = 1000;
+		for (int h = 0; h < hubTotal; ++h)
+			best = std::min(best, abs(hubs[h].mobLevel - botLevel));
+		for (int h = 0; h < hubTotal && count < cap; ++h)
+			if (abs(hubs[h].mobLevel - botLevel) == best)
+				out[count++] = h;
+		return count;
 	}
 
 	void ManagePlayerBotWandering(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow);
@@ -456,7 +484,15 @@ namespace
 		long targetX = ch->GetX();
 		long targetY = ch->GetY();
 
-		if (ch->GetMapIndex() == 21) // Chunjo M1 (Joan)
+		// The ground belongs to the map, not to Chunjo. Every branch below used
+		// to name 21, 23 or 24, so a Shinsoo or Jinno bot reached none of them
+		// and fell through to a random walk on a map full of monsters it could
+		// not find. What each village holds is the same; where it holds it is
+		// not, so the tables are per map and were measured per map.
+		const TPlayerBotVillageGround* ground =
+				GetPlayerBotVillageGround(ch->GetMapIndex());
+
+		if (ground != NULL && IsPlayerBotM1Map(ch->GetMapIndex()))
 		{
 			const DWORD pid = ch->GetPlayerID();
 
@@ -484,9 +520,14 @@ namespace
 					return;
 				}
 
-				BYTE hIdx = ChoosePlayerBotMetinHotspot(pid, state.uMetinHotspotIndex, dwNow);
-				long hx = PLAYERBOT_METIN_HOTSPOTS[hIdx].x;
-				long hy = PLAYERBOT_METIN_HOTSPOTS[hIdx].y;
+				BYTE hIdx = ChoosePlayerBotMetinHotspot(pid, state.uMetinHotspotIndex,
+						dwNow, ch->GetMapIndex());
+				if (ground->metinCount == 0)
+					return;
+				if (hIdx >= (BYTE)ground->metinCount)
+					hIdx = (BYTE)(hIdx % ground->metinCount);
+				long hx = ground->metins[hIdx].x;
+				long hy = ground->metins[hIdx].y;
 				long hotspotOffsetX = 0, hotspotOffsetY = 0;
 				GetPlayerBotStableOffset(pid, 0x4d455449U + hIdx, 100, 650,
 						hotspotOffsetX, hotspotOffsetY);
@@ -497,8 +538,11 @@ namespace
 				if (distToMetinHotspot < 1200)
 				{
 					// Reached current hotspot: wander in search of stones, then advance to next
-					++s_adwPlayerBotMetinHotspotVisits[hIdx];
-					state.uMetinHotspotIndex = (state.uMetinHotspotIndex + 1) % 12;
+					const int statSlot = GetPlayerBotMetinHotspotSlot(ch->GetMapIndex());
+					if (statSlot >= 0)
+						++s_adwPlayerBotMetinHotspotVisits[statSlot][hIdx];
+					state.uMetinHotspotIndex =
+							(state.uMetinHotspotIndex + 1) % (BYTE)ground->metinCount;
 					state.dwNextWanderTime = dwNow + 2000;
 					targetX = ch->GetX() + number(-600, 600);
 					targetY = ch->GetY() + number(-600, 600);
@@ -520,24 +564,15 @@ namespace
 				// units, measured from regen.txt through group.txt: a camp is
 				// picked among those whose band holds the bot's level, so a
 				// level-twenty party is not sent to the East beasts of three.
-				const struct { long x; long y; int mobLevel; } partyCamps[8] = {
-					{ 39000, 200200, 9 },  // South-West White Oath Camp
-					{ 37000, 168400, 10 }, // West White Oath Camp
-					{ 84600, 197500, 12 }, // South-East Bear / Tiger Camp
-					{ 61000, 203600, 6 },  // South Dense Boar / Wolf Plains
-					{ 80300, 135700, 9 },  // North-East Plateau Camp
-					{ 61600, 133500, 12 }, // North Meadow Camp
-					{ 35000, 135500, 21 }, // North-West Lykos Territory
-					{ 85800, 169700, 3 }   // East Cursed Beast Camp
-				};
-				int campChoices[8];
-				int campCount = 0;
-				for (int c = 0; c < 8; ++c)
-					if (IsPlayerBotM1HubForLevel(ch->GetLevel(), partyCamps[c].mobLevel))
-						campChoices[campCount++] = c;
-				if (campCount == 0)
-					for (int c = 0; c < 8; ++c)
-						campChoices[campCount++] = c;
+				const TPlayerBotVillageHub* partyCamps = ground->camps;
+				const int campTotal = (int)ground->campCount;
+				if (partyCamps == NULL || campTotal <= 0)
+					return;
+				int campChoices[16];
+				const int campCount = CollectPlayerBotM1HubsForLevel(ch->GetLevel(),
+						partyCamps, campTotal, campChoices, 16);
+				if (campCount <= 0)
+					return;
 
 				int campIdx = campChoices[((pid / 4) + state.uMetinHotspotIndex) % campCount];
 				long cx = partyCamps[campIdx].x;
@@ -579,32 +614,15 @@ namespace
 				// band holds its level; the pid still spreads the population
 				// over them. Rectangle centres still pass through the live
 				// attr/same-component validation.
-				const struct { long x; long y; int mobLevel; } hubs[32] = {
-					// 1. North Quadrant (Meadows & North Road)
-					{ 61600, 133500, 12 }, { 55600, 135200, 12 }, { 70600, 135800, 9 }, { 59500, 123600, 18 },
-					// 2. North-East Quadrant (Plateaus & Hills)
-					{ 80300, 135700, 9 }, { 83500, 130000, 12 }, { 75500, 143600, 6 }, { 87200, 147300, 12 },
-					// 3. East Quadrant (Cursed Animals & Tigers)
-					{ 85800, 169700, 3 }, { 80300, 165800, 1 }, { 88600, 162800, 9 }, { 82900, 178300, 3 },
-					// 4. South-East Quadrant (Brown Bears & Tiger Groves)
-					{ 84600, 197500, 12 }, { 78300, 191000, 3 }, { 89800, 195300, 12 }, { 86700, 209800, 20 },
-					// 5. South Quadrant (Wild Boars, Grey Wolves, Tigers)
-					{ 61000, 203600, 6 }, { 52700, 194700, 4 }, { 67400, 194700, 3 }, { 61100, 214300, 21 },
-					// 6. South-West Quadrant (White Oath Camps & Black Bears)
-					{ 39000, 200200, 9 }, { 29900, 196400, 16 }, { 46200, 206200, 10 }, { 33500, 209800, 18 },
-					// 7. West Quadrant (Valley of Mi-Jung, White Oath)
-					{ 37000, 168400, 10 }, { 30200, 164500, 12 }, { 44700, 165800, 3 }, { 32600, 178200, 12 },
-					// 8. North-West Quadrant (Lykos territory, Cursed Wolves)
-					{ 35000, 135500, 21 }, { 40600, 145000, 9 }, { 28500, 146900, 12 }, { 42100, 129300, 18 }
-				};
-				int hubChoices[32];
-				int hubCount = 0;
-				for (int h = 0; h < 32; ++h)
-					if (IsPlayerBotM1HubForLevel(ch->GetLevel(), hubs[h].mobLevel))
-						hubChoices[hubCount++] = h;
-				if (hubCount == 0)
-					for (int h = 0; h < 32; ++h)
-						hubChoices[hubCount++] = h;
+				const TPlayerBotVillageHub* hubs = ground->hubs;
+				const int hubTotal = (int)ground->hubCount;
+				if (hubs == NULL || hubTotal <= 0)
+					return;
+				int hubChoices[64];
+				const int hubCount = CollectPlayerBotM1HubsForLevel(ch->GetLevel(),
+						hubs, hubTotal, hubChoices, 64);
+				if (hubCount <= 0)
+					return;
 				int hubIdx = hubChoices[((pid / 2) + state.uMetinHotspotIndex) % hubCount];
 				long hubX = hubs[hubIdx].x;
 				long hubY = hubs[hubIdx].y;
@@ -629,16 +647,17 @@ namespace
 				}
 			}
 		}
-		else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+		else if (ground != NULL && IsPlayerBotM2Map(ch->GetMapIndex()))
 		{
 			const DWORD pid = ch->GetPlayerID();
 			// The Bestial Captain, while he stands: anybody of the band goes,
 			// the way the valley goes for the Orc Chief. Nine sectors round his
 			// point are asked, once every thirty seconds for everybody.
-			if (ch->GetLevel() >= PLAYERBOT_M2_CAPTAIN_MIN_LEVEL)
+			if (ch->GetLevel() >= PLAYERBOT_M2_CAPTAIN_MIN_LEVEL &&
+					ground->captain.x != 0)
 			{
 				long bossX = 0, bossY = 0;
-				if (IsPlayerBotBossAlive(ch->GetMapIndex(), PLAYERBOT_M2_CAPTAIN_X, PLAYERBOT_M2_CAPTAIN_Y,
+				if (IsPlayerBotBossAlive(ch->GetMapIndex(), ground->captain.x, ground->captain.y,
 						591, dwNow, &bossX, &bossY) &&
 						DISTANCE_APPROX(ch->GetX() - bossX, ch->GetY() - bossY) > 600)
 				{
@@ -654,15 +673,15 @@ namespace
 					return;
 				}
 			}
-			if (ShouldPlayerBotHuntM2Bestials(ch))
+			if (ShouldPlayerBotHuntM2Bestials(ch) && ground->bestials != NULL)
 			{
 				SetPlayerBotGoal(ch, state, BOT_GOAL_GET_EQUIPMENT, dwNow);
 				const size_t bestialIndex = (pid + state.uMetinHotspotIndex) % 2;
 				long offsetX = 0, offsetY = 0;
 				GetPlayerBotStableOffset(pid, 0x42455354U + (DWORD)bestialIndex,
 						100, 450, offsetX, offsetY);
-				targetX = PLAYERBOT_M2_BESTIAL_HOTSPOTS[bestialIndex].x + offsetX;
-				targetY = PLAYERBOT_M2_BESTIAL_HOTSPOTS[bestialIndex].y + offsetY;
+				targetX = ground->bestials[bestialIndex].x + offsetX;
+				targetY = ground->bestials[bestialIndex].y + offsetY;
 				if (DISTANCE_APPROX(ch->GetX() - targetX, ch->GetY() - targetY) < 1000)
 				{
 					++state.uMetinHotspotIndex;
@@ -673,15 +692,11 @@ namespace
 			}
 			else
 			{
-				// Real spawn clusters from metin2_map_b3/regen.txt. Persistent hub
-				// assignment stops the M2 cohort from tracing one identical route.
-				const TPlayerBotMapPoint hubs[12] = {
-					{ 173800, 218500 }, { 182500, 224300 }, { 188900, 234700 },
-					{ 190000, 250200 }, { 187300, 263200 }, { 185500, 278700 },
-					{ 175000, 286500 }, { 162200, 288900 }, { 149200, 289900 },
-					{ 136900, 287300 }, { 125700, 286800 }, { 116500, 279800 }
-				};
-				const size_t hubIndex = (pid + state.uMetinHotspotIndex) % 12;
+				// Real spawn clusters from this village's own regen.txt.
+				// Persistent hub assignment stops the M2 cohort from tracing one
+				// identical route.
+				const TPlayerBotVillageHub* hubs = ground->hubs;
+				const size_t hubIndex = (pid + state.uMetinHotspotIndex) % ground->hubCount;
 				long offsetX = 0, offsetY = 0;
 				GetPlayerBotStableOffset(pid, 0x4d324855U + (DWORD)hubIndex,
 						150, 700, offsetX, offsetY);
@@ -695,19 +710,14 @@ namespace
 				}
 			}
 		}
-		else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M3)
+		else if (ground != NULL && IsPlayerBotM3Map(ch->GetMapIndex()))
 		{
-			// Centres of real map24 infected-animal regen rectangles.  Keeping the
-			// arrival/return strip out of this set also prevents farming inside the
-			// teleporter's BANPK area.
-			const TPlayerBotMapPoint hubs[10] = {
-				{ 189700, 6000 }, { 196900, 7000 }, { 206800, 7800 },
-				{ 212600, 9400 }, { 204200, 12400 }, { 209200, 18800 },
-				{ 195800, 18100 }, { 187600, 15100 }, { 216000, 15900 },
-				{ 201500, 21700 }
-			};
+			// Centres of that guild map's own infected-animal regen rectangles.
+			// Keeping the arrival/return strip out of the set also prevents
+			// farming inside the teleporter's BANPK area.
+			const TPlayerBotVillageHub* hubs = ground->hubs;
 			const DWORD pid = ch->GetPlayerID();
-			const size_t hubIndex = (pid + state.uMetinHotspotIndex) % 10;
+			const size_t hubIndex = (pid + state.uMetinHotspotIndex) % ground->hubCount;
 			long offsetX = 0, offsetY = 0;
 			GetPlayerBotStableOffset(pid, 0x4d334855U + (DWORD)hubIndex,
 					100, 550, offsetX, offsetY);

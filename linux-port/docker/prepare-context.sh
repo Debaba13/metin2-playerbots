@@ -202,14 +202,38 @@ info "$(du -sh "$GAME_CTX/server" | cut -f1)"
 # patch uses zero-context hunks so it never rewrites the legacy CP949 comments;
 # the dry-run and post-apply checks make application errors fatal.
 say "Playerbot server overlay"
-# Every patch is dry-run first, all of them, before any of them is applied for
+# Every patch is rehearsed first, all of them, before any of them is applied for
 # real. A half-patched context is worse than an unpatched one: it compiles.
+#
+# The rehearsal has to be cumulative. Each patch used to be dry-run on its own
+# against the untouched tree, which is a different question from the one being
+# asked: 0009's first hunk carries the `#include "playerbot_manager.h"` that
+# 0001 adds as its context, so it fails alone and applies perfectly in sequence.
+# Every Linux and VPS install stopped there ("Hunk #1 FAILED at 37", reported
+# from the Discord) and could not update at all, while Windows never noticed -
+# there the launcher stages the already-patched files. So the files the series
+# touches are copied into a scratch tree outside the build context and the whole
+# series is applied there for real; the real context is touched only if that
+# rehearsal succeeds end to end.
+PATCH_REHEARSAL="$(mktemp -d)"
 for p in $PLAYERBOT_PATCHES; do
-  if ! (cd "$GAME_CTX/server" && \
-        patch --batch --forward --fuzz=0 -p1 --dry-run < "$p"); then
+  sed -n 's|^+++ b/\([^\t ]*\).*|\1|p' "$p" | while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    [ -f "$GAME_CTX/server/$rel" ] || continue
+    if [ ! -f "$PATCH_REHEARSAL/$rel" ]; then
+      mkdir -p "$PATCH_REHEARSAL/$(dirname "$rel")"
+      cp -a "$GAME_CTX/server/$rel" "$PATCH_REHEARSAL/$rel"
+    fi
+  done
+done
+for p in $PLAYERBOT_PATCHES; do
+  if ! (cd "$PATCH_REHEARSAL" && \
+        patch --batch --forward --fuzz=0 -p1 < "$p"); then
+    rm -rf "$PATCH_REHEARSAL"
     die "engine patch does not apply cleanly to the staged port source: $(basename "$p")"
   fi
 done
+rm -rf "$PATCH_REHEARSAL"
 for p in $PLAYERBOT_PATCHES; do
   (cd "$GAME_CTX/server" && patch --batch --forward --fuzz=0 -p1 < "$p") \
     || die "engine patch could not be applied: $(basename "$p")"

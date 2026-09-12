@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "publishedAt": "2026-09-12T13:50:25Z",
+  "statusMessage": "Wersja 2.0.14: panel klasyczny z polskimi znakami w nazwach przedmiotów i bazowymi statystykami w dymku (wartość ataku, obrona, wymagany poziom). Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "server": {
+    "version": "2.0.14",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.14/metin2-server-update-2.0.14.zip",
+    "sha256": "AEA9344C8E9A66F0B3FDA41F829AD60C5C0E2AC5FA17B363C661FA2892F810BE"
+  },
+  "support": {
+    "contactUrl": "https://discord.gg/pt5tvnrN6",
+    "uploadUrl": ""
+  },
+  "client": {
+    "version": "2.0.3",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.3/metin2-client-update-2.0.3.zip",
+    "sha256": "02C1492C48F409CC89F172DCD2DD34680474981B674059CB80E98C72E51C2803"
+  }
+}

@@ -143,7 +143,7 @@ namespace
 		// the ring bought the same +6 armour three times over, two seconds
 		// apart, each one better than what it had on and none of them on yet.
 		const long long offerScore = GetPlayerBotEquipmentScore(offer, ch);
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM spare = ch->GetInventoryItem(cell);
 			if (!spare || spare->IsEquipped() || !IsPlayerBotEquipmentCandidate(ch, spare) ||
@@ -374,10 +374,14 @@ namespace
 		// Joan was looked at and had nothing this bot wanted, so Bokjung is
 		// worth a walk for a while. Without this a shopper would cross to the
 		// quiet market for ever and never see the busy one.
-		if (ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 && state.bMarketTrip)
+		// A walk to Joan that ran out of time counts as Joan looked at, or the
+		// next shopping pass would set off again from wherever it gave up.
+		if (ch && state.bMarketTrip &&
+				(IsPlayerBotM1Map(ch->GetMapIndex()) || state.bMarketToJoan))
 			state.dwMarketM2AllowedUntil = get_dword_time() +
 					PLAYERBOT_MARKET_M2_FALLBACK;
 		state.bMarketTrip = false;
+		state.bMarketToJoan = false;
 		state.dwMarketTripUntil = 0;
 		state.dwMarketBrowseTime = 0;
 		state.dwMarketStallVID = 0;
@@ -405,6 +409,48 @@ namespace
 			EndPlayerBotMarketTrip(ch, state,
 					dwNow >= state.dwMarketTripUntil ? "timeout" : "broke");
 			return false;
+		}
+		// The first leg of a "Joan first" trip: keep walking the portal until
+		// the map changes. The shopping pass runs every two to five minutes,
+		// and asking for the portal once left the route to the tick's
+		// continuation passes - which walked the bot to the gate cell and
+		// then handed it to the wander. 152 of 160 walks to that gate in ten
+		// minutes were this, with one crossing; the bots stood at the gate
+		// with "Sohan" or "Monkey Dungeon" over their heads and rode off.
+		if (state.bMarketToJoan)
+		{
+			if (!IsPlayerBotM2Map(ch->GetMapIndex()))
+			{
+				state.bMarketToJoan = false;
+				state.dwMarketTripUntil = dwNow + PLAYERBOT_MARKET_TRIP_TIMEOUT;
+				state.dwMarketBrowseTime = dwNow;
+			}
+			else
+			{
+				if (state.lDepartureMap != 0)
+				{
+					EndPlayerBotMarketTrip(ch, state, "departure_set");
+					return false;
+				}
+				// This kingdom's own gate and this kingdom's own first village.
+				// The walk is the same one it has always been; which market it
+				// ends at is whichever one the bot's second village opens onto.
+				const int owner = playerbot_empire_rules::GetMapOwnerEmpire(ch->GetMapIndex());
+				const long firstVillage = playerbot_empire_rules::GetHomeMap(owner,
+						playerbot_empire_rules::MAP_ROLE_M1);
+				playerbot_empire_rules::TKingdomGate gate;
+				playerbot_empire_rules::TPoint pitch;
+				if (!playerbot_empire_rules::FindKingdomGate(owner, ch->GetMapIndex(),
+							firstVillage, gate) ||
+						!playerbot_empire_rules::GetTownPitch(firstVillage, pitch))
+				{
+					EndPlayerBotMarketTrip(ch, state, "no_gate_home");
+					return false;
+				}
+				return MovePlayerBotToWorldPortal(ch, state,
+						gate.gate.x, gate.gate.y,
+						firstVillage, pitch.x, pitch.y, dwNow, "market_to_m1");
+			}
 		}
 		SetPlayerBotAction(state, BOT_ACTION_MARKET, dwNow);
 
@@ -531,22 +577,41 @@ namespace
 		// off. That is the difference between a market and a vending machine.
 		if (!haveStallInReach && !PlayerBotWantsAnythingFromMarket(ch))
 			return false;
+		// A market is counters, and the ledger counts them once a minute. With
+		// none in reach and none on this map there is nothing to walk to, and
+		// with none in the first village either there is nothing to cross for:
+		// on a young world no bot is old enough to open one, and the trip was
+		// a walk to an empty pitch under "Szukam czegos na straganach".
+		const int owner = playerbot_empire_rules::GetMapOwnerEmpire(ch->GetMapIndex());
+		const long firstVillage = playerbot_empire_rules::GetHomeMap(owner,
+				playerbot_empire_rules::MAP_ROLE_M1);
+		const bool stallsHere = GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0;
+		const bool stallsInJoan = GetPlayerBotStallsOnMap(firstVillage) > 0;
+		if (!haveStallInReach && !stallsHere && !stallsInJoan)
+			return false;
 		// Joan first. A shopper standing in Bokjung crosses to the quieter market
 		// before browsing the one under its nose: that is what gives the Joan
 		// counters customers, and it is also what stops five hundred bots
 		// circling the same seven stalls. Bokjung opens up again for a while
 		// once Joan has been looked at and had nothing.
-		if (!haveStallInReach && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
-				dwNow >= state.dwMarketM2AllowedUntil)
+		// Only for a bot whose place is Bokjung: one that is leaving for the
+		// frontier, or is held back from it by an errand, shops in reach and
+		// goes - the same line the stall's walk to Joan draws.
+		if (!haveStallInReach && stallsInJoan && IsPlayerBotM2Map(ch->GetMapIndex()) &&
+				dwNow >= state.dwMarketM2AllowedUntil &&
+				state.lDepartureMap == 0 && GetPlayerBotFrontierMapForLevel(ch) == 0)
 		{
-			PlayerBotLogThrottled("market_to_m1", dwNow,
-					"PLAYERBOT_MARKET: looking in Joan first pid=%u name=%s",
-					ch->GetPlayerID(), ch->GetName());
-			return MovePlayerBotToWorldPortal(ch, state,
-					PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
-					PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_GUARD_X,
-					PLAYERBOT_M1_GUARD_Y, dwNow, "market_to_m1");
+			state.bMarketTrip = true;
+			state.bMarketToJoan = true;
+			state.dwMarketTripUntil = dwNow + PLAYERBOT_MARKET_JOAN_WALK_TIMEOUT;
+			state.dwMarketBrowseTime = 0;
+			state.dwMarketStallVID = 0;
+			sys_log(0, "PLAYERBOT_MARKET: looking in Joan first pid=%u name=%s pos=(%ld,%ld)",
+					ch->GetPlayerID(), ch->GetName(), ch->GetX(), ch->GetY());
+			return ContinuePlayerBotMarketTrip(ch, state, dwNow, pitchX, pitchY);
 		}
+		if (!haveStallInReach && !stallsHere)
+			return false; // the only counters are in Joan, and Joan was looked at
 		if (!haveStallInReach &&
 				DISTANCE_APPROX(ch->GetX() - pitchX, ch->GetY() - pitchY) >
 					PLAYERBOT_MARKET_TRIP_RANGE)
@@ -591,7 +656,9 @@ namespace
 		s_mapMarketLedger.clear();
 
 		DWORD stalls = 0, lines = 0, demandBots = 0;
+		DWORD auStallsByReason[PLAYERBOT_SHOP_REASON_MAX] = { 0 };
 		s_iPlayerBotStallsInM2 = 0;
+		s_mapPlayerBotStallsByMap.clear();
 		std::set<DWORD> wanted;
 		std::vector<DWORD> wallets;
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
@@ -604,8 +671,11 @@ namespace
 			if (ch->GetMyShop() && !state.vecShopOffers.empty())
 			{
 				++stalls;
-				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+				++auStallsByReason[state.bShopOpenReason < PLAYERBOT_SHOP_REASON_MAX
+						? state.bShopOpenReason : PLAYERBOT_SHOP_REASON_NONE];
+				if (IsPlayerBotM2Map(ch->GetMapIndex()))
 					++s_iPlayerBotStallsInM2;
+				++s_mapPlayerBotStallsByMap[ch->GetMapIndex()];
 				for (size_t k = 0; k < state.vecShopOffers.size(); ++k)
 				{
 					const TPlayerBotShopOffer& offer = state.vecShopOffers[k];
@@ -621,7 +691,8 @@ namespace
 			// half hour and its own anvil is still waiting.
 			if (!CanPlayerBotAffordMarket(ch))
 				continue;
-			wallets.push_back((DWORD)std::max(0, ch->GetGold() - GetPlayerBotReservedGold(ch)));
+			wallets.push_back((DWORD)std::max<long long>(0,
+					(long long)ch->GetGold() - (long long)GetPlayerBotReservedGold(ch)));
 			CollectPlayerBotWantedMaterials(ch, wanted);
 			if (wanted.empty())
 				continue;
@@ -658,6 +729,14 @@ namespace
 					GetPlayerBotLastAsk(ranked[i].second, 0, dwNow));
 			top += buf;
 		}
+		// Who is trading and why, against the TRADE weight in force: the number
+		// an operator needs before deciding the slider "does nothing".
+		sys_log(0, "PLAYERBOT_SHOP: census stalls=%u trade_weight=%d merchant=%u poor=%u bag_full=%u dropper_pressure=%u books=%u dropper_roll=%u roll=%u",
+				stalls, GetPlayerBotWeight(PLAYERBOT_WEIGHT_TRADE),
+				auStallsByReason[PLAYERBOT_SHOP_REASON_MERCHANT], auStallsByReason[PLAYERBOT_SHOP_REASON_POOR],
+				auStallsByReason[PLAYERBOT_SHOP_REASON_BAG_FULL], auStallsByReason[PLAYERBOT_SHOP_REASON_DROPPER_PRESSURE],
+				auStallsByReason[PLAYERBOT_SHOP_REASON_BOOKS], auStallsByReason[PLAYERBOT_SHOP_REASON_DROPPER_ROLL],
+				auStallsByReason[PLAYERBOT_SHOP_REASON_ROLL]);
 		sys_log(0, "PLAYERBOT_MARKET: ledger stalls=%u lines=%u vnums=%u demand_bots=%u wallet=%u decisions list=%u probe=%u no_demand=%u overstock=%u top:%s",
 				stalls, lines, (unsigned int)s_mapMarketLedger.size(), demandBots,
 				s_dwMarketMedianWallet,

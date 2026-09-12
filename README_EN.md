@@ -2,12 +2,17 @@
 
 [Polski (README.md)](README.md) | **English**
 
+[![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/6v4WkDY6a)
+[![BuyCoffee](https://img.shields.io/badge/BuyCoffee-Support_the_Project-FF813F?style=for-the-badge&logo=coffeescript&logoColor=white)](https://buycoffee.to/metin2-playerbots)
+
 A local Metin2 singleplayer world populated by genuine, autonomous player characters (Playerbots): leveling up, grinding solo and in squads, looting items, refining gear at the Blacksmith, hunting Metin stones, and persisting their full progression in the standard database.
 
 ## 💬 Community & Project Support
 
 - **[Join our Discord server](https://discord.gg/6v4WkDY6a)** — discuss the project, share playtests and ideas, and follow playerbot development updates.
 - **[Support development on Zrzutka.pl](https://zrzutka.pl/rw4g7p)** — voluntary donations help cover the tools and AI models used to develop the project.
+
+<a href="https://buycoffee.to/metin2-playerbots" target="_blank"><img src="https://buycoffee.to/btn/buycoffeeto-btn-primary.svg" style="height: 42px;" alt="Support on buycoffee.to"></a>
 
 Every contribution — testing, bug reports, ideas, code, or financial support — helps us build a more autonomous and lively Metin2 world.
 
@@ -36,7 +41,7 @@ Unlike conventional external client-bot scripts, bots in this project are **firs
 The project is under active research and development.
 
 > [!NOTE]
-> **Supported Kingdom:** The autonomous world currently covers **Chunjo**: Joan (M1, map 21), Bokjung (M2, map 23), Waryong/M3 (map 24), and the Easy Monkey Dungeon (map 25). More Chunjo regions and the other kingdoms (*Shinsoo – Reds* and *Jinno – Blues*) remain future work.
+> **Supported Kingdoms:** The autonomous world covers **all three kingdoms** (**Chunjo** – Yellows, **Shinsoo** – Reds, and **Jinno** – Blues) including M1, M2, M3, Monkey Dungeons, **Orc Valley**, **Yongbi Desert**, **Mount Sohan**, **Hwang Temple**, and **Spider Dungeons**!
 
 ### Resource Footprint (350 Bot Snapshot)
 - **Game Engine (`game core`)**: ~1.05 GiB RAM

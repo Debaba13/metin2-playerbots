@@ -155,11 +155,18 @@ namespace
 
 	const char* GetPlayerBotTownName(long mapIndex)
 	{
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M1)
-			return "Joan";
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M2)
-			return "Bokjung";
-		return PlayerBotText("miescie");
+		// The engine's own quests name these: new_quest_lv52 for the first
+		// villages, new_quest_lv7 for the second.
+		switch (mapIndex)
+		{
+			case 1: return "Yongan";
+			case 3: return "Jayang";
+			case PLAYERBOT_MAP_CHUNJO_M1: return "Joan";
+			case PLAYERBOT_MAP_CHUNJO_M2: return "Bokjung";
+			case 41: return "Pyongmoo";
+			case 43: return "Bakra";
+			default: return PlayerBotText("miescie");
+		}
 	}
 
 	// Lowercase ASCII from CP1250: the Polish letters go to their base, the

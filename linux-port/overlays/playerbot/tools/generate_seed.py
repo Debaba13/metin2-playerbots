@@ -9,7 +9,24 @@ import sys
 from pathlib import Path
 
 
-BOT_COUNT = 1500
+# Each kingdom's block of the canonical cohort, in PID order:
+#   empire, how many, the village map, and the corner of the spawn grid.
+#
+# Chunjo's 1500 are the original cohort and keep their PIDs, names, logins,
+# jobs and positions to the byte - a second run of this generator must not
+# move a single existing character. The two new blocks are appended after
+# them, so every login and social id the registry derives from a PID keeps
+# working unchanged.
+#
+# The two anchors were chosen by walking server_attr: all 500 points of each
+# grid stand on open ground (tools/dump_world_catalog.py reads the same files;
+# for comparison 153 of Chunjo's 1500 do not, and are rescued at spawn).
+KINGDOM_COHORTS = (
+    (2, 1500, 21, 51000, 165000),
+    (1, 500, 1, 476000, 954000),
+    (3, 500, 41, 962500, 265500),
+)
+BOT_COUNT = sum(block[1] for block in KINGDOM_COHORTS)
 FIRST_PID = 4
 SEED_VERSION = 1
 
@@ -40,7 +57,15 @@ STATS = {
 
 def cohort() -> list[dict[str, int | str]]:
     rows: list[dict[str, int | str]] = []
+    blocks: list[tuple[int, int, int, int, int, int]] = []
+    first_ordinal = 1
+    for empire, count, map_index, ax, ay in KINGDOM_COHORTS:
+        blocks.append((first_ordinal, first_ordinal + count - 1, empire, map_index, ax, ay))
+        first_ordinal += count
     for ordinal in range(1, BOT_COUNT + 1):
+        block = next(b for b in blocks if b[0] <= ordinal <= b[1])
+        start, _end, empire, map_index, anchor_x, anchor_y = block
+        index = ordinal - start
         prefix = NAME_PREFIXES[(ordinal - 1) % len(NAME_PREFIXES)]
         cycle = (ordinal - 1) // len(NAME_PREFIXES)
         suffix = "" if cycle == 0 else str(cycle + 1)
@@ -53,8 +78,10 @@ def cohort() -> list[dict[str, int | str]]:
                 "social_id": f"9{ordinal:012d}",
                 "name": f"bot{prefix}{suffix}",
                 "job": job,
-                "x": 51000 + ((ordinal - 1) % 25) * 80,
-                "y": 165000 + ((ordinal - 1) // 25) * 120,
+                "empire": empire,
+                "map_index": map_index,
+                "x": anchor_x + (index % 25) * 80,
+                "y": anchor_y + (index // 25) * 120,
                 "hp": hp,
                 "mp": mp,
                 "st": st,
@@ -88,6 +115,14 @@ def validate(rows: list[dict[str, int | str]]) -> None:
         raise ValueError("social IDs must be unique 13-digit ASCII strings")
     if any(int(row["job"]) not in range(8) for row in rows):
         raise ValueError("job must be in the r40250 range 0..7")
+    kingdom_map = {empire: map_index for empire, _c, map_index, _x, _y in KINGDOM_COHORTS}
+    if any(int(row["empire"]) not in (1, 2, 3) for row in rows):
+        raise ValueError("empire must be 1, 2 or 3")
+    if any(kingdom_map[int(row["empire"])] != int(row["map_index"]) for row in rows):
+        raise ValueError("a bot's village map does not belong to its kingdom")
+    chunjo = [row for row in rows if int(row["empire"]) == 2]
+    if len(chunjo) != 1500 or int(chunjo[0]["pid"]) != FIRST_PID:
+        raise ValueError("the original Chunjo cohort must stay PID 4 upwards, 1500 of them")
 
 
 def sql_quote(value: object) -> str:
@@ -97,7 +132,7 @@ def sql_quote(value: object) -> str:
 def render_sql(rows: list[dict[str, int | str]]) -> str:
     values = []
     columns = (
-        "pid", "login", "social_id", "name", "job", "x", "y",
+        "pid", "login", "social_id", "name", "job", "empire", "map_index", "x", "y",
         "hp", "mp", "st", "ht", "dx", "iq",
     )
     string_columns = {"login", "social_id", "name"}
@@ -125,6 +160,8 @@ CREATE TEMPORARY TABLE playerbot_seed_spec (
     social_id   VARCHAR(13) NOT NULL,
     player_name VARCHAR(24) NOT NULL,
     job         TINYINT UNSIGNED NOT NULL,
+    empire      TINYINT UNSIGNED NOT NULL,
+    map_index   INT UNSIGNED NOT NULL,
     x           INT NOT NULL,
     y           INT NOT NULL,
     hp          SMALLINT NOT NULL,
@@ -140,13 +177,20 @@ CREATE TEMPORARY TABLE playerbot_seed_spec (
 ) ENGINE=MEMORY DEFAULT CHARSET=latin1;
 
 INSERT INTO playerbot_seed_spec
-    (pid, login, social_id, player_name, job, x, y, hp, mp, st, ht, dx, iq)
+    (pid, login, social_id, player_name, job, empire, map_index, x, y, hp, mp, st, ht, dx, iq)
 VALUES
 @@VALUES@@;
 
 -- The generated registry describes itself; validate that before looking at a
 -- single durable row.
 DELIMITER //
+-- Shinsoo and Jinno are opt-in until their bots have a life of their own on
+-- their own maps: without @playerbot_seed_kingdoms the seed is the Chunjo
+-- cohort it has always been, and no character is created for the other two.
+-- The Compose wrapper sets the variable from M2_PLAYERBOT_KINGDOMS.
+DELETE FROM playerbot_seed_spec
+ WHERE empire <> 2 AND COALESCE(@playerbot_seed_kingdoms, 0) = 0;
+
 BEGIN NOT ATOMIC
     DECLARE v_count INT DEFAULT 0;
     DECLARE v_min_pid INT DEFAULT 0;
@@ -155,7 +199,11 @@ BEGIN NOT ATOMIC
     SELECT COUNT(*), COALESCE(MIN(pid), 0), COALESCE(MAX(pid), 0)
       INTO v_count, v_min_pid, v_max_pid
       FROM playerbot_seed_spec;
-    IF v_count <> @@COUNT@@ OR v_min_pid <> @@FIRST@@ OR v_max_pid <> @@LAST@@ THEN
+    -- Either the whole registry, or the Chunjo cohort on its own when the
+    -- kingdoms are not switched on. Anything else means the spec was edited.
+    IF NOT ((v_count = @@COUNT@@ AND v_min_pid = @@FIRST@@ AND v_max_pid = @@LAST@@)
+            OR (v_count = @@CHUNJO_COUNT@@ AND v_min_pid = @@FIRST@@
+                AND v_max_pid = @@CHUNJO_LAST@@)) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'playerbot seed: registry is not exactly PID @@FIRST@@..@@LAST@@';
     END IF;
@@ -171,6 +219,18 @@ BEGIN NOT ATOMIC
                      ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (pid)
     ) ENGINE=MyISAM DEFAULT CHARSET=ascii;
+
+    -- The nickname ledger, for the same reason: the "renamed" skip rule below
+    -- reads it, and on a fresh install playerbot_names.sql has not run yet.
+    -- Empty and idempotent; creating it commits to nothing.
+    CREATE TABLE IF NOT EXISTS common.playerbot_name_history (
+        pid        INT UNSIGNED NOT NULL,
+        seed_name  VARCHAR(24) NOT NULL,
+        human_name VARCHAR(24) NOT NULL,
+        renamed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (pid),
+        KEY human_name (human_name)
+    ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 END//
 DELIMITER ;
 
@@ -192,11 +252,23 @@ CREATE TEMPORARY TABLE playerbot_seed_skip (
 ) ENGINE=MEMORY DEFAULT CHARSET=latin1;
 
 -- Renamed, re-classed, or otherwise not the character this registry describes.
+--
+-- With one exception, and it is the whole reason the nickname ledger exists:
+-- a bot the launcher renamed from botsomething to a human nickname is still
+-- this registry's bot, and skipping it would have quietly taken the entire
+-- cohort out of the seed's care the first time an operator turned nicknames on.
+-- The ledger has to agree on both halves - the name it was given and the name
+-- it wears - so a second, hand-made rename is still a character to leave alone.
 INSERT INTO playerbot_seed_skip (pid)
 SELECT s.pid
   FROM playerbot_seed_spec AS s
   JOIN player.player AS p ON p.id = s.pid
- WHERE BINARY p.name <> BINARY s.player_name OR p.job <> s.job;
+ WHERE p.job <> s.job
+    OR (BINARY p.name <> BINARY s.player_name
+        AND NOT EXISTS (SELECT 1 FROM common.playerbot_name_history AS h
+                         WHERE h.pid = s.pid
+                           AND BINARY h.seed_name = BINARY s.player_name
+                           AND BINARY h.human_name = BINARY p.name));
 
 -- player.name is only indexed, not unique, so aliases need their own pass.
 INSERT INTO playerbot_seed_skip (pid)
@@ -204,6 +276,13 @@ SELECT s.pid
   FROM playerbot_seed_spec AS s
   JOIN player.player AS p ON p.name = s.player_name
  WHERE p.id <> s.pid;
+
+-- A ledger row whose character is gone is a nickname held against nothing, and
+-- it would keep a recreated bot from ever being given one. Cleared here rather
+-- than in playerbot_names.sql, because this is the pass that knows which PIDs
+-- the registry expects to exist.
+DELETE FROM common.playerbot_name_history
+ WHERE pid NOT IN (SELECT id FROM player.player);
 
 -- An existing character sitting on a foreign account.
 INSERT INTO playerbot_seed_skip (pid)
@@ -255,7 +334,7 @@ SELECT s.pid
   LEFT JOIN player.player_index AS pi ON pi.id = a.id
  WHERE pi.id IS NOT NULL
    AND (pi.pid1 <> s.pid OR pi.pid2 <> 0 OR pi.pid3 <> 0 OR pi.pid4 <> 0
-        OR pi.empire <> 2);
+        OR pi.empire <> s.empire);
 
 -- The PID is referenced by somebody else's index slot.
 INSERT INTO playerbot_seed_skip (pid)
@@ -270,7 +349,7 @@ SELECT s.pid
     OR pi.id <> a.id
     OR pi.pid1 <> s.pid
     OR pi.pid2 <> 0 OR pi.pid3 <> 0 OR pi.pid4 <> 0
-    OR pi.empire <> 2;
+    OR pi.empire <> s.empire;
 
 -- Ledger rows from another seed version, or completed rows whose character is
 -- gone, are ambiguous and must be repaired by an operator rather than guessed.
@@ -310,7 +389,12 @@ BEGIN NOT ATOMIC
     SELECT COUNT(*) INTO v_conflicts
       FROM playerbot_seed_spec AS s
       JOIN player.player AS p ON p.id = s.pid
-     WHERE BINARY p.name <> BINARY s.player_name OR p.job <> s.job;
+     WHERE p.job <> s.job
+        OR (BINARY p.name <> BINARY s.player_name
+            AND NOT EXISTS (SELECT 1 FROM common.playerbot_name_history AS h
+                             WHERE h.pid = s.pid
+                               AND BINARY h.seed_name = BINARY s.player_name
+                               AND BINARY h.human_name = BINARY p.name));
     IF v_conflicts <> 0 THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'playerbot seed conflict: target PID has a foreign name or job';
@@ -388,7 +472,7 @@ BEGIN NOT ATOMIC
       JOIN account.account AS a ON a.id = p.account_id
       LEFT JOIN player.player_index AS pi ON pi.id = a.id
      WHERE pi.id IS NOT NULL
-       AND (pi.pid1 <> s.pid OR pi.pid2 <> 0 OR pi.pid3 <> 0 OR pi.pid4 <> 0 OR pi.empire <> 2);
+       AND (pi.pid1 <> s.pid OR pi.pid2 <> 0 OR pi.pid3 <> 0 OR pi.pid4 <> 0 OR pi.empire <> s.empire);
     IF v_conflicts <> 0 THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'playerbot seed conflict: canonical account has a foreign index';
@@ -406,7 +490,7 @@ BEGIN NOT ATOMIC
         OR pi.id <> a.id
         OR pi.pid1 <> s.pid
         OR pi.pid2 <> 0 OR pi.pid3 <> 0 OR pi.pid4 <> 0
-        OR pi.empire <> 2;
+        OR pi.empire <> s.empire;
     IF v_conflicts <> 0 THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'playerbot seed conflict: target PID is in a foreign index';
@@ -446,11 +530,16 @@ BEGIN NOT ATOMIC
       LEFT JOIN common.playerbot_seed_state AS l ON l.pid = s.pid
      WHERE l.pid IS NULL;
 
+    -- s.empire, not a literal 2. player_index.empire is what the core reads
+    -- when it decides which kingdom a bot belongs to, and it has always been
+    -- right; the account's own column was left at Chunjo for everybody, so
+    -- every Shinsoo and Jinno bot claimed Chunjo to anything that asked the
+    -- account instead - both panels did, and showed the wrong flag.
     INSERT INTO account.account
         (login, password, social_id, email, create_time, is_testor, status,
          empire, name_checked, availDt, last_play)
     SELECT s.login, '!', s.social_id, '', UTC_TIMESTAMP(), 0, 'BLOCK',
-           2, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+           s.empire, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()
       FROM playerbot_seed_missing AS s
       JOIN common.playerbot_seed_state AS l ON l.pid = s.pid AND l.state = 'pending'
       LEFT JOIN account.account AS a ON a.login = s.login
@@ -476,8 +565,8 @@ BEGIN NOT ATOMIC
          sub_skill_point, stat_reset_count, horse_hp, horse_stamina,
          horse_level, horse_hp_droptime, horse_riding, horse_skill_point,
          bank_value, last_play)
-    SELECT s.pid, a.id, s.player_name, s.job, 0, 0, s.x, s.y, 0, 21,
-           s.x, s.y, 21, s.hp, s.mp, 800, 1, 0,
+    SELECT s.pid, a.id, s.player_name, s.job, 0, 0, s.x, s.y, 0, s.map_index,
+           s.x, s.y, s.map_index, s.hp, s.mp, 800, 1, 0,
            s.st, s.ht, s.dx, s.iq, 0, 2500, 0, 0, 0,
            0, 0, 0, 0, 0, 0, 0, 0, 0, UTC_TIMESTAMP()
       FROM playerbot_seed_missing AS s
@@ -489,16 +578,36 @@ BEGIN NOT ATOMIC
     -- Adding a genuinely missing index is safe for adopted bots as well; no
     -- existing row is ever updated or reassigned.
     INSERT INTO player.player_index (id, pid1, pid2, pid3, pid4, empire)
-    SELECT a.id, s.pid, 0, 0, 0, 2
+    SELECT a.id, s.pid, 0, 0, 0, s.empire
       FROM playerbot_seed_spec AS s
       JOIN player.player AS p
-        ON p.id = s.pid AND BINARY p.name = BINARY s.player_name AND p.job = s.job
+        ON p.id = s.pid AND p.job = s.job
+       -- The name it was seeded with, or the nickname this project gave
+       -- it; see the skip rule above.
+       AND (BINARY p.name = BINARY s.player_name
+            OR EXISTS (SELECT 1 FROM common.playerbot_name_history AS h
+                        WHERE h.pid = s.pid
+                          AND BINARY h.seed_name = BINARY s.player_name
+                          AND BINARY h.human_name = BINARY p.name))
       JOIN account.account AS a
         ON a.id = p.account_id
        AND BINARY a.login = BINARY s.login
        AND BINARY a.social_id = BINARY s.social_id
       LEFT JOIN player.player_index AS pi ON pi.id = a.id
      WHERE pi.id IS NULL;
+
+    -- And the same repair for the accounts already created with the literal.
+    -- Bounded to this seed's own logins and to rows that actually disagree, so
+    -- it is idempotent and cannot reach a character a person plays. Nothing in
+    -- the engine reads this column for a bot - LoadRegisteredBots asks
+    -- player_index - so it is corrected here rather than left as a trap for
+    -- the next thing that asks the account which kingdom it belongs to.
+    UPDATE account.account AS a
+      JOIN player.player_index AS pi ON pi.id = a.id
+      JOIN playerbot_seed_spec AS s ON s.pid = pi.pid1
+       AND BINARY s.login = BINARY a.login
+       SET a.empire = s.empire
+     WHERE a.empire <> s.empire;
 
     DROP TEMPORARY TABLE IF EXISTS playerbot_seed_pending;
     CREATE TEMPORARY TABLE playerbot_seed_pending (
@@ -607,14 +716,21 @@ BEGIN NOT ATOMIC
     SELECT COUNT(*) INTO v_count
       FROM playerbot_seed_spec AS s
       JOIN player.player AS p
-        ON p.id = s.pid AND BINARY p.name = BINARY s.player_name AND p.job = s.job
+        ON p.id = s.pid AND p.job = s.job
+       -- The name it was seeded with, or the nickname this project gave
+       -- it; see the skip rule above.
+       AND (BINARY p.name = BINARY s.player_name
+            OR EXISTS (SELECT 1 FROM common.playerbot_name_history AS h
+                        WHERE h.pid = s.pid
+                          AND BINARY h.seed_name = BINARY s.player_name
+                          AND BINARY h.human_name = BINARY p.name))
       JOIN account.account AS a
         ON a.id = p.account_id
        AND BINARY a.login = BINARY s.login
        AND BINARY a.social_id = BINARY s.social_id
       JOIN player.player_index AS pi
         ON pi.id = a.id AND pi.pid1 = s.pid
-       AND pi.pid2 = 0 AND pi.pid3 = 0 AND pi.pid4 = 0 AND pi.empire = 2
+       AND pi.pid2 = 0 AND pi.pid3 = 0 AND pi.pid4 = 0 AND pi.empire = s.empire
       JOIN common.playerbot_seed_state AS l
         ON l.pid = s.pid AND l.seed_version = 1
        AND l.state IN ('complete', 'adopted');
@@ -631,6 +747,9 @@ DROP TEMPORARY TABLE IF EXISTS playerbot_seed_missing;
 DROP TEMPORARY TABLE IF EXISTS playerbot_seed_skip;
 DROP TEMPORARY TABLE IF EXISTS playerbot_seed_spec;
 """
+    chunjo_count = next(block[1] for block in KINGDOM_COHORTS if block[0] == 2)
+    sql = sql.replace("@@CHUNJO_COUNT@@", str(chunjo_count))
+    sql = sql.replace("@@CHUNJO_LAST@@", str(FIRST_PID + chunjo_count - 1))
     sql = sql.replace("@@COUNT@@", str(BOT_COUNT))
     sql = sql.replace("@@FIRST@@", str(FIRST_PID))
     sql = sql.replace("@@LAST@@", str(FIRST_PID + BOT_COUNT - 1))

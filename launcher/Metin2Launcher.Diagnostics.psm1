@@ -439,7 +439,12 @@ function Get-M2DockerPreflight {
     # The game ports are the ones that fail in practice: a range that starts
     # at 11000 or 13000 blocks the login server or the channel, and nothing
     # in the launcher used to say so.
-    $excludedRanges = Get-M2ExcludedPortRanges
+    # @(): a function's array of one unrolls to a bare object and of none to
+    # $null, and under StrictMode neither has .Count - every player whose
+    # Windows reserved exactly one port range (or none) got "The property
+    # 'Count' cannot be found on this object" from Start, StartDocker and
+    # Logs alike, because all three run this preflight.
+    $excludedRanges = @(Get-M2ExcludedPortRanges)
     if ($excludedRanges.Count -gt 0) {
         $envPath = Join-Path $root 'linux-port\docker\.env'
         $authPort = 11000

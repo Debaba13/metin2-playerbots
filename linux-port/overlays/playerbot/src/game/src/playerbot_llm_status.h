@@ -68,16 +68,26 @@ namespace
 	// The map a player would name, not the one the code names. Used by the
 	// travel line, which used to announce every journey as a hunt for
 	// experience whatever the errand actually was.
-	// Polish declines the destination, so the table carries the phrase that
-	// follows "ide" rather than the bare name: "Ide na Dolina Orkow" is not a
-	// sentence anybody would write.
 	const char* GetPlayerBotMapDestinationTurkish(long mapIndex)
 	{
 		switch (mapIndex)
 		{
+			// The names are the engine's own: new_quest_lv52 reads the first
+			// villages out of { "Yongan", "Joan", "Pyongmoo" } by empire and
+			// new_quest_lv7 names the second ones Jayang, Bokjung and Bakra.
+			// Map 24 used to be labelled Pyungmoo here, which is Jinno's
+			// capital and not Chunjo's guild ground.
+			case 1: return "Yongan'a";
+			case 3: return "Jayang'a";
 			case PLAYERBOT_MAP_CHUNJO_M1: return "Joan'a";
 			case PLAYERBOT_MAP_CHUNJO_M2: return "Bokjung'a";
-			case PLAYERBOT_MAP_CHUNJO_M3: return "Pyungmoo'ya";
+			case 41: return "Pyongmoo'ya";
+			case 43: return "Bakra'ya";
+			case 4:
+			case PLAYERBOT_MAP_CHUNJO_M3:
+			case 44: return "Klan Topraklarina";
+			case 5:
+			case 45:
 			case PLAYERBOT_MAP_MONKEY_EASY: return "Maymun Zindani";
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "Maymun Zindani II";
 			case PLAYERBOT_MAP_MONKEY_HARD: return "Maymun Zindani III";
@@ -85,6 +95,7 @@ namespace
 			case PLAYERBOT_MAP_ORC_VALLEY: return "Orklar Vadisi'ne";
 			case PLAYERBOT_MAP_SOHAN: return "Sohan Dagi'na";
 			case PLAYERBOT_MAP_SPIDER_V1: return "Orumcek Zindani'na";
+			case PLAYERBOT_MAP_SPIDER_V2: return "Orumcek Zindani'na 2";
 			case PLAYERBOT_MAP_HWANG: return "Hwang Tapinagi'na";
 			default: return "";
 		}
@@ -109,7 +120,7 @@ namespace
 			case BOT_ACTION_STALL: return "pazar kuruyorum";
 			case BOT_ACTION_MARKET: return "pazarda alisveris yapiyorum";
 			case BOT_ACTION_LURE: return "grup icin mob cekiyorum";
-			case BOT_ACTION_TOWN_REST: return "pazarlari geziyorum";
+			case BOT_ACTION_TOWN_REST: return "sehirde dinleniyorum";
 			default: return "takiliyorum";
 		}
 	}
@@ -197,7 +208,7 @@ namespace
 
 		if (state.bTacticalRetreat)
 		{
-			snprintf(status, statusSize, "%sUciekam - mam malo HP", prefix);
+			snprintf(status, statusSize, "%sKaciyorum - HP dusuk", prefix);
 			return;
 		}
 		// An errand the watchdog interrupted, and the map the bot still means to
@@ -348,9 +359,10 @@ namespace
 				// The stable keeper of the map the bot is on: measured against
 				// Joan's alone, a bot handing its medal over in Bokjung was
 				// "on its way" for the whole visit.
-				const bool inM2 = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2;
-				const long stableX = inM2 ? PLAYERBOT_M2_STABLE_BOY_X : PLAYERBOT_STABLE_BOY_X;
-				const long stableY = inM2 ? PLAYERBOT_M2_STABLE_BOY_Y : PLAYERBOT_STABLE_BOY_Y;
+				playerbot_empire_rules::TTownServices svc;
+				const bool haveStable = playerbot_empire_rules::GetTownServices(ch->GetMapIndex(), svc);
+				const long stableX = haveStable ? svc.stableKeeper.x : ch->GetX();
+				const long stableY = haveStable ? svc.stableKeeper.y : ch->GetY();
 				const bool bFar = DISTANCE_APPROX(ch->GetX() - stableX, ch->GetY() - stableY) > 850;
 				if (IsPlayerBotBattleHorseEarned(ch))
 					snprintf(status, statusSize, bFar ? "%sSavas atina gidiyorum"
@@ -366,9 +378,11 @@ namespace
 				if (ch->CountSpecifyItem(PLAYERBOT_FISHING_BAIT_VNUM) <
 						PLAYERBOT_FISHING_BAIT_RESTOCK)
 					snprintf(status, statusSize, "%sYem almak icin balikciya gidiyorum", prefix);
-				else if (DISTANCE_APPROX(ch->GetX() - PLAYERBOT_FISHING_BANK_X,
-						ch->GetY() - PLAYERBOT_FISHING_BANK_Y) >
-						PLAYERBOT_FISHING_BANK_RADIUS)
+				else if (GetPlayerBotFishingBank(ch->GetMapIndex()) == NULL ||
+						DISTANCE_APPROX(
+							ch->GetX() - GetPlayerBotFishingBank(ch->GetMapIndex())->centre.x,
+							ch->GetY() - GetPlayerBotFishingBank(ch->GetMapIndex())->centre.y) >
+						GetPlayerBotFishingBank(ch->GetMapIndex())->radius)
 					snprintf(status, statusSize, "%sNehirde balik tutmaya gidiyorum", prefix);
 				else if (state.bIsFishing)
 					snprintf(status, statusSize, "%sBalik tutuyorum - oltayi bekliyorum", prefix);
@@ -383,7 +397,13 @@ namespace
 					snprintf(status, statusSize, "%sYemi oltaya takiyorum", prefix);
 				break;
 			case BOT_ACTION_TOWN_REST:
-				snprintf(status, statusSize, "%sPazar tezgahlarini geziyorum", prefix);
+				// The linger after a town errand. It reads as browsing only
+				// where there are counters to browse; on a world too young
+				// for a single stall it was "what stalls, there are none".
+				if (GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0)
+					snprintf(status, statusSize, "%sPazar tezgahlarini geziyorum", prefix);
+				else
+					snprintf(status, statusSize, "%sSehirde dinleniyorum", prefix);
 				break;
 			case BOT_ACTION_MARKET:
 				if (state.dwMarketStallVID != 0)
@@ -392,10 +412,10 @@ namespace
 					snprintf(status, statusSize, "%sPazarlarda bir sey ariyorum", prefix);
 				break;
 			case BOT_ACTION_TRAVEL:
-				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
+				if (IsPlayerBotM1Map(ch->GetMapIndex()) &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
 					snprintf(status, statusSize, "%sM2'ye at madalyasi icin gidiyorum", prefix);
-				else if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
+				else if (IsPlayerBotM2Map(ch->GetMapIndex()) &&
 						ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) == 0 &&
 						state.bLongTermGoal == BOT_GOAL_HORSE)
 					snprintf(status, statusSize, "%sMaymun Zindani'na at madalyasi icin gidiyorum", prefix);
@@ -452,7 +472,16 @@ namespace
 					const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
 					const char* where = wantMap != 0 && wantMap != ch->GetMapIndex()
 							? GetPlayerBotMapDestinationTurkish(wantMap) : "";
-					if (where[0])
+					// The frontier is reached from Bokjung through the
+					// Teleporter, at his price; a bot that cannot pay is not
+					// going anywhere, and a plain travel line over a bot that
+					// has stood in Bokjung for an hour is what an operator
+					// reads as a bot that cannot find the portal.
+					if (where[0] && IsPlayerBotM2Map(ch->GetMapIndex()) &&
+							ch->GetGold() < GetPlayerBotTeleporterFee(ch))
+						snprintf(status, statusSize, "%sTeleporter icin yang biriktiriyorum %s (%d/%d)",
+								prefix, where, ch->GetGold(), GetPlayerBotTeleporterFee(ch));
+					else if (where[0])
 						snprintf(status, statusSize, "%s%s gidiyorum (hedef: %s)", prefix,
 								where, goal);
 					else

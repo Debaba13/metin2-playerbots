@@ -291,7 +291,7 @@ namespace
 		}
 
 		if (rewardGold > 0)
-			ch->PointChange(POINT_GOLD, rewardGold, true);
+			PlayerBotChangeGold(ch, rewardGold);
 		if (expPercent > 0)
 		{
 			const DWORD rewardExp = (DWORD)(((unsigned long long)

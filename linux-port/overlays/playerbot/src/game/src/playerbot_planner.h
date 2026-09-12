@@ -34,7 +34,7 @@ namespace
 	{
 		if (!ch || !ch->IsItemLoaded() || ch->GetSkillGroup() == 0)
 			return false;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);

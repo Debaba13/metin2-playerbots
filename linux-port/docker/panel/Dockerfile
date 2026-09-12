@@ -9,7 +9,7 @@
 #  non-technical operator interacts with daily, so it gets a real WSGI server
 #  (waitress) rather than Flask's development server.
 # =============================================================================
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

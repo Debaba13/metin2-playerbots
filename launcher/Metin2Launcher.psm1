@@ -4,14 +4,37 @@ $ErrorActionPreference = 'Stop'
 # Fallback used when the manifest carries no support block (offline, or an old manifest).
 $script:M2_DEFAULT_SUPPORT_CONTACT = 'https://discord.gg/pt5tvnrN6'
 
+function Get-M2SiblingClientExecutable {
+    # The full package (Metin2-Singleplayer-<version>.zip) unpacks as Klient\
+    # beside Serwer\; a launcher that finds the client there asks nobody for
+    # it. Empty when there is no such folder.
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+    $parent = Split-Path -Parent ([IO.Path]::GetFullPath($ServerRoot).TrimEnd('\'))
+    if (-not $parent) { return '' }
+    foreach ($folder in @('Klient', 'Client')) {
+        $candidate = Join-Path $parent "$folder\metin2client.exe"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return [IO.Path]::GetFullPath($candidate) }
+    }
+    return ''
+}
+
 function Get-M2DefaultLauncherConfig {
     param([Parameter(Mandatory = $true)][string]$ServerRoot)
 
+    # The mt2009 line has its own manifest: an update meant for one engine
+    # dropped onto the other's tree would put ENGINE, world.sql and eighty
+    # engine files where they do not belong, and the launcher would then
+    # refuse to start the world it had.
+    $manifest = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
+    if ((Get-M2ServerEngine -ServerRoot $ServerRoot) -eq 'mt2009') {
+        $manifest = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest-mt2009.json'
+    }
+    $sibling = Get-M2SiblingClientExecutable -ServerRoot $ServerRoot
     [pscustomobject]@{
         schema = 1
-        manifestUrl = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
-        clientRoot = ''
-        clientExecutable = ''
+        manifestUrl = $manifest
+        clientRoot = $(if ($sibling) { Split-Path -Parent $sibling } else { '' })
+        clientExecutable = $sibling
         supportUploadUrl = ''
         # Interface language: 'pl' or 'en'. More and more of the Discord is
         # English-speaking, and a launcher nobody can read is a launcher nobody
@@ -38,6 +61,16 @@ function Get-M2LauncherConfig {
             $defaults.$name = [string]$loaded.$name
         }
     }
+    # A config saved before the client was unpacked beside the server, or
+    # pointing at a client that has since moved, still gets the sibling.
+    if (-not [string]$defaults.clientExecutable -or
+        -not (Test-Path -LiteralPath ([string]$defaults.clientExecutable) -PathType Leaf)) {
+        $sibling = Get-M2SiblingClientExecutable -ServerRoot $ServerRoot
+        if ($sibling) {
+            $defaults.clientExecutable = $sibling
+            $defaults.clientRoot = Split-Path -Parent $sibling
+        }
+    }
     return $defaults
 }
 
@@ -51,6 +84,38 @@ function Save-M2LauncherConfig {
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 }
 
+function ConvertFrom-M2ManifestText {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Origin
+    )
+
+    # A byte order mark is not JSON. ConvertFrom-Json in Windows PowerShell
+    # refuses a string that starts with one ("Nieprawidlowy element pierwotny
+    # JSON"), and Invoke-RestMethod hides that failure by handing back the raw
+    # text instead of an object - so the caller reads a String, finds no
+    # 'server' property on it and concludes there is no new version. 1.32.0
+    # shipped a manifest with a BOM and every install stopped seeing updates
+    # for twenty minutes, each one being told its channel had nothing new.
+    # Strip the mark, parse it here, and let a real failure be a failure.
+    $clean = $Text
+    if ($clean.Length -gt 0 -and [int]$clean[0] -eq 0xFEFF) { $clean = $clean.Substring(1) }
+    $clean = $clean.Trim()
+    if (-not $clean) {
+        throw "Kanal aktualizacji ($Origin) zwrocil pusta odpowiedz. Twoja instalacja pozostaje bez zmian."
+    }
+    try {
+        $parsed = $clean | ConvertFrom-Json
+    }
+    catch {
+        throw "Kanal aktualizacji ($Origin) zwrocil plik, ktorego nie da sie odczytac jako JSON. To blad po stronie kanalu, nie Twojej instalacji - zglos to na Discordzie. Szczegoly: $($_.Exception.Message)"
+    }
+    if ($parsed -isnot [psobject] -or $parsed -is [string]) {
+        throw "Kanal aktualizacji ($Origin) zwrocil cos, co nie jest manifestem. Twoja instalacja pozostaje bez zmian."
+    }
+    return $parsed
+}
+
 function Get-M2UpdateManifest {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
@@ -58,15 +123,47 @@ function Get-M2UpdateManifest {
     )
 
     if (Test-Path -LiteralPath $Source -PathType Leaf) {
-        return Get-Content -LiteralPath $Source -Raw -Encoding UTF8 | ConvertFrom-Json
+        $text = Get-Content -LiteralPath $Source -Raw -Encoding UTF8
+        return ConvertFrom-M2ManifestText -Text $text -Origin $Source
     }
 
     $uri = $null
     if (-not [Uri]::TryCreate($Source, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne 'https') {
         throw 'Manifest musi być lokalnym plikiem albo adresem HTTPS.'
     }
+    # raw.githubusercontent.com is a CDN with a five-minute cache
+    # (Cache-Control: max-age=300), and for a while after a release it hands
+    # out the previous manifest: measured five minutes after 2.0.8 was pushed,
+    # "Masz juz najnowsza wersje (2.0.7)" from a launcher that had just read
+    # it. The contents API answers from the repository itself (its cache is a
+    # minute), so for the repository's own manifest it is asked first, with
+    # the raw URL as the fallback - the API's anonymous budget is sixty
+    # requests an hour per address, and a session reads the manifest once.
+    $apiUri = $null
+    if ($uri.Host -eq 'raw.githubusercontent.com') {
+        $parts = $uri.AbsolutePath.Trim('/') -split '/', 4
+        if ($parts.Count -eq 4) {
+            [void][Uri]::TryCreate(('https://api.github.com/repos/{0}/{1}/contents/{3}?ref={2}' -f $parts[0], $parts[1], $parts[2], $parts[3]),
+                [UriKind]::Absolute, [ref]$apiUri)
+        }
+    }
+    if ($null -ne $apiUri) {
+        try {
+            $response = Invoke-WebRequest -Uri $apiUri -Method Get -UseBasicParsing -TimeoutSec $TimeoutSec `
+                -Headers @{ Accept = 'application/vnd.github.raw+json'; 'User-Agent' = 'metin2-playerbots-launcher' }
+            $text = [string]$response.Content
+            if ($text.TrimStart().StartsWith('{')) {
+                return ConvertFrom-M2ManifestText -Text $text -Origin ([string]$apiUri)
+            }
+        }
+        catch { }
+    }
     try {
-        return Invoke-RestMethod -Uri $uri -Method Get -UseBasicParsing -TimeoutSec $TimeoutSec
+        # Invoke-WebRequest, not Invoke-RestMethod: the REST variant parses for
+        # us and silently degrades to a string when it cannot, which is exactly
+        # the failure that has to be visible here.
+        $response = Invoke-WebRequest -Uri $uri -Method Get -UseBasicParsing -TimeoutSec $TimeoutSec
+        return ConvertFrom-M2ManifestText -Text ([string]$response.Content) -Origin $Source
     }
     catch {
         $statusCode = 0
@@ -137,6 +234,129 @@ function New-M2AntivirusError {
         'Dodaj katalog serwera do wykluczen w Zabezpieczeniach Windows (Ochrona przed ' +
         'wirusami > Zarzadzaj ustawieniami > Wykluczenia) albo przeslij ten log, ' +
         'zebysmy zobaczyli, o ktory plik chodzi.')
+}
+
+function Test-M2AccessDenied {
+    # Nie da sie tego zlapac przez `catch [UnauthorizedAccessException]`:
+    # przy $ErrorActionPreference = 'Stop' PowerShell 5.1 opakowuje blad
+    # cmdletu w ActionPreferenceStopException i typowany catch go mija -
+    # sprawdzone, gracz dostawal goly komunikat mimo poprawnego z pozoru
+    # bloku. Lancuch wyjatkow mowi prawde, tak samo jak przy antywirusie.
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($exception) {
+        if ($exception -is [UnauthorizedAccessException]) { return $true }
+        # E_ACCESSDENIED, gdy przyjdzie jako zwykly Win32Exception.
+        if ($exception.HResult -eq -2147024891) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+function Repair-M2WritableFile {
+    # Copy-Item -Force overwrites a read-only destination, but NOT a hidden or
+    # system one: Windows refuses to replace those and .NET reports it as
+    # UnauthorizedAccessException - the same sentence an ACL denial produces.
+    # Clearing the three attributes is the one cause we can repair ourselves, so
+    # it is tried before the copy is called a failure.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        $item = Get-Item -LiteralPath $Path -Force
+        $unwanted = ([IO.FileAttributes]::ReadOnly -bor
+            [IO.FileAttributes]::Hidden -bor [IO.FileAttributes]::System)
+        if (([int]$item.Attributes -band [int]$unwanted) -eq 0) { return $false }
+        $item.Attributes = [IO.FileAttributes]([int]$item.Attributes -band (-bnot [int]$unwanted))
+        return $true
+    }
+    catch { return $false }
+}
+
+function New-M2AccessDeniedError {
+    # "Odmowa dostepu do sciezki" is what Windows says for at least four
+    # different problems, and this function exists because the launcher used to
+    # pass that one sentence through untouched. Artur554 hit it nine times in a
+    # day on E:\Metin2Client - every attempt the same eleven words, nothing to
+    # act on, and the client never updated once. Same shape as the bait purchase
+    # that reported "cannot_afford_tackle" for three unrelated causes: name each
+    # refusal, or the report cannot be diagnosed from outside.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)]$ErrorRecord
+    )
+
+    $lines = @()
+    $lines += "Brak prawa zapisu do pliku: $Path"
+    $lines += "Windows zglosil: $($ErrorRecord.Exception.Message)"
+    $lines += 'Nic nie zostalo zmienione - poprzednia wersja dziala dalej.'
+    $lines += ''
+    $found = $false
+
+    # 1. Cos z tego folderu dziala i trzyma plik. Windows zwykle mowi wtedy
+    #    "uzywany przez inny proces", ale przy pliku otwartym na wylacznosc
+    #    przez sterownik gry potrafi odpowiedziec odmowa dostepu.
+    try {
+        $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('') + ''
+        $holders = @(Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and $_.Path.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -ExpandProperty Name -Unique)
+        if ($holders.Count -gt 0) {
+            $lines += "* Z tego folderu dziala teraz: $($holders -join ', ')."
+            $lines += '  Zamknij gre (takze launcher gry, jesli go uzywasz) i sprobuj ponownie.'
+            $found = $true
+        }
+    }
+    catch { }
+
+    # 2. Atrybuty pliku. Repair-M2WritableFile probowal je zdjac wczesniej, wiec
+    #    jesli nadal tu sa, to znaczy, ze nie wolno ich bylo zmienic.
+    try {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $attrs = (Get-Item -LiteralPath $Path -Force).Attributes
+            if (([int]$attrs -band [int][IO.FileAttributes]::ReadOnly) -ne 0) {
+                $lines += '* Plik jest tylko do odczytu i nie dalo sie tego zdjac.'
+                $found = $true
+            }
+        }
+    }
+    catch { }
+
+    # 3. Ochrona folderow w Windows Defenderze. Blokuje zapis do Dokumentow,
+    #    Pulpitu i wszystkiego, co operator sam dopisal - i zglasza to dokladnie
+    #    tak samo jak brak uprawnien.
+    try {
+        $cfa = (Get-MpPreference -ErrorAction SilentlyContinue).EnableControlledFolderAccess
+        if ($cfa -and [int]$cfa -ne 0) {
+            $lines += '* Wlaczona jest Ochrona folderow (Kontrolowany dostep do folderow) w Zabezpieczeniach Windows.'
+            $lines += '  Zabezpieczenia Windows > Ochrona przed wirusami i zagrozeniami > Ochrona przed'
+            $lines += '  ransomware > Zezwalaj aplikacji na dostep - dodaj powershell.exe, albo wylacz ochrone na czas aktualizacji.'
+            $found = $true
+        }
+    }
+    catch { }
+
+    # 4. Zwykle uprawnienia NTFS. Test zapisu mowi wiecej niz odczytanie listy
+    #    ACL, bo liczy sie wynik, a nie to, co na liscie widac.
+    if (-not $found) {
+        $parent = Split-Path -Parent $Path
+        $probe = Join-Path $parent (".m2write-" + [Guid]::NewGuid().ToString('N') + ".tmp")
+        try {
+            [IO.File]::WriteAllText($probe, 'x')
+            Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+            $lines += "* Do folderu $parent mozna pisac, ale do samego pliku nie."
+            $lines += '  Kliknij plik prawym przyciskiem > Wlasciwosci > Zabezpieczenia i sprawdz, czy Twoje konto ma Zapis.'
+        }
+        catch {
+            $lines += "* Do folderu $parent nie mozna pisac w ogole - to uprawnienia NTFS, nie sam plik."
+            $lines += '  Kliknij folder prawym przyciskiem > Wlasciwosci > Zabezpieczenia > Edytuj i daj swojemu kontu Pelna kontrole,'
+            $lines += '  albo przenies klienta do folderu, ktorego jestes wlascicielem (np. C:\Gry\Metin2Client).'
+        }
+    }
+
+    return ($lines -join [Environment]::NewLine)
 }
 
 function Get-M2Download {
@@ -266,11 +486,14 @@ function Invoke-M2PackageUpdate {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
     try {
+        $downloadWatch = [Diagnostics.Stopwatch]::StartNew()
         Get-M2Download -Source $url -Destination $download
         $actualHash = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToUpperInvariant()
         if ($actualHash -ne $expectedHash) {
             throw "Błędna suma SHA-256. Oczekiwano $expectedHash, otrzymano $actualHash."
         }
+        $downloadMb = [Math]::Round((Get-Item -LiteralPath $download).Length / 1MB, 1)
+        Write-Host ("[faza] pakiet pobrany i sprawdzony: {0} MB w {1} s" -f $downloadMb, [int]$downloadWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
 
         Expand-M2SafeZip -ArchivePath $download -Destination $expanded
         $files = @(Get-ChildItem -LiteralPath $expanded -Recurse -File -Force)
@@ -306,6 +529,12 @@ function Invoke-M2PackageUpdate {
             }
         }
 
+        # Only what was really written is rolled back. Rolling back the whole
+        # list used to mean restoring a backup onto a file the update had just
+        # been refused - which fails the same way and replaces the diagnosis
+        # with its own error, so the player was told "Odmowa dostepu" no matter
+        # how carefully the copy loop had named the cause.
+        $applied = @()
         try {
             foreach ($change in $changes) {
                 New-Item -ItemType Directory -Path (Split-Path -Parent $change.Destination) -Force | Out-Null
@@ -316,19 +545,34 @@ function Invoke-M2PackageUpdate {
                     if (Test-M2AntivirusBlock -ErrorRecord $_) {
                         throw (New-M2AntivirusError -Path $change.Relative -ErrorRecord $_)
                     }
-                    throw
+                    if (-not (Test-M2AccessDenied -ErrorRecord $_)) { throw }
+                    # One repair is worth trying before this is called a failure:
+                    # a read-only or hidden destination costs nothing to clear.
+                    # It is rarely the cause - Copy-Item -Force handles both on
+                    # its own - so the message below is what usually ships, and
+                    # it has to name which of the remaining causes this is.
+                    if (-not (Repair-M2WritableFile -Path $change.Destination)) {
+                        throw (New-M2AccessDeniedError -Path $change.Destination -Root $target -ErrorRecord $_)
+                    }
+                    Copy-Item -LiteralPath $change.Source -Destination $change.Destination -Force
                 }
+                $applied += $change
             }
         }
         catch {
-            foreach ($change in $changes) {
-                $backupFile = Join-Path $backup $change.Relative
-                if (Test-Path -LiteralPath $backupFile -PathType Leaf) {
-                    Copy-Item -LiteralPath $backupFile -Destination $change.Destination -Force
+            foreach ($change in $applied) {
+                # A rollback that throws hides why the update failed, and that is
+                # the one thing the player needs. Each restore stands alone.
+                try {
+                    $backupFile = Join-Path $backup $change.Relative
+                    if (Test-Path -LiteralPath $backupFile -PathType Leaf) {
+                        Copy-Item -LiteralPath $backupFile -Destination $change.Destination -Force
+                    }
+                    elseif (-not $change.Existed -and (Test-Path -LiteralPath $change.Destination -PathType Leaf)) {
+                        Remove-Item -LiteralPath $change.Destination -Force
+                    }
                 }
-                elseif (-not $change.Existed -and (Test-Path -LiteralPath $change.Destination -PathType Leaf)) {
-                    Remove-Item -LiteralPath $change.Destination -Force
-                }
+                catch { }
             }
             throw
         }
@@ -363,6 +607,12 @@ function Invoke-M2EnginePatches {
         adding a patch must not mean editing this function.
     #>
     param([Parameter(Mandatory = $true)][string]$ServerRoot)
+
+    # The patches are r40250's. The mt2009 tree ships already ported and
+    # patched (linux-port-mt2009/port/*.py did that where the engine source
+    # is), and a hunk written for r40250's char.cpp has nothing to match in
+    # it; the staged files themselves travel in the update instead.
+    if ((Get-M2ServerEngine -ServerRoot $ServerRoot) -ne 'r40250') { return 0 }
 
     $patchDir = Join-Path $ServerRoot 'linux-port\overlays\playerbot\patches'
     $target = Join-Path $ServerRoot 'linux-port\docker\game\src\server'
@@ -574,7 +824,12 @@ function Sync-M2PlayerbotOverlay {
     # the container reads.
     $seedSource = Join-Path $ServerRoot 'linux-port\overlays\playerbot\sql\playerbots_seed.sql'
     $seedStaged = Join-Path $ServerRoot 'linux-port\docker\mariadb\playerbot\playerbots_seed.sql'
-    if ((Test-Path -LiteralPath $seedSource -PathType Leaf) -and
+    if ((Get-M2ServerEngine -ServerRoot $ServerRoot) -ne 'r40250') {
+        # mt2009's seed is rendered from the overlay's by port/seedify.py and
+        # ships where the migrate container mounts it; the overlay's own would
+        # write columns this schema does not have. Nothing to copy over it.
+    }
+    elseif ((Test-Path -LiteralPath $seedSource -PathType Leaf) -and
         (Test-Path -LiteralPath (Split-Path -Parent $seedStaged) -PathType Container)) {
         $seedStagedHash = $null
         if (Test-Path -LiteralPath $seedStaged -PathType Leaf) {
@@ -792,6 +1047,23 @@ function New-M2SupportBundle {
             Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'compose-logs.txt') -Command {
                 docker compose --project-directory $composeDir -f $composeFile logs --no-color --tail 800
             }
+            # The game container on its own, with a window of its own: the
+            # shared 800 lines were fifty seconds of watchdog and MariaDB
+            # "Aborted connection" chatter on a world whose core was dying
+            # every ninety seconds, and the one line that mattered - the
+            # supervisor's CORE DIED with the backtrace under it - had
+            # scrolled out before the bundle was made.
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'game-container-logs.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile logs --no-color --tail 6000 game
+            }
+            # Filtered on the PowerShell side: 2.0.11 piped this through grep,
+            # which Windows PowerShell does not have, and every bundle carried
+            # a CommandNotFoundException where the supervisor's lines belonged.
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'game-supervise.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile logs --no-color --tail 200000 game 2>&1 |
+                    Select-String -Pattern 'supervise', 'CORE DIED', 'fatal signal', 'crash' -SimpleMatch |
+                    Select-Object -Last 400 | ForEach-Object { $_.Line }
+            }
             # The core's syslog never reaches the container log - only syserr
             # does - so a bundle sent about "the bots walk to the wrong portal"
             # carried nothing about where any bot was going. The travel,
@@ -805,13 +1077,60 @@ function New-M2SupportBundle {
             # holds, so the first embedded quote ended the argument and the
             # file came back empty on the machine it was made for (1.30.40).
             # Hence -e per pattern instead of one quoted alternation.
-            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'playerbot-syslog.txt') -Command {
-                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
-                    'for f in /opt/metin2/var/channel1/game1/log/*/syslog.* /opt/metin2/var/channel1/game1/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e autospawn | tail -n 60000'
+            # Every core, not game1 alone. Since 2.0.8 Shinsoo lives on `first'
+            # and Jinno on `game2', and a bundle about "the bots stand at level
+            # five" carried nothing about the two cores they stood on. One file
+            # per core, and the crash traces m2-supervise keeps beside the
+            # syserr (crash-<stamp>.txt, 2.0.8) - the only way to see where a
+            # player's core died.
+            foreach ($core in @('first', 'game1', 'game2')) {
+                $coreDir = '/opt/metin2/var/channel1/' + $core
+                Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('playerbot-syslog-' + $core + '.txt')) -Command {
+                    docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e GM_PROFILE -e autospawn | tail -n 40000')
+                }
+                Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('syserr-' + $core + '.txt')) -Command {
+                    docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                        ('tail -n 3000 ' + $coreDir + '/syserr 2>/dev/null')
+                }
+                Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('playerbot-status-' + $core + '.tsv')) -Command {
+                    docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                        ('cat ' + $coreDir + '/playerbot_status.tsv 2>/dev/null')
+                }
+                Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('crash-' + $core + '.txt')) -Command {
+                    docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                        ('ls -la ' + $coreDir + '/crash*.txt 2>/dev/null; for f in $(ls -t ' + $coreDir + '/crash*.txt 2>/dev/null | head -n 5); do echo; echo === $f; cat $f; done')
+                }
+                # A player's login lands on a channel core: the key it brought,
+                # what the db core answered, and a FULL or ALREADY refusal are
+                # all syslog lines, and none of the patterns above matched them.
+                # "Wisi na ekranie logowania" (sizowski, 2.0.11) could not be read
+                # from a bundle without these.
+                Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('login-' + $core + '.txt')) -Command {
+                    docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e LOGIN -e Login -e login -e AUTH -e CHANNEL_STATUS -e P2P -e ALREADY -e FULL | grep -a -v -e PLAYERBOT_AUTH -e playerbot_ | tail -n 2000')
+                }
             }
-            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'playerbot-status.tsv') -Command {
+            # The auth core answers the client's first screen. Its syserr and
+            # every login it handled, because "Logowanie..." that never ends
+            # is decided here or in the db core, and 2.0.11 collected neither.
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'syserr-auth.txt') -Command {
                 docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
-                    'cat /opt/metin2/var/channel1/game1/playerbot_status.tsv 2>/dev/null'
+                    'tail -n 2000 /opt/metin2/var/auth/syserr 2>/dev/null'
+            }
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'login-auth.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                    'for f in /opt/metin2/var/auth/log/*/syslog.* /opt/metin2/var/auth/syslog; do [ -f $f ] && tail -n 200000 $f; done 2>/dev/null | grep -a -v -e playerbot_ -e PLAYERBOT_ | tail -n 2000'
+            }
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'login-db.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                    'for f in /opt/metin2/var/db/log/*/syslog.* /opt/metin2/var/db/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e LOGIN -e Login -e login -e AUTH -e ALREADY -e KEY -e PLAYER_LOAD | grep -a -v -e playerbot_ | tail -n 2000'
+            }
+            # The db core writes its own syserr (a failed query, a table the
+            # game asked for and the schema lacks).
+            Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'syserr-db.txt') -Command {
+                docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
+                    'tail -n 1000 /opt/metin2/var/db/syserr 2>/dev/null'
             }
             Invoke-M2CapturedCommand -OutputPath (Join-Path $work 'compose-services.txt') -Command {
                 docker compose --project-directory $composeDir -f $composeFile config --services
@@ -1038,6 +1357,62 @@ function Get-M2DbDataVolumes {
     finally { $ErrorActionPreference = $previous }
 }
 
+function Get-M2ServerEngine {
+    <#
+        Which engine the tree under linux-port\docker was built for. 'r40250'
+        is the original port; the mt2009 tree (linux-port-mt2009 in the
+        repository, deployed under the same linux-port name so that every
+        path in the launcher stays one path) carries an ENGINE file naming
+        itself. Everything engine-specific asks here: which dumps make a
+        world, whether the r40250 engine patches are applied, what a complete
+        build context holds.
+    #>
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+    $marker = Join-Path $ServerRoot 'linux-port\docker\ENGINE'
+    if (Test-Path -LiteralPath $marker -PathType Leaf) {
+        $engine = ([IO.File]::ReadAllText($marker)).Trim().ToLowerInvariant()
+        if ($engine -match '^[a-z0-9]+$') { return $engine }
+    }
+    return 'r40250'
+}
+
+function Get-M2RequiredSqlDumps {
+    # The per-database dumps MariaDB imports on its first start. r40250's
+    # package ships hotbackup (legitimately empty); mt2009's keeps the protos
+    # in a sixth database, world, and has no hotbackup dump at all.
+    param([Parameter(Mandatory = $true)][string]$Engine)
+    if ($Engine -eq 'mt2009') { return @('account', 'common', 'player', 'log', 'world') }
+    return @('account', 'common', 'player', 'log', 'hotbackup')
+}
+
+function Get-M2RequiredGameContext {
+    # What linux-port\docker\game\src has to hold for the image to build,
+    # relative to it: the modules the Dockerfile COPYs and the share
+    # directories. mt2009 keeps its protos in the database, so it has no
+    # share\conf, and its dependency script sits one level up, in game\.
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+    if ((Get-M2ServerEngine -ServerRoot $ServerRoot) -eq 'mt2009') {
+        return @(
+            '..\build-deps-mt2009.sh', 'extern\include', 'extern\cryptopp', 'extern-tarballs',
+            'server\__REVISION__',
+            'server\common', 'server\db', 'server\game', 'server\libgame',
+            'server\liblua', 'server\libpoly', 'server\libsql', 'server\libthecore',
+            'serverfiles\share\CMD', 'serverfiles\share\data',
+            'serverfiles\share\locale', 'serverfiles\share\package',
+            'serverfiles\mark-default'
+        )
+    }
+    return @(
+        'build-deps-40250.sh', 'extern',
+        'server\common', 'server\db', 'server\game', 'server\libgame',
+        'server\liblua', 'server\libpoly', 'server\libserverkey',
+        'server\libsql', 'server\libthecore',
+        'serverfiles\share\conf', 'serverfiles\share\data',
+        'serverfiles\share\locale', 'serverfiles\share\package',
+        'serverfiles\mark-default'
+    )
+}
+
 function Get-M2MissingSqlDumps {
     # The five SQL dumps MariaDB imports on its very first start. They come out
     # of the operator's own r40250 package (Server/metin2_mysql_dump.zip) and
@@ -1049,7 +1424,8 @@ function Get-M2MissingSqlDumps {
     param([Parameter(Mandatory = $true)][string]$ServerRoot)
     $dumpDir = Join-Path $ServerRoot 'linux-port\docker\mariadb\initdb.d\dumps'
     $missing = @()
-    foreach ($db in @('account', 'common', 'player', 'log', 'hotbackup')) {
+    $engine = Get-M2ServerEngine -ServerRoot $ServerRoot
+    foreach ($db in (Get-M2RequiredSqlDumps -Engine $engine)) {
         $f = Join-Path $dumpDir "$db.sql"
         if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { $missing += "$db.sql"; continue }
         # hotbackup is legitimately empty (its Readme says so); the rest carry
@@ -1252,7 +1628,14 @@ function Invoke-M2DatabaseImport {
         # 1. Reversible backup of the current target world.
         $tgtC = Start-M2ThrowawayDb -Volume $TargetVolume
         foreach ($db in $script:M2_DB_LIST) {
-            $exists = & docker exec $tgtC sh -c "mariadb -uroot -N -B -e `"SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='$db' LIMIT 1`"" 2>$null
+            # No double quote may reach docker from PowerShell 5.1: it wraps a
+            # native command's argument in double quotes without escaping the ones
+            # inside it, so the first `" ends the argument and sh gets a broken
+            # script. This probe carried one, always came back empty, and the
+            # "reversible backup of the current target world" the operator is
+            # promised in the confirmation dialog was an empty folder every time.
+            # mariadb is invoked directly, with the query as its own argument.
+            $exists = & docker exec $tgtC mariadb -uroot -N -B -e "SHOW DATABASES LIKE '$db'" 2>$null
             if ($exists) { Export-M2Database -Container $tgtC -Database $db -OutFile (Join-Path $backupDir "target-before-import\$db.sql") }
         }
         Stop-M2ThrowawayDb -Container $tgtC; $tgtC = $null
@@ -1320,6 +1703,225 @@ function Invoke-M2DatabaseImport {
     }
 }
 
+function New-M2DatabaseBackup {
+    # A backup an operator can keep, move to another machine, and read.
+    #
+    # The import path already dumped the target world before overwriting it, but
+    # only as a side effect of an import, into a folder nobody was told about.
+    # This is the same dump asked for on purpose: the five game databases as
+    # plain SQL, a manifest naming what is inside, and a zip so that what lands
+    # in a cloud folder is one file.
+    #
+    # The server has to be stopped first - the caller does that - because a
+    # throwaway container cannot open a volume MariaDB is holding.
+    param(
+        [Parameter(Mandatory = $true)][string]$Volume,
+        [Parameter(Mandatory = $true)][string]$BackupRoot,
+        [string]$Label = ''
+    )
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $safeLabel = ($Label -replace '[^A-Za-z0-9_\-]', '')
+    $name = if ($safeLabel) { "db-backup-$stamp-$safeLabel" } else { "db-backup-$stamp" }
+    $dir = Join-Path $BackupRoot $name
+    $container = $null
+    try {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $container = Start-M2ThrowawayDb -Volume $Volume
+        $sizes = @()
+        foreach ($db in $script:M2_DB_LIST) {
+            # See the note in Invoke-M2DatabaseImport: no double quote inside a
+            # command handed to docker from PowerShell.
+            $exists = & docker exec $container mariadb -uroot -N -B -e "SHOW DATABASES LIKE '$db'" 2>$null
+            if (-not $exists) { continue }
+            $out = Join-Path $dir "$db.sql"
+            Export-M2Database -Container $container -Database $db -OutFile $out
+            $sizes += [pscustomobject]@{ Name = $db; Bytes = (Get-Item -LiteralPath $out).Length }
+        }
+        if ($sizes.Count -eq 0) { throw 'Nie znaleziono zadnej bazy gry do zapisania.' }
+        $stat = & docker exec $container sh -c "mariadb -uroot -N -B -e 'SELECT COUNT(*), IFNULL(MAX(level),0) FROM player.player'" 2>$null
+        $players = 0; $maxLevel = 0
+        if ($stat) {
+            $parts = ($stat.ToString().Trim() -split "`t")
+            if ($parts.Count -ge 2) { $players = [int]$parts[0]; $maxLevel = [int]$parts[1] }
+        }
+        Stop-M2ThrowawayDb -Container $container; $container = $null
+
+        # A backup that cannot be identified six months later is not a backup.
+        $readme = New-Object System.Text.StringBuilder
+        [void]$readme.AppendLine('Kopia zapasowa swiata Metin2 Singleplayer')
+        [void]$readme.AppendLine('')
+        [void]$readme.AppendLine("Wykonana:      $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+        [void]$readme.AppendLine("Wolumen:       $Volume")
+        [void]$readme.AppendLine("Postaci:       $players")
+        [void]$readme.AppendLine("Najwyzszy lvl: $maxLevel")
+        [void]$readme.AppendLine('')
+        [void]$readme.AppendLine('Zawartosc (zrzuty mariadb-dump, latin1 jak w grze):')
+        foreach ($s in $sizes) {
+            [void]$readme.AppendLine(('  {0,-12} {1,12:N0} B' -f ($s.Name + '.sql'), $s.Bytes))
+        }
+        [void]$readme.AppendLine('')
+        [void]$readme.AppendLine('Przywrocenie: launcher -> PRZYWROC KOPIE, i wskaz ten folder albo zip.')
+        [IO.File]::WriteAllText((Join-Path $dir 'README.txt'), $readme.ToString(),
+            [Text.UTF8Encoding]::new($false))
+
+        $zip = Join-Path $BackupRoot ($name + '.zip')
+        if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+        Compress-Archive -Path (Join-Path $dir '*') -DestinationPath $zip -CompressionLevel Optimal
+        return [pscustomobject]@{
+            Folder   = $dir
+            Zip      = $zip
+            Players  = $players
+            MaxLevel = $maxLevel
+            Files    = $sizes
+            ZipBytes = (Get-Item -LiteralPath $zip).Length
+        }
+    }
+    finally { Stop-M2ThrowawayDb -Container $container; $ErrorActionPreference = $previous }
+}
+
+function Restore-M2DatabaseBackup {
+    # The other half of New-M2DatabaseBackup, and the same swap Invoke-M2DatabaseImport
+    # performs - only the source is a folder of SQL files instead of another
+    # volume. A zip is accepted and unpacked to a temporary folder first, so an
+    # operator can point at exactly what the backup produced.
+    param(
+        [Parameter(Mandatory = $true)][string]$BackupPath,
+        [Parameter(Mandatory = $true)][string]$TargetVolume,
+        [Parameter(Mandatory = $true)][string]$BackupRoot,
+        [string]$DbUser = 'metin2',
+        [string]$DbPassword = ''
+    )
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $work = Join-Path ([IO.Path]::GetTempPath()) ('m2dbres-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+    $tgtC = $null
+    try {
+        New-Item -ItemType Directory -Path $work -Force | Out-Null
+        $source = $BackupPath
+        if ((Test-Path -LiteralPath $BackupPath -PathType Leaf) -and
+                ([IO.Path]::GetExtension($BackupPath) -eq '.zip')) {
+            $source = Join-Path $work 'unpacked'
+            New-Item -ItemType Directory -Path $source -Force | Out-Null
+            Expand-Archive -LiteralPath $BackupPath -DestinationPath $source -Force
+        }
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            throw "Nie znaleziono kopii: $BackupPath"
+        }
+        # A backup without player.sql is not this server's backup, and loading it
+        # would leave the install with no world at all.
+        $found = @()
+        foreach ($db in $script:M2_DB_LIST) {
+            if (Test-Path -LiteralPath (Join-Path $source "$db.sql") -PathType Leaf) { $found += $db }
+        }
+        if ($found -notcontains 'player') {
+            throw "W kopii '$source' nie ma pliku player.sql - to nie jest kopia swiata tego serwera."
+        }
+
+        # The world about to be replaced goes into its own backup first. The
+        # operator asked to restore, not to lose what is there now.
+        $safety = New-M2DatabaseBackup -Volume $TargetVolume -BackupRoot $BackupRoot -Label 'przed-przywroceniem'
+
+        $tgtC = Start-M2ThrowawayDb -Volume $TargetVolume
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('SET FOREIGN_KEY_CHECKS=0;')
+        foreach ($db in $found) {
+            [void]$sb.AppendLine("DROP DATABASE IF EXISTS $db;")
+            [void]$sb.AppendLine("CREATE DATABASE $db DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;")
+        }
+        $createFile = Join-Path $work 'create.sql'
+        [IO.File]::WriteAllText($createFile, $sb.ToString(), [Text.UTF8Encoding]::new($false))
+        Invoke-M2SqlFile -Container $tgtC -Database '' -InFile $createFile
+        foreach ($db in $found) {
+            Invoke-M2SqlFile -Container $tgtC -Database $db -InFile (Join-Path $source "$db.sql")
+        }
+        $stats = & docker exec $tgtC sh -c "mariadb -uroot -N -B -e 'SELECT COUNT(*), IFNULL(MAX(level),0) FROM player.player'" 2>$null
+
+        # Same tail as the import: the game user and its grants last, because
+        # FLUSH PRIVILEGES turns the privilege system back on.
+        if ($DbPassword) {
+            $safeUser = ($DbUser -replace '[^A-Za-z0-9_]', '')
+            if (-not $safeUser) { $safeUser = 'metin2' }
+            $pwEsc = $DbPassword.Replace('\', '\\').Replace("'", "''")
+            $gb = New-Object System.Text.StringBuilder
+            [void]$gb.AppendLine('FLUSH PRIVILEGES;')
+            [void]$gb.AppendLine("CREATE USER IF NOT EXISTS '$safeUser'@'%' IDENTIFIED BY '$pwEsc';")
+            [void]$gb.AppendLine("ALTER USER '$safeUser'@'%' IDENTIFIED BY '$pwEsc';")
+            foreach ($db in $script:M2_DB_LIST) {
+                [void]$gb.AppendLine("GRANT ALL PRIVILEGES ON $db.* TO '$safeUser'@'%';")
+            }
+            [void]$gb.AppendLine('FLUSH PRIVILEGES;')
+            $grantFile = Join-Path $work 'grant.sql'
+            [IO.File]::WriteAllText($grantFile, $gb.ToString(), [Text.UTF8Encoding]::new($false))
+            Invoke-M2SqlFile -Container $tgtC -Database '' -InFile $grantFile
+        }
+        Stop-M2ThrowawayDb -Container $tgtC; $tgtC = $null
+
+        $players = 0; $maxLevel = 0
+        if ($stats) {
+            $parts = ($stats.ToString().Trim() -split "`t")
+            if ($parts.Count -ge 2) { $players = [int]$parts[0]; $maxLevel = [int]$parts[1] }
+        }
+        return [pscustomobject]@{
+            Players  = $players
+            MaxLevel = $maxLevel
+            Source   = $source
+            Safety   = $safety.Zip
+            Restored = $found
+        }
+    }
+    finally {
+        Stop-M2ThrowawayDb -Container $tgtC
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Reset-M2WorldToFreshInstall {
+    # Back to the world a fresh install starts with: the r40250 dumps, the
+    # playerbot schema and a freshly seeded cohort.
+    #
+    # It is done by deleting the database volume, because that is the only thing
+    # that makes MariaDB run initdb.d again - the entrypoint skips it entirely on
+    # a volume that is not empty, which is why "just drop the databases" would
+    # leave an install with no schema and no way to get one back.
+    #
+    # And it refuses to delete anything until the five dumps that rebuild it are
+    # on disk. An install assembled from an update package can be missing them,
+    # and a reset that discovers this after the volume is gone leaves an operator
+    # with neither the old world nor a new one.
+    param(
+        [Parameter(Mandatory = $true)][string]$Volume,
+        [Parameter(Mandatory = $true)][string]$ServerRoot,
+        [Parameter(Mandatory = $true)][string]$BackupRoot
+    )
+    # @(): an empty result unrolls to $null on the way out, and $null.Count
+    # throws under StrictMode - which is how the first run of this refused to
+    # reset a world it was perfectly able to reset. Same idiom as every other
+    # caller of this function.
+    $missing = @(Get-M2MissingSqlDumps -ServerRoot $ServerRoot)
+    if ($missing.Count -gt 0) {
+        throw ("Nie moge zresetowac swiata: brakuje zrzutow, z ktorych powstaje nowa baza (" +
+               ($missing -join ', ') + "). Znajduja sie w linux-port\docker\mariadb\initdb.d\dumps.")
+    }
+    $backup = $null
+    if (Test-M2VolumeInitialized -Volume $Volume) {
+        $backup = New-M2DatabaseBackup -Volume $Volume -BackupRoot $BackupRoot -Label 'przed-resetem'
+    }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try {
+        & docker volume rm -f $Volume 1>$null 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Nie udalo sie usunac wolumenu '$Volume' - czy serwer na pewno jest zatrzymany?"
+        }
+    }
+    finally { $ErrorActionPreference = $previous }
+    return [pscustomobject]@{
+        Volume = $Volume
+        Backup = if ($backup) { $backup.Zip } else { '' }
+        Players = if ($backup) { $backup.Players } else { 0 }
+    }
+}
+
 Export-ModuleMember -Function @(
     'Get-M2DefaultLauncherConfig',
     'Get-M2LauncherConfig',
@@ -1333,9 +1935,16 @@ Export-ModuleMember -Function @(
     'Get-M2DbDataVolumes',
     'Get-M2VolumeWorldStats',
     'Invoke-M2DatabaseImport',
+    'New-M2DatabaseBackup',
+    'Restore-M2DatabaseBackup',
+    'Reset-M2WorldToFreshInstall',
     'Repair-M2GameDbUser',
     'Test-M2VolumeInitialized',
     'Get-M2MissingSqlDumps',
+    'Get-M2ServerEngine',
+    'Get-M2SiblingClientExecutable',
+    'Get-M2RequiredSqlDumps',
+    'Get-M2RequiredGameContext',
     'Test-M2DockerRunning',
     'Sync-M2PlayerbotOverlay',
     'Set-M2PlayerbotsVersionEnvironment',

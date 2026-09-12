@@ -2,7 +2,6 @@
 # authoritative copy of anything.
 game/src/
 game/rates/pack.sh
-game/mob_drop_item.m3.append.txt
 client-builder/pack/pack.sh
 panel/app/
 panel/schema/

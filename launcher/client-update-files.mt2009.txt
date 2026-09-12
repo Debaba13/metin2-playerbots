@@ -1,0 +1,4 @@
+pack/root.index
+pack/root.data
+pack/locale.index
+pack/locale.data

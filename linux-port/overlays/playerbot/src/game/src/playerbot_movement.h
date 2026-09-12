@@ -33,9 +33,23 @@ namespace
 
 	typedef std::map<DWORD, TKnownPlayerBotMetin> TKnownPlayerBotMetinMap;
 	TKnownPlayerBotMetinMap s_mapKnownPlayerBotMetins;
-	DWORD s_adwPlayerBotMetinHotspotVisits[12] = { 0 };
-	DWORD s_adwPlayerBotMetinHotspotFinds[12] = { 0 };
-	DWORD s_adwPlayerBotMetinHotspotLastFind[12] = { 0 };
+	// Twelve stone hotspots per first village, and a village per kingdom: what
+	// is learned about Yongan's north field says nothing about Joan's. Indexing
+	// one array of twelve by hotspot alone blended three maps into one score.
+	DWORD s_adwPlayerBotMetinHotspotVisits[3][12] = { { 0 } };
+	DWORD s_adwPlayerBotMetinHotspotFinds[3][12] = { { 0 } };
+	DWORD s_adwPlayerBotMetinHotspotLastFind[3][12] = { { 0 } };
+
+	// The kingdom whose statistics a map's stones belong to, 0..2, or -1 for a
+	// map that keeps none.
+	int GetPlayerBotMetinHotspotSlot(long mapIndex)
+	{
+		const int empire = playerbot_empire_rules::GetMapOwnerEmpire(mapIndex);
+		if (empire < playerbot_empire_rules::EMPIRE_SHINSOO ||
+				empire > playerbot_empire_rules::EMPIRE_JINNO)
+			return -1;
+		return empire - 1;
+	}
 
 	// The Monkey Dungeon is ten or eleven chambers, and the GOTO NPCs are the
 	// only way between them.
@@ -540,22 +554,26 @@ namespace
 		known.bLevel = stone->GetLevel();
 		known.dwLastSeenTime = dwNow;
 
-		if (bNewDiscovery && stone->GetMapIndex() == 21)
+		const TPlayerBotVillageGround* ground = bNewDiscovery &&
+				IsPlayerBotM1Map(stone->GetMapIndex())
+				? GetPlayerBotVillageGround(stone->GetMapIndex()) : NULL;
+		const int slot = ground ? GetPlayerBotMetinHotspotSlot(stone->GetMapIndex()) : -1;
+		if (ground != NULL && ground->metinCount > 0 && slot >= 0)
 		{
 			int nearest = 0;
 			int nearestDistance = INT_MAX;
-			for (int i = 0; i < 12; ++i)
+			for (size_t i = 0; i < ground->metinCount && i < 12; ++i)
 			{
-				const int distance = DISTANCE_APPROX(stone->GetX() - PLAYERBOT_METIN_HOTSPOTS[i].x,
-						stone->GetY() - PLAYERBOT_METIN_HOTSPOTS[i].y);
+				const int distance = DISTANCE_APPROX(stone->GetX() - ground->metins[i].x,
+						stone->GetY() - ground->metins[i].y);
 				if (distance < nearestDistance)
 				{
-					nearest = i;
+					nearest = (int)i;
 					nearestDistance = distance;
 				}
 			}
-			++s_adwPlayerBotMetinHotspotFinds[nearest];
-			s_adwPlayerBotMetinHotspotLastFind[nearest] = dwNow;
+			++s_adwPlayerBotMetinHotspotFinds[slot][nearest];
+			s_adwPlayerBotMetinHotspotLastFind[slot][nearest] = dwNow;
 		}
 	}
 
@@ -570,8 +588,12 @@ namespace
 				ch->GetLevel() <= stone->GetLevel() + 10;
 	}
 
-	BYTE ChoosePlayerBotMetinHotspot(DWORD playerID, BYTE currentIndex, DWORD dwNow)
+	BYTE ChoosePlayerBotMetinHotspot(DWORD playerID, BYTE currentIndex, DWORD dwNow,
+			long mapIndex)
 	{
+		const int slot = GetPlayerBotMetinHotspotSlot(mapIndex);
+		if (slot < 0)
+			return (BYTE)(currentIndex % 12);
 		BYTE best = currentIndex % 12;
 		int bestScore = INT_MIN;
 		// Compare four PID-specific candidates. This learns productive areas while
@@ -580,10 +602,10 @@ namespace
 		{
 			const BYTE index = (BYTE)((currentIndex + option * 3 +
 					(PlayerBotNavHash(playerID + option * 101U) % 5U)) % 12);
-			const int successRate = (int)((s_adwPlayerBotMetinHotspotFinds[index] + 1) * 1000 /
-					(s_adwPlayerBotMetinHotspotVisits[index] + 3));
-			const int freshness = s_adwPlayerBotMetinHotspotLastFind[index] != 0 &&
-					dwNow - s_adwPlayerBotMetinHotspotLastFind[index] < 300000 ? 250 : 0;
+			const int successRate = (int)((s_adwPlayerBotMetinHotspotFinds[slot][index] + 1) * 1000 /
+					(s_adwPlayerBotMetinHotspotVisits[slot][index] + 3));
+			const int freshness = s_adwPlayerBotMetinHotspotLastFind[slot][index] != 0 &&
+					dwNow - s_adwPlayerBotMetinHotspotLastFind[slot][index] < 300000 ? 250 : 0;
 			const int personalJitter = (int)(PlayerBotNavHash(playerID ^ (index * 7919U)) % 350U);
 			const int score = successRate + freshness + personalJitter;
 			if (score > bestScore)
@@ -709,6 +731,13 @@ namespace
 			if (!ch->StopRiding())
 				return false;
 
+			// StopRiding summons the horse as a follower, so a bot that climbs
+			// down in a town square leaves it standing there - which is the herd
+			// of horses in every screenshot of Joan and Bokjung. Inside a safe
+			// zone the horse is sent away like a player would send it; on a
+			// hunting map it stays, because the bot is about to want it again.
+			if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()))
+				ch->HorseSummon(false);
 			ClearPlayerBotRoute(state, false);
 			state.dwNextNavPlanTime = 0;
 			state.dwNextHorseRideCheckTime = dwNow + 1000;
@@ -1013,9 +1042,13 @@ namespace
 		// function without explicitly requesting a horse.  Treating that default
 		// value as a new decision made mounted bots dismount and remount every tick.
 		if (newGoal)
+		{
 			state.bRouteAllowsHorse = allowHorse;
+			state.bRouteKeepsHorse = keepHorseAtDestination;
+		}
 		UpdatePlayerBotTravelMount(ch, state, destX, destY,
-				state.bRouteAllowsHorse, dwNow, fightOnHorse, keepHorseAtDestination);
+				state.bRouteAllowsHorse, dwNow, fightOnHorse,
+				keepHorseAtDestination || state.bRouteKeepsHorse);
 		if (newGoal)
 		{
 			ClearPlayerBotRoute(state, false);

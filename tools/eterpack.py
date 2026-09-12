@@ -18,9 +18,12 @@ from <dir> instead when one of the same name is there (a new name is appended).
 Types are kept per file; a new file gets the type of the majority. Needs
 python-lzo (apt liblzo2-dev + pip python-lzo; the docker python image does).
 
-Keys are the stock r40250 ones (EterPack.cpp). A client with its own keys
-fails the index check loudly - the fourcc of the decrypted index is tested -
-rather than writing garbage.
+Keys are the stock r40250 ones (EterPack.cpp) unless `--profile mt2009` is
+given before the command: that is the martysama0134 client, whose PackMakerLite
+keys sit in pack/PackMakerLite.json and whose archives are <name>.index and
+<name>.data. The format is the same to the byte; only the keys and the
+extensions differ. A client with other keys fails the index check loudly - the
+fourcc of the decrypted index is tested - rather than writing garbage.
 """
 import os
 import struct
@@ -29,8 +32,27 @@ import zlib
 
 import lzo
 
-INDEX_KEY = (45129401, 92367215, 681285731, 1710201)
-DATA_KEY = (78952482, 527348324, 1632463, 486575)
+PROFILES = {
+    # EterPack.cpp of the r40250 client
+    'r40250': {'index_key': (45129401, 92367215, 681285731, 1710201),
+               'data_key': (78952482, 527348324, 1632463, 486575),
+               'ext_index': '.eix', 'ext_data': '.epk', 'layout': 'stock'},
+    # pack/PackMakerLite.json of the mt2009 client (eter_pack_index_key /
+    # eter_pack_data_key; its EterPack.cpp carries the same numbers as
+    # s_adwEterPackKey / s_adwEterPackSecurityKey)
+    'mt2009': {'index_key': (533489241, 64592187, 413438084, 181131063),
+               'data_key': (183730646, 760506105, 952721118, 990624796),
+               'ext_index': '.index', 'ext_data': '.data',
+               # PackMakerLite's layout, and a loader (ENABLE_CRC32_CHECK) that
+               # refuses a type-2 file whose data_crc is not the CRC32 of its
+               # on-disk bytes; see write_pack.
+               'layout': 'packmakerlite'},
+}
+INDEX_KEY = PROFILES['r40250']['index_key']
+DATA_KEY = PROFILES['r40250']['data_key']
+EXT_INDEX = PROFILES['r40250']['ext_index']
+EXT_DATA = PROFILES['r40250']['ext_data']
+LAYOUT = PROFILES['r40250']['layout']
 DELTA = 0x9E3779B9
 MASK = 0xFFFFFFFF
 ENTRY = 192
@@ -92,7 +114,13 @@ def lzo_pack(data, key):
     enc = 0
     body = FOURCC_LZO + comp
     if key:
-        body += bytes((-len(body)) % 8)
+        # The mt2009 client's CLZObject::Encrypt ciphers dwCompressedSize + 19
+        # bytes rounded up to the cipher block - fourcc, stream and whatever
+        # follows in its buffer - and writes that as dwEncryptSize; the stock
+        # client ciphers the fourcc and the stream alone. Either loader only
+        # reads what the header says, so this is for byte-faithful output.
+        target = len(body) + 15 if LAYOUT == 'packmakerlite' else len(body)
+        body += bytes((-target) % 8 + (target - len(body)))
         enc = len(body)
         body = xtea(body, key, True)
     return struct.pack('<4sIII', FOURCC_LZO, enc, len(comp), len(data)) + body
@@ -158,28 +186,58 @@ def write_pack(path_base, version, files):
         # a compressed last file, say - maps past the end and the client dies
         # without a word at login. (Only the fourth DWORD, `size`, is
         # uninitialised garbage in the stock index; it gets the real size.)
+        nm = name.encode('latin-1')
         pos = len(epk)
+        if LAYOUT == 'packmakerlite':
+            # PackMakerLite (the mt2009 client): the object on disk is the LZO
+            # header, the ciphered bytes and four zero bytes (CLZObject::GetSize
+            # counts an extra DWORD); data_size is exactly that, the slot it sits
+            # in is data_size rounded up to 256 (kept in real_data_size, which
+            # this loader never reads for a type-2 file - the LZO header carries
+            # the real size), and data_crc is the CRC32 of the data_size bytes.
+            # With ENABLE_CRC32_CHECK the loader refuses every type-2 file whose
+            # data_crc does not match: the stock layout below in that slot put
+            # the real size there, so the client opened not one script of root
+            # and died at "RunMain Error".
+            if typ == 2:
+                blob = blob + bytes(4)
+            slot = (len(blob) + 255) // 256 * 256
+            epk += blob
+            epk += bytes(slot - len(blob))
+            entries.append(struct.pack('<I161s3xIIIIIB3x', i, nm, zlib.crc32(nm.lower()) & MASK,
+                                       slot, len(blob), zlib.crc32(blob) & MASK, pos, typ))
+            continue
         epk += blob
         padded = (len(blob) + 127) // 128 * 128
         epk += bytes(padded - len(blob))
-        nm = name.encode('latin-1')
         entries.append(struct.pack('<I161s3xIIIIIB3x', i, nm, zlib.crc32(nm.lower()) & MASK,
                                    len(blob), padded, len(data), pos, typ))
     index = struct.pack('<4sII', FOURCC_INDEX, version, len(files)) + b''.join(entries)
-    open(path_base + '.epk', 'wb').write(bytes(epk))
-    open(path_base + '.eix', 'wb').write(lzo_pack(index, INDEX_KEY))
+    open(path_base + EXT_DATA, 'wb').write(bytes(epk))
+    open(path_base + EXT_INDEX, 'wb').write(lzo_pack(index, INDEX_KEY))
+
+
+def use_profile(name):
+    global INDEX_KEY, DATA_KEY, EXT_INDEX, EXT_DATA, LAYOUT
+    p = PROFILES[name]
+    INDEX_KEY, DATA_KEY = p['index_key'], p['data_key']
+    EXT_INDEX, EXT_DATA = p['ext_index'], p['ext_data']
+    LAYOUT = p['layout']
 
 
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == '--profile':
+        use_profile(sys.argv[2])
+        del sys.argv[1:3]
     cmd = sys.argv[1]
     base = sys.argv[2]
-    version, entries = read_index(base + '.eix')
+    version, entries = read_index(base + EXT_INDEX)
     if cmd == 'list':
         print('version', version, 'files', len(entries))
         for e in entries:
             print('%3d type=%d size=%7d disk=%7d %s' % (e['id'], e['type'], e['real'], e['disk'], e['name']))
         return
-    epk = open(base + '.epk', 'rb').read()
+    epk = open(base + EXT_DATA, 'rb').read()
     if cmd == 'extract':
         out = sys.argv[3]
         os.makedirs(out, exist_ok=True)
@@ -192,6 +250,13 @@ def main():
         return
     if cmd == 'repack':
         out_base, repl = sys.argv[3], sys.argv[4]
+        # A file in the replacement directory that the archive does not already
+        # hold is almost always a mistake - a note, a backup, an editor's stray
+        # copy - and the client cannot read it anyway: nothing imports a module
+        # that was not in root.epk before. It used to be added silently, which
+        # is how a README.md written beside the four panel sources ended up
+        # inside the pack. --allow-new says "yes, really add it".
+        allow_new = '--allow-new' in sys.argv[5:]
         replacements = {}
         for root, _, names in os.walk(repl):
             for n in names:
@@ -210,13 +275,18 @@ def main():
                 seen.add(key)
                 print('replaced', e['name'], len(data))
             files.append((e['name'], data, e['type'] if e['type'] in (0, 1, 2) else default_type))
+        if replacements and not allow_new:
+            raise SystemExit(
+                    'refusing to add files the archive does not have: ' +
+                    ', '.join(sorted(replacements)) +
+                    '\n(pass --allow-new if that is really what you want)')
         for key, data in sorted(replacements.items()):
             print('added', key, len(data))
             files.append((key, data, default_type))
         write_pack(out_base, version, files)
-        print('wrote', out_base + '.eix/.epk', 'files', len(files))
+        print('wrote', out_base + EXT_INDEX + '/' + EXT_DATA, 'files', len(files))
         return
-    raise SystemExit('usage: list|extract|repack')
+    raise SystemExit('usage: [--profile r40250|mt2009] list|extract|repack')
 
 
 if __name__ == '__main__':

@@ -27,7 +27,7 @@ namespace
 		if (!ch || !ch->IsItemLoaded())
 			return;
 
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item)
@@ -91,13 +91,13 @@ namespace
 			return true;
 
 		size_t occupiedGridCells = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (item)
 				occupiedGridCells += std::max(1, (int)item->GetSize());
 		}
-		return occupiedGridCells * 100 >= INVENTORY_MAX_NUM * 45;
+		return occupiedGridCells * 100 >= PLAYERBOT_BAG_CELLS * 45;
 	}
 
 	// A missing weapon or body armour, an empty potion belt, no arrows or a full
@@ -113,6 +113,75 @@ namespace
 		return ch->GetWear(WEAR_WEAPON) == NULL || ch->GetWear(WEAR_BODY) == NULL ||
 				NeedsPlayerBotEmergencyPotions(ch) || NeedsPlayerBotArrows(ch) ||
 				ch->GetEmptyInventory(3) < 0;
+	}
+
+	// Which kingdom's roads this bot is travelling on.
+	//
+	// Inside a kingdom it is the map's owner, because the gate in front of the
+	// bot is the one it can actually walk to - a Jinno bot standing in Bokjung
+	// leaves Bokjung by Bokjung's gate. Off the kingdom maps altogether - a
+	// frontier, a dungeon, the guild ground - it is the bot's own empire,
+	// because there "go home" can only mean its own home.
+	int GetPlayerBotRoadsEmpire(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		const int owner = playerbot_empire_rules::GetMapOwnerEmpire(ch->GetMapIndex());
+		return owner != 0 ? owner : (int)ch->GetEmpire();
+	}
+
+	// A move between two roles of that kingdom: the gate to walk to, the map it
+	// leads to, and the point the engine puts the character down on. Every leg
+	// below used to be a pair of constants naming Chunjo's gate and Chunjo's
+	// arrival, which is the whole reason a Shinsoo bot could reach Bokjung and
+	// never find its way anywhere else.
+	bool GetPlayerBotKingdomLeg(LPCHARACTER ch, playerbot_empire_rules::EMapRole from,
+			playerbot_empire_rules::EMapRole to, long& gateX, long& gateY,
+			long& destMap, long& destX, long& destY)
+	{
+		const int empire = GetPlayerBotRoadsEmpire(ch);
+		const long fromMap = playerbot_empire_rules::GetHomeMap(empire, from);
+		const long toMap = playerbot_empire_rules::GetHomeMap(empire, to);
+		playerbot_empire_rules::TKingdomGate gate;
+		if (fromMap == 0 || toMap == 0 ||
+				!playerbot_empire_rules::FindKingdomGate(empire, fromMap, toMap, gate))
+			return false;
+		gateX = gate.gate.x;
+		gateY = gate.gate.y;
+		destMap = toMap;
+		destX = gate.arrival.x;
+		destY = gate.arrival.y;
+		return true;
+	}
+
+	// Where a bot that has come back from a neutral map should stand: its own
+	// kingdom's village square, which is what the return legs have always aimed
+	// for. The pitch rather than the gate, because the errand that brought it
+	// back is a town errand.
+	bool GetPlayerBotVillageReturn(LPCHARACTER ch, playerbot_empire_rules::EMapRole role,
+			long& destMap, long& destX, long& destY)
+	{
+		const int empire = GetPlayerBotRoadsEmpire(ch);
+		const long map = playerbot_empire_rules::GetHomeMap(empire, role);
+		playerbot_empire_rules::TPoint pitch;
+		if (map == 0 || !playerbot_empire_rules::GetTownPitch(map, pitch))
+			return false;
+		destMap = map;
+		destX = pitch.x;
+		destY = pitch.y;
+		return true;
+	}
+
+	// The Teleporter of the village the bot is standing in. Every long trip goes
+	// through him and every village has one.
+	bool GetPlayerBotLocalTeleporter(LPCHARACTER ch, long& outX, long& outY)
+	{
+		playerbot_empire_rules::TTownServices svc;
+		if (!ch || !playerbot_empire_rules::GetTownServices(ch->GetMapIndex(), svc))
+			return false;
+		outX = svc.teleporter.x;
+		outY = svc.teleporter.y;
+		return true;
 	}
 
 	bool NeedsPlayerBotM1OnlyServices(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
@@ -164,13 +233,33 @@ namespace
 	// quest target, a material it is genuinely short of and self-defence - but
 	// experience is not a reason to be there, and "my ambition is Metins" is
 	// not consent. Everywhere else this is true and nothing changes.
+	// Defined below with the frontier draw it asks about.
+	bool PlayerBotCoreHasAnyFrontier();
+
 	bool IsPlayerBotGrindAllowedHere(LPCHARACTER ch)
 	{
 		if (!ch)
 			return false;
-		if (ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M2)
+		if (!IsPlayerBotM2Map(ch->GetMapIndex()))
 			return true;
-		return !IsPlayerBotPastM2Ceiling(ch);
+		if (!IsPlayerBotPastM2Ceiling(ch))
+			return true;
+		// The ceiling says "you have outgrown this village, go to the frontier".
+		// On a core that hosts no frontier there is nowhere to go, and refusing
+		// the hunt as well would leave the whole kingdom standing in its own
+		// second village with nothing it is allowed to do. Until the shared
+		// maps are split between the cores, a kingdom without a frontier keeps
+		// its village.
+		if (!PlayerBotCoreHasAnyFrontier())
+			return true;
+		// Past the ceiling, one exception: the bot cannot pay the Teleporter
+		// that would take it where it belongs. Refusing the hunt as well left
+		// it asking the Teleporter every tick for ever ("Zbieram yang na
+		// Teleporter" over a bot that could not gather any); it hunts here
+		// until it holds a few fares and then goes.
+		return GetPlayerBotFrontierMapForLevel(ch) != 0 &&
+				ch->GetGold() < GetPlayerBotTeleporterFareEstimate(ch) *
+					PLAYERBOT_TELEPORTER_FARE_RESERVE_COUNT;
 	}
 
 	bool IsPlayerBotM2LevelingCohort(LPCHARACTER ch)
@@ -213,9 +302,22 @@ namespace
 		return IsPlayerBotFrontierMapIndex(mapIndex);
 	}
 
-	// The map whose ordinary spawns still sit inside this bot's useful level
-	// window, or 0 when Bokjung is still the right place for it.
-	long GetPlayerBotFrontierMapForLevel(LPCHARACTER ch)
+	// Does this core host that map at all?
+	//
+	// One map lives on exactly one core, and a character cannot cross between
+	// them: WarpSet tells a client to reconnect, and a bot has no client. Every
+	// shared map in this world - the valley, the desert, Sohan, both Spider
+	// Dungeons, Hwang, the two harder Monkey Dungeons - is hosted by the core
+	// that also carries Chunjo, so a Shinsoo or Jinno bot asking for one is
+	// asking for something that cannot happen. Left unchecked that is not a
+	// quiet no: it is the shape this file has already been bitten by, ten
+	// thousand refused warps a minute with one throttled line to show for it.
+	bool IsPlayerBotMapHostedHere(long mapIndex)
+	{
+		return mapIndex != 0 && SECTREE_MANAGER::instance().GetMap(mapIndex) != NULL;
+	}
+
+	long GetPlayerBotFrontierMapForLevelRaw(LPCHARACTER ch)
 	{
 		if (!ch)
 			return 0;
@@ -283,6 +385,29 @@ namespace
 		return 0;
 	}
 
+	// The map whose ordinary spawns still sit inside this bot's useful level
+	// window, or 0 when its own village is still the right place for it.
+	long GetPlayerBotFrontierMapForLevel(LPCHARACTER ch)
+	{
+		const long map = GetPlayerBotFrontierMapForLevelRaw(ch);
+		return IsPlayerBotMapHostedHere(map) ? map : 0;
+	}
+
+	// A kingdom whose core hosts no frontier at all. Its bots have four maps and
+	// nothing beyond them, which changes what the ceiling in its second village
+	// is allowed to mean - see IsPlayerBotGrindAllowedHere.
+	bool PlayerBotCoreHasAnyFrontier()
+	{
+		static const long candidates[] = {
+			PLAYERBOT_MAP_ORC_VALLEY, PLAYERBOT_MAP_DESERT, PLAYERBOT_MAP_SOHAN,
+			PLAYERBOT_MAP_SPIDER_V1, PLAYERBOT_MAP_SPIDER_V2, PLAYERBOT_MAP_HWANG
+		};
+		for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
+			if (IsPlayerBotMapHostedHere(candidates[i]))
+				return true;
+		return false;
+	}
+
 	// How far from town a personality is willing to play, in eighths. Personality
 	// used to decide only how far a bot would push a refine, so every character
 	// hunted in the same places; this is what makes the trait visible in-world.
@@ -309,6 +434,19 @@ namespace
 	bool WantsPlayerBotFishingTrip(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!IsPlayerBotAngler(ch, state))
+			return false;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// CHARACTER::fishing() here wants level 50, the fishing pass (unique
+		// item 27620) worn, water in front of the rod and the onboarding quest
+		// done. The last two are the bank's and the session's business; the
+		// first two are asked here so a bot without them never walks to the water.
+		if (ch->GetLevel() < 50 || !ch->IsEquipUniqueItem(UNIQUE_ITEM_FISHING_PASS))
+			return false;
+#endif
+		// A trip to a village with no measured bank is a walk to nowhere: the
+		// fishing pass would refuse on arrival and the bot would stand there.
+		if (GetPlayerBotFishingBank(playerbot_empire_rules::GetHomeMap(
+					(int)ch->GetEmpire(), playerbot_empire_rules::MAP_ROLE_M1)) == NULL)
 			return false;
 		return state.dwNextFishingCheckTime == 0 || dwNow >= state.dwNextFishingCheckTime;
 	}
@@ -375,10 +513,16 @@ namespace
 		// closes at the share and the bots inside keep their place until the
 		// crowd is well over it, so the ones sent home are not sent straight
 		// back through the door they just left.
-		const int crowd = GetPlayerBotsOnMap(PLAYERBOT_MAP_CHUNJO_M3);
+		// Per kingdom: three guild maps of the same size, so a share of the
+		// whole population on one of them would be three times the crowd the
+		// share was measured for.
+		const long guildMap = playerbot_empire_rules::GetHomeMap(
+				(int)ch->GetEmpire(), playerbot_empire_rules::MAP_ROLE_M3);
+		const int crowd = GetPlayerBotsOnMap(guildMap);
 		const int share = std::max(PLAYERBOT_M3_CROWD_MIN,
-				GetPlayerBotsAlive() * PLAYERBOT_M3_CROWD_SHARE_PERCENT / 100);
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M3
+				GetPlayerBotsAlive() * PLAYERBOT_M3_CROWD_SHARE_PERCENT /
+					(100 * playerbot_empire_rules::EMPIRE_COUNT_REAL));
+		if (ch->GetMapIndex() == guildMap
 				? crowd > share * PLAYERBOT_M3_CROWD_STAY_PERCENT / 100
 				: crowd >= share)
 			return false;
@@ -612,7 +756,7 @@ namespace
 		state.dwNextWanderTime = dwNow + number(1500, 4500);
 		state.dwNextHorseRideCheckTime = dwNow + 1000;
 		state.dwDungeonEnteredTime = IsPlayerBotMonkeyMap(targetMap) ? dwNow : 0;
-		state.dwM3EnteredTime = targetMap == PLAYERBOT_MAP_CHUNJO_M3 ? dwNow : 0;
+		state.dwM3EnteredTime = IsPlayerBotM3Map(targetMap) ? dwNow : 0;
 		state.dwFrontierEnteredTime = IsPlayerBotFrontierMap(targetMap) ? dwNow : 0;
 		// Landed anywhere but the desert: whatever crossing was under way is over.
 		if (targetMap != PLAYERBOT_MAP_DESERT)
@@ -626,14 +770,29 @@ namespace
 		state.lCampY = targetY;
 		state.dwCampSince = dwNow;
 		state.dwRelocateSince = IsPlayerBotFrontierMap(targetMap) ? dwNow : 0;
-		if (targetMap == PLAYERBOT_MAP_CHUNJO_M3)
+		if (IsPlayerBotM3Map(targetMap))
 			state.dwNextRemoteRefineReturnTime = 0;
+		// The departure intent is done when the bot lands where it meant to
+		// go - or on any frontier, if the level band moved the target while
+		// it waited. Nothing ever cleared it before: a bot held once in
+		// Bokjung carried lDepartureMap for the rest of its life, back in town
+		// for services it refused every material hunt and every trip to Joan
+		// ("Ide na pustynie" over a bot circling M1 - D12 of the audit).
+		if (state.lDepartureMap != 0 &&
+				(state.lDepartureMap == targetMap || IsPlayerBotFrontierMap(targetMap)))
+		{
+			sys_log(0, "PLAYERBOT_DEPARTURE: arrived pid=%u name=%s to=%ld wanted=%ld after_ms=%u",
+					ch->GetPlayerID(), ch->GetName(), targetMap, state.lDepartureMap,
+					state.dwDepartureSince != 0 ? dwNow - state.dwDepartureSince : 0);
+			state.lDepartureMap = 0;
+			state.dwDepartureSince = 0;
+		}
 		sys_log(0, "PLAYERBOT_WORLD: transitioned pid=%u name=%s from=%ld to=%ld pos=(%ld,%ld) reason=%s",
 				ch->GetPlayerID(), ch->GetName(), oldMap, targetMap, targetX, targetY,
 				reason ? reason : "?");
 		// How long the bot stayed in town after its errand was done. Asked for
 		// by name: "sam spadek liczby atakow nie dowodzi naprawy".
-		if (oldMap == PLAYERBOT_MAP_CHUNJO_M2 && state.dwErrandDoneTime != 0 &&
+		if (IsPlayerBotM2Map(oldMap) && state.dwErrandDoneTime != 0 &&
 				ch->GetLevel() >= 40)
 		{
 			sys_log(0, "PLAYERBOT_M2: left after errand pid=%u name=%s level=%u waited_ms=%u to=%ld reason=%s",
@@ -797,7 +956,7 @@ namespace
 				return false;
 			if (fee > 0)
 			{
-				ch->PointChange(POINT_GOLD, -fee);
+				PlayerBotChangeGold(ch, -fee);
 				sys_log(0, "PLAYERBOT_WORLD: teleporter fee pid=%u name=%s level=%u fee=%d to=%ld gold_left=%d",
 						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), fee, targetMap, ch->GetGold());
 			}
@@ -1013,7 +1172,7 @@ namespace
 		const bool needsM1OnlyServices = NeedsPlayerBotM1OnlyServices(ch, state, dwNow);
 		// M2 has its own blacksmith. Only the remote M3 farm needs to schedule a
 		// return to town for equipment progression.
-		const bool scheduledRemoteRefine = mapIndex == PLAYERBOT_MAP_CHUNJO_M3 &&
+		const bool scheduledRemoteRefine = IsPlayerBotM3Map(mapIndex) &&
 				ShouldPlayerBotLeaveRemoteMapForRefining(ch, state, dwNow);
 
 		// Leaving the Monkey Dungeon is a decision, not a pathfinding exercise.
@@ -1053,9 +1212,12 @@ namespace
 					reason = "monkey_medal_found_direct";
 				else if (exitDecision == playerbot_world_rules::MONKEY_EXIT_TIMEOUT)
 					reason = "monkey_timeout_direct";
+				long homeMap = 0, homeX = 0, homeY = 0;
+				if (!GetPlayerBotVillageReturn(ch, playerbot_empire_rules::MAP_ROLE_M2,
+							homeMap, homeX, homeY))
+					return false;
 				const bool transitioned = TransitionPlayerBotMap(ch, state,
-						PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_MONKEY_RETURN_X,
-						PLAYERBOT_M2_MONKEY_RETURN_Y, dwNow, reason);
+						homeMap, homeX, homeY, dwNow, reason);
 				if (transitioned && medalCount == 0)
 					state.dwNextWorldTravelTime = dwNow + number(300000, 900000);
 				return transitioned;
@@ -1068,14 +1230,16 @@ namespace
 		// ...unless it is there on purpose: the M3 dropper stays to 32, and
 		// graduating it at 25 sent it back to Bokjung, where the same rule sent
 		// it to M3 again - a hundred and fifty warps an hour per bot.
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M3 && ch->GetLevel() > 24 &&
+		if (IsPlayerBotM3Map(mapIndex) && ch->GetLevel() > 24 &&
 				!ShouldPlayerBotVisitM3(ch))
 		{
 			// The walk does not own the goal - see the desert crossing below.
-			return MovePlayerBotToWorldPortal(ch, state,
-					PLAYERBOT_M3_RETURN_PORTAL_X, PLAYERBOT_M3_RETURN_PORTAL_Y,
-					PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_FROM_M3_X,
-					PLAYERBOT_M2_FROM_M3_Y, dwNow, "m3_level_graduated");
+			long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+			if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M3,
+						playerbot_empire_rules::MAP_ROLE_M2, gateX, gateY, destMap, destX, destY))
+				return false;
+			return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+					destMap, destX, destY, dwNow, "m3_level_graduated");
 		}
 
 		// A bot should not walk away from a fight -- but "holds a target" was
@@ -1143,7 +1307,7 @@ namespace
 					dwNow, toV1 ? "desert_gate_to_v1" : "desert_gate_to_bokjung");
 		}
 
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M1)
+		if (IsPlayerBotM1Map(mapIndex))
 		{
 			// Compact and sell an oversized potion reserve before the first trip to
 			// M2. Once the bot is already outside M1, excess potions alone must not
@@ -1205,21 +1369,26 @@ namespace
 				{
 					long arriveX = 0, arriveY = 0;
 					GetPlayerBotFrontierArrival(directMap, arriveX, arriveY);
+					long teleX = 0, teleY = 0;
+					if (!GetPlayerBotLocalTeleporter(ch, teleX, teleY))
+						return false;
 					char reason[48];
 					snprintf(reason, sizeof(reason), "m1_direct_to_%s", GetPlayerBotFrontierName(directMap));
-					return MovePlayerBotToWorldPortal(ch, state,
-							PLAYERBOT_M1_TELEPORTER_X, PLAYERBOT_M1_TELEPORTER_Y,
+					return MovePlayerBotToWorldPortal(ch, state, teleX, teleY,
 							directMap, arriveX, arriveY, dwNow, reason);
 				}
 			}
 
-			return MovePlayerBotToWorldPortal(ch, state,
-					PLAYERBOT_M1_TO_M2_PORTAL_X, PLAYERBOT_M1_TO_M2_PORTAL_Y,
-					PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_ARRIVAL_X, PLAYERBOT_M2_ARRIVAL_Y,
+			long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+			if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M1,
+						playerbot_empire_rules::MAP_ROLE_M2, gateX, gateY, destMap, destX, destY))
+				return false;
+			return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+					destMap, destX, destY,
 					dwNow, needsHorseExpedition ? "horse_to_m2" : "level_to_m2");
 		}
 
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M2)
+		if (IsPlayerBotM2Map(mapIndex))
 		{
 			// ManagePlayerBotHorse owns the medal on M2 and walks to the local Stable
 			// Boy. Returning to M1 here was the source of the needless three-map trip.
@@ -1230,10 +1399,12 @@ namespace
 			// potion, inventory and refine needs are served by the real Bokjung NPCs.
 			if (needsM1OnlyServices)
 			{
-				return MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
-						PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_RETURN_X,
-						PLAYERBOT_M1_RETURN_Y, dwNow, "m1_only_service");
+				long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+				if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M2,
+							playerbot_empire_rules::MAP_ROLE_M1, gateX, gateY, destMap, destX, destY))
+					return false;
+				return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+						destMap, destX, destY, dwNow, "m1_only_service");
 			}
 			// Same rule in Bokjung: its own shops own this need, but only until a
 			// visit has actually happened. Otherwise a bot the town cannot equip
@@ -1251,9 +1422,27 @@ namespace
 				{
 					state.lDepartureMap = wantMap;
 					state.dwDepartureSince = dwNow;
+					state.dwNextDepartureLogTime = dwNow + PLAYERBOT_DEPARTURE_OVERDUE_MS;
 					sys_log(0, "PLAYERBOT_DEPARTURE: held pid=%u name=%s level=%u to=%ld reason=%s",
 							ch->GetPlayerID(), ch->GetName(), ch->GetLevel(), wantMap,
 							BlocksPlayerBotTravel(ch) ? "gear_or_potions" : "town_visit");
+				}
+				// A departure held for longer than an errand takes is a bot the
+				// audit called "krazy po M1 mimo celu Pustynia". Every ten
+				// minutes it says what is still holding it, with the numbers the
+				// hold is made of, so the next report names a cause.
+				else if (state.lDepartureMap != 0 && state.dwDepartureSince != 0 &&
+						dwNow >= state.dwNextDepartureLogTime)
+				{
+					state.dwNextDepartureLogTime = dwNow + PLAYERBOT_DEPARTURE_OVERDUE_MS;
+					sys_log(0, "PLAYERBOT_DEPARTURE: overdue pid=%u name=%s level=%u to=%ld held_ms=%u map=%ld pos=(%ld,%ld) weapon=%d body=%d potions_short=%d arrows_short=%d bag_3cell=%d critical_services=%d shop_check_in_ms=%d service_pending=%d gold=%lld",
+							ch->GetPlayerID(), ch->GetName(), ch->GetLevel(), state.lDepartureMap,
+							dwNow - state.dwDepartureSince, ch->GetMapIndex(), ch->GetX(), ch->GetY(),
+							ch->GetWear(WEAR_WEAPON) != NULL, ch->GetWear(WEAR_BODY) != NULL,
+							NeedsPlayerBotEmergencyPotions(ch) ? 1 : 0, NeedsPlayerBotArrows(ch) ? 1 : 0,
+							ch->GetEmptyInventory(3) >= 0, needsCriticalTownServices ? 1 : 0,
+							state.dwNextShopCheckTime > dwNow ? (int)(state.dwNextShopCheckTime - dwNow) : 0,
+							state.bServicePending ? 1 : 0, (long long)ch->GetGold());
 				}
 				return false;
 			}
@@ -1280,17 +1469,38 @@ namespace
 				GetPlayerBotMonkeyArrival(monkeyMap, monkeyX, monkeyY);
 				char reason[48];
 				snprintf(reason, sizeof(reason), "horse_to_monkey_%s", GetPlayerBotMonkeyName(monkeyMap));
-				return MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_MONKEY_PORTAL_X, PLAYERBOT_M2_MONKEY_PORTAL_Y,
-						monkeyMap, monkeyX, monkeyY, dwNow, reason);
+				long gateX = 0, gateY = 0, easyMap = 0, easyX = 0, easyY = 0;
+				if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M2,
+							playerbot_empire_rules::MAP_ROLE_MONKEY_EASY,
+							gateX, gateY, easyMap, easyX, easyY))
+					return false;
+				// The easy dungeon is entered by that kingdom's own gate, and
+				// each kingdom has one of its own; the harder two are shared and
+				// are reached from inside the maze, so their arrival stands.
+				const bool toEasy = GetPlayerBotMonkeyMapForLevel(ch->GetLevel()) ==
+						PLAYERBOT_MAP_MONKEY_EASY;
+				return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+						toEasy ? easyMap : monkeyMap,
+						toEasy ? easyX : monkeyX,
+						toEasy ? easyY : monkeyY, dwNow, reason);
 			}
 
 			if (wantsM3 && !needsCriticalTownServices)
 			{
-				return MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_TO_M3_TELEPORTER_X, PLAYERBOT_M2_TO_M3_TELEPORTER_Y,
-						PLAYERBOT_MAP_CHUNJO_M3, PLAYERBOT_M3_ARRIVAL_X,
-						PLAYERBOT_M3_ARRIVAL_Y, dwNow, "level30_weapon_to_m3");
+				// The same Teleporter, the same wait and the same fare.
+				if (playerbot_world_rules::IsTravelCooldownActive(dwNow, state.dwNextWorldTravelTime) ||
+						ch->GetGold() < GetPlayerBotTeleporterFee(ch))
+					return false;
+				long teleX = 0, teleY = 0;
+				playerbot_empire_rules::TPoint arrival;
+				const int empire = GetPlayerBotRoadsEmpire(ch);
+				if (!GetPlayerBotLocalTeleporter(ch, teleX, teleY) ||
+						!playerbot_empire_rules::GetTeleportArrival(empire,
+							playerbot_empire_rules::TELEPORT_GUILD_MAP, arrival))
+					return false;
+				return MovePlayerBotToWorldPortal(ch, state, teleX, teleY,
+						playerbot_empire_rules::GetHomeMap(empire, playerbot_empire_rules::MAP_ROLE_M3),
+						arrival.x, arrival.y, dwNow, "level30_weapon_to_m3");
 			}
 
 			// The river is in Joan, and every bot old enough to hold a rod has long
@@ -1299,10 +1509,12 @@ namespace
 			// the pearls it brings back are worth more than the hunting it skips.
 			if (WantsPlayerBotFishingTrip(ch, state, dwNow))
 			{
-				return MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
-						PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_RETURN_X,
-						PLAYERBOT_M1_RETURN_Y, dwNow, "fishing_to_m1");
+				long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+				if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M2,
+							playerbot_empire_rules::MAP_ROLE_M1, gateX, gateY, destMap, destX, destY))
+					return false;
+				return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+						destMap, destX, destY, dwNow, "fishing_to_m1");
 			}
 
 			// Bokjung's own spawns stop paying long before the M2 band ends. Bots
@@ -1312,12 +1524,22 @@ namespace
 					? GetPlayerBotFrontierMapForLevel(ch) : 0;
 			if (frontierMap != 0)
 			{
+				// The Teleporter's refusal sets dwNextWorldTravelTime and this
+				// branch never read it: 1.30.42 announced a five-minute wait and
+				// the bot asked again on the next tick, 26 000 times a minute
+				// across the cohort. A bot short of the fare is not sent either;
+				// the grind rule above lets it earn the fare where it stands.
+				if (playerbot_world_rules::IsTravelCooldownActive(dwNow, state.dwNextWorldTravelTime) ||
+						ch->GetGold() < GetPlayerBotTeleporterFee(ch))
+					return false;
 				long arriveX = 0, arriveY = 0;
 				GetPlayerBotFrontierArrival(frontierMap, arriveX, arriveY);
+				long teleX = 0, teleY = 0;
+				if (!GetPlayerBotLocalTeleporter(ch, teleX, teleY))
+					return false;
 				char reason[48];
 				snprintf(reason, sizeof(reason), "level_to_%s", GetPlayerBotFrontierName(frontierMap));
-				return MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_TO_M3_TELEPORTER_X, PLAYERBOT_M2_TO_M3_TELEPORTER_Y,
+				return MovePlayerBotToWorldPortal(ch, state, teleX, teleY,
 						frontierMap, arriveX, arriveY, dwNow, reason);
 			}
 
@@ -1327,11 +1549,13 @@ namespace
 			// hunted anything.
 			if (!m2LevelingCohort && !IsPlayerBotPastM2Ceiling(ch))
 			{
-				const bool moving = MovePlayerBotToWorldPortal(ch, state,
-						PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
-						PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_RETURN_X, PLAYERBOT_M1_RETURN_Y,
-						dwNow, "m2_level_range_complete");
-				if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1)
+				long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+				if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M2,
+							playerbot_empire_rules::MAP_ROLE_M1, gateX, gateY, destMap, destX, destY))
+					return false;
+				const bool moving = MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+						destMap, destX, destY, dwNow, "m2_level_range_complete");
+				if (IsPlayerBotM1Map(ch->GetMapIndex()))
 					state.dwNextWorldTravelTime = dwNow + number(300000, 900000);
 				return moving;
 			}
@@ -1339,7 +1563,7 @@ namespace
 			return false; // designated M2 leveler: hunt normally
 		}
 
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M3)
+		if (IsPlayerBotM3Map(mapIndex))
 		{
 			if (state.dwM3EnteredTime == 0)
 				state.dwM3EnteredTime = dwNow;
@@ -1371,10 +1595,12 @@ namespace
 				reason = "m3_scheduled_refine_to_m2";
 			else if (visitExpired)
 				reason = "m3_visit_complete";
-			return MovePlayerBotToWorldPortal(ch, state,
-					PLAYERBOT_M3_RETURN_PORTAL_X, PLAYERBOT_M3_RETURN_PORTAL_Y,
-					PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_FROM_M3_X,
-					PLAYERBOT_M2_FROM_M3_Y, dwNow, reason);
+			long gateX = 0, gateY = 0, destMap = 0, destX = 0, destY = 0;
+			if (!GetPlayerBotKingdomLeg(ch, playerbot_empire_rules::MAP_ROLE_M3,
+						playerbot_empire_rules::MAP_ROLE_M2, gateX, gateY, destMap, destX, destY))
+				return false;
+			return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
+					destMap, destX, destY, dwNow, reason);
 		}
 
 		if (IsPlayerBotFrontierMap(mapIndex))
@@ -1435,13 +1661,12 @@ namespace
 				reason = "frontier_weapon_to_m2";
 			long exitX = 0, exitY = 0;
 			GetPlayerBotFrontierExit(mapIndex, exitX, exitY);
-			if (joanHome)
-				return MovePlayerBotToWorldPortal(ch, state, exitX, exitY,
-						PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_RETURN_X, PLAYERBOT_M1_RETURN_Y,
-						dwNow, reason);
+			long destMap = 0, destX = 0, destY = 0;
+			if (!GetPlayerBotVillageReturn(ch, joanHome ? playerbot_empire_rules::MAP_ROLE_M1
+						: playerbot_empire_rules::MAP_ROLE_M2, destMap, destX, destY))
+				return false;
 			return MovePlayerBotToWorldPortal(ch, state, exitX, exitY,
-					PLAYERBOT_MAP_CHUNJO_M2, PLAYERBOT_M2_FROM_M3_X, PLAYERBOT_M2_FROM_M3_Y,
-					dwNow, reason);
+					destMap, destX, destY, dwNow, reason);
 		}
 
 		if (IsPlayerBotMonkeyMap(mapIndex))
@@ -1454,8 +1679,11 @@ namespace
 		// the frontier maps carry real warp NPCs of their own, and walking inside
 		// one's trigger radius hands the character to a map the AI has no plan
 		// for. Nothing would ever bring it back, so it would sit there for good.
-		if (TransitionPlayerBotMap(ch, state, PLAYERBOT_MAP_CHUNJO_M2,
-				PLAYERBOT_M2_FROM_M3_X, PLAYERBOT_M2_FROM_M3_Y, dwNow, "stranded_recovery"))
+		long strandedMap = 0, strandedX = 0, strandedY = 0;
+		if (GetPlayerBotVillageReturn(ch, playerbot_empire_rules::MAP_ROLE_M2,
+					strandedMap, strandedX, strandedY) &&
+				TransitionPlayerBotMap(ch, state, strandedMap, strandedX, strandedY,
+					dwNow, "stranded_recovery"))
 		{
 			sys_log(0, "PLAYERBOT_WORLD: recovered pid=%u name=%s from unmanaged map=%ld",
 					ch->GetPlayerID(), ch->GetName(), mapIndex);

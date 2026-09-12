@@ -35,7 +35,16 @@ ATTR_OBJECT = 1 << 7
 TILE = 1024
 
 # index -> (folder, base_x, base_y, width, height) -- the bounds the panel uses.
+# Three kingdoms of four maps each, then the shared world. The easy Monkey
+# Dungeon is one picture used three times: maps 5, 25 and 45 are the same
+# server_attr byte for byte, at three different bases.
 MAPS = [
+    (1, "metin2_map_a1", 409600, 896000, 102400, 128000),
+    (3, "metin2_map_a3", 307200, 819200, 102400, 102400),
+    (4, "metin2_map_guild_01", 128000, 0, 51200, 51200),
+    (41, "metin2_map_c1", 921600, 204800, 102400, 128000),
+    (43, "metin2_map_c3", 819200, 204800, 102400, 102400),
+    (44, "metin2_map_guild_03", 230400, 0, 51200, 51200),
     (21, "metin2_map_b1", 0, 102400, 102400, 128000),
     (23, "metin2_map_b3", 102400, 204800, 102400, 102400),
     (24, "metin2_map_guild_02", 179200, 0, 51200, 51200),

@@ -48,6 +48,10 @@ db() {
 # dump, then require the item prototypes used by the starter rows.
 echo "[playerbot-migrate] waiting for the complete r40250 schema"
 attempt=0
+# Consecutive probes refused for authentication; see the check inside the
+# loop. Reset by any probe that fails for a different reason, so a login
+# that starts working is not held against it.
+auth_failures=0
 while :; do
     attempt=$((attempt + 1))
     # Keep the error instead of discarding it. A refused login looks exactly
@@ -66,10 +70,34 @@ while :; do
     if [ -s "$probe_err" ] && [ "$attempt" -eq 3 ]; then
         echo "[playerbot-migrate] the database is not answering yet:" >&2
         head -3 "$probe_err" >&2
-        if grep -qi "access denied" "$probe_err"; then
-            echo "[playerbot-migrate] this is a login failure, not a slow import." >&2
-            echo "[playerbot-migrate] use the launcher button NAPRAW DOSTEP DO BAZY." >&2
-        fi
+    fi
+
+    # A refused login is not a slow import, and waiting thirty minutes for it
+    # to fix itself tells the operator the wrong thing twice: once by the wait
+    # and once by the message at the end, which blames a large world still
+    # recovering and suggests starting again. It never recovers - the password
+    # in .env and the one the volume was initialised with simply differ.
+    #
+    # MariaDB error 1045 is "access denied for user" and 1044 is "access denied
+    # to database"; both are permanent until somebody changes the credentials.
+    # Confirmed over a few attempts rather than on the first, because a server
+    # in the middle of starting can refuse a connection once for other reasons,
+    # and then given up on with a message about the thing that is actually
+    # wrong. Everything else - a refused connection, a missing schema - keeps
+    # the long budget, which is what it was for.
+    if [ -s "$probe_err" ] && grep -qiE "1045|1044|access denied" "$probe_err"; then
+        auth_failures=$((auth_failures + 1))
+    else
+        auth_failures=0
+    fi
+    if [ "$auth_failures" -ge 5 ]; then
+        echo "[playerbot-migrate] FATAL: the database refuses this login." >&2
+        head -1 "$probe_err" >&2
+        echo "[playerbot-migrate] This is a credentials problem, not a slow import: the password in" >&2
+        echo "[playerbot-migrate] linux-port/docker/.env and the one this database was created with" >&2
+        echo "[playerbot-migrate] are not the same. Waiting will not change it." >&2
+        echo "[playerbot-migrate] In the launcher: NAPRAW DOSTEP DO BAZY." >&2
+        exit 1
     fi
     if [ "$ready" = "8" ]; then
         protos=$(db -e "SELECT COUNT(*) FROM player.item_proto;" 2>/dev/null || true)
@@ -105,6 +133,40 @@ while :; do
     fi
     sleep 2
 done
+
+# Repair anything MyISAM left marked as crashed.
+#
+# Seventy-three of this game's seventy-five tables are MyISAM, and one unclean
+# stop marks a table crashed: every reader then fails until somebody repairs
+# it. `myisam_recover_options = BACKUP,FORCE` in 99-metin2.cnf handles the
+# common case, but only for a table the server itself opens AFTER that setting
+# took effect - so a database that was already running when the option arrived
+# keeps the old behaviour until it is restarted, and a data file damaged beyond
+# what QUICK will touch stays broken either way. What the operator sees then is
+# not a database error but a blank "Internal Server Error" from the advanced
+# panel, which reads everything from these tables while the classic panel,
+# which reads files, keeps working (archonek2137, 10 September: log.log marked
+# as crashed).
+#
+# --fast only looks at tables that were not closed properly, so on a healthy
+# world this is one open per table and repairs nothing. Failures are reported
+# and never fatal: a world that starts with one damaged log table is far better
+# than a world that refuses to start at all.
+if [ -n "${M2_DB_ROOT_PASSWORD:-}" ]; then
+    repair_log=/tmp/playerbot-repair.log
+    if MYSQL_PWD="$M2_DB_ROOT_PASSWORD" mariadb-check \
+            --protocol=tcp --host="$M2_DB_HOST" --port="$M2_DB_PORT" --user=root \
+            --auto-repair --fast --silent \
+            --databases account common player log >"$repair_log" 2>&1; then
+        if [ -s "$repair_log" ]; then
+            echo "[playerbot-migrate] repaired tables left crashed by an unclean stop:"
+            head -20 "$repair_log"
+        fi
+    else
+        echo "[playerbot-migrate] WARNING: table check failed; continuing" >&2
+        head -5 "$repair_log" >&2
+    fi
+fi
 
 # The ItemShop's own database, and the item_award table its purchases are
 # delivered through. Created as root because the metin2 user cannot create a
@@ -158,17 +220,27 @@ stranded=$(db -e "
       FROM player.player p
       JOIN account.account a ON a.id = p.account_id
      WHERE LEFT(a.login, 10) = 'playerbot_'
-       AND p.map_index NOT IN (21, 23, 24, 25, 108, 109, 61, 63, 64, 104, 65, 71);
+       AND p.map_index NOT IN (1, 3, 4, 5, 21, 23, 24, 25, 41, 43, 44, 45,
+                               108, 109, 61, 63, 64, 104, 65, 71);
 ")
 if [ -n "$stranded" ] && [ "$stranded" -gt 0 ] 2>/dev/null; then
+    # Back to its OWN kingdom's second map, not always Chunjo's: a Jinno bot
+    # dropped on Bokjung's arrival point is a bot in a foreign town with none
+    # of its services in reach. The three points are the arrivals of each
+    # kingdom's M1->M2 gate, read out of npc.txt (tools/dump_world_catalog.py);
+    # Chunjo keeps the exact point this step has always used.
     db -e "
         UPDATE player.player p
           JOIN account.account a ON a.id = p.account_id
-           SET p.map_index = 23, p.x = 145500, p.y = 240000
+          LEFT JOIN player.player_index pi ON pi.id = a.id
+           SET p.map_index = CASE pi.empire WHEN 1 THEN 3 WHEN 3 THEN 43 ELSE 23 END,
+               p.x = CASE pi.empire WHEN 1 THEN 400200 WHEN 3 THEN 906400 ELSE 145500 END,
+               p.y = CASE pi.empire WHEN 1 THEN 899500 WHEN 3 THEN 221400 ELSE 240000 END
          WHERE LEFT(a.login, 10) = 'playerbot_'
-           AND p.map_index NOT IN (21, 23, 24, 25, 108, 109, 61, 63, 64, 104, 65, 71);
+           AND p.map_index NOT IN (1, 3, 4, 5, 21, 23, 24, 25, 41, 43, 44, 45,
+                                   108, 109, 61, 63, 64, 104, 65, 71);
     "
-    echo "[playerbot-migrate] moved $stranded bot(s) back to Bokjung"
+    echo "[playerbot-migrate] moved $stranded bot(s) back to their own kingdom"
 fi
 
 # There used to be a step here that pulled every bot outside Orc Valley's
@@ -201,7 +273,18 @@ before=$(db -e "
 echo "[playerbot-migrate] applying deterministic Playerbot seed (PID $first_pid..$last_pid)"
 result=/tmp/playerbot-seed.out
 trap 'rm -f "$result"' EXIT HUP INT TERM
-if db --show-warnings < "$seed" >"$result" 2>&1; then
+# Shinsoo and Jinno are opt-in: M2_PLAYERBOT_KINGDOMS=1 lets the seed create
+# their cohorts, anything else keeps the file to the Chunjo cohort it has
+# always been. The variable goes in ahead of the file, in the same session,
+# because a SET is per-connection.
+kingdoms=0
+case "${M2_PLAYERBOT_KINGDOMS:-0}" in
+    1|true|TRUE|yes|YES) kingdoms=1 ;;
+esac
+echo "[playerbot-migrate] kingdoms (Shinsoo/Jinno) cohorts: $kingdoms"
+if { printf 'SET @playerbot_seed_kingdoms = %s;
+' "$kingdoms"; cat "$seed"; } |
+        db --show-warnings >"$result" 2>&1; then
     [ ! -s "$result" ] || cat "$result"
 else
     rc=$?
@@ -234,3 +317,81 @@ if [ "$added" -gt 0 ]; then
     echo "[playerbot-migrate] created $added new bot character(s)"
 fi
 echo "[playerbot-migrate] seed complete: $count bot character(s) in PID $first_pid..$last_pid"
+
+# ---------------------------------------------------------------------------
+# Human nicknames.
+#
+# "Pozdrawiam pana botarek7 jest kotem ale brzmi jak bot" - a world of botX7
+# reads as a world of bots however well they behave. The pool and the rules are
+# in playerbot_names.sql; this only chooses which of its three modes to run and
+# reports what it did.
+#
+# It runs after the seed on purpose: a bot created a minute ago is renamed on
+# the same start, and a bot the seed decided to preserve is left with whatever
+# name it has, because the SQL only touches characters still called bot*.
+#
+# A failure here is not fatal. Names are the one part of a bot's identity
+# nothing depends on - the core matches on the account login - so a server that
+# could not rename its bots is a server that works with the old names.
+# ---------------------------------------------------------------------------
+names=/opt/playerbot/playerbot_names.sql
+if [ -s "$names" ]; then
+    human=1
+    case "${M2_PLAYERBOT_HUMAN_NAMES:-1}" in
+        0|false|FALSE|no|NO) human=0 ;;
+        restore|RESTORE) human=restore ;;
+    esac
+    echo "[playerbot-migrate] human nicknames: $human"
+    names_out=/tmp/playerbot-names.out
+    if { printf 'SET @playerbot_human_names = %s;
+' "'$human'"; cat "$names"; } |
+            db --show-warnings >"$names_out" 2>&1; then
+        [ ! -s "$names_out" ] || cat "$names_out"
+    else
+        cat "$names_out" >&2
+        echo "[playerbot-migrate] WARNING: nicknames not applied; bots keep their seed names" >&2
+    fi
+    rm -f "$names_out"
+else
+    echo "[playerbot-migrate] no playerbot_names.sql; bots keep their seed names"
+fi
+
+# ---------------------------------------------------------------------------
+# A game master for the tester account.
+#
+# GM rights are one row in common.gmlist naming an account AND a character,
+# and the mt2009 package ships neither a row nor a character on `admin' - so
+# a world initialised before initdb created one (2.0.0, 2.0.1) has an admin
+# who can log in and command nothing, and the first report was exactly that:
+# "loguje sie admin admin, a tam nie ma postaci gm". The character the player
+# made in the meantime is the one they want the rights on, so this grants
+# IMPLEMENTOR to the tester account's oldest character, once, and only while
+# the list is empty: a world that has ever named a GM is left as it is, and a
+# world whose tester account was removed (M2_KEEP_DEMO_ACCOUNTS=0) has nothing
+# to grant to. A world that has no character on the account yet gets the row
+# on the first start after one is created. The db core reads the list at
+# boot, and this runs before the game container starts.
+# ---------------------------------------------------------------------------
+gm_rows=$(db -e "SELECT COUNT(*) FROM common.gmlist;" 2>/dev/null || echo x)
+if [ "$gm_rows" = "0" ]; then
+    gm_name=$(db -e "
+        SELECT p.name
+          FROM player.player AS p
+          JOIN account.account AS a ON a.id = p.account_id
+         WHERE a.login = 'admin'
+         ORDER BY p.id
+         LIMIT 1;
+    " 2>/dev/null || true)
+    if [ -n "$gm_name" ]; then
+        if db -e "
+            INSERT INTO common.gmlist (mAccount, mName, mContactIP, mServerIP, mAuthority)
+            VALUES ('admin', '$gm_name', '', 'ALL', 'IMPLEMENTOR');
+        "; then
+            echo "[playerbot-migrate] gmlist was empty: '$gm_name' on the admin account is IMPLEMENTOR now"
+        else
+            echo "[playerbot-migrate] WARNING: could not grant GM rights to '$gm_name'" >&2
+        fi
+    else
+        echo "[playerbot-migrate] gmlist is empty and the admin account has no character yet; the first one it gets becomes GM on the next start"
+    fi
+fi

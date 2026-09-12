@@ -104,6 +104,29 @@ namespace
 		return finder.Found();
 	}
 
+	// Whether a drop would land in a bag with no free cell: only by merging
+	// into a stack of the same thing, the way the engine's own pickup does
+	// (same vnum, same sockets, room under ITEM_MAX_COUNT).
+	bool PlayerBotLootMergesIntoStack(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !item->IsStackable())
+			return false;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM held = ch->GetInventoryItem(cell);
+			if (!held || held->GetVnum() != item->GetVnum() ||
+					held->GetCount() + item->GetCount() > ITEM_MAX_COUNT)
+				continue;
+			bool sameSockets = true;
+			for (int s = 0; s < ITEM_SOCKET_MAX_NUM; ++s)
+				if (held->GetSocket(s) != item->GetSocket(s))
+					sameSockets = false;
+			if (sameSockets)
+				return true;
+		}
+		return false;
+	}
+
 	class CCollectPlayerBotLoot
 	{
 		public:
@@ -111,7 +134,11 @@ namespace
 				m_owner(owner),
 				m_maxDistance(maxDistance),
 				m_failedLoot(failedLoot),
-				m_dwNow(dwNow)
+				m_dwNow(dwNow),
+				// One count for the whole sweep: a full bag is a full bag for
+				// every drop in it.
+				m_bagFull(CountPlayerBotFreeInventoryCells(owner) == 0),
+				m_skippedNoRoom(0)
 			{
 			}
 
@@ -134,8 +161,18 @@ namespace
 				const int distance = DISTANCE_APPROX(
 						m_owner->GetX() - item->GetX(),
 						m_owner->GetY() - item->GetY());
-				if (distance <= m_maxDistance)
-					m_items.push_back(std::make_pair(distance, item));
+				if (distance > m_maxDistance)
+					return true;
+				// A drop the bag cannot take is not loot: walking up to it,
+				// announcing the pickup and being refused by the engine every
+				// five seconds is what "mowi ze podnosi lup ale nie robi nic"
+				// was. Counted, so the pass can say so once a minute.
+				if (m_bagFull && !PlayerBotLootMergesIntoStack(m_owner, item))
+				{
+					++m_skippedNoRoom;
+					return true;
+				}
+				m_items.push_back(std::make_pair(distance, item));
 
 				return true;
 			}
@@ -146,12 +183,15 @@ namespace
 			}
 
 			const std::vector<std::pair<int, LPITEM> >& GetItems() const { return m_items; }
+			int SkippedNoRoom() const { return m_skippedNoRoom; }
 
 		private:
 			LPCHARACTER m_owner;
 			int m_maxDistance;
 			const std::map<DWORD, DWORD>& m_failedLoot;
 			DWORD m_dwNow;
+			bool m_bagFull;
+			int m_skippedNoRoom;
 			std::vector<std::pair<int, LPITEM> > m_items;
 	};
 
@@ -335,6 +375,17 @@ namespace
 		const std::vector<std::pair<int, LPITEM> >& items = collector.GetItems();
 		if (items.empty())
 		{
+			// Drops in reach and no cell to put one in. Said once a minute per
+			// bot with the count, so the next "boty maja zapchane eq" report
+			// carries a number; the town errand for a full bag is the
+			// manager's (bInventoryFull) and the junk rule's, not this pass's.
+			if (collector.SkippedNoRoom() > 0 && dwNow >= state.dwNextBagFullLogTime)
+			{
+				state.dwNextBagFullLogTime = dwNow + 60000;
+				sys_log(0, "PLAYERBOT_LOOT: bag full pid=%u name=%s map=%ld drops_in_reach=%d level=%d can_open_shop=%d",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(),
+						collector.SkippedNoRoom(), ch->GetLevel(), PlayerBotCanOpenShop(ch) ? 1 : 0);
+			}
 			// An empty 25 m search used to run twice per second for every peaceful
 			// bot.  Delay only the next empty-floor query; as soon as an item is seen,
 			// the normal 500 ms walking/visibility cadence remains unchanged.

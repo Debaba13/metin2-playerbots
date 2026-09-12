@@ -18,6 +18,7 @@ and not a silent omission.
 
 Exit code 1 if anything a build reads would not arrive.
 """
+import argparse
 import fnmatch
 import os
 import re
@@ -78,6 +79,16 @@ def copies(dockerfile):
 
 
 def main():
+    # The mt2009 tree has the same shape under another name and its own
+    # list: --docker linux-port-mt2009/docker --list launcher/server-update-files.mt2009.txt.
+    global DOCKER, LIST
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--docker', default=os.path.relpath(DOCKER, ROOT))
+    parser.add_argument('--list', default=os.path.relpath(LIST, ROOT))
+    args = parser.parse_args()
+    DOCKER = os.path.join(ROOT, args.docker.replace('/', os.sep))
+    LIST = os.path.join(ROOT, args.list.replace('/', os.sep))
+    docker_rel = os.path.relpath(DOCKER, ROOT).replace(os.sep, '/')
     patterns = shipping_patterns()
     problems = []
     checked = 0
@@ -89,7 +100,7 @@ def main():
             checked += 1
             if source.startswith(STAGED_PREFIXES):
                 continue
-            rel = 'linux-port/docker/%s/%s' % (context, source.rstrip('/'))
+            rel = '%s/%s/%s' % (docker_rel, context, source.rstrip('/'))
             if not os.path.exists(os.path.join(ROOT, rel.replace('/', os.sep))):
                 problems.append('%s: COPY %s - nie ma tego w repozytorium' % (context, source))
                 continue

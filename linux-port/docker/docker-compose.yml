@@ -112,6 +112,16 @@ services:
       # Optional persistent-world guard. A non-zero value refuses to seed/start
       # when the selected Docker daemon or volume contains fewer bots.
       PLAYERBOT_EXPECT_MIN_EXISTING_BOTS: "${PLAYERBOT_EXPECT_MIN_EXISTING_BOTS:-0}"
+      # Shinsoo and Jinno. 0 seeds the Chunjo cohort alone, exactly as before;
+      # 1 also creates the two new kingdoms' identities, which the cores then
+      # start on their own villages. Off until their bots live a full life of
+      # their own on their own maps.
+      M2_PLAYERBOT_KINGDOMS: "${M2_PLAYERBOT_KINGDOMS:-0}"
+      # Bots wear nicknames from a pool instead of bot<something><number>.
+      # 1 renames every bot that still carries a seed name, 0 leaves every name
+      # alone, and "restore" puts the seed names back. The old name is kept in
+      # common.playerbot_name_history, which is what makes the last one work.
+      M2_PLAYERBOT_HUMAN_NAMES: "${M2_PLAYERBOT_HUMAN_NAMES:-1}"
 
     entrypoint: ["/bin/sh", "/opt/playerbot/apply.sh"]
 
@@ -187,6 +197,10 @@ services:
       # Single authoritative startup switch (implemented by the bot manager).
       # Keep the existing 350-bot world by default; lower this in .env for tests.
       PLAYERBOT_AUTOSPAWN_COUNT: "${PLAYERBOT_AUTOSPAWN_COUNT:-350}"
+      # 0 keeps Shinsoo and Jinno from being started even when the seed once
+      # registered them (the migrate service reads the same switch for the
+      # seed itself).
+      M2_PLAYERBOT_KINGDOMS: "${M2_PLAYERBOT_KINGDOMS:-0}"
 
       # The Moonlight Treasure Chest event: chances in a thousand that a kill,
       # and that a Metin stone, drops a chest. Zero switches the event off.
@@ -265,6 +279,11 @@ services:
       # Blank on first run means "generate one and print it once".
       M2_PANEL_PASSWORD: "${M2_PANEL_PASSWORD:-}"
       M2_PANEL_PORT: "7788"
+      # The address the panel is published on, and the explicit answer to
+      # "may anybody else reach it": empty lets the panel decide from the
+      # address (loopback = local, no passphrase), 0 or 1 overrides that.
+      M2PANEL_BIND_ADDRESS: "${M2_PANEL_BIND_ADDRESS:-${M2_HOST_BIND_ADDRESS:-0.0.0.0}}"
+      M2PANEL_LOCAL_ONLY: "${M2_PANEL_LOCAL_ONLY:-}"
       M2_PANEL_BIND: "0.0.0.0"
 
       # So the panel can answer "is the game up" by probing the game container
@@ -713,7 +732,7 @@ services:
       # server it is actually looking at rather than "nieustawiona".
       # The default is bumped with every release, so a world nobody has
       # configured still reports the version it is actually running.
-      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-1.31.2}"
+      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-1.33.3}"
       TZ: "${M2_TZ:-UTC}"
     ports:
       # 7790 outside: 7789 is the browser bridge's port in this stack.

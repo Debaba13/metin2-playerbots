@@ -25,6 +25,67 @@ DATABASES="account common player log hotbackup"
 
 mysql_do() { mariadb --protocol=socket -uroot -p"${MARIADB_ROOT_PASSWORD}" "$@"; }
 
+# -----------------------------------------------------------------------------
+#  Every input, checked before anything durable is created.
+#
+#  This runs as the mysql account (uid 999 - the official entrypoint re-executes
+#  itself under gosu before it touches initdb.d), and a test of "does the file
+#  exist" says nothing about whether that account can READ it: the directory is
+#  bind-mounted from the host with the host's own modes. A ZIP unpacked under a
+#  strict umask on Linux gives 770 on the directory and 660 on the files, owned
+#  by the unpacking user, and the entrypoint then failed with "Permission
+#  denied" partway through - after the five databases and the game user had
+#  already been created, on a data directory that is no longer empty. initdb.d
+#  runs once per volume and never again, so that world stayed permanently
+#  half-built behind a healthcheck that answered green. (The data directory
+#  itself is already there by this point - the entrypoint creates MariaDB's own
+#  system tables before it runs anything here - so the only honest promise this
+#  can make is that OUR five databases do not exist yet. The volume still has
+#  to go.)
+#
+#  Reading one byte is the only honest test. The mode bits and the owner are
+#  not: either can look right while a directory above them denies the search.
+# -----------------------------------------------------------------------------
+if [ ! -d "$DUMP_DIR" ]; then
+  echo "[initdb] FATAL: $DUMP_DIR does not exist."
+  echo "[initdb]        Run ./prepare-context.sh to stage the SQL dumps, then"
+  echo "[initdb]        'docker compose down -v' and up again."
+  exit 1
+fi
+
+_missing=""
+_unreadable=""
+_empty=""
+for d in $DATABASES; do
+  f="$DUMP_DIR/$d.sql"
+  if [ ! -f "$f" ]; then
+    _missing="$_missing $d.sql"
+  elif ! head -c 1 "$f" >/dev/null 2>&1; then
+    _unreadable="$_unreadable $d.sql"
+  elif [ "$d" != "hotbackup" ] && [ ! -s "$f" ]; then
+    # hotbackup is legitimately empty; the other four carry the schema.
+    _empty="$_empty $d.sql"
+  fi
+done
+
+if [ -n "$_missing" ] || [ -n "$_unreadable" ] || [ -n "$_empty" ]; then
+  echo "[initdb] FATAL: the SQL dumps cannot be imported. None of the game's five"
+  echo "[initdb] databases and no game user have been created - this stops before that."
+  [ -n "$_missing" ]    && echo "[initdb]   missing:    $_missing"
+  [ -n "$_unreadable" ] && echo "[initdb]   unreadable: $_unreadable"
+  [ -n "$_empty" ]      && echo "[initdb]   empty:      $_empty"
+  echo "[initdb] They live in linux-port/docker/mariadb/initdb.d/dumps on the host."
+  if [ -n "$_unreadable" ]; then
+    echo "[initdb] Unreadable means the modes on the host are too strict - this container"
+    echo "[initdb] mounts that directory exactly as it is. Directories need 755 and the"
+    echo "[initdb] .sql files 644:"
+    echo "[initdb]     chmod 755 linux-port/docker/mariadb/initdb.d linux-port/docker/mariadb/initdb.d/dumps"
+    echo "[initdb]     chmod 644 linux-port/docker/mariadb/initdb.d/dumps/*.sql"
+  fi
+  echo "[initdb] Then remove this volume and start again: initdb runs once per volume."
+  exit 1
+fi
+
 echo "[initdb] creating databases and the game's SQL user"
 
 # The character set is pinned per-database as well as server-wide, so that a
@@ -47,19 +108,10 @@ echo "[initdb] creating databases and the game's SQL user"
 
 echo "[initdb] importing dumps from $DUMP_DIR"
 
-if [ ! -d "$DUMP_DIR" ]; then
-  echo "[initdb] FATAL: $DUMP_DIR does not exist."
-  echo "[initdb]        Run ./prepare-context.sh to stage the SQL dumps, then"
-  echo "[initdb]        'docker compose down -v' and up again."
-  exit 1
-fi
-
 for d in $DATABASES; do
+  # Existence, readability and emptiness were all settled above, before the
+  # first CREATE DATABASE; there is nothing left to test here.
   f="$DUMP_DIR/$d.sql"
-  if [ ! -f "$f" ]; then
-    echo "[initdb] FATAL: $f is missing. The server cannot start without it."
-    exit 1
-  fi
   echo "[initdb]   importing $d ($(du -h "$f" | cut -f1))"
   # Warnings are expected here -- see the note in conf.d/99-metin2.cnf.
   mysql_do "$d" < "$f"

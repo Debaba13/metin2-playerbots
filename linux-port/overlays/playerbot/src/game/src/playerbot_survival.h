@@ -31,7 +31,11 @@ namespace
 		++s_uPlayerBotLoadSaves;
 		ch->FlushDelayedSaveItem();
 		const DWORD playerID = ch->GetPlayerID();
+#if !defined(PLAYERBOT_ENGINE_MT2009)
+		// mt2009 has no cache-flush packet; its db core writes the player
+		// cache out on its own clock, so a panel reads the save a little later.
 		db_clientdesc->DBPacket(HEADER_GD_FLUSH_CACHE, 0, &playerID, sizeof(playerID));
+#endif
 		sys_log(1, "PLAYERBOT_AI: persisted state pid=%u name=%s level=%u exp=%u gold=%lld",
 				playerID, ch->GetName(), level, ch->GetExp(), (long long)ch->GetGold());
 	}

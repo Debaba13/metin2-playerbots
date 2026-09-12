@@ -5,13 +5,48 @@ import time
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
 
-MAX_ITEM_COUNT, MAX_PENDING = 65535, 10
+# 200, bo tyle wynosi pelny stos i tyle jest w stanie wydac silnik za jednym
+# razem. pc.give_item2 czyta ilosc jako int i podaje ja do
+# CHARACTER::AutoGiveItem(DWORD, BYTE, ...) - jeden bajt: 256 staje sie zerem,
+# 300 czterdziestoma czterema, 65535 dwiescia piecdziesiecioma pieciema. Nic
+# tego nie zglaszalo, bo niezerowe item_id wygladalo na sukces, wiec paczka
+# konczyla sie statusem "Nadano" i mniejsza liczba sztuk, niz proszono.
+# Quest odrzuca teraz wszystko powyzej 200 statusem qty_too_big; panel nie
+# powinien takiej liczby w ogole proponowac.
+MAX_ITEM_COUNT, MAX_PENDING = 200, 10
 JOBS = (("", "Każda klasa"), ("0", "Wojownik"), ("1", "Ninja"), ("2", "Sura"), ("3", "Szaman"))
 TERMINAL = {"done": "Nadano", "has_item": "Już posiada", "full": "Brak miejsca w ekwipunku",
     "failed": "Gra nie mogła utworzyć przedmiotu", "bad_args": "Nieprawidłowy VNUM lub ilość",
     "no_skill": "Warunek nie jest już spełniony", "gone": "Postać nie istnieje",
+    "qty_too_big": "Ilość ponad 200 — gra nie wyda tego za jednym razem",
+    "partial": "Wydano mniej, niż proszono (sprawdź plecak)",
     "cancelled": "Anulowano", "review": "Wymaga sprawdzenia", "unknown_cmd": "Quest wymaga aktualizacji"}
 LABELS = {"waiting": "Czeka na wysłanie", "queued": "Przekazano aktywnej postaci", **TERMINAL}
+
+# The worker is a separate container (seban-item-grants) and the page could
+# not tell whether it was running: a batch that stopped at 333 recipients
+# looked exactly like a worker that had died, a queue nobody in game was
+# reading, and three hundred bots that were simply offline (audit D02). The
+# worker stamps every tick into web_seban_settings; the page reads the stamp,
+# the last error, and the age of the oldest task in each state, so the next
+# report can say which of those it is.
+HEARTBEAT_KEY, LAST_ERROR_KEY = "item_grants_heartbeat", "item_grants_last_error"
+HEARTBEAT_STALE = 15          # three ticks of three seconds, with room to spare
+QUEUE_STALE = 45              # a queue row older than this has nobody in game reading it
+
+# Measured on 11 September with 1500 registered bots of which 349 were in the
+# world: a batch for all of them reached done=350 in two minutes and then sat
+# at queued=10 for good - the ten places of MAX_PENDING were all offline
+# recipients, each of which takes 30 s for the quest's sweep to call
+# player_offline, another 60 s for this worker to withdraw it, and comes back
+# two minutes later, so ten offline names blocked every online one behind
+# them. That is the "stops at 333" of the audit: not a terminal state, a queue
+# whose head is offline. The collector's five-minute snapshot says who is in
+# the world; the online recipients go first and the offline ones get at most
+# OFFLINE_PROBES_PER_TICK of the places, so the queue always has room to move.
+SNAPSHOT_MAX_AGE = 15 * 60
+OFFLINE_PROBES_PER_TICK = 2
+OFFLINE_MAX_PENDING = 4       # offline probes may hold this many of MAX_PENDING's places at once
 
 
 def init(cur):
@@ -24,6 +59,9 @@ def init(cur):
       updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, next_try DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY batch_player(batch,player_id), KEY pending(status,next_try), KEY recipient(player_id,vnum,status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS player.web_seban_settings (
+      name VARCHAR(64) NOT NULL PRIMARY KEY, value VARCHAR(255) NOT NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB""")
     cur.execute("SHOW COLUMNS FROM player.web_seban_grants")
     columns = {row["Field"] for row in cur.fetchall()}
     for name, sql in (
@@ -109,6 +147,93 @@ def candidates(cur, vnum, criteria, only_missing, player_id=None):
     return cur.fetchall()
 
 
+def stamp(cur, key, value):
+    cur.execute("INSERT INTO player.web_seban_settings (name,value) VALUES (%s,%s) "
+                "ON DUPLICATE KEY UPDATE value=VALUES(value)", (key, str(value)[:255]))
+
+
+def worker_stats(cur):
+    """What the page shows above the history: is the worker alive, what is
+    waiting, and for how long. Every age is in seconds, None when there is
+    nothing in that state."""
+    stats = {"alive": False, "heartbeat_age": None, "last_error": "", "counts": {},
+             "oldest_waiting": None, "oldest_queued": None, "pending": 0, "oldest_pending": None,
+             "queue_stale": False}
+    cur.execute("SELECT name,value,UNIX_TIMESTAMP(updated_at) AS at FROM player.web_seban_settings WHERE name IN (%s,%s)",
+                (HEARTBEAT_KEY, LAST_ERROR_KEY))
+    for row in cur.fetchall():
+        if row["name"] == HEARTBEAT_KEY:
+            try: age = max(0, int(time.time()) - int(row["value"]))
+            except (TypeError, ValueError): age = None
+            stats["heartbeat_age"] = age
+            stats["alive"] = age is not None and age <= HEARTBEAT_STALE
+        else:
+            stats["last_error"] = row["value"] or ""
+    cur.execute("""SELECT status,COUNT(*) AS n,MAX(TIMESTAMPDIFF(SECOND,updated,NOW())) AS oldest
+                   FROM player.web_seban_grants GROUP BY status""")
+    for row in cur.fetchall():
+        stats["counts"][row["status"]] = int(row["n"])
+        if row["status"] == "waiting": stats["oldest_waiting"] = int(row["oldest"] or 0)
+        if row["status"] == "queued": stats["oldest_queued"] = int(row["oldest"] or 0)
+    # The in-game side: rows the helper quest has not taken yet. A pending row
+    # older than QUEUE_STALE means nothing in game is reading the queue at all
+    # (no player logged in since the start, or a quest the core did not compile).
+    cur.execute("SELECT COUNT(*) AS n,MAX(TIMESTAMPDIFF(SECOND,created,NOW())) AS oldest "
+                "FROM player.web_admin_queue WHERE status='pending'")
+    row = cur.fetchone() or {}
+    stats["pending"] = int(row.get("n") or 0)
+    stats["oldest_pending"] = int(row["oldest"]) if row.get("oldest") is not None else None
+    stats["queue_stale"] = stats["oldest_pending"] is not None and stats["oldest_pending"] > QUEUE_STALE
+    return stats
+
+
+def online_pids(cur):
+    """The bots the collector last saw in the world, or None when it has not
+    looked recently (then nobody is preferred and the old order applies)."""
+    try:
+        cur.execute("SELECT MAX(captured_at) AS at, TIMESTAMPDIFF(SECOND,MAX(captured_at),NOW()) AS age "
+                    "FROM player.web_seban_bot_position_snapshot")
+        row = cur.fetchone() or {}
+        if row.get("at") is None or int(row.get("age") or 0) > SNAPSHOT_MAX_AGE:
+            return None
+        cur.execute("SELECT pid FROM player.web_seban_bot_position_snapshot WHERE captured_at=%s", (row["at"],))
+        return {int(r["pid"]) for r in cur.fetchall()}
+    except Exception:
+        return None
+
+
+def pick_waiting(cur, capacity, pending=0):
+    """The waiting rows this tick may hand to the game, online recipients first."""
+    if capacity <= 0:
+        return []
+    online = online_pids(cur)
+    if online is None:
+        cur.execute("SELECT * FROM player.web_seban_grants WHERE status='waiting' AND next_try<=NOW() "
+                    "ORDER BY next_try,id LIMIT %s FOR UPDATE", (capacity,))
+        return cur.fetchall()
+    # A human's character is never in the bot snapshot; it counts as "maybe
+    # online" and takes the fast lane, because the quest answers for it within
+    # three seconds when it is in game and the sweep retires it when it is not.
+    bots_sql = ("SELECT p.id FROM player.player p JOIN account.account a ON a.id=p.account_id "
+                "WHERE a.login LIKE 'playerbot_%%'")
+    marks = ",".join(["%s"] * len(online)) if online else "NULL"
+    cur.execute("SELECT * FROM player.web_seban_grants WHERE status='waiting' AND next_try<=NOW() "
+                "AND (player_id IN (" + marks + ") OR player_id NOT IN (" + bots_sql + ")) "
+                "ORDER BY next_try,id LIMIT %s FOR UPDATE", tuple(sorted(online)) + (capacity,))
+    picked = list(cur.fetchall())
+    # A probe sits in the queue for up to 60 s before it is withdrawn, so two
+    # a tick would still fill every place in five ticks; the cap is on how many
+    # can be out at once, and it always leaves the fast lane room.
+    left = min(capacity - len(picked), OFFLINE_PROBES_PER_TICK, OFFLINE_MAX_PENDING - pending)
+    if left > 0:
+        taken = [g["id"] for g in picked]
+        cur.execute("SELECT * FROM player.web_seban_grants WHERE status='waiting' AND next_try<=NOW() "
+                    + ("AND id NOT IN (" + ",".join(["%s"] * len(taken)) + ") " if taken else "")
+                    + "ORDER BY next_try,id LIMIT %s FOR UPDATE", tuple(taken) + (left,))
+        picked.extend(cur.fetchall())
+    return picked
+
+
 def grant_criteria(grant):
     try:
         value = json.loads(grant["criteria"] or "{}")
@@ -167,6 +292,7 @@ def install(app, db, login_required, game_text):
                 flash(f"Zlecono {quantity}× VNUM {vnum} dla {len(recipients)} postaci.")
                 return redirect(url_for("manage_items", vnum=vnum))
             session["grant_preview"] = {"fingerprint": fingerprint, "batch": secrets.token_hex(16), "time": time.time()}
+            stats = worker_stats(cur)
             cur.execute("SELECT * FROM player.web_seban_grants ORDER BY id DESC LIMIT 1000")
             history = cur.fetchall()
             for grant in history:
@@ -174,7 +300,7 @@ def install(app, db, login_required, game_text):
             item["name"] = game_text(item["locale_name"])
             return render_template("item_grants.html", item=item, vnum=vnum, quantity=quantity, criteria=criteria,
                 recipients=recipients, only_missing=only_missing, history=history, labels=LABELS, csrf=token, jobs=JOBS,
-                criteria_text=criteria_text)
+                criteria_text=criteria_text, stats=stats)
 
 
 def tick(con):
@@ -200,9 +326,9 @@ def tick(con):
                 else:
                     cur.execute("UPDATE player.web_seban_grants SET status=%s,updated=NOW() WHERE id=%s", (status if status in TERMINAL else "review", grant["id"]))
             cur.execute("SELECT COUNT(*) AS n FROM player.web_admin_queue WHERE status='pending'")
-            capacity = max(0, MAX_PENDING - cur.fetchone()["n"])
-            cur.execute("SELECT * FROM player.web_seban_grants WHERE status='waiting' AND next_try<=NOW() ORDER BY next_try,id LIMIT %s FOR UPDATE", (capacity,))
-            for grant in cur.fetchall():
+            pending = int(cur.fetchone()["n"])
+            capacity = max(0, MAX_PENDING - pending)
+            for grant in pick_waiting(cur, capacity, pending):
                 criteria = grant_criteria(grant)
                 player = candidates(cur, grant["vnum"], criteria, bool(grant["only_missing"]), grant["player_id"]) if criteria is not None else []
                 if not player:
@@ -221,13 +347,29 @@ def tick(con):
             cur.execute("SELECT RELEASE_LOCK('seban_item_grants')")
 
 
+def beat(error=""):
+    """One row per tick, whatever the tick did. Its own connection, so a tick
+    that failed halfway (and rolled back) still leaves a fresh stamp - a dead
+    worker and a failing one are different problems, and the page says which."""
+    from app import db
+    with db() as con, con.cursor() as cur:
+        stamp(cur, HEARTBEAT_KEY, int(time.time()))
+        stamp(cur, LAST_ERROR_KEY, error)
+
+
 if __name__ == "__main__":
     from app import db
     while True:
+        error = ""
         try:
             with db() as con:
                 with con.cursor() as cur: init(cur)
                 tick(con)
         except Exception as exc:
-            print(f"[item-grants] {type(exc).__name__}: {exc}", flush=True)
+            error = f"{type(exc).__name__}: {exc}"
+            print(f"[item-grants] {error}", flush=True)
+        try:
+            beat(error)
+        except Exception as exc:
+            print(f"[item-grants] heartbeat: {type(exc).__name__}: {exc}", flush=True)
         time.sleep(3)

@@ -14,6 +14,7 @@ from functools import wraps
 
 import pymysql
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from markupsafe import escape
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
@@ -26,14 +27,24 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
+# Nazwy wiosek pochodzą z questów silnika: new_quest_lv52 czyta pierwsze
+# wioski jako { "Yongan", "Joan", "Pyongmoo" } wg królestwa, a new_quest_lv7
+# nazywa drugie Jayang, Bokjung i Bakra.
 MAP_NAMES = {
-    1: "Shinsoo M1", 3: "Shinsoo M2", 21: "Chunjo M1", 23: "Chunjo M2",
-    24: "Chunjo M3", 25: "Łatwy Loch Małp", 41: "Jinno M1", 43: "Jinno M2",
+    1: "Shinsoo M1 — Yongan", 3: "Shinsoo M2 — Jayang", 4: "Ziemia Klanu Shinsoo",
+    5: "Loch Małp Shinsoo", 44: "Ziemia Klanu Jinno", 45: "Loch Małp Jinno",
+    21: "Chunjo M1 — Joan", 23: "Chunjo M2 — Bokjung",
+    24: "Ziemia Klanu Chunjo", 25: "Łatwy Loch Małp",
+    41: "Jinno M1 — Pyongmoo", 43: "Jinno M2 — Bakra",
     61: "Góra Sohan", 63: "Pustynia Yongbi", 64: "Dolina Orków", 104: "Loch Pająków V1",
     65: "Świątynia Hwang", 71: "Loch Pająków V2",
     108: "Loch Małp Normalny", 109: "Loch Małp Trudny",
 }
 MAP_BOUNDS = {
+    1: (409600, 896000, 102400, 128000), 3: (307200, 819200, 102400, 102400),
+    4: (128000, 0, 51200, 51200), 5: (768000, 435200, 76800, 76800),
+    41: (921600, 204800, 102400, 128000), 43: (819200, 204800, 102400, 102400),
+    44: (230400, 0, 51200, 51200), 45: (921600, 435200, 76800, 76800),
     21: (0, 102400, 102400, 128000), 23: (102400, 204800, 102400, 102400),
     24: (179200, 0, 51200, 51200), 25: (844800, 435200, 76800, 76800),
     61: (358400, 153600, 153600, 153600), 63: (204800, 486400, 153600, 153600),
@@ -43,14 +54,16 @@ MAP_BOUNDS = {
 }
 TRACKED_MAP_OPTIONS = tuple((index, MAP_NAMES[index]) for index in MAP_BOUNDS)
 MAP_RESPAWN_OPTIONS = (
-    (1, "Shinsoo M1 — Yongan"), (3, "Shinsoo M2"), (21, "Chunjo M1 — Joan"),
-    (23, "Chunjo M2"), (41, "Jinno M1"), (43, "Jinno M2"),
+    (1, "Shinsoo M1 — Yongan"), (3, "Shinsoo M2 — Jayang"), (21, "Chunjo M1 — Joan"),
+    (23, "Chunjo M2 — Bokjung"), (41, "Jinno M1 — Pyongmoo"), (43, "Jinno M2 — Bakra"),
+    (4, "Ziemia Klanu Shinsoo"), (24, "Ziemia Klanu Chunjo"), (44, "Ziemia Klanu Jinno"),
+    (5, "Loch Małp Shinsoo"), (45, "Loch Małp Jinno"),
     (25, "Łatwy Loch Małp"), (61, "Góra Sohan"), (63, "Pustynia Yongbi"), (64, "Dolina Orków"),
     (104, "Loch Pająków V1"), (71, "Loch Pająków V2"), (108, "Loch Małp Normalny"), (109, "Loch Małp Trudny"),
 )
 # Monkey Dungeons and Spider Dungeon V1 ship no stone.txt, so only their mob
 # respawns can be configured. The explicit allowlist also protects the helper.
-MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {25, 104, 71, 108, 109})
+MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {5, 25, 45, 104, 71, 108, 109})
 STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv"),)
 RATES_SPOOL = Path("/opt/m2spool")
 UPDATE_SPOOL = Path("/opt/m2update")
@@ -76,7 +89,7 @@ AI_WEIGHT_KEYS = (
 AI_WEIGHT_MIN, AI_WEIGHT_MAX, AI_WEIGHT_NEUTRAL = 25, 250, 100
 # These values share the live weight file with goal weights, but the core treats
 # them as switches or direct settings rather than 25–250% goal weights.
-AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "NIGHT": 1, "SCRAP": 0, "CHEST": None, "CHEST_STONE": None}
+AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "NIGHT": 1, "SCRAP": 0, "REST": 100, "CHEST": None, "CHEST_STONE": None}
 AI_SPECIAL_WEIGHT_KEYS = frozenset(AI_LIVE_DEFAULTS)
 BIOLOGIST_COMPLETE_STATE = 557528158
 # Tieru 1.29.10 adds the Orc Tooth task after the six classic Biologist
@@ -127,7 +140,11 @@ try:
     ITEM_DEFS = json.loads((Path(__file__).parent / "static" / "item_defs.json").read_text(encoding="utf-8"))
 except (OSError, ValueError):
     ITEM_DEFS = {}
-BOT_PERSONALITIES = {0: "Wytrwały poszukiwacz", 1: "Pogromca Metinów", 2: "Towarzysz drużyny", 3: "Mistrz ekwipunku", 4: "Rozważny zbieracz", 5: "Wędrowiec"}
+# EPlayerBotPersonality (playerbot_types.h): MERCHANT to 5, WANDERER 6.
+# Ta tabela miala 5 jako wedrowca i konczyla sie na nim, wiec straganiarz
+# czytal sie jako wedrowiec, a piec dopisanych od tamtej pory osobowosci
+# nie czytalo sie wcale.
+BOT_PERSONALITIES = {0: "Wytrwały poszukiwacz", 1: "Pogromca Metinów", 2: "Towarzysz drużyny", 3: "Mistrz ekwipunku", 4: "Rozważny zbieracz", 5: "Handlarz", 6: "Wędrowiec", 7: "Dropek Metinów", 8: "Dropek z M3", 9: "Dropek z M2", 10: "Dropek medali"}
 BOT_AMBITIONS = {0: "Poziom", 1: "Ekwipunek", 2: "Metiny", 3: "Koń", 4: "Biolog", 5: "Umiejętności"}
 BOT_GOALS = {0: "Zdobywanie poziomu", 1: "Przetrwanie", 2: "Wybór profesji", 3: "Zdobycie ekwipunku", 4: "Uzupełnienie zapasów", 5: "Ulepszanie EQ", 6: "Rozwój umiejętności", 7: "Polowanie na Metiny", 8: "Silne cele w PT", 9: "Misja Biologa", 10: "Misja Polowania", 11: "Rozwój konia"}
 BOT_ACTIONS = {0: "Planuje następny ruch", 1: "Podróżuje", 2: "Walczy", 3: "Podnosi łup", 4: "Regeneruje się", 5: "Wybiera profesję", 6: "Handluje", 7: "Ulepsza EQ", 8: "Czyta KU", 9: "Wkłada KD", 10: "Organizuje PT", 11: "Robi Biologa", 12: "Odwiedza Stajennego"}
@@ -138,7 +155,7 @@ ITEM_TYPE_NAMES = (
     "ITEM_SPECIAL_DS", "ITEM_EXTRACT", "ITEM_SECONDARY_COIN", "ITEM_RING", "ITEM_BELT", "ITEM_PET", "ITEM_MEDIUM", "ITEM_GACHA", "ITEM_SOUL", "ITEM_PASSIVE",
 )
 APPLY_LABELS = {
-    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Średnie obrażenia", "%"), 72: ("Obrażenia umiejętności", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%")}
+    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Obrażenia umiejętności", "%"), 72: ("Średnie obrażenia", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%"), 1138: ("Terror", "%"), 1139: ("Regeneracja wytrzymałości", "%"), 1140: ("Atak sztyletem przeciw potworom", ""), 1141: ("Wartość ataku przeciw potworom", ""), 1142: ("Odporność na potwory", "‰"), 1143: ("Pochłanianie obrażeń", "%"), 1144: ("Pochłanianie obrażeń od potworów", "%"), 1145: ("Przełamanie odporności na ogłuszenie", ""), 1146: ("Przełamanie klątwy świątyni", ""), 1147: ("Czas trwania umiejętności", "%"), 1148: ("Silny przeciw potworom z Doliny Orków", "%"), 1149: ("Silny przeciw Metinom", "%"), 1150: ("Silny przeciw bossom", "%"), 1151: ("Magiczny atak przeciw potworom", "%"), 1152: ("Przełamanie odporności na miecz", "%"), 1153: ("Przełamanie odporności na broń dwuręczną", "%"), 1154: ("Przełamanie odporności na sztylet", "%"), 1155: ("Przełamanie odporności na dzwonek", "%"), 1156: ("Przełamanie odporności na wachlarz", "%"), 1157: ("Przełamanie odporności na łuk", "%"), 1158: ("Szansa na zbieranie", "%"), 1159: ("Szansa na naukę", "%"), 1160: ("Odporność na ludzi", "%"), 1161: ("Magiczny atak", ""), 1162: ("Szansa na podpalenie", "%"), 1163: ("Zamiana obrażeń na PE", "%"), 1164: ("Szansa na rzadki łup", "%"), 1165: ("Magiczna wartość ataku przeciw potworom", ""), 1166: ("Szansa na unieruchomienie", "%"), 1167: ("Atak specjalny", ""), 1168: ("Kara za śmierć", "%")}
 # 71 i 72 są w tablicy powyżej, we właściwej kolejności: common/length.h
 # niesie numery we własnych komentarzach - APPLY_SKILL_DAMAGE_BONUS to 71,
 # APPLY_NORMAL_HIT_DAMAGE_BONUS to 72. Stała tu wcześniej poprawka
@@ -146,6 +163,31 @@ APPLY_LABELS = {
 # są odwrotne" - nic ich nie odwraca. Uzasadnienie było nieprawdziwe, a samo
 # nadpisanie sięgało tylko opisów przedmiotów, więc ranking - który bierze
 # dane z osobnego zapytania - pokazywał je zamienione jeszcze długo potem.
+# Which engine the panel looks at (PLAYERBOTS_ENGINE). mt2009 keeps an
+# item's bonus lines as POINT_* numbers: the two damage lines are 121 and
+# 122 there, every attrtype goes through POINT_TO_APPLY before APPLY_LABELS,
+# account.account has no empire column and player.player no bank_value.
+PANEL_ENGINE = os.environ.get("PLAYERBOTS_ENGINE", "r40250").strip().lower()
+ENGINE_MT2009 = PANEL_ENGINE == "mt2009"
+ATTR_SKILL_DAMAGE = 121 if ENGINE_MT2009 else 71
+ATTR_AVG_DAMAGE = 122 if ENGINE_MT2009 else 72
+POINT_TO_APPLY = {6: 1, 8: 2, 13: 3, 15: 4, 12: 5, 14: 6, 17: 7, 19: 8, 21: 9, 32: 10, 33: 11,
+ 37: 12, 38: 13, 39: 14, 40: 15, 41: 16, 43: 17, 44: 18, 45: 19, 46: 20, 47: 21,
+ 48: 22, 63: 23, 64: 24, 65: 25, 66: 26, 67: 27, 68: 28, 69: 29, 70: 30, 71: 31,
+ 72: 32, 73: 33, 74: 34, 75: 35, 76: 36, 77: 37, 78: 38, 79: 39, 81: 41, 82: 42,
+ 83: 43, 84: 44, 85: 45, 86: 46, 87: 47, 88: 48, 89: 49, 90: 50, 28: 51, 34: 52,
+ 95: 53, 96: 54, 22: 55, 23: 56, 42: 57, 10: 58, 54: 59, 55: 60, 56: 61, 57: 62,
+ 53: 63, 114: 64, 115: 65, 116: 66, 117: 67, 118: 68, 119: 69, 120: 70, 121: 71,
+ 122: 72, 123: 73, 124: 74, 125: 75, 126: 76, 59: 78, 60: 79, 61: 80, 62: 81,
+ 128: 82, 16: 83, 130: 84, 131: 85, 132: 86, 133: 87, 134: 88, 135: 89, 136: 90,
+ 137: 91,
+ # mt2009 points with no APPLY id at all (length.h 138..168 - the engine
+ # applies them straight from the item). A pseudo key of 1000 + point, so
+ # the label tables can name them; without it the panel wrote "Bonus #139".
+ 138: 1138, 139: 1139, 140: 1140, 141: 1141, 142: 1142, 143: 1143, 144: 1144, 145: 1145, 146: 1146, 147: 1147, 148: 1148, 149: 1149, 150: 1150, 151: 1151, 152: 1152, 153: 1153, 154: 1154, 155: 1155, 156: 1156, 157: 1157, 158: 1158, 159: 1159, 160: 1160, 161: 1161, 162: 1162, 163: 1163, 164: 1164, 165: 1165, 166: 1166, 167: 1167, 168: 1168}
+# The kingdom of a character: the index, then (r40250 only) the account.
+EMPIRE_EXPR = "COALESCE(NULLIF(pi.empire,0),0)" if ENGINE_MT2009 else "COALESCE(NULLIF(pi.empire,0),a.empire,0)"
+
 JOB_NAMES = ("Wojownik", "Ninja", "Sura", "Szaman")
 SKILLS = {
     # Exact vnum/name pairs from Tieru's current panel. The old mapping put
@@ -171,6 +213,66 @@ try:
     GM_COMMANDS = (Path(__file__).parent / "gm_commands.txt").read_text(encoding="utf-8", errors="replace")
 except OSError:
     GM_COMMANDS = "Brak pliku z komendami."
+
+
+# MyISAM nie przezywa nieczystego zatrzymania, a ten panel czyta na stronie
+# glownej najruchliwsza tabele w calym swiecie - log.log, dla rankingu wedkarzy.
+# Gdy jest uszkodzona, kazde zapytanie do niej rzuca wyjatkiem, Flask pokazuje
+# wlasne "Internal Server Error", i to zrzut ekranu tej strony trafia na
+# Discorda - bez nazwy tabeli, bez przyczyny, bez niczego do zrobienia
+# (archonek, 10 wrzesnia: "klikam i blad wyskakuje"; zwykly panel dzialal, bo
+# jego strona glowna do log.log nie zaglada). Aktualizacja tego nie naprawia:
+# uszkodzenie siedzi w danych na wolumenie, nie w obrazie.
+#
+# Numery bledow: 1194 "is marked as crashed and should be repaired",
+# 1195 i 144 "last repair failed", 145 to samo dla starszych serwerow.
+CRASHED_TABLE_ERRNOS = (144, 145, 1194, 1195)
+
+
+@app.errorhandler(pymysql.err.OperationalError)
+def handle_crashed_table(error):
+    errno = error.args[0] if error.args else 0
+    message = str(error.args[1]) if len(error.args) > 1 else str(error)
+    if errno not in CRASHED_TABLE_ERRNOS:
+        # Nie nasza sprawa - niech Flask pokaze swoje 500 i zapisze slad.
+        raise error
+    table = ""
+    match = re.search(r"Table '([^']+)'", message)
+    if match:
+        table = match.group(1).replace("./", "").replace("/", ".")
+    named = ("Tabela <code>%s</code>" % escape(table)) if table else "Jedna z tabel bazy"
+    body = """<!doctype html><html lang="pl"><head><meta charset="utf-8">
+<title>Uszkodzona tabela bazy</title>
+<style>body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:52em;margin:3em auto;padding:0 1.5em;line-height:1.6;color:#222}
+h1{font-size:1.5em}code{background:#f2f2f2;padding:.15em .35em;border-radius:3px}
+pre{background:#f2f2f2;padding:1em;border-radius:5px;overflow-x:auto}
+.note{background:#fff8e1;border-left:4px solid #e0a800;padding:.8em 1em;margin:1.5em 0}</style>
+</head><body>
+<h1>Uszkodzona tabela bazy danych</h1>
+<p>%s jest oznaczona jako uszkodzona, wiec panel nie moze jej odczytac.
+Silnik gry uzywa tabel MyISAM, a te nie przezywaja nagłego zatrzymania -
+wystarczy zamkniecie Dockera w trakcie zapisu albo zanik zasilania.</p>
+<div class="note"><strong>Aktualizacja serwera tego nie naprawi.</strong>
+Uszkodzenie jest w danych na dysku, a nie w programie - nowa wersja czyta te
+same pliki.</div>
+<h2>Jak naprawic</h2>
+<p>Otworz PowerShell w folderze serwera, w podkatalogu <code>linux-port\\docker</code>
+(w launcherze przycisk FOLDER SERWERA), i uruchom:</p>
+<pre>docker compose exec mariadb mysqlcheck -uroot -p --auto-repair --databases log player account common</pre>
+<p>Zapyta o haslo - to <code>M2_DB_ROOT_PASSWORD</code> z pliku <code>.env</code>
+w tym samym folderze. Naprawa duzej tabeli logow potrafi potrwac kilka minut.</p>
+<h2>Jesli naprawa sie nie uda</h2>
+<p>Baza <code>log</code> to wylacznie historia: co kto podniosl, ulepszyl i
+powiedzial. Gra jej nie czyta i zadna postac, przedmiot ani bot od niej nie
+zaleza. Jesli <code>mysqlcheck</code> zglosi, ze nie da rady, mozna te tabele
+oproznic bez straty dla swiata:</p>
+<pre>docker compose exec mariadb mariadb -uroot -p -e "TRUNCATE log.log; TRUNCATE log.levellog; TRUNCATE log.shout_log;"</pre>
+<div class="note">Nie rob tego dla baz <code>player</code>, <code>account</code>
+ani <code>common</code> - tam sa postacie, konta i boty.</div>
+<p style="margin-top:2em;color:#666;font-size:.9em">Blad bazy: %s (%s)</p>
+</body></html>""" % (named, errno, escape(message))
+    return body, 500
+
 
 
 def db():
@@ -323,7 +425,10 @@ def is_stationary_activity(status):
 
 
 def apply_text(apply_type, value):
-    name, suffix = APPLY_LABELS.get(int(apply_type or 0), (f"Bonus #{apply_type}", ""))
+    key = int(apply_type or 0)
+    if ENGINE_MT2009:
+        key = POINT_TO_APPLY.get(key, key)
+    name, suffix = APPLY_LABELS.get(key, (f"Bonus #{apply_type}", ""))
     value = int(value or 0)
     return f"{name} {value:+d}{suffix}"
 
@@ -408,7 +513,9 @@ def news_feed_events():
       ORDER BY l.time DESC LIMIT 900""")
     events, seen = [], set()
     for row in raw:
-        how, hint, name = str(row.get("how") or ""), game_text(row.get("hint")), game_text(row.get("name"))
+        # `how` is VARBINARY on mt2009 and arrives as bytes; str() of that is
+        # "b'GET'" and matches nothing below.
+        how, hint, name = game_text(row.get("how")), game_text(row.get("hint")), game_text(row.get("name"))
         key = f"{how}:{row.get('who')}:{row.get('what')}:{row.get('time')}"
         if key in seen or not name:
             continue
@@ -673,7 +780,7 @@ def read_ai_weights():
                     key, raw_value = fields[0].upper(), fields[1]
                     if key in ("CHAT", "BOOKS", "NIGHT"):
                         values[key] = 0 if raw_value.lower() in ("0", "off", "no") else 1
-                    elif key == "SCRAP":
+                    elif key in ("SCRAP", "REST"):
                         values[key] = max(0, min(100, int(raw_value)))
                     elif key in ("CHEST", "CHEST_STONE"):
                         values[key] = max(0, min(1000, int(raw_value)))
@@ -716,6 +823,7 @@ def write_ai_weights(values):
     content.append(f"BOOKS\t{1 if values.get('BOOKS', 1) else 0}")
     content.append(f"NIGHT\t{1 if values.get('NIGHT', 1) else 0}")
     content.append(f"SCRAP\t{max(0, min(100, int(values.get('SCRAP', 0))))}")
+    content.append(f"REST\t{max(0, min(100, int(values.get('REST', 100))))}")
     for key in ("CHEST", "CHEST_STONE"):
         if values.get(key) is not None:
             content.append(f"{key}\t{max(0, min(1000, int(values[key])))}")
@@ -763,7 +871,39 @@ def restart_progress():
     return {"percent": 100 if auth and world else 40, "stage": "Serwer działa" if auth and world else "Oczekiwanie na usługi", "state": state}
 
 
+# On the mt2009 line a rate is not a rewritten table but six event flags the
+# engine multiplies by (mob_exp / mob_item / mob_gold and their "_buyer"
+# twins for premium accounts): rows of player.quest with dwPID = 0, read by the
+# db core at boot and pushed to every game core. The game container has no
+# database client, so the panel writes the rows and the restart it queues
+# below is what makes the cores read them. See files/admin_panel.py, which
+# also tries the in-game helper first; this console is a restart console.
+MT2009_RATE_FLAGS = {
+    "exp":  ("mob_exp",  "mob_exp_buyer"),
+    "drop": ("mob_item", "mob_item_buyer"),
+    "yang": ("mob_gold", "mob_gold_buyer"),
+}
+
+
+def persist_rates_mt2009(values):
+    with db() as connection, connection.cursor() as cursor:
+        for name, flags in MT2009_RATE_FLAGS.items():
+            for flag in flags:
+                cursor.execute("REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES (0, %s, '', %s)",
+                               (flag, int(values[name])))
+        # The classic panel's table too, so both pages show the same numbers.
+        try:
+            for name in RATE_NAMES:
+                cursor.execute("INSERT INTO player.web_admin_rates (name, value) VALUES (%s, %s) "
+                               "ON DUPLICATE KEY UPDATE value=VALUES(value)", (name, int(values[name])))
+        except pymysql.MySQLError:
+            pass
+        connection.commit()
+
+
 def queue_rate_restart(values):
+    if ENGINE_MT2009:
+        persist_rates_mt2009(values)
     stamp = int(time.time() * 1000)
     request_data = "\n".join((
         f"id=seban-{stamp}",
@@ -803,7 +943,12 @@ def server_settings_status():
     elif result["pending"]:
         result["message"] = "Zlecenie nie jest odbierane przez helper gry. Sprawdź instalację integracji; po 10 minutach można usunąć wyłącznie zaległe zlecenie."
     else:
-        result["message"] = "Brak sygnału helpera gry. Zainstaluj integrację `m2-server-settings` i `m2-supervise` przed zmianą respawnów lub rat."
+        # Telling the operator to install something this build never ships is
+        # not help, and the warning fired on every visit to the console even
+        # though both buttons that matter work without the helper.
+        result["message"] = ("Ta wersja serwera nie zawiera silnikowej integracji Sebana, "
+                             "więc zmiana respawnów map jest niedostępna. Restart serwera "
+                             "i zmiana rat działają normalnie i niczego nie wymagają.")
     return result
 
 
@@ -893,8 +1038,37 @@ def biologist_missions():
     return tuple(sorted(names, key=mission_order))
 
 
+# ---------------------------------------------------------------------------
+# What makes a character a bot, in one place instead of eight.
+#
+# The name used to be the test: everything this project creates is called
+# bot<something>, so `name LIKE 'bot%'` found them all. Rename them - which is
+# exactly what the Discord keeps asking for, human nicknames instead of
+# botarek7 - and every ranking, the live map, the world statistics and the
+# season page quietly stop counting them.
+#
+# The core never asks the name. CPlayerBotManager::LoadRegisteredBots accepts a
+# character only when its account login is exactly playerbot_NNN, and renaming a
+# character does not touch an account login. So that is what is asked here too,
+# with the old name test kept beside it, so a hand-made bot on an ordinary
+# account stays visible exactly as before.
+#
+# The classic panel has had this since it was bitten by the same thing; this is
+# the same predicate, spelled for the aliases these queries use.
+def bot_identity(alias="p"):
+    ref = (alias + ".") if alias else ""
+    return ("(EXISTS (SELECT 1 FROM account.account ba"
+            " WHERE ba.id = " + ref + "account_id"
+            " AND LEFT(ba.login, 10) = 'playerbot_')"
+            " OR " + ref + "name LIKE 'bot%%')")
+
+
+BOT_IS = bot_identity("p")
+BOT_IS_BARE = bot_identity("")
+
+
 def bot_ranking(kind, sort_by="avg"):
-    base = "p.name LIKE 'bot%%'"
+    base = BOT_IS
     if kind == "gold":
         return rows(f"SELECT p.id,p.name,p.level,p.gold,CONCAT(FORMAT(p.gold,0),' Yang') AS detail FROM player.player p WHERE {base} ORDER BY p.gold DESC,p.level DESC LIMIT 100")
     if kind == "weapon":
@@ -913,9 +1087,14 @@ def bot_ranking(kind, sort_by="avg"):
             "skill": "skill_damage DESC, avg_damage DESC, p.level DESC",
             "upgrade": "MOD(i.vnum,10) DESC, avg_damage DESC, skill_damage DESC, p.level DESC",
         }.get(sort_by, "avg_damage DESC, skill_damage DESC, p.level DESC")
+        # avg_damage czyta APPLY_NORMAL_HIT_DAMAGE_BONUS (72), a
+        # skill_damage APPLY_SKILL_DAMAGE_BONUS (71) - tak, jak nazywa je
+        # common/length.h. Do 1.33.0 aliasy byly odwrotne, wiec ORDER BY
+        # wybieral pierwsza setke po niewlasciwej kolumnie i poprawianie
+        # samego sortowania w Pythonie nic by nie dalo.
         result = rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS item_name,
-            IF(GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=71 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=71 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=71 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=71 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=71 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=71 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=71 THEN i.attrvalue6 ELSE -999 END)) AS avg_damage,
-            IF(GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0=72 THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1=72 THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2=72 THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3=72 THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4=72 THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5=72 THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6=72 THEN i.attrvalue6 ELSE -999 END)) AS skill_damage
+            IF(GREATEST(CASE WHEN i.attrtype0={ATTR_SKILL_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_SKILL_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_SKILL_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_SKILL_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_SKILL_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_SKILL_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_SKILL_DAMAGE} THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0={ATTR_SKILL_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_SKILL_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_SKILL_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_SKILL_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_SKILL_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_SKILL_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_SKILL_DAMAGE} THEN i.attrvalue6 ELSE -999 END)) AS skill_damage,
+            IF(GREATEST(CASE WHEN i.attrtype0={ATTR_AVG_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_AVG_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_AVG_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_AVG_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_AVG_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_AVG_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_AVG_DAMAGE} THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0={ATTR_AVG_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_AVG_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_AVG_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_AVG_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_AVG_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_AVG_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_AVG_DAMAGE} THEN i.attrvalue6 ELSE -999 END)) AS avg_damage
             FROM player.item i JOIN player.player p ON p.id=i.owner_id LEFT JOIN player.item_proto ip ON ip.vnum=i.vnum
             WHERE {base} AND ((i.vnum BETWEEN 290 AND 299) OR (i.vnum BETWEEN 1170 AND 1179) OR (i.vnum BETWEEN 2150 AND 2159) OR (i.vnum BETWEEN 3210 AND 3219) OR (i.vnum BETWEEN 5110 AND 5119) OR (i.vnum BETWEEN 7160 AND 7169))
             ORDER BY {weapon30_order} LIMIT 100""")
@@ -964,16 +1143,27 @@ def bot_ranking(kind, sort_by="avg"):
         placeholders = ",".join(["%s"] * len(keeper_ids))
         return rows(f"SELECT p.id,p.name,p.level,p.gold,'Stragan otwarty' AS detail FROM player.player p WHERE p.id IN ({placeholders}) ORDER BY p.level DESC LIMIT 100", keeper_ids)
     if kind == "skills":
-        roster = rows(f"SELECT p.id,p.name,p.level,p.gold,p.job,p.skill_group,p.skill_level FROM player.player p WHERE {base} AND p.skill_group>0 ORDER BY p.level DESC LIMIT 400")
+        # Kazdy bot z profesja, a nie czterysta najwyzszych poziomem.
+        # Ranking umiejetnosci posortowany najpierw po poziomie odpowiada
+        # na inne pytanie: bot z trzydziestki z mistrzowska umiejetnoscia
+        # stal pod czterystoma piecdziesiatkami bez zadnej i nie pokazywal
+        # sie wcale. Punktowanie i tak jest w Pythonie, bo skill_level to
+        # blob, wiec caly zbior musi wrocic.
+        roster = rows(f"SELECT p.id,p.name,p.level,p.gold,p.job,p.skill_group,p.skill_level FROM player.player p WHERE {base} AND p.skill_group>0 ")
         for bot in roster:
             best = max(parse_skills(bot.get("skill_level"), bot.get("job"), bot.get("skill_group")), key=lambda skill: (3 if skill["rank"] == "P" else 2 if skill["rank"].startswith("G") else 1 if skill["rank"].startswith("M") else 0, skill["level"]), default=None)
             bot["score"] = (3 if best and best["rank"] == "P" else 2 if best and best["rank"].startswith("G") else 1 if best and best["rank"].startswith("M") else 0, best["level"] if best else 0)
             bot["detail"] = f"{best['name']} · {best['rank']}" if best else "Brak rozwiniętych umiejętności"
         return sorted(roster, key=lambda bot: (bot["score"], bot["level"]), reverse=True)[:100]
     if kind == "plus9":
+        # Ktore vnumy sa sprzetem, rozstrzyga item_proto, a nie liczba:
+        # "ponizej 12000" mialo odsiac materialy, a odsiewalo kazda tarcze
+        # (13xxx) i cala bizuterie razem z nimi. type 1 to ITEM_WEAPON,
+        # 2 to ITEM_ARMOR - dokladnie ten zbior, ktorego lancuch ulepszen
+        # biegnie base+0..9.
         return rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS detail
             FROM player.item i JOIN player.player p ON p.id=i.owner_id LEFT JOIN player.item_proto ip ON ip.vnum=i.vnum
-            WHERE {base} AND i.vnum<12000 AND MOD(i.vnum,10)=9 ORDER BY i.vnum DESC,p.level DESC LIMIT 100""")
+            WHERE {base} AND ip.type IN (1,2) AND MOD(i.vnum,10)=9 ORDER BY i.vnum DESC,p.level DESC LIMIT 100""")
     return rows(f"SELECT p.id,p.name,p.level,p.gold,p.level AS score,'Poziom' AS detail FROM player.player p WHERE {base} ORDER BY p.level DESC,p.exp DESC LIMIT 100")
 
 
@@ -1078,13 +1268,13 @@ def dashboard():
     map_rows = live_map_counts()
     for row in map_rows:
         row["name"] = map_name(row["map_index"])
-    top = rows("SELECT id, name, level, exp, job, map_index, playtime FROM player.player WHERE name LIKE 'bot%%' ORDER BY level DESC, exp DESC LIMIT 10")
+    top = rows("SELECT id, name, level, exp, job, map_index, playtime FROM player.player WHERE " + BOT_IS_BARE + " ORDER BY level DESC, exp DESC LIMIT 10")
     global_top_id = top[0]["id"] if top else None
     live = live_statuses()
     live_roster = live_bots()
     try:
         bot_guilds = one("""SELECT COUNT(*) AS count FROM player.guild g
-                           JOIN player.player p ON p.id=g.master WHERE p.name LIKE 'bot%%'""").get("count", 0)
+                           JOIN player.player p ON p.id=g.master WHERE """ + BOT_IS).get("count", 0)
     except pymysql.MySQLError:
         bot_guilds = 0
     restart_status = read_rate_status()
@@ -1119,13 +1309,13 @@ def dashboard():
     weapon30 = bot_ranking("weapon30")[:10]
     quick_rankings.append({"title": "Broń 30 Lv", "subtitle": "średnie / umiejętności", "items": [{"id": row["id"], "name": row["name"], "value": f"Śr. {int(row.get('avg_damage') or 0)}% · Um. {int(row.get('skill_damage') or 0)}%"} for row in weapon30]})
     metins = rows("""SELECT p.id,p.name,COUNT(*) AS score FROM log.log l JOIN player.player p ON p.id=l.who
-                     WHERE p.name LIKE 'bot%%' AND l.how='STONE_KILL' AND l.time >= NOW() - INTERVAL 7 DAY
+                     WHERE """ + BOT_IS + """ AND l.how='STONE_KILL' AND l.time >= NOW() - INTERVAL 7 DAY
                      GROUP BY p.id,p.name ORDER BY score DESC,p.name LIMIT 10""")
     quick_rankings.append({"title": "Metiny", "subtitle": "rozbite · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in metins]})
     bosses = bot_ranking("bosses")[:10]
     quick_rankings.append({"title": "Bossy", "subtitle": "zabite · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in bosses]})
     fish = rows("""SELECT p.id,p.name,COUNT(*) AS score FROM log.log l JOIN player.player p ON p.id=l.who
-                   WHERE p.name LIKE 'bot%%' AND l.time >= NOW() - INTERVAL 7 DAY
+                   WHERE """ + BOT_IS + """ AND l.time >= NOW() - INTERVAL 7 DAY
                      AND (l.what LIKE '%%ryb%%' OR l.what LIKE '%%fish%%')
                    GROUP BY p.id,p.name ORDER BY score DESC,p.name LIMIT 10""")
     quick_rankings.append({"title": "Ryby", "subtitle": "wyłowione · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in fish]})
@@ -1199,7 +1389,7 @@ def guild(guild_id):
 @app.route("/player/<int:pid>")
 @login_required
 def player(pid):
-    character = one("SELECT p.id,p.account_id,p.name,p.level,p.job,p.exp,p.gold,p.hp,p.mp,p.x,p.y,p.horse_level,p.alignment,p.st,p.ht,p.dx,p.iq,p.stat_point,p.skill_point,p.skill_group,p.skill_level,p.map_index,p.playtime,COALESCE(NULLIF(a.empire,0),pi.empire,0) AS empire FROM player.player p LEFT JOIN account.account a ON a.id=p.account_id LEFT JOIN player.player_index pi ON pi.id=p.account_id WHERE p.id=%s", (pid,))
+    character = one("SELECT p.id,p.account_id,p.name,p.level,p.job,p.exp,p.gold,p.hp,p.mp,p.x,p.y,p.horse_level,p.alignment,p.st,p.ht,p.dx,p.iq,p.stat_point,p.skill_point,p.skill_group,p.skill_level,p.map_index,p.playtime," + EMPIRE_EXPR + " AS empire FROM player.player p LEFT JOIN account.account a ON a.id=p.account_id LEFT JOIN player.player_index pi ON pi.id=p.account_id WHERE p.id=%s", (pid,))
     if not character:
         abort(404)
     live = live_statuses().get(pid)
@@ -1351,8 +1541,11 @@ def accounts():
         except ValueError:
             gm_job = -1
         gm_gender = request.form.get("gm_gender", "classic")
-        if not (3 <= len(login) <= 30 and login.replace("_", "").isalnum() and len(password) >= 6 and authority in authorities):
-            flash("Login ma mieć 3–30 znaków (litery, cyfry, _), a hasło minimum 6 znaków.", "error")
+        # account.login is varchar(16) on mt2009 and varchar(30) on r40250; a
+        # longer one is "Data too long" from the database, not a form error.
+        login_max = 16 if ENGINE_MT2009 else 30
+        if not (3 <= len(login) <= login_max and login.replace("_", "").isalnum() and len(password) >= 6 and authority in authorities):
+            flash(f"Login ma mieć 3–{login_max} znaków (litery, cyfry, _), a hasło minimum 6 znaków.", "error")
         elif not (deletion_code.isdigit() and len(deletion_code) == 7):
             flash("Kod usunięcia postaci ma zawierać dokładnie 7 cyfr.", "error")
         elif authority != "PLAYER" and not re.fullmatch(GM_NAME_PATTERN, gm_name):
@@ -1372,15 +1565,23 @@ def accounts():
                             if cur.fetchone():
                                 raise ValueError("Taki nick postaci już istnieje.")
                         con.begin()
-                        cur.execute("INSERT INTO account.account (login,password,social_id,email,status,empire) VALUES (%s,PASSWORD(%s),%s,%s,'OK',%s)", (login, password, deletion_code, email, empire if authority != "PLAYER" else 0))
+                        # The mt2009 account table has no empire column (the kingdom
+                        # lives in player_index, written below for a GM character and
+                        # by the game itself for a player's first character); naming
+                        # it refused every account on the 2.x line ("Unknown column
+                        # 'empire' in 'INSERT INTO'", NieBijOddam, 11 September).
+                        if ENGINE_MT2009:
+                            cur.execute("INSERT INTO account.account (login,password,social_id,email,status) VALUES (%s,PASSWORD(%s),%s,%s,'OK')", (login, password, deletion_code, email))
+                        else:
+                            cur.execute("INSERT INTO account.account (login,password,social_id,email,status,empire) VALUES (%s,PASSWORD(%s),%s,%s,'OK',%s)", (login, password, deletion_code, email, empire if authority != "PLAYER" else 0))
                         if authority != "PLAYER":
                             account_id = cur.lastrowid
                             x, y, map_index = GM_EMPIRE_STARTS[empire]
                             st, ht, dx, iq, hp, mp = GM_JOB_STARTS[gm_job]
                             character_race = GM_RACE_BY_CLASS_GENDER[(gm_job, gm_gender)]
                             cur.execute("""INSERT INTO player.player
-                              (account_id,name,job,dir,x,y,map_index,exit_x,exit_y,exit_map_index,hp,mp,stamina,random_hp,random_sp,level,st,ht,dx,iq,stat_point,skill_point,sub_skill_point,part_main,part_base,part_hair,skill_group,horse_hp,horse_stamina,horse_level,horse_hp_droptime,horse_riding,horse_skill_point,bank_value)
-                              VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,%s,1000,0,0,1,%s,%s,%s,%s,0,0,0,0,0,0,0,0,0,0,0,0,0,0)""",
+                              (account_id,name,job,dir,x,y,map_index,exit_x,exit_y,exit_map_index,hp,mp,stamina,random_hp,random_sp,level,st,ht,dx,iq,stat_point,skill_point,sub_skill_point,part_main,part_base,part_hair,skill_group,horse_hp,horse_stamina,horse_level,horse_hp_droptime,horse_riding,horse_skill_point""" + ("" if ENGINE_MT2009 else ",bank_value") + """)
+                              VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,%s,1000,0,0,1,%s,%s,%s,%s,0,0,0,0,0,0,0,0,0,0,0,0,0""" + ("" if ENGINE_MT2009 else ",0") + """)""",
                               (account_id, gm_name, character_race, x, y, map_index, x, y, map_index, hp, mp, st, ht, dx, iq))
                             player_id = cur.lastrowid
                             # Metin reads character slots from player_index.  A player row
@@ -1422,7 +1623,7 @@ def accounts():
     if account_query:
         where.append("(a.login LIKE %s OR EXISTS (SELECT 1 FROM player.player p WHERE p.account_id=a.id AND p.name LIKE %s))")
         params.extend([f"%{account_query}%", f"%{account_query}%"])
-    query_sql = "SELECT a.id,a.login,a.email,a.empire,a.create_time,a.last_play FROM account.account a"
+    query_sql = "SELECT a.id,a.login,a.email," + ("0 AS empire" if ENGINE_MT2009 else "a.empire") + ",a.create_time,a.last_play FROM account.account a"
     if where:
         query_sql += " WHERE " + " AND ".join(where)
     query_sql += " ORDER BY a.id DESC"
@@ -1467,7 +1668,7 @@ def changelog():
 @app.route("/api/live-bots")
 @login_required
 def api_live_bots():
-    global_top = one("SELECT id FROM player.player WHERE name LIKE 'bot%%' ORDER BY level DESC,exp DESC LIMIT 1")
+    global_top = one("SELECT id FROM player.player WHERE " + BOT_IS_BARE + " ORDER BY level DESC,exp DESC LIMIT 1")
     return {"ok": True, "updated_at": int(datetime.now().timestamp() * 1000), "maps": MAP_NAMES, "bounds": MAP_BOUNDS, "global_top_id": global_top.get("id"), "bots": live_bots()}
 
 
@@ -1512,6 +1713,19 @@ def rankings():
     ranking = bot_ranking(kind, weapon30_sort)
     ids = [row["id"] for row in ranking]
     if ids:
+        # Which kingdom each of them belongs to. player_index.empire, because
+        # that is the column the core reads when it decides where a bot lives;
+        # the account's own copy was left at Chunjo for the whole cohort.
+        marks = ",".join(["%s"] * len(ids))
+        empire_rows = rows(
+            "SELECT p.id, " + EMPIRE_EXPR + " AS empire"
+            " FROM player.player p"
+            " LEFT JOIN player.player_index pi ON pi.id=p.account_id"
+            " LEFT JOIN account.account a ON a.id=p.account_id"
+            " WHERE p.id IN (" + marks + ")", ids)
+        empires = {row["id"]: row["empire"] for row in empire_rows}
+        for row in ranking:
+            row["empire"] = empires.get(row["id"], 0)
         progress_rows = rows("SELECT id,level,exp,job FROM player.player WHERE id IN (" + ",".join(["%s"] * len(ids)) + ")", ids)
         progress = {row["id"]: experience_progress(row["level"], row["exp"]) for row in progress_rows}
         jobs = {row["id"]: row["job"] for row in progress_rows}
@@ -1537,7 +1751,7 @@ def season():
         SUM(l.how='BOSS_KILL') AS bosses,
         SUM(l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7' OR l.hint LIKE '%%+8' OR l.hint LIKE '%%+9')) AS refine7
         FROM log.log l JOIN player.player p ON p.id=l.who
-        WHERE l.time>=NOW()-INTERVAL 7 DAY AND p.name LIKE 'bot%%'
+        WHERE l.time>=NOW()-INTERVAL 7 DAY AND """ + BOT_IS + """
           AND l.how IN ('STONE_KILL','BOSS_KILL','REFINE SUCCESS')
         GROUP BY p.id ORDER BY (SUM(l.how='STONE_KILL')*150+SUM(l.how='BOSS_KILL')*500+SUM(l.how='REFINE SUCCESS' AND (l.hint LIKE '%%+7' OR l.hint LIKE '%%+8' OR l.hint LIKE '%%+9'))*200) DESC,p.level DESC LIMIT 30""")
     for row in weekly:
@@ -1718,6 +1932,10 @@ def manage_behavior():
         values["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", values.get("SCRAP", 0)))))
     except (TypeError, ValueError):
         values["SCRAP"] = 0
+    try:
+        values["REST"] = max(0, min(100, int(request.form.get("REST", values.get("REST", 100)))))
+    except (TypeError, ValueError):
+        values["REST"] = 100
     for key in ("CHEST", "CHEST_STONE"):
         if key not in request.form:
             continue

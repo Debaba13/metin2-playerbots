@@ -11,17 +11,6 @@
 
 namespace
 {
-	enum EPlayerBotRaceSlot
-	{
-		PLAYERBOT_RACE_ANIMAL = 0,
-		PLAYERBOT_RACE_UNDEAD,
-		PLAYERBOT_RACE_DEVIL,
-		PLAYERBOT_RACE_ORC,
-		PLAYERBOT_RACE_MILGYO,
-		PLAYERBOT_RACE_SLOTS,
-		PLAYERBOT_RACE_NONE = -1
-	};
-
 	// What the population has learned about each map: which kind of monster
 	// actually lives there. Shared across every bot, because it is a fact about
 	// the world rather than about any one character. Feeds equipment scoring, so
@@ -35,17 +24,32 @@ namespace
 	typedef std::map<long, TPlayerBotMapRaces> TPlayerBotMapRaceMap;
 	TPlayerBotMapRaceMap s_mapRaceMemory;
 
+	// The one race a kill pays for, exactly as battle.cpp picks it: an else-if
+	// chain in this order, stopping at the first flag the monster carries. The
+	// five races below it in that chain - INSECT, FIRE, ICE, DESERT, TREE - have
+	// a POINT and no APPLY, so nothing a bot can wear reaches them and a fight
+	// with one of them is a fight that paid nothing.
+	int GetPlayerBotTargetRaceSlot(LPCHARACTER target)
+	{
+		if (!target)
+			return PLAYERBOT_RACE_OTHER;
+		if (target->IsRaceFlag(RACE_FLAG_ANIMAL)) return PLAYERBOT_RACE_ANIMAL;
+		if (target->IsRaceFlag(RACE_FLAG_UNDEAD)) return PLAYERBOT_RACE_UNDEAD;
+		if (target->IsRaceFlag(RACE_FLAG_DEVIL))  return PLAYERBOT_RACE_DEVIL;
+		if (target->IsRaceFlag(RACE_FLAG_HUMAN))  return PLAYERBOT_RACE_HUMAN;
+		if (target->IsRaceFlag(RACE_FLAG_ORC))    return PLAYERBOT_RACE_ORC;
+		if (target->IsRaceFlag(RACE_FLAG_MILGYO)) return PLAYERBOT_RACE_MILGYO;
+		return PLAYERBOT_RACE_OTHER;
+	}
+
 	void RememberPlayerBotMapRace(LPCHARACTER ch, LPCHARACTER target)
 	{
 		if (!ch || !target || !target->IsMonster())
 			return;
+		const int slot = GetPlayerBotTargetRaceSlot(target);
 		TPlayerBotMapRaces& mem = s_mapRaceMemory[ch->GetMapIndex()];
 		++mem.dwSamples;
-		if (target->IsRaceFlag(RACE_FLAG_ANIMAL)) ++mem.dwByRace[PLAYERBOT_RACE_ANIMAL];
-		if (target->IsRaceFlag(RACE_FLAG_UNDEAD)) ++mem.dwByRace[PLAYERBOT_RACE_UNDEAD];
-		if (target->IsRaceFlag(RACE_FLAG_DEVIL))  ++mem.dwByRace[PLAYERBOT_RACE_DEVIL];
-		if (target->IsRaceFlag(RACE_FLAG_ORC))    ++mem.dwByRace[PLAYERBOT_RACE_ORC];
-		if (target->IsRaceFlag(RACE_FLAG_MILGYO)) ++mem.dwByRace[PLAYERBOT_RACE_MILGYO];
+		++mem.dwByRace[slot];
 
 		// And the bot's own account of it. The map is an approximation - the
 		// desert has scorpions beside its undead, the valley orcs beside its
@@ -65,18 +69,13 @@ namespace
 				state.awRaceHistogram[r] /= 2;
 			state.dwRaceHistogramStamp += PLAYERBOT_RACE_HISTOGRAM_DECAY;
 		}
-		const bool flags[PLAYERBOT_RACE_HISTOGRAM_SLOTS] = {
-			target->IsRaceFlag(RACE_FLAG_ANIMAL), target->IsRaceFlag(RACE_FLAG_UNDEAD),
-			target->IsRaceFlag(RACE_FLAG_DEVIL), target->IsRaceFlag(RACE_FLAG_ORC),
-			target->IsRaceFlag(RACE_FLAG_MILGYO) };
-		for (int r = 0; r < PLAYERBOT_RACE_HISTOGRAM_SLOTS; ++r)
-			if (flags[r] && state.awRaceHistogram[r] < 60000)
-				++state.awRaceHistogram[r];
+		if (state.awRaceHistogram[slot] < 60000)
+			++state.awRaceHistogram[slot];
 	}
 
 	// The race this bot has actually been fighting, when it has fought enough
 	// to say; the map's aggregate until then. The slots are the enum's order.
-	int GetPlayerBotFightingRace(LPCHARACTER ch);
+	int GetPlayerBotFightingRace(LPCHARACTER ch, int* percentOut = NULL);
 
 	BYTE GetPlayerBotRaceApplyType(int race)
 	{
@@ -85,6 +84,7 @@ namespace
 			case PLAYERBOT_RACE_ANIMAL: return APPLY_ATTBONUS_ANIMAL;
 			case PLAYERBOT_RACE_UNDEAD: return APPLY_ATTBONUS_UNDEAD;
 			case PLAYERBOT_RACE_DEVIL:  return APPLY_ATTBONUS_DEVIL;
+			case PLAYERBOT_RACE_HUMAN:  return APPLY_ATTBONUS_HUMAN;
 			case PLAYERBOT_RACE_ORC:    return APPLY_ATTBONUS_ORC;
 			case PLAYERBOT_RACE_MILGYO: return APPLY_ATTBONUS_MILGYO;
 			default: return APPLY_NONE;
@@ -317,9 +317,13 @@ namespace
 		return unit;
 	}
 
-	// The race a map is made of, or PLAYERBOT_RACE_NONE while the sample is too
-	// small or too mixed to call. A guess made from ten kills is worse than none.
-	int GetPlayerBotDominantRace(long mapIndex)
+	// The race a map is made of, as the population has seen it, or
+	// PLAYERBOT_RACE_NONE while the sample is too small or too mixed to call. A
+	// guess made from ten kills is worse than none. Only a fallback now: for
+	// every map a bot may stand on, PLAYERBOT_MAP_RACE_TABLE already holds the
+	// answer counted off the spawn files, and this is what answers for a map
+	// added to the frontier before its row was measured.
+	int GetPlayerBotDominantRace(long mapIndex, int* percentOut)
 	{
 		TPlayerBotMapRaceMap::const_iterator it = s_mapRaceMemory.find(mapIndex);
 		if (it == s_mapRaceMemory.end() || it->second.dwSamples < 200)
@@ -328,18 +332,39 @@ namespace
 		DWORD bestCount = 0;
 		for (int race = 0; race < PLAYERBOT_RACE_SLOTS; ++race)
 		{
+			// A fight that paid no race is counted, so that the desert can say
+			// so - but it is never the answer.
+			if (race == PLAYERBOT_RACE_OTHER)
+				continue;
 			if (it->second.dwByRace[race] > bestCount)
 			{
 				bestCount = it->second.dwByRace[race];
 				best = race;
 			}
 		}
-		// Half the encounters have to agree before this counts as "the" race.
-		return (bestCount * 2 >= it->second.dwSamples) ? best : PLAYERBOT_RACE_NONE;
+		if (best == PLAYERBOT_RACE_NONE)
+			return PLAYERBOT_RACE_NONE;
+		const int percent = (int)(bestCount * 100 / it->second.dwSamples);
+		// A quarter of the map is enough to be worth a line: on Mount Sohan the
+		// undead are 46% and the rest is ice, which pays nothing at all, so
+		// "half the encounters must agree" would have thrown away the only line
+		// that works there.
+		if (percent < PLAYERBOT_RACE_WORTH_PERCENT)
+			return PLAYERBOT_RACE_NONE;
+		if (percentOut)
+			*percentOut = percent;
+		return best;
 	}
 
-	int GetPlayerBotFightingRace(LPCHARACTER ch)
+	// The race this bot is actually being paid for, and how much of its fighting
+	// that is. Its own history first, because a bot camped on Orc Valley's
+	// Fanatic islands fights mystics on a map that is mostly orcs; the map's
+	// measured table when it has not fought enough to say; and what the
+	// population has seen for a map with no row.
+	int GetPlayerBotFightingRace(LPCHARACTER ch, int* percentOut)
 	{
+		if (percentOut)
+			*percentOut = 0;
 		if (!ch)
 			return PLAYERBOT_RACE_NONE;
 		TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
@@ -351,17 +376,33 @@ namespace
 			for (int r = 0; r < PLAYERBOT_RACE_HISTOGRAM_SLOTS; ++r)
 			{
 				total += it->second.awRaceHistogram[r];
+				if (r == PLAYERBOT_RACE_OTHER)
+					continue;
 				if (it->second.awRaceHistogram[r] > bestCount)
 				{
 					bestCount = it->second.awRaceHistogram[r];
 					best = r;
 				}
 			}
-			// Half of what it fought has to agree, the same bar the map is held to.
 			if (total >= PLAYERBOT_RACE_HISTOGRAM_MIN_SAMPLES)
-				return (DWORD)bestCount * 2 >= total ? best : PLAYERBOT_RACE_NONE;
+			{
+				const int percent = (int)((DWORD)bestCount * 100 / total);
+				if (best == PLAYERBOT_RACE_NONE || percent < PLAYERBOT_RACE_WORTH_PERCENT)
+					return PLAYERBOT_RACE_NONE;
+				if (percentOut)
+					*percentOut = percent;
+				return best;
+			}
 		}
-		return GetPlayerBotDominantRace(ch->GetMapIndex());
+		int percent = 0;
+		const int measured = GetPlayerBotMapRace(ch->GetMapIndex(), &percent);
+		if (measured != PLAYERBOT_RACE_NONE)
+		{
+			if (percentOut)
+				*percentOut = percent;
+			return measured;
+		}
+		return GetPlayerBotDominantRace(ch->GetMapIndex(), percentOut);
 	}
 
 	// ------------------------------------------------------------ the spots

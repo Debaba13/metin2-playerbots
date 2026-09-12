@@ -767,6 +767,38 @@ compose_supports_override() {
 #  Step 3 -- get the server onto this machine
 # =============================================================================
 
+normalize_context_modes() {
+    # The database's first start reads these files as the mysql account inside
+    # the container, straight off this directory through a bind mount - so the
+    # modes here are the modes it gets. A release ZIP unpacked under a strict
+    # umask (umask 077 is not exotic on a VPS) gives 700 on directories and 600
+    # on files, and the import then failed with "Permission denied" partway
+    # through, on a volume that initdb.d will never run on again: reported from
+    # a Debian install of 1.32.3 with 770 root:root on the script and 660 on
+    # the dumps.
+    #
+    # Nothing here is a secret - they are the game's own schema dumps and the
+    # scripts that load them - so the modes a document root would use are the
+    # right ones. Only what has to be executed gets the execute bit.
+    _ctx="$1"
+    [ -d "$_ctx" ] || return 0
+    find "$_ctx/mariadb" -type d -exec chmod 755 {} + 2>/dev/null || true
+    find "$_ctx/mariadb" -type f -name '*.sql' -exec chmod 644 {} + 2>/dev/null || true
+    find "$_ctx/mariadb" -type f -name '*.sh'  -exec chmod 755 {} + 2>/dev/null || true
+    find "$_ctx/mariadb" -type f -name '*.cnf' -exec chmod 644 {} + 2>/dev/null || true
+    # The same for the two panels' and the shop's document roots, for the same
+    # reason: COPY into an image keeps whatever it finds here.
+    for _sub in panel/app seban-panel itemshop/app; do
+        [ -d "$_ctx/$_sub" ] || continue
+        # The parent too: a directory nobody may search hides everything below
+        # it however open the contents are.
+        chmod 755 "$_ctx/$(dirname "$_sub")" 2>/dev/null || true
+        find "$_ctx/$_sub" -type d -exec chmod 755 {} + 2>/dev/null || true
+        find "$_ctx/$_sub" -type f -exec chmod 644 {} + 2>/dev/null || true
+    done
+    return 0
+}
+
 context_is_complete() {
     _d="$1"
     [ -f "$_d/docker-compose.yml" ] || return 1
@@ -1384,6 +1416,7 @@ fetch_stack() {
         [ -d "$M2_LOCAL_CONTEXT" ] || die "--local-context points at
   '$M2_LOCAL_CONTEXT', which is not a directory."
         context_is_complete "$M2_LOCAL_CONTEXT" || explain_incomplete_context "$M2_LOCAL_CONTEXT"
+        normalize_context_modes "$M2_LOCAL_CONTEXT"
         say "Copying the server from $M2_LOCAL_CONTEXT ..."
         run mkdir -p "$INSTALL_DIR"
         if [ "$DRY_RUN" != "1" ]; then
@@ -1409,6 +1442,7 @@ fetch_stack() {
     fi
 
     context_is_complete "$_ctx" || explain_incomplete_context "$_ctx"
+    normalize_context_modes "$_ctx"
 
     say "Copying the build context into $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR"

@@ -56,7 +56,7 @@ namespace
 		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER)
 			keep = PLAYERBOT_DROPPER_BOOK_KEEP;
 		int surplus = 0;
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!IsPlayerBotSurplusSkillBook(ch, item))
@@ -70,7 +70,7 @@ namespace
 	int CountPlayerBotSurplusSkillBooks(LPCHARACTER ch)
 	{
 		int surplus = 0;
-		for (WORD cell = 0; ch && cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; ch && cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (IsPlayerBotSurplusSkillBook(ch, item))
@@ -79,21 +79,58 @@ namespace
 		return surplus;
 	}
 
-	bool HasPlayerBotSafeboxDeposit(LPCHARACTER ch)
+	// Gear nobody bought in PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS stands and the
+	// merchant may not have: the piece a player photographs in a bag of the
+	// wrong class. Only under bag pressure, like the books - with room in the
+	// bag it is still counter goods - and never a piece the bot ought to wear.
+	void CollectPlayerBotSafeboxDeadStock(LPCHARACTER ch, const TPlayerBotAIState& state,
+			std::vector<WORD>& cells)
+	{
+		cells.clear();
+		if (!ch || state.mapStallUnsold.empty() || (!IsPlayerBotBagFull(ch) &&
+				CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_BAG_PRESSURE_FREE_CELLS))
+			return;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->IsEquipped() || item->isLocked())
+				continue;
+			if (item->GetType() != ITEM_WEAPON && item->GetType() != ITEM_ARMOR)
+				continue;
+			if (item->GetRefineLevel() <= PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE)
+				continue;   // the merchant's rule has that one
+			std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
+			if (unsold == state.mapStallUnsold.end() || unsold->second < PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS)
+				continue;
+			if (IsPlayerBotWearableUpgrade(ch, item, cell))
+				continue;
+			cells.push_back(cell);
+		}
+	}
+
+	bool HasPlayerBotSafeboxDeposit(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		std::vector<WORD> cells;
 		CollectPlayerBotSafeboxBooks(ch, cells);
+		if (!cells.empty())
+			return true;
+		CollectPlayerBotSafeboxDeadStock(ch, state, cells);
 		return !cells.empty();
 	}
 
 	// Into the open safebox, the way CInputMain::SafeboxCheckin does it: off the
 	// character, onto the first empty slot of the grid. Returns how many books
 	// went in; the rest stay in the bag as goods when the page is full.
-	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, CSafebox* box)
+	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, TPlayerBotAIState& state, CSafebox* box)
 	{
 		std::vector<WORD> cells;
 		CollectPlayerBotSafeboxBooks(ch, cells);
+		const size_t books = cells.size();
+		std::vector<WORD> dead;
+		CollectPlayerBotSafeboxDeadStock(ch, state, dead);
+		cells.insert(cells.end(), dead.begin(), dead.end());
 		int deposited = 0;
+		const DWORD dwNow = get_dword_time();
 		for (size_t i = 0; i < cells.size(); ++i)
 		{
 			LPITEM item = ch->GetInventoryItem(cells[i]);
@@ -107,6 +144,18 @@ namespace
 				char szHint[128];
 				snprintf(szHint, sizeof(szHint), "%s %u", item->GetName(), (unsigned int)item->GetCount());
 				LogManager::instance().ItemLog(ch, item, "SAFEBOX PUT", szHint);
+				if (i >= books)
+				{
+					// The registry says how long this piece was for sale.
+					std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
+					std::map<DWORD, DWORD>::const_iterator first = state.mapStockFirstListed.find(item->GetID());
+					sys_log(0, "PLAYERBOT_STOCK: to safebox pid=%u name=%s vnum=%u+%u stands_unsold=%u listed_for=%u min",
+							ch->GetPlayerID(), ch->GetName(), item->GetVnum(), (unsigned int)item->GetRefineLevel(),
+							unsold != state.mapStallUnsold.end() ? (unsigned int)unsold->second : 0U,
+							first != state.mapStockFirstListed.end() ? (unsigned int)((dwNow - first->second) / 60000) : 0U);
+					state.mapStallUnsold.erase(item->GetID());
+					state.mapStockFirstListed.erase(item->GetID());
+				}
 				item->RemoveFromCharacter();
 				box->Add(pos, item);
 				placed = true;
@@ -142,6 +191,20 @@ namespace
 
 	BYTE GetPlayerBotFirstDirectTownPhase(const TPlayerBotAIState& state)
 	{
+		// The trainer and the old woman first, exactly as on the exterior list.
+		// This list was Bokjung's, where neither stands, and 2.0.8 handed it to
+		// Yongan and Pyongmoo as well - so a Shinsoo or Jinno bot at level
+		// five, whose only errand was the trainer, began a visit with nothing
+		// on the list, finished it on the same tick, and began it again on the
+		// next: five hundred bots a core standing on the market pitch with
+		// goal=CHOOSE_PROFESSION, reset by the watchdog every ninety seconds,
+		// never past level five ("boty na 5 lv sie buguja", four reports in a
+		// night). In a second village the trainer flag is never set, so this
+		// costs Bokjung nothing.
+		if (state.bTownNeedSkillReset)
+			return BOT_TOWN_PHASE_SKILL_RESET;
+		if (state.bTownNeedTrainer)
+			return BOT_TOWN_PHASE_TRAINER;
 		if (state.bTownNeedWeaponMerchant)
 			return BOT_TOWN_PHASE_WEAPON_MERCHANT;
 		if (state.bTownNeedArmorMerchant)
@@ -157,14 +220,20 @@ namespace
 
 	void StartPlayerBotTownVisit(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
-		if (!ch || state.bVisitingShop ||
-				(ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1 &&
-				 ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M2))
+		if (!ch || state.bVisitingShop || !IsPlayerBotVillageMap(ch->GetMapIndex()))
 			return;
-		const bool inM2 = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2;
+		// Not "am I in Bokjung" but "is this a second village": what the trainer
+		// and the old woman are missing from is the role, and every kingdom's
+		// second village is missing them in the same way.
+		const bool inM2 = IsPlayerBotM2Map(ch->GetMapIndex());
+		// Which phase list: every village but Joan walks straight to each NPC.
+		const bool bDirect = inM2 || !IsPlayerBotGatedVillage(ch->GetMapIndex());
 
+		// Only where a trainer stands: a need no phase can serve would start a
+		// visit that ends on the tick it began, for ever (see below).
 		state.bTownNeedTrainer = !inM2 && ch->GetLevel() >= 5 && ch->GetSkillGroup() == 0 &&
-				ch->GetJob() <= JOB_SHAMAN;
+				ch->GetJob() <= JOB_SHAMAN &&
+				playerbot_empire_rules::HasSkillTrainers(ch->GetMapIndex());
 		state.bTownNeedSkillReset = !inM2 && ShouldPlayerBotResetSkills(ch, state, dwNow);
 		state.bTownNeedMisc = HasPlayerBotJunkForMerchant(ch, BOT_MERCHANT_MISC) ||
 				NeedsPlayerBotPotions(ch) || HasPlayerBotExcessPotions(ch) ||
@@ -176,7 +245,7 @@ namespace
 				NeedsPlayerBotProgressionArmor(ch) || NeedsPlayerBotProgressionShield(ch) ||
 				NeedsPlayerBotProgressionHelmet(ch);
 		state.bTownNeedBlacksmith = HasPlayerBotRefineOpportunity(ch);
-		state.bTownNeedSafebox = HasPlayerBotSafeboxDeposit(ch);
+		state.bTownNeedSafebox = HasPlayerBotSafeboxDeposit(ch, state);
 		if (!state.bTownNeedTrainer && !state.bTownNeedSkillReset && !state.bTownNeedMisc &&
 				!state.bTownNeedWeaponMerchant && !state.bTownNeedSafebox &&
 				!state.bTownNeedArmorMerchant && !state.bTownNeedBlacksmith)
@@ -186,11 +255,28 @@ namespace
 		}
 
 		state.bVisitingShop = true;
-		if (inM2)
+		if (bDirect)
 		{
-			// Bokjung has no decorative gate split: visit only the specialists which
-			// are needed and then walk straight back to the local hunting fields.
+			// Bokjung has no decorative gate split, and neither have Yongan and
+			// Pyongmoo: visit only the specialists which are needed and then walk
+			// straight back to the local hunting fields.
 			state.bTownVisitPhase = GetPlayerBotFirstDirectTownPhase(state);
+			// A need the list cannot serve is not a visit. Without this a visit
+			// began and finished on the same tick, and the manager began it
+			// again on the next - the bot stood on the spot for good, claiming
+			// every tick. Back off the way "nothing needed" does, and say so.
+			if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+			{
+				PlayerBotLogThrottled("town_direct_empty", dwNow,
+						"PLAYERBOT_TOWN: nothing on the direct list pid=%u name=%s map=%ld trainer=%d misc=%d weapon=%d armor=%d smith=%d safebox=%d",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(),
+						state.bTownNeedTrainer ? 1 : 0, state.bTownNeedMisc ? 1 : 0,
+						state.bTownNeedWeaponMerchant ? 1 : 0, state.bTownNeedArmorMerchant ? 1 : 0,
+						state.bTownNeedBlacksmith ? 1 : 0, state.bTownNeedSafebox ? 1 : 0);
+				state.bVisitingShop = false;
+				state.dwNextShopCheckTime = dwNow + number(60000, 120000);
+				return;
+			}
 		}
 		else
 		{
@@ -262,7 +348,7 @@ namespace
 		if (rewardItem != 0)
 			ch->AutoGiveItem(rewardItem, 1, -1, false);
 		if (mission.rewardGold > 0)
-			ch->PointChange(POINT_GOLD, mission.rewardGold);
+			PlayerBotChangeGold(ch, mission.rewardGold);
 		if (mission.rewardExp > 0)
 			ch->PointChange(POINT_EXP, mission.rewardExp, true);
 	}
@@ -310,7 +396,12 @@ namespace
 		// anything. Only the hand-in needs the Biologist, who is in Joan.
 		if (!EnsurePlayerBotBiologistMissionStarted(ch, missionIndex))
 			return false;
-		if (ch->GetMapIndex() != 21)
+		// 20084 stands in all three first villages, so the hand-in is a local
+		// errand in every kingdom. This test named map 21 outright and survived
+		// the move to the catalog below it, which meant a Shinsoo or Jinno bot
+		// could stand beside its own Biologist and still turn round.
+		playerbot_empire_rules::TPoint biologistPos;
+		if (!playerbot_empire_rules::GetBiologist(ch->GetMapIndex(), biologistPos))
 		{
 			state.bVisitingBiologist = false;
 			return false;
@@ -323,10 +414,19 @@ namespace
 				GetPlayerBotBiologistFlag(*mission, "collect_count")));
 		const int remaining = std::max(0, required - accepted);
 		const int carried = ch->CountSpecifyItem(wantedVnum);
-		// A handful is worth the walk. See PLAYERBOT_BIOLOGIST_MIN_HANDIN: the
-		// quest takes them one at a time, so there is nothing to wait for.
-		const int worthTheWalk = std::min(remaining, PLAYERBOT_BIOLOGIST_MIN_HANDIN);
-		if (!state.bVisitingBiologist && carried < worthTheWalk)
+		// One specimen is worth handing in, because the bot is already here.
+		//
+		// PLAYERBOT_BIOLOGIST_MIN_HANDIN is the threshold for the JOURNEY - it
+		// is what NeedsPlayerBotM1OnlyServices asks before spending a trip from
+		// the frontier - and applying it here as well meant a bot standing in
+		// its own village with two Orc Teeth walked past the Biologist and kept
+		// them. Measured on this world: 656 bots of thirty and up had handed in
+		// nothing at all while carrying 577 teeth between them, and the counts
+		// fell away sharply from three, which is where four-at-once stops
+		// happening for a row the bot has outgrown and no longer hunts on
+		// purpose. The quest accepts one specimen per interaction anyway, so
+		// there was never anything to save them up for.
+		if (!state.bVisitingBiologist && carried < 1)
 			return false;
 
 		if (!state.bVisitingBiologist)
@@ -346,12 +446,14 @@ namespace
 		state.dwTargetVID = 0;
 		ch->SetVictim(NULL);
 
+		// biologistPos came from the guard at the top of this pass: reaching
+		// here means this village has one.
 		long approachX = 0, approachY = 0;
-		GetPlayerBotNpcApproach(ch->GetPlayerID(), PLAYERBOT_BIOLOGIST_X,
-				PLAYERBOT_BIOLOGIST_Y, 0x42494f4cU, approachX, approachY);
+		GetPlayerBotNpcApproach(ch->GetPlayerID(), biologistPos.x,
+				biologistPos.y, 0x42494f4cU, approachX, approachY);
 		if (DISTANCE_APPROX(ch->GetX() - approachX, ch->GetY() - approachY) > 650)
 		{
-			if (!MovePlayerBot(ch, approachX, approachY, dwNow, 20, true, true) &&
+			if (!MovePlayerBot(ch, approachX, approachY, dwNow, 20, true, true, false, true) &&
 					state.bStuckCounter >= 6)
 			{
 				state.bVisitingBiologist = false;
@@ -364,7 +466,6 @@ namespace
 			return true;
 		}
 
-		SetPlayerBotRidingForTravel(ch, state, false, dwNow, "biologist_interaction");
 		ch->Stop();
 		ch->SetPosition(POS_STANDING);
 		if (state.dwNextBiologistActionTime == 0)
@@ -478,12 +579,11 @@ namespace
 			state.dwServiceSince = 0;
 		}
 		// Half the bots that finish an errand in Joan stay a while instead of
-		// walking straight back out. See PLAYERBOT_TOWN_LINGER_PERCENT: a town
+		// walking straight back out. See RollPlayerBotTownRest: a town
 		// with four hundred bots on its map and two dozen in its square does not
 		// look like a town, and the stalls that now open there have nobody to
 		// stand among. Bokjung is left out on purpose - it is crowded already.
-		if (completed && ch && ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M1 &&
-				number(1, 100) <= PLAYERBOT_TOWN_LINGER_PERCENT)
+		if (completed && RollPlayerBotTownRest(ch))
 			state.dwTownLingerUntil = dwNow + number(
 					(int)PLAYERBOT_TOWN_LINGER_MIN, (int)PLAYERBOT_TOWN_LINGER_MAX);
 		// Free, standing in town, errands done: the one moment this bot is the
@@ -520,19 +620,12 @@ namespace
 
 	bool GetPlayerBotShopCentre(long mapIndex, long& pitchX, long& pitchY)
 	{
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M1)
-		{
-			pitchX = PLAYERBOT_M1_GUARD_X;
-			pitchY = PLAYERBOT_M1_GUARD_Y;
-			return true;
-		}
-		if (mapIndex == PLAYERBOT_MAP_CHUNJO_M2)
-		{
-			pitchX = PLAYERBOT_M2_MARKET_X;
-			pitchY = PLAYERBOT_M2_MARKET_Y;
-			return true;
-		}
-		return false;
+		playerbot_empire_rules::TPoint pitch;
+		if (!playerbot_empire_rules::GetTownPitch(mapIndex, pitch))
+			return false;
+		pitchX = pitch.x;
+		pitchY = pitch.y;
+		return true;
 	}
 
 	bool IsPlayerBotMerchant(const TPlayerBotAIState& state)
@@ -562,19 +655,25 @@ namespace
 				PLAYERBOT_SHOP_POOR_ROTATION_SHARE == 0;
 	}
 
-	bool ShouldPlayerBotKeepShop(LPCHARACTER ch, const TPlayerBotAIState& state)
+	// Why this bot would keep a counter right now - PLAYERBOT_SHOP_REASON_NONE
+	// when it would not. The four exceptions come first and ignore the TRADE
+	// weight on purpose (see EPlayerBotShopReason); the three rolls after them
+	// are what the slider moves.
+	BYTE GetPlayerBotShopReason(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		if (!ch || ch->GetLevel() < PLAYERBOT_SHOP_MIN_LEVEL)
-			return false;
+			return PLAYERBOT_SHOP_REASON_NONE;
 		// A bot that cannot afford its potions sells what it has, whatever its
 		// personality rolled. So does one whose bag is full: the counter is
 		// where the spares a collector will not scrap can go.
-		if (IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch))
-			return true;
+		if (IsPlayerBotPoorKeeper(ch))
+			return PLAYERBOT_SHOP_REASON_POOR;
+		if (IsPlayerBotBagFull(ch))
+			return PLAYERBOT_SHOP_REASON_BAG_FULL;
 		// A trader always has the stall open when it can. For everyone else it
 		// stays what it was: an occasional thing one bot in ten does with a spare.
 		if (IsPlayerBotMerchant(state))
-			return true;
+			return PLAYERBOT_SHOP_REASON_MERCHANT;
 		// A stock of surplus books is a counter, whatever the personality
 		// rolled: a book never goes to the merchant, so the counter is the
 		// only way it leaves the bag - and the roll left nine bots in ten
@@ -582,18 +681,28 @@ namespace
 		// pressure: on a world of full bags every keeper would qualify, and
 		// on one of half-empty bags none would, while the books sat either
 		// way.
-		if (CountPlayerBotSurplusSkillBooks(ch) >= PLAYERBOT_SHOP_BOOK_PRESSURE_MIN)
-			return true;
+		// ...but the operator's slider still decides how many of them do it. This
+		// clause used to return true outright, so a world whose bots had books -
+		// which is every world after a few hours of Metin stones - ran whatever
+		// counter share the books dictated and the TRADE weight moved nothing.
+		// At the neutral weight the behaviour is what it was; at the minimum the
+		// stalls actually stop.
+		if (CountPlayerBotSurplusSkillBooks(ch) >= PLAYERBOT_SHOP_BOOK_PRESSURE_MIN &&
+				PlayerBotWeightedRoll(
+					PlayerBotNavHash(ch->GetPlayerID() ^ 0x424f4f4bU) % 1000U,
+					PLAYERBOT_SHOP_BOOK_ROLL, PLAYERBOT_WEIGHT_TRADE))
+			return PLAYERBOT_SHOP_REASON_BOOKS;
 		if (IsPlayerBotDropper(state.bPersonality))
 		{
 			// A dropper whose bag is under pressure sells whatever the roll said:
 			// the goods are the point of the personality, and a dropper that lost
 			// the roll carried eighty books and picked up nothing.
 			if (CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS)
-				return true;
+				return PLAYERBOT_SHOP_REASON_DROPPER_PRESSURE;
 			return PlayerBotWeightedRoll(
 					PlayerBotNavHash(ch->GetPlayerID() ^ 0x44524f50U) % 1000U,
-					PLAYERBOT_DROPPER_SHOP_ROLL, PLAYERBOT_WEIGHT_TRADE);
+					PLAYERBOT_DROPPER_SHOP_ROLL, PLAYERBOT_WEIGHT_TRADE)
+					? PLAYERBOT_SHOP_REASON_DROPPER_ROLL : PLAYERBOT_SHOP_REASON_NONE;
 		}
 		// One bot in ten, stretched or shrunk by the TRADE weight. Drawn against a
 		// thousand rather than ten so that the weight has somewhere to move: the
@@ -603,7 +712,13 @@ namespace
 		return PlayerBotWeightedRoll(
 				PlayerBotNavHash(ch->GetPlayerID() ^ 0x53484f50U) % 1000U,
 				IsPlayerBotFullyEquipped(ch) ? PLAYERBOT_FULL_GEAR_SHOP_ROLL : 100,
-				PLAYERBOT_WEIGHT_TRADE);
+				PLAYERBOT_WEIGHT_TRADE)
+				? PLAYERBOT_SHOP_REASON_ROLL : PLAYERBOT_SHOP_REASON_NONE;
+	}
+
+	bool ShouldPlayerBotKeepShop(LPCHARACTER ch, const TPlayerBotAIState& state)
+	{
+		return GetPlayerBotShopReason(ch, state) != PLAYERBOT_SHOP_REASON_NONE;
 	}
 
 	// What a bot asks for what it puts up. A refined item has no price in the
@@ -1011,10 +1126,11 @@ namespace
 	{
 		if (!ch || state.dwTownLingerUntil == 0)
 			return false;
-		// Over for good: the clock ran out, the bot left Joan, it opened a stall
-		// of its own, or it is busy staying alive.
+		// Over for good: the clock ran out, the bot left Joan or may no longer
+		// rest there (the REST key moved to zero, the last counter packed up),
+		// it opened a stall of its own, or it is busy staying alive.
 		if (dwNow >= state.dwTownLingerUntil ||
-				ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1 ||
+				!MayPlayerBotRestInTown(ch) ||
 				ch->GetMyShop() || state.bTacticalRetreat || state.bRecoveringAfterDeath)
 		{
 			state.dwTownLingerUntil = 0;
@@ -1104,7 +1220,7 @@ namespace
 		// refusals logged; the other scans of the same bag say nothing.
 		const bool report = ShouldReportPlayerBotMarketDecisions(
 				ch->GetPlayerID(), get_dword_time());
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->IsEquipped() || item->isLocked())
@@ -1140,6 +1256,10 @@ namespace
 				// equipment pass near the bottom, so without this line the
 				// counter always won the race for a gift.
 				if (IsPlayerBotWearableUpgrade(ch, item, cell))
+					continue;
+				// The Archer's stone weapon (playerbot_gear.h) is not goods.
+				if (IsPlayerBotArcherBuild(ch) && IsPlayerBotStoneMeleeWeapon(ch, item) &&
+						FindPlayerBotStoneWeapon(ch, false) == item)
 					continue;
 				const int wearCell = item->FindEquipCell(ch);
 				if (wearCell < 0 || ch->GetWear((BYTE)wearCell) == NULL)
@@ -1240,20 +1360,51 @@ namespace
 	}
 
 	// Where a bot belongs on each map we manage: the point that map is entered
-	// by, and Bokjung for anything else.
-	void GetPlayerBotHomePoint(long mapIndex, long& outMap, long& outX, long& outY)
+	// by, and its own kingdom's second village for anything else.
+	//
+	// The fallback has to be the bot's own kingdom and not a fixed map. This is
+	// the rescue for a character with no sector, and dropping a Jinno bot into
+	// Bokjung because 23 was written here would make every such rescue an
+	// emigration - a bot that then walks Chunjo's roads for the rest of its life
+	// because nothing ever tells it to go home.
+	void GetPlayerBotHomePoint(LPCHARACTER ch, long mapIndex, long& outMap, long& outX, long& outY)
 	{
-		outMap = PLAYERBOT_MAP_CHUNJO_M2;
+		const int empire = ch ? (int)ch->GetEmpire() : playerbot_empire_rules::EMPIRE_CHUNJO;
+		playerbot_empire_rules::TPoint pitch;
+		outMap = playerbot_empire_rules::GetHomeMap(empire, playerbot_empire_rules::MAP_ROLE_M2);
 		outX = PLAYERBOT_M2_FROM_M3_X;
 		outY = PLAYERBOT_M2_FROM_M3_Y;
+		if (playerbot_empire_rules::GetTownPitch(outMap, pitch))
+		{
+			outX = pitch.x;
+			outY = pitch.y;
+		}
+		if (IsPlayerBotVillageMap(mapIndex) || IsPlayerBotM3Map(mapIndex))
+		{
+			// A village or a guild map: stand where its own gate puts a traveller
+			// down. Which gate depends on the role, and the owner of the map
+			// answers for it - a visitor arrives by the road a local uses.
+			const int owner = playerbot_empire_rules::GetMapOwnerEmpire(mapIndex);
+			const playerbot_empire_rules::EMapRole role = playerbot_empire_rules::GetMapRole(mapIndex);
+			const long from = playerbot_empire_rules::GetHomeMap(owner,
+					role == playerbot_empire_rules::MAP_ROLE_M1 ? playerbot_empire_rules::MAP_ROLE_M2 : playerbot_empire_rules::MAP_ROLE_M1);
+			playerbot_empire_rules::TKingdomGate gate;
+			if (playerbot_empire_rules::FindKingdomGate(owner, from, mapIndex, gate))
+			{
+				outMap = mapIndex;
+				outX = gate.arrival.x;
+				outY = gate.arrival.y;
+			}
+			else if (playerbot_empire_rules::GetTownPitch(mapIndex, pitch))
+			{
+				outMap = mapIndex;
+				outX = pitch.x;
+				outY = pitch.y;
+			}
+			return;
+		}
 		switch (mapIndex)
 		{
-			case PLAYERBOT_MAP_CHUNJO_M1:
-				outMap = mapIndex; outX = PLAYERBOT_M1_RETURN_X; outY = PLAYERBOT_M1_RETURN_Y; break;
-			case PLAYERBOT_MAP_CHUNJO_M2:
-				outMap = mapIndex; outX = PLAYERBOT_M2_ARRIVAL_X; outY = PLAYERBOT_M2_ARRIVAL_Y; break;
-			case PLAYERBOT_MAP_CHUNJO_M3:
-				outMap = mapIndex; outX = PLAYERBOT_M3_ARRIVAL_X; outY = PLAYERBOT_M3_ARRIVAL_Y; break;
 			case PLAYERBOT_MAP_MONKEY_EASY:
 			case PLAYERBOT_MAP_MONKEY_MEDIUM:
 			case PLAYERBOT_MAP_MONKEY_HARD:
@@ -1284,7 +1435,7 @@ namespace
 		state.dwNextSectreeRescueTime = dwNow + 30000;
 
 		long homeMap = 0, homeX = 0, homeY = 0;
-		GetPlayerBotHomePoint(mapIndex, homeMap, homeX, homeY);
+		GetPlayerBotHomePoint(ch, mapIndex, homeMap, homeX, homeY);
 		if (TransitionPlayerBotMap(ch, state, homeMap, homeX, homeY, dwNow, "sectree_rescue"))
 		{
 			sys_log(0, "PLAYERBOT_RESCUE: pid=%u name=%s had no sectree on map=%ld, moved to map=%ld (%ld,%ld)",
@@ -1311,6 +1462,9 @@ namespace
 		ch->PacketAround(&p, sizeof(TPacketGCShopSign));
 	}
 
+	// Defined below, with the counter's line bookkeeping.
+	LPITEM FindPlayerBotOfferItem(LPCHARACTER keeper, const TPlayerBotShopOffer& offer);
+
 	void ClosePlayerBotShop(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow,
 			const char* reason)
 	{
@@ -1323,8 +1477,40 @@ namespace
 		// once per line that left the bag.
 		bool bSoldSomething = false;
 		for (size_t i = 0; i < state.vecShopOffers.size(); ++i)
-			if (state.vecShopOffers[i].bSoldLogged)
-				bSoldSomething = true;
+		{
+			const TPlayerBotShopOffer& offer = state.vecShopOffers[i];
+			if (offer.bSoldLogged || !FindPlayerBotOfferItem(ch, offer))
+			{
+				bSoldSomething = bSoldSomething || offer.bSoldLogged;
+				state.mapStallUnsold.erase(offer.dwItemID);
+				continue;
+			}
+			BYTE& unsold = state.mapStallUnsold[offer.dwItemID];
+			if (unsold < 255)
+				++unsold;
+		}
+		// The map outlives the goods: a line vendored or burnt leaves its id
+		// behind, so it is pruned against the bag now and then.
+		if (state.mapStallUnsold.size() > 64)
+		{
+			for (std::map<DWORD, BYTE>::iterator it = state.mapStallUnsold.begin();
+					it != state.mapStallUnsold.end(); )
+			{
+				LPITEM held = ITEM_MANAGER::instance().Find(it->first);
+				if (!held || held->GetOwner() != ch)
+					state.mapStallUnsold.erase(it++);
+				else
+					++it;
+			}
+			for (std::map<DWORD, DWORD>::iterator it = state.mapStockFirstListed.begin();
+					it != state.mapStockFirstListed.end(); )
+			{
+				if (state.mapStallUnsold.find(it->first) == state.mapStallUnsold.end())
+					state.mapStockFirstListed.erase(it++);
+				else
+					++it;
+			}
+		}
 		state.dwShopOpenedTime = 0;
 		state.dwShopCloseTime = 0;
 		state.vecShopOffers.clear();
@@ -1389,7 +1575,7 @@ namespace
 				continue;
 			const int wantLines = units == 1 ? PLAYERBOT_SHOP_SINGLE_UNITS : PLAYERBOT_SHOP_PACK_LINES;
 			int lines = 0;
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM other = ch->GetInventoryItem(cell);
 				if (other && other != item && (int)other->GetCount() == units &&
@@ -1436,6 +1622,15 @@ namespace
 	{
 		for (int h = 0; h < height; ++h)
 			grid[slot + h * PLAYERBOT_SHOP_GRID_COLUMNS] = true;
+	}
+
+	// The bots' own grid is five wide; what the engine indexes by is
+	// PLAYERBOT_SHOP_ENGINE_COLUMNS wide (ten on mt2009, whose right half is
+	// locked or premium). Same row, same column, the engine's stride.
+	int PlayerBotShopSlotToEngine(int slot)
+	{
+		return (slot / PLAYERBOT_SHOP_GRID_COLUMNS) * PLAYERBOT_SHOP_ENGINE_COLUMNS +
+				slot % PLAYERBOT_SHOP_GRID_COLUMNS;
 	}
 
 	// The item behind a counter line, while it is still the keeper's to sell.
@@ -1551,6 +1746,32 @@ namespace
 			return false;
 		}
 
+		// The operator moved the TRADE slider while this stand was up. A stand
+		// that stood on a roll is judged again under the new weight - the roll
+		// is by pid, so the answer is the one a fresh open would get - and one
+		// that lost packs up within PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS, spread
+		// by pid, rather than all of them in the same tick. The four exceptions
+		// are not asked: the slider never applied to them and the UI says so.
+		const DWORD dwWeightsGeneration = GetPlayerBotWeightsGeneration();
+		if (state.dwShopWeightsGeneration != dwWeightsGeneration)
+		{
+			state.dwShopWeightsGeneration = dwWeightsGeneration;
+			if (IsPlayerBotShopReasonRolled(state.bShopOpenReason) &&
+					!ShouldPlayerBotKeepShop(ch, state))
+			{
+				const DWORD dwEndBy = dwNow + PlayerBotNavHash(ch->GetPlayerID() ^ 0x57454947U) %
+						PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS;
+				if (dwEndBy < state.dwShopCloseTime)
+				{
+					state.dwShopCloseTime = dwEndBy;
+					sys_log(0, "PLAYERBOT_SHOP: weights changed pid=%u name=%s reason=%s stand ends in %u s",
+							ch->GetPlayerID(), ch->GetName(),
+							GetPlayerBotShopReasonName(state.bShopOpenReason),
+							(unsigned int)((dwEndBy - dwNow) / 1000));
+				}
+			}
+		}
+
 		if (dwNow < state.dwShopCloseTime && !bOffPitch)
 		{
 			// Standing at a stall is the activity, not the absence of one. Without
@@ -1576,8 +1797,23 @@ namespace
 		if (ch->GetMyShop())
 			return true;
 
-		if (!ShouldPlayerBotKeepShop(ch, state))
+		const BYTE bShopReason = GetPlayerBotShopReason(ch, state);
+		if (bShopReason == PLAYERBOT_SHOP_REASON_NONE)
 			return false;
+		// Kept from here rather than from the open itself: the walk to the pitch
+		// runs this pass every tick, and the reason it acts on is this one.
+		state.bShopOpenReason = bShopReason;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// This engine grants the counter at level 15 and 800 kills (CanOpenShop);
+		// before that OpenMyShop refuses with a chat line nobody reads, and a
+		// young world logged thirty-nine refusals in a row for no reason a
+		// keeper could mend. Asked here, before the walk to the pitch.
+		if (!ch->CanOpenShop())
+		{
+			state.dwNextShopKeepTime = dwNow + PLAYERBOT_MT2009_SHOP_NOT_YET_RETRY;
+			return false;
+		}
+#endif
 		// No map test here. There used to be one pinning stalls to Bokjung, left
 		// over from when that was the only market, and it sat in front of the
 		// choice below - so a bot in Joan returned before it ever got to roll, and
@@ -1609,45 +1845,13 @@ namespace
 		long pitchX = 0, pitchY = 0;
 		if (!GetPlayerBotShopCentre(ch->GetMapIndex(), pitchX, pitchY))
 			return false;
-		// Bokjung's ring is capped. A keeper that finds it full takes its goods
-		// to Joan rather than adding an eighth counter nobody can see past -
-		// which is the only way the second market ever gets stock, since this is
-		// where the bots with something to sell happen to be standing.
-		const int iM2StallCap = MAX(PLAYERBOT_SHOP_M2_MAX_STALLS,
-				GetPlayerBotsAlive() * PLAYERBOT_SHOP_M2_STALLS_PER_MILLE / 1000);
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
-				s_iPlayerBotStallsInM2 >= iM2StallCap)
-		{
-			// Only a keeper by personality, and only one with nowhere else to
-			// be. This pass runs ahead of the world travel, so a bot bound for
-			// the frontier was walked to the M1 portal instead - every tick,
-			// for as long as it held six surplus books.
-			// ...and not a bot whose place is the frontier: it stood in
-			// Bokjung on its way to Sohan with "Ide na Gore Sohan" over its
-			// head and rode to the Joan gate instead, which is what "the bots
-			// go to the wrong portal" looked like from the outside.
-			if (!IsPlayerBotStallKeeper(state) || state.lDepartureMap != 0 ||
-					GetPlayerBotFrontierMapForLevel(ch) != 0)
-			{
-				state.dwNextShopKeepTime = dwNow + PLAYERBOT_SHOP_RING_FULL_RETRY;
-				return false;
-			}
-			std::vector<std::pair<int, WORD> > worthTaking;
-			CollectPlayerBotShopItems(ch, worthTaking, IsPlayerBotStallKeeper(state));
-			if (!IsPlayerBotStallWorthOpening(worthTaking.size(),
-					worthTaking.empty() ? 0 : worthTaking[0].first,
-					IsPlayerBotPoorKeeper(ch) || IsPlayerBotBagFull(ch)))
-				return false;
-			PlayerBotLogThrottled("stall_overflow", dwNow,
-					"PLAYERBOT_SHOP: Bokjung full, taking the stall to Joan pid=%u name=%s stalls=%d cap=%d lines=%u",
-					ch->GetPlayerID(), ch->GetName(), s_iPlayerBotStallsInM2, iM2StallCap,
-					(unsigned int)worthTaking.size());
-			state.dwStallWalkUntil = dwNow + PLAYERBOT_SHOP_RING_FULL_RETRY;
-			return MovePlayerBotToWorldPortal(ch, state,
-					PLAYERBOT_M2_TO_M1_PORTAL_X, PLAYERBOT_M2_TO_M1_PORTAL_Y,
-					PLAYERBOT_MAP_CHUNJO_M1, PLAYERBOT_M1_GUARD_X,
-					PLAYERBOT_M1_GUARD_Y, dwNow, "stall_overflow_to_m1");
-		}
+		// Bokjung's ring used to be capped, and a keeper that found it full
+		// carried its goods to Joan. Both are gone: a town is meant to fill up,
+		// and a counter refused is a bot with nothing to do (the operator's
+		// call - "jak chca to niech chodza i zaludniaja miasto"). Joan gets its
+		// stalls from the bots standing in Joan, which is where they came from
+		// before the cap existed. s_iPlayerBotStallsInM2 is still counted for
+		// the ledger's report.
 		// A keeper already standing on the ring counts as in town too. A server
 		// restart drops every shop - they live only in memory - and leaves its
 		// keeper parked exactly where the stall was, with no errand to bring it
@@ -1701,8 +1905,9 @@ namespace
 			return true; // still walking to the pitch
 		// Counted the moment it opens rather than at the next ledger sweep, or
 		// eight keepers arriving in the same minute would all read six.
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2)
+		if (IsPlayerBotM2Map(ch->GetMapIndex()))
 			++s_iPlayerBotStallsInM2;
+		++s_mapPlayerBotStallsByMap[ch->GetMapIndex()];
 
 		// OpenMyShop refuses a character whose main part is not its own body, so
 		// the horse has to go before the stall can be set up.
@@ -1736,10 +1941,30 @@ namespace
 		const char* pszBook = NULL;
 		int iBooks = 0;
 		int iScrap = 0;
+		// The rest of what a sign can be about (playerbot_shop_signs.h): the
+		// fish line's unit price for the "Malze po %C" names, the best gear
+		// line's name for the "%I" ones.
+		int iFish = 0;
+		int iGear = 0;
+		int iMedals = 0;
+		int iScrolls = 0;
+		int iStones = 0;
+		DWORD dwFishUnitPrice = 0;
+		const char* pszGear = NULL;
+		BYTE bGearRefine = 0;
 		bool grid[PLAYERBOT_SHOP_GRID_CELLS];
 		memset(grid, 0, sizeof(grid));
-		for (size_t i = 0; i < scored.size() && tableCount < tableLimit; ++i)
+		// What qualified and still stayed in the bag, by reason - the audit's
+		// "why was it not put up": no line left on the counter, no cell of the
+		// right height on the grid, an anti-flag. Said on the open line.
+		unsigned int uNoLine = 0, uNoSlot = 0, uAntiFlag = 0;
+		for (size_t i = 0; i < scored.size(); ++i)
 		{
+			if (tableCount >= tableLimit)
+			{
+				++uNoLine;
+				continue;
+			}
 			const WORD cell = scored[i].second;
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->IsEquipped() || item->isLocked())
@@ -1747,24 +1972,42 @@ namespace
 			const TItemTable* proto = item->GetProto();
 			if (!proto || IS_SET(proto->dwAntiFlags,
 					ITEM_ANTIFLAG_GIVE | ITEM_ANTIFLAG_MYSHOP))
+			{
+				++uAntiFlag;
 				continue;
+			}
 			// Placed on the engine's grid by height, or the engine drops the
 			// line and every buyer who comes for it is refused at an empty slot.
 			const int height = std::max<int>(1, std::min<int>(PLAYERBOT_SHOP_GRID_ROWS, item->GetSize()));
 			const int slot = FindPlayerBotShopSlot(grid, height);
 			if (slot < 0)
+			{
+				++uNoSlot;
 				continue;
+			}
 			PutPlayerBotShopSlot(grid, slot, height);
+			if (state.mapStockFirstListed.find(item->GetID()) == state.mapStockFirstListed.end())
+				state.mapStockFirstListed[item->GetID()] = dwNow;
 			DWORD price = GetPlayerBotShopAskingPrice(item);
 			// The clearance discount. Applied to the price as asked, so the sale
 			// memory still learns the real price the market would have paid.
 			if (bPoor)
 				price = std::max<DWORD>(1, price * PLAYERBOT_SHOP_POOR_DISCOUNT_PERCENT / 100);
+			// Carried home unsold before: cheaper by the stand, after the price
+			// is asked so the sale memory learns the market and not the markdown.
+			{
+				std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
+				if (unsold != state.mapStallUnsold.end() && unsold->second > 0)
+				{
+					const int stands = std::min<int>(unsold->second, PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_STANDS);
+					price = std::max<DWORD>(1, price * (100 - stands * PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT) / 100);
+				}
+			}
 			table[tableCount].vnum = item->GetVnum();
 			table[tableCount].count = item->GetCount();
 			table[tableCount].pos = TItemPos(INVENTORY, cell);
 			table[tableCount].price = price;
-			table[tableCount].display_pos = (BYTE)slot;
+			table[tableCount].display_pos = (BYTE)PlayerBotShopSlotToEngine(slot);
 
 			TPlayerBotShopOffer offer;
 			offer.dwVnum = item->GetVnum();
@@ -1773,7 +2016,7 @@ namespace
 			offer.wCount = item->GetCount();
 			offer.dwItemID = item->GetID();
 			offer.bSoldLogged = false;
-			offer.bSlot = (BYTE)slot;
+			offer.bSlot = (BYTE)PlayerBotShopSlotToEngine(slot);
 			offers.push_back(offer);
 			if (scored[i].first > bestScore)
 				bestScore = scored[i].first;
@@ -1792,6 +2035,21 @@ namespace
 					bPreciousRefine = item->GetRefineLevel();
 				}
 			}
+			else if (item->GetType() == ITEM_FISH || item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM ||
+					(item->GetVnum() >= 27992 && item->GetVnum() <= 27994)) // the three pearls
+			{
+				// Asked before the material test: a shellfish and the pearls are
+				// refine materials too, and a fish counter is not a smith's supplier.
+				if (item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM && item->GetCount() > 0)
+					dwFishUnitPrice = price / item->GetCount();
+				++iFish;
+			}
+			else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
+				++iMedals;
+			else if (item->GetVnum() == PLAYERBOT_BLESSING_SCROLL_VNUM)
+				++iScrolls;
+			else if (item->GetType() == ITEM_METIN)
+				++iStones;
 			else if (IsPlayerBotTradeableMaterial(item))
 			{
 				if (iMaterials < 2)
@@ -1806,6 +2064,15 @@ namespace
 			else if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
 					item->GetRefineLevel() < PLAYERBOT_SHOP_MIN_GEAR_REFINE)
 				++iScrap;
+			else if (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR)
+			{
+				if (!pszGear || item->GetRefineLevel() > bGearRefine)
+				{
+					pszGear = pszName;
+					bGearRefine = item->GetRefineLevel();
+				}
+				++iGear;
+			}
 		}
 		// Asked again here rather than trusting the scan above: the inventory
 		// moves between the two - a town errand happens in between - and a stall
@@ -1824,8 +2091,13 @@ namespace
 		// headline is the best line; the wording says what kind of counter it
 		// is; a short prefix by pid keeps neighbours from matching word for word.
 		char sign[SHOP_SIGN_MAX_LEN + 1];
-		BuildPlayerBotTurkishShopSign(ch, bPoor, tableCount, pszWeapon30,
-				pszPrecious, iBooks, pszBook, iMaterials, iScrap, pszBestName,
+		// The draw moves with the stand, so a keeper reopening on the same
+		// pitch is not reading the same line for an hour.
+		const DWORD dwSignDraw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU ^
+				((DWORD)state.bShopStandsInRow * 0x9E3779B9U));
+		BuildPlayerBotTurkishShopSign(ch, bPoor, tableCount, pszWeapon30, pszPrecious,
+				iFish, dwFishUnitPrice, iBooks, pszBook, iMaterials, iGear, pszGear,
+				iMedals, iScrolls, iStones, iScrap, pszBestName, dwSignDraw,
 				sign, sizeof(sign));
 
 		// Opening a stall costs a shop bundle, exactly as it does for a player:
@@ -1871,11 +2143,17 @@ namespace
 			}
 			// The bot buys its stall like anything else it carries.
 			if (ch->GetGold() >= PLAYERBOT_SHOP_BUNDLE_PRICE)
-				ch->PointChange(POINT_GOLD, -(int)PLAYERBOT_SHOP_BUNDLE_PRICE);
+				PlayerBotChangeGold(ch, -(int)PLAYERBOT_SHOP_BUNDLE_PRICE);
 			ch->AutoGiveItem(50200, 1);
 		}
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// The fourth argument is the offline-shop duration index; zero is the
+		// ordinary counter that closes when the keeper leaves.
+		ch->OpenMyShop(sign, table, tableCount, 0);
+#else
 		ch->OpenMyShop(sign, table, tableCount);
+#endif
 		if (!ch->GetMyShop())
 		{
 			// OpenMyShop refuses silently, and it refuses the whole shop over one
@@ -1884,13 +2162,13 @@ namespace
 			quest::PC* pc = quest::CQuestManager::instance().GetPCForce(ch->GetPlayerID());
 			LPITEM first = ch->GetItem(table[0].pos);
 			const TItemTable* rp = first ? first->GetProto() : NULL;
-			sys_log(0, "PLAYERBOT_SHOP: refused pid=%u items=%u poly=%d quest=%d vnum=%u anti=%u equipped=%d locked=%d viaPos=%d sign=%d gold=%d",
+			sys_log(0, "PLAYERBOT_SHOP: refused pid=%u items=%u poly=%d quest=%d vnum=%u anti=%u equipped=%d locked=%d viaPos=%d sign=%d gold=%d level=%d riding=%d",
 					ch->GetPlayerID(), (unsigned int)tableCount,
 					ch->IsPolymorphed() ? 1 : 0,
 					(pc && pc->IsRunning()) ? 1 : 0, table[0].vnum,
 					rp ? rp->dwAntiFlags : 0, first && first->IsEquipped() ? 1 : 0,
 					first && first->isLocked() ? 1 : 0, first ? 1 : 0,
-					(int)strlen(sign), (int)(ch->GetGold() / 1000));
+					(int)strlen(sign), (int)(ch->GetGold() / 1000), (int)ch->GetLevel(), ch->IsHorseRiding() ? 1 : 0);
 			// The sign is already on every client in view - OpenMyShop sends it
 			// before it creates the shop, and nothing takes it back when the
 			// creation fails. Left alone, this bot walks off wearing a stall
@@ -1909,6 +2187,7 @@ namespace
 		ch->RemoveGoodAffect();
 
 		state.dwShopOpenedTime = dwNow;
+		state.dwShopWeightsGeneration = GetPlayerBotWeightsGeneration();
 		state.dwShopCloseTime = dwNow + (IsPlayerBotMerchant(state)
 				? number(PLAYERBOT_SHOP_MERCHANT_MIN_DURATION,
 						PLAYERBOT_SHOP_MERCHANT_MAX_DURATION)
@@ -1922,8 +2201,9 @@ namespace
 		// AddPlayerBotMarketSupply for the three keepers this is about.
 		for (size_t i = 0; i < offers.size(); ++i)
 			AddPlayerBotMarketSupply(offers[i].dwVnum, offers[i].wCount);
-		sys_log(0, "PLAYERBOT_SHOP: opened pid=%u name=%s items=%u first_vnum=%u first_price=%u pos=(%ld,%ld) sign=\"%s\"",
-				ch->GetPlayerID(), ch->GetName(), (unsigned int)tableCount,
+		sys_log(0, "PLAYERBOT_SHOP: opened pid=%u name=%s reason=%s items=%u left_behind no_line=%u no_slot=%u antiflag=%u first_vnum=%u first_price=%u pos=(%ld,%ld) sign=\"%s\"",
+				ch->GetPlayerID(), ch->GetName(), GetPlayerBotShopReasonName(state.bShopOpenReason),
+				(unsigned int)tableCount, uNoLine, uNoSlot, uAntiFlag,
 				offers[0].dwVnum, offers[0].dwPrice, ch->GetX(), ch->GetY(), sign);
 		// Worth crossing town for is worth a line on the world channel - the
 		// same bar the sign uses for a stall that carries one thing.
@@ -1937,7 +2217,11 @@ namespace
 	{
 		if (DISTANCE_APPROX(ch->GetX() - goalX, ch->GetY() - goalY) <= arrivalDistance)
 		{
-			SetPlayerBotRidingForTravel(ch, state, false, dwNow, "town_interaction");
+			// No dismount: the engine serves a rider at every counter - the
+			// shop, the blacksmith, the storekeeper, a quest NPC - and refuses
+			// one only a skill book, a costume and a second mount. Climbing
+			// down at each NPC and up again after was the visible half of a
+			// town visit, and what a player does not do.
 			ch->Stop();
 			ch->SetPosition(POS_STANDING);
 			ClearPlayerBotRoute(state, true);
@@ -2000,7 +2284,7 @@ namespace
 			}
 		}
 		const bool moveAccepted = MovePlayerBot(ch, walkX, walkY, dwNow,
-				snapCells, true, true);
+				snapCells, true, true, false, true);
 		if (!moveAccepted && state.bStuckCounter >= 6)
 		{
 			sys_err("PLAYERBOT_TOWN: route failed pid=%u name=%s phase=%u from=(%ld,%ld) to=(%ld,%ld)",
@@ -2031,6 +2315,17 @@ namespace
 				FinishPlayerBotTownVisit(ch, state, dwNow, false);
 		}
 		return false;
+	}
+
+	// Joan's decorative gate, and nothing else in the world. The two sides of it
+	// are separate components of server_attr even though a player runs straight
+	// through the opening, which is why the walk across it is issued by hand.
+	// No other village has this shape, so every other village skips the phase
+	// rather than being walked to Joan's coordinates - which is exactly what a
+	// Jinno bot did when this was a bare constant.
+	bool HasPlayerBotTownGate(long mapIndex)
+	{
+		return mapIndex == PLAYERBOT_MAP_CHUNJO_M1;
 	}
 
 	bool MovePlayerBotAcrossTownGate(LPCHARACTER ch, TPlayerBotAIState& state,
@@ -2071,19 +2366,25 @@ namespace
 
 	bool HandlePlayerBotTownVisit(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
+		// Six villages, one visit. The counters, the anvil and the keeper come
+		// from the map the bot is standing on - asking the table is what stops a
+		// Shinsoo bot announcing "Ide do kowala" and then walking towards
+		// Chunjo's anvil eighty kilometres away, which is what a pair of
+		// constants named M1 and M2 made every foreign bot do.
+		playerbot_empire_rules::TTownServices svc;
 		if (!ch || !state.bVisitingShop ||
-				(ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M1 &&
-				 ch->GetMapIndex() != PLAYERBOT_MAP_CHUNJO_M2))
+				!playerbot_empire_rules::GetTownServices(ch->GetMapIndex(), svc))
 			return false;
-		const bool inM2 = ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2;
-		const long weaponNpcX = inM2 ? PLAYERBOT_M2_WEAPON_MERCHANT_X : PLAYERBOT_WEAPON_MERCHANT_X;
-		const long weaponNpcY = inM2 ? PLAYERBOT_M2_WEAPON_MERCHANT_Y : PLAYERBOT_WEAPON_MERCHANT_Y;
-		const long armorNpcX = inM2 ? PLAYERBOT_M2_ARMOR_MERCHANT_X : PLAYERBOT_ARMOR_MERCHANT_X;
-		const long armorNpcY = inM2 ? PLAYERBOT_M2_ARMOR_MERCHANT_Y : PLAYERBOT_ARMOR_MERCHANT_Y;
-		const long miscNpcX = inM2 ? PLAYERBOT_M2_MISC_MERCHANT_X : PLAYERBOT_MISC_MERCHANT_X;
-		const long miscNpcY = inM2 ? PLAYERBOT_M2_MISC_MERCHANT_Y : PLAYERBOT_MISC_MERCHANT_Y;
-		const long blacksmithNpcX = inM2 ? PLAYERBOT_M2_BLACKSMITH_X : PLAYERBOT_BLACKSMITH_X;
-		const long blacksmithNpcY = inM2 ? PLAYERBOT_M2_BLACKSMITH_Y : PLAYERBOT_BLACKSMITH_Y;
+		const bool inM2 = IsPlayerBotM2Map(ch->GetMapIndex());
+		const bool bDirect = inM2 || !IsPlayerBotGatedVillage(ch->GetMapIndex());
+		const long weaponNpcX = svc.weaponMerchant.x;
+		const long weaponNpcY = svc.weaponMerchant.y;
+		const long armorNpcX = svc.armourMerchant.x;
+		const long armorNpcY = svc.armourMerchant.y;
+		const long miscNpcX = svc.miscMerchant.x;
+		const long miscNpcY = svc.miscMerchant.y;
+		const long blacksmithNpcX = svc.blacksmith.x;
+		const long blacksmithNpcY = svc.blacksmith.y;
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER ||
 				state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER_WAIT ||
@@ -2106,12 +2407,12 @@ namespace
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
 		{
-			state.bTownVisitPhase = inM2
+			state.bTownVisitPhase = bDirect
 					? GetPlayerBotFirstDirectTownPhase(state)
 					: GetPlayerBotFirstExteriorTownPhase(state);
-			if (!inM2 && state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+			if (!bDirect && state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
 				state.bTownVisitPhase = BOT_TOWN_PHASE_GATE_IN;
-			if (inM2 && state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+			if (bDirect && state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
 			{
 				FinishPlayerBotTownVisit(ch, state, dwNow, true);
 				return true;
@@ -2122,22 +2423,21 @@ namespace
 		// 623/627 (Warrior), 631/635 (Ninja), 645/649 (Sura), 653/657
 		// (Shaman); the second coordinate includes map 21's 102400 Y base.
 		const BYTE wantedGroup = (ch->GetPlayerID() % 2 == 0) ? 1 : 2;
-		const long trainerGroup1X[4] = { 62300, 63100, 64500, 65300 };
-		const long trainerGroup2X[4] = { 62700, 63500, 64900, 65700 };
 		const BYTE trainerJob = std::min<BYTE>(ch->GetJob(), JOB_SHAMAN);
-		const long trainerNpcX = wantedGroup == 1
-				? trainerGroup1X[trainerJob] : trainerGroup2X[trainerJob];
-		const long trainerNpcY = ch->GetJob() <= JOB_WARRIOR ? 161800 : 161900;
+		playerbot_empire_rules::TPoint trainerNpc;
+		const bool haveTrainer = playerbot_empire_rules::GetSkillTrainer(
+				ch->GetMapIndex(), (int)trainerJob, (int)wantedGroup, trainerNpc);
 		long trainerX = 0, trainerY = 0;
-		GetPlayerBotNpcApproach(ch->GetPlayerID(), trainerNpcX, trainerNpcY,
-				0x54524149U, trainerX, trainerY);
+		if (haveTrainer)
+			GetPlayerBotNpcApproach(ch->GetPlayerID(), trainerNpc.x, trainerNpc.y,
+					0x54524149U, trainerX, trainerY);
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SKILL_RESET)
 		{
 			SetPlayerBotAction(state, BOT_ACTION_TRAIN, dwNow);
 			long resetX = 0, resetY = 0;
-			GetPlayerBotNpcApproach(ch->GetPlayerID(), PLAYERBOT_SKILL_RESET_NPC_X,
-					PLAYERBOT_SKILL_RESET_NPC_Y, 0x52534554U, resetX, resetY);
+			GetPlayerBotNpcApproach(ch->GetPlayerID(), svc.skillReset.x,
+					svc.skillReset.y, 0x52534554U, resetX, resetY);
 			if (MovePlayerBotTownLeg(ch, state, dwNow, resetX, resetY, 550))
 			{
 				// Asked again on arrival rather than trusted from the walk: a
@@ -2164,8 +2464,10 @@ namespace
 			{
 				state.dwTownWaitUntil = 0;
 				ClearPlayerBotRoute(state, true);
-				state.bTownVisitPhase = GetPlayerBotFirstExteriorTownPhase(state);
-				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE &&
+				state.bTownVisitPhase = bDirect
+						? GetPlayerBotFirstDirectTownPhase(state)
+						: GetPlayerBotFirstExteriorTownPhase(state);
+				if (!bDirect && state.bTownVisitPhase == BOT_TOWN_PHASE_NONE &&
 						(state.bTownNeedMisc || state.bTownNeedBlacksmith))
 					state.bTownVisitPhase = BOT_TOWN_PHASE_GATE_IN;
 				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
@@ -2177,6 +2479,16 @@ namespace
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_TRAINER)
 		{
 			SetPlayerBotAction(state, BOT_ACTION_TRAIN, dwNow);
+			// No trainer in this village: the errand is not this map's to do,
+			// and walking to (0,0) is what an unguarded table lookup would ask
+			// for. The M2 -> M1 travel rule is what carries this need home.
+			if (!haveTrainer)
+			{
+				state.bTownNeedTrainer = false;
+				state.bTownVisitPhase = BOT_TOWN_PHASE_TRAINER_WAIT;
+				state.dwTownWaitUntil = dwNow;
+				return true;
+			}
 			if (MovePlayerBotTownLeg(ch, state, dwNow, trainerX, trainerY, 550))
 			{
 				if (ChoosePlayerBotSkillGroup(ch))
@@ -2201,8 +2513,9 @@ namespace
 				state.bTownVisitPhase = state.bTownNeedWeaponMerchant
 						? BOT_TOWN_PHASE_WEAPON_MERCHANT
 						: (state.bTownNeedArmorMerchant ? BOT_TOWN_PHASE_ARMOR_MERCHANT
-							: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
-								? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE));
+							: (bDirect ? GetPlayerBotFirstDirectTownPhase(state)
+								: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
+									? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE)));
 				state.dwTownWaitUntil = 0;
 				ClearPlayerBotRoute(state, true);
 				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
@@ -2251,7 +2564,7 @@ namespace
 			{
 				state.bTownVisitPhase = state.bTownNeedArmorMerchant
 						? BOT_TOWN_PHASE_ARMOR_MERCHANT
-						: (inM2 ? GetPlayerBotFirstDirectTownPhase(state)
+						: (bDirect ? GetPlayerBotFirstDirectTownPhase(state)
 							: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
 								? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE));
 				state.dwTownWaitUntil = 0;
@@ -2291,7 +2604,7 @@ namespace
 			ch->SetPosition(POS_STANDING);
 			if (dwNow >= state.dwTownWaitUntil)
 			{
-				state.bTownVisitPhase = inM2
+				state.bTownVisitPhase = bDirect
 						? GetPlayerBotFirstDirectTownPhase(state)
 						: (state.bTownNeedSafebox ? BOT_TOWN_PHASE_SAFEBOX
 							: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
@@ -2312,8 +2625,8 @@ namespace
 		// refuse the next request as "overlapped", so the wait cancels it.
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_SAFEBOX)
 		{
-			const long keeperX = inM2 ? PLAYERBOT_M2_STOREKEEPER_X : PLAYERBOT_STOREKEEPER_X;
-			const long keeperY = inM2 ? PLAYERBOT_M2_STOREKEEPER_Y : PLAYERBOT_STOREKEEPER_Y;
+			const long keeperX = svc.storekeeper.x;
+			const long keeperY = svc.storekeeper.y;
 			long goalX = 0, goalY = 0;
 			GetPlayerBotNpcApproach(ch->GetPlayerID(), keeperX, keeperY, 0x53414645U, goalX, goalY);
 			if (MovePlayerBotTownLeg(ch, state, dwNow, goalX, goalY, 650))
@@ -2328,7 +2641,7 @@ namespace
 						sys_log(0, "PLAYERBOT_TOWN: safebox unaffordable pid=%u name=%s gold=%d",
 								ch->GetPlayerID(), ch->GetName(), ch->GetGold());
 						state.bTownNeedSafebox = false;
-						state.bTownVisitPhase = inM2
+						state.bTownVisitPhase = bDirect
 								? GetPlayerBotFirstDirectTownPhase(state)
 								: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
 									? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE);
@@ -2337,7 +2650,7 @@ namespace
 							FinishPlayerBotTownVisit(ch, state, dwNow, true);
 						return true;
 					}
-					ch->PointChange(POINT_GOLD, -PLAYERBOT_SAFEBOX_FEE);
+					PlayerBotChangeGold(ch, -PLAYERBOT_SAFEBOX_FEE);
 					TSafeboxChangeSizePacket page;
 					page.dwID = ch->GetDesc()->GetAccountTable().id;
 					page.bSize = 1;
@@ -2368,7 +2681,7 @@ namespace
 			CSafebox* box = ch->GetSafebox();
 			if (box)
 			{
-				const int deposited = DepositPlayerBotSafeboxBooks(ch, box);
+				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box);
 				ch->CloseSafebox();
 				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d books_left=%d free_cells=%d",
 						ch->GetPlayerID(), ch->GetName(), deposited, CountPlayerBotSkillBooks(ch),
@@ -2385,7 +2698,7 @@ namespace
 			if (done)
 			{
 				state.bTownNeedSafebox = false;
-				state.bTownVisitPhase = inM2
+				state.bTownVisitPhase = bDirect
 						? GetPlayerBotFirstDirectTownPhase(state)
 						: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
 							? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE);
@@ -2399,7 +2712,7 @@ namespace
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_GATE_IN)
 		{
-			if (inM2)
+			if (!HasPlayerBotTownGate(ch->GetMapIndex()))
 			{
 				FinishPlayerBotTownVisit(ch, state, dwNow, false);
 				return true;
@@ -2449,7 +2762,7 @@ namespace
 			{
 				state.bTownVisitPhase = state.bTownNeedBlacksmith
 						? BOT_TOWN_PHASE_BLACKSMITH
-						: (inM2 ? BOT_TOWN_PHASE_NONE : BOT_TOWN_PHASE_GATE_OUT);
+						: (bDirect ? BOT_TOWN_PHASE_NONE : BOT_TOWN_PHASE_GATE_OUT);
 				state.dwTownWaitUntil = 0;
 				ClearPlayerBotRoute(state, true);
 				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
@@ -2503,7 +2816,7 @@ namespace
 				// Always leave the NPC wearing the best surviving/refined equipment,
 				// even if materials, Yang or a failed roll ended the session early.
 				RestorePlayerBotEquipmentAfterRefining(ch, state, dwNow);
-				state.bTownVisitPhase = inM2
+				state.bTownVisitPhase = bDirect
 						? BOT_TOWN_PHASE_NONE : BOT_TOWN_PHASE_GATE_OUT;
 				state.dwTownWaitUntil = 0;
 				ClearPlayerBotRoute(state, true);
@@ -2515,7 +2828,7 @@ namespace
 
 		if (state.bTownVisitPhase == BOT_TOWN_PHASE_GATE_OUT)
 		{
-			if (inM2)
+			if (!HasPlayerBotTownGate(ch->GetMapIndex()))
 			{
 				FinishPlayerBotTownVisit(ch, state, dwNow, false);
 				return true;

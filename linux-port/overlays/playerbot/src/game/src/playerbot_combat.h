@@ -179,9 +179,10 @@ namespace
 		}
 		// The market is in Bokjung, and this check only ever covered Joan. A bot
 		// browsing the stalls has no business buffing in the middle of them.
-		if (ch->GetMapIndex() == PLAYERBOT_MAP_CHUNJO_M2 &&
-				DISTANCE_APPROX(ch->GetX() - PLAYERBOT_M2_MARKET_X,
-						ch->GetY() - PLAYERBOT_M2_MARKET_Y) <= PLAYERBOT_SHOPPING_RANGE)
+		playerbot_empire_rules::TPoint pitch;
+		if (playerbot_empire_rules::GetTownPitch(ch->GetMapIndex(), pitch) &&
+				DISTANCE_APPROX(ch->GetX() - pitch.x,
+						ch->GetY() - pitch.y) <= PLAYERBOT_SHOPPING_RANGE)
 			return false;
 
 		state.dwNextBuffCheckTime = dwNow + 5000;
@@ -324,6 +325,13 @@ namespace
 		LPITEM archerArrow = NULL;
 		if (ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2)
 		{
+			// An Archer on a stone holds its dagger (bMeleeForStone), and every
+			// Archer skill is SKILL_FLAG_USE_ARROW_DAMAGE: without a bow the
+			// engine sets atk to 0 and the cast is an animation lock for nothing.
+			// Plain swings until the bow is back.
+			LPITEM held = ch->GetWear(WEAR_WEAPON);
+			if (!held || held->GetType() != ITEM_WEAPON || held->GetSubType() != WEAPON_BOW)
+				return false;
 			if (!EnsurePlayerBotArrowsEquipped(ch) ||
 					ch->GetArrowAndBow(&archerBow, &archerArrow, 1) != 1)
 				return false;

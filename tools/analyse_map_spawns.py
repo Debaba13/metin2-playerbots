@@ -73,7 +73,13 @@ def blocks(path, middle):
 
 
 def load_mobs():
-    """vnum -> level, rank, type, the etc-drop key and the Polish name."""
+    """vnum -> level, rank, type, race, the etc-drop key and the Polish name.
+
+    mob_proto's columns are VNUM, NAME, RANK, TYPE - in that order, so index 2
+    is the rank (KNIGHT, S_PAWN, BOSS) and index 3 the type (MONSTER, STONE,
+    NPC). They used to be stored the other way round and the spawn report
+    printed "MONST" under a column headed "ranga".
+    """
     names = {}
     try:
         for line in read(SHARE + os.path.join('conf', 'mob_names_pl.txt')):
@@ -92,8 +98,8 @@ def load_mobs():
         num = lambda i: int(c[i]) if c[i].lstrip('-').isdigit() else 0
         mobs[int(c[0])] = {
             'name': names.get(int(c[0]), c[1] if len(c) > 1 else ''),
-            'type': c[2], 'rank': c[3], 'level': num(5),
-            'exp': num(20), 'drop': num(32),
+            'rank': c[2], 'type': c[3], 'battle': c[4], 'level': num(5),
+            'race': c[9], 'exp': num(20), 'drop': num(32),
             'hp': num(17), 'st': num(11),
         }
     return mobs

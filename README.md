@@ -2,12 +2,28 @@
 
 **Polski** | [English (README_EN.md)](README_EN.md)
 
+[![Discord](https://img.shields.io/badge/Discord-Dołącz_do_społeczności-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/6v4WkDY6a)
+[![BuyCoffee](https://img.shields.io/badge/BuyCoffee-Postaw_kaw%C4%99-FF813F?style=for-the-badge&logo=coffeescript&logoColor=white)](https://buycoffee.to/metin2-playerbots)
+
 Lokalny świat Metin2 singleplayer, w którym po mapie biegają i autentycznie grają autonomiczne postacie (Playerbots): zdobywają poziomy, walczą solo i w party, zbierają łup, ulepszają ekwipunek u Kowala, polują na Metiny i zapisują swój postęp w standardowej bazie danych.
+
+## Wersja 2.0 — nowe pliki serwerowe (mt2009)
+
+Od 2.0.0 projekt działa na plikach serwerowych mt2009. To **pełna paczka**
+(klient + serwer w jednym zipie), do pobrania z Discorda:
+[discord.gg/pt5tvnrN6](https://discord.gg/pt5tvnrN6). Stary launcher i stary
+klient z linii 1.33 **nie pasują** do nowych plików — nie aktualizuj po staremu,
+pobierz całość. Po rozpakowaniu aktualizacje serwera i klienta przychodzą przez
+launcher, jak dotąd; linia 2.x ma własny kanał (`update-manifest-mt2009.json`),
+więc instalacje 1.33.x niczego z niej nie dostaną.
+Jak to jest zbudowane: [linux-port-mt2009/README.md](linux-port-mt2009/README.md).
 
 ## 💬 Społeczność i wsparcie projektu
 
 - **[Dołącz do serwera Discord](https://discord.gg/6v4WkDY6a)** — porozmawiaj o projekcie, podziel się testami i pomysłami oraz śledź aktualności z rozwoju botów.
 - **[Wesprzyj rozwój na Zrzutka.pl](https://zrzutka.pl/rw4g7p)** — dobrowolne wpłaty pomagają pokrywać koszty narzędzi i modeli AI wykorzystywanych podczas rozwijania projektu.
+
+<a href="https://buycoffee.to/metin2-playerbots" target="_blank"><img src="https://buycoffee.to/btn/buycoffeeto-btn-primary.svg" style="height: 42px;" alt="Postaw kawę na buycoffee.to"></a>
 
 Każda forma wsparcia — testy, zgłoszenia błędów, propozycje, kod lub wpłata — pomaga nam tworzyć coraz bardziej samodzielny i żywy świat Metin2.
 
@@ -36,7 +52,7 @@ W przeciwieństwie do tradycyjnych botów-klientów, boty w tym projekcie są **
 Projekt jest w fazie aktywnego rozwoju.
 
 > [!NOTE]
-> **Obsługiwane Królestwo:** Obecnie autonomiczny świat obejmuje **Chunjo**: Joan (M1, mapa 21), Bokjung (M2, mapa 23), Waryong/M3 (mapa 24) oraz Łatwy Loch Małp (mapa 25). Obsługa kolejnych regionów Chunjo i królestw (*Shinsoo – Czerwoni* oraz *Jinno – Niebiescy*) jest zaplanowana w dalszych etapach.
+> **Obsługiwane Królestwa:** Autonomiczny świat obejmuje **wszystkie trzy królestwa** (**Chunjo** – Żółci, **Shinsoo** – Czerwoni oraz **Jinno** – Niebiescy) wraz z mapami M1, M2, M3, Lochami Małp, **Doliną Orków**, **Pustynią Yongbi**, **Górą Sohan**, **Świątynią Hwang** oraz **Lochami Pająków**!
 
 ### Zużycie zasobów (Snapshot dla 350 botów)
 - **Serwer gry (`game core`)**: ~1.05 GiB RAM

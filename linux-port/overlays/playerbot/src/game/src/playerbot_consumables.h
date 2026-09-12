@@ -54,6 +54,22 @@ namespace
 		return item->GetCount() >= PLAYERBOT_CHEST_STALL_MIN_STACK;
 	}
 
+	// Ile pol plecaka jest naprawde puste.
+	//
+	// GetEmptyInventory(height) odpowiada na inne pytanie - "gdzie zmiesci sie
+	// jeden przedmiot tej wysokosci" - i nie da sie z niego zbudowac rezerwacji
+	// na kilka nagrod naraz.
+	int CountPlayerBotFreeInventoryCells(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		int free = 0;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+			if (!ch->GetInventoryItem(cell))
+				++free;
+		return free;
+	}
+
 	bool ManagePlayerBotChests(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->IsItemLoaded() || dwNow < state.dwNextChestTime)
@@ -62,17 +78,24 @@ namespace
 		// A treasure chest (the silver and gold ones) opens with a key, not by
 		// itself: the engine's path is "use the key on the chest", which removes
 		// both and hands out the chest's group. Any key whose lock value matches.
-		for (WORD boxCell = 0; boxCell < INVENTORY_MAX_NUM; ++boxCell)
+		for (WORD boxCell = 0; boxCell < PLAYERBOT_BAG_CELLS; ++boxCell)
 		{
 			LPITEM box = ch->GetInventoryItem(boxCell);
 			if (!box || box->GetType() != ITEM_TREASURE_BOX)
 				continue;
-			for (WORD keyCell = 0; keyCell < INVENTORY_MAX_NUM; ++keyCell)
+			for (WORD keyCell = 0; keyCell < PLAYERBOT_BAG_CELLS; ++keyCell)
 			{
 				LPITEM key = ch->GetInventoryItem(keyCell);
 				if (!key || key->GetType() != ITEM_TREASURE_KEY || key->GetValue(0) != box->GetValue(0))
 					continue;
-				if (ch->GetEmptyInventory(1) < 0)
+				// Miejsce na caly zestaw, a nie na jeden przedmiot: patrz
+				// PLAYERBOT_CHEST_FREE_CELLS. Wysokie przedmioty potrzebuja
+				// dodatkowo ciaglych trzech pol w jednej kolumnie, o co
+				// GetEmptyInventory(3) pyta wprost.
+				// The whole set or nothing (PlayerBotBagTakesGroup, playerbot_gear.h):
+				// the key's use hands out the box's own group.
+				int cellsNeeded = 0;
+				if (!PlayerBotBagTakesGroup(ch, box->GetVnum(), cellsNeeded))
 					return false;
 				const DWORD boxVnum = box->GetVnum(), keyVnum = key->GetVnum();
 				const int before = ch->GetEmptyInventory(1);
@@ -85,7 +108,7 @@ namespace
 				break;
 			}
 		}
-		for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			// The Moonlight chest, and every boss casket (ITEM_GIFTBOX: the Orc
@@ -103,7 +126,10 @@ namespace
 					s_mapPlayerBotChestRefused.find(item->GetVnum());
 			if (refused != s_mapPlayerBotChestRefused.end() && dwNow < refused->second)
 				continue;
-			if (ch->GetEmptyInventory(1) < 0)
+			// The same test as for the treasure box: room for the whole set the
+			// group can hand out, placed the way the engine places it.
+			int cellsNeeded = 0;
+			if (!PlayerBotBagTakesGroup(ch, item->GetVnum(), cellsNeeded))
 				return false;
 			const int before = ch->GetEmptyInventory(1);
 			const DWORD chestVnum = item->GetVnum();
@@ -143,7 +169,7 @@ namespace
 		bool used = false;
 		for (size_t b = 0; b < sizeof(PLAYERBOT_BOOSTER_VNUMS) / sizeof(PLAYERBOT_BOOSTER_VNUMS[0]); ++b)
 		{
-			for (WORD cell = 0; cell < INVENTORY_MAX_NUM; ++cell)
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
 				LPITEM item = ch->GetInventoryItem(cell);
 				if (!item || item->GetVnum() != PLAYERBOT_BOOSTER_VNUMS[b])
