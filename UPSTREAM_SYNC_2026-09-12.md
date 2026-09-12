@@ -1,5 +1,63 @@
 # Upstream sync: 1.31.2 -> 2.0.14 (2026-09-12)
 
+## Follow-up: translation sweep and a client phone-home call (same day, commit 4b36f31)
+
+After the merge landed, asked to (1) translate every Polish string a player
+or admin could see and (2) look for "paywall"-shaped things from upstream
+and counter them with our own prior work. Scoped to in-game bot text first
+(the admin panel, seban-panel and the mt2009 client's Python UI are each
+their own much larger job - deliberately not started here; see below).
+
+**Translation**: audited every `PlayerBotText()`/`FormatPlayerBotText()`
+call site against `playerbot_language.h`'s dictionary (all covered) and
+swept the whole overlay for loose Polish literals with a broader heuristic
+than the merge's own check used. Found one real gap: `playerbot_shop_signs.h`,
+upstream's new ~100-string community stall-sign pool (screenshotted off real
+2010-2012 Polish server stalls), had never conflicted with anything on our
+side - it's wholly new content - so nothing flagged it for translation. It
+was also dead code: I'd left it uncalled in the original merge, using our
+own simpler Turkish sign generator instead, and flagged that as a judgment
+call needing a second look. Translated all eight categories (universal,
+books, fish, gear, materials, medals, scrolls, stones) to Turkish, keeping
+the joke shapes (the "quitting the game" trope, decorative `@@@`/`>>>`
+borders, the "cheaper than next door" lines) and the `%N`/`%I`/`%C`
+placeholder mechanics exactly, then wired `PickPlayerBotShopSign` into
+`playerbot_town.h`'s actual sign generator ahead of our own
+`BuildPlayerBotTurkishShopSign` (same priority upstream gives its own pool),
+with the pid/poor-status prefix pulled into a shared
+`ApplyPlayerBotShopSignPrefix` so a poor keeper's "Indirim:" prefix still
+applies over a community-pool pick instead of the pick being discarded.
+Everything else the sweep found was either a `playerbot_language.h`
+dictionary key (Polish-as-key is the designed pattern, per
+`AI_LANGUAGE_FIX.md`) or a code comment quoting a historical Discord bug
+report - not live player-visible text.
+
+**"Paywall"**: found one genuine issue, not the premium/subscription system
+I'd guessed at first (that one's the opposite of a paywall - upstream grants
+every bot five years of mt2009 premium for free, since the engine reads
+bonus rates and extra safebox/shop slots from that flag and a bot has no
+real login to set it). The actual finding: `linux-port-mt2009/client-root/
+intrologin.py`'s login window POSTs to the original commercial site's
+`logon.mt2009.pl/gatekeeper.php` on every client launch, synchronously,
+release builds only, and reads nothing back (just prints "success!" to a
+console nobody sees) - a pure phone-home with a startup-hang risk on a
+firewalled or offline machine, sitting right next to three other buttons on
+the same screen that upstream's own `clientrootify.py` already redirected
+away from mt2009.pl. Removed it from both the checked-in file and the
+patch-definition script (so it stays gone if a future stock client package
+is ever re-processed through that tool), and pointed the home-page button
+at this fork's own repo instead of upstream's, matching the precedent
+already set for the updater (`967cc50`).
+
+**Deliberately not done in this pass**: the admin panel (`files/
+admin_panel.py`, 305+ translation calls plus an estimated ~530 more lines of
+plain Polish per `CLAUDE.md`'s own note), seban-panel, the itemshop PHP
+front end, and the mt2009 client's several dozen other Python UI files. Each
+is large enough, and unfamiliar enough to me in this session, to warrant its
+own careful pass rather than a rushed one bundled into this sync - flagged
+to the user rather than guessed at.
+
+
 What this was: `git merge upstream/main` (TieruYT/metin2-playerbots,
 `https://github.com/TieruYT/metin2-playerbots.git`) into this fork's
 `claude/sync-updates-client-o7hk2w`, bringing in 107 upstream commits since our
