@@ -626,6 +626,21 @@ def main(root):
     edit(os.path.join(game, 'char_skill.cpp'),
          '\tsys_log(0, "%s: USE_SKILL: %d pkVictim %p", GetName(), dwVnum, get_pointer(pkVictim));\n',
          '\tsys_log(1, "%s: USE_SKILL: %d pkVictim %p", GetName(), dwVnum, get_pointer(pkVictim));\n')
+
+    # GetRefineLevel compares the plus in the base name with the plus in the
+    # locale name and writes a syserr line when they differ - and "Mikstura
+    # Ataku +15" (71034/76018) is a potion whose Korean name ends in a bare
+    # "+": 2773 lines in twelve minutes on one core, one per look at a bag
+    # holding it (sizowski, 12 September). Only equipment is refined. The
+    # anchor carries no newline: item.cpp has mixed line endings.
+    edit(os.path.join(game, 'item.cpp'),
+         '\tconst char* locale_name = GetName();',
+         '\t// A potion is not refined: "Mikstura Ataku +15" carries a plus in\n'
+         '\t// its Polish name and a bare "+" in the Korean one, and the check\n'
+         '\t// below wrote a syserr line for every look at a bag holding it.\n'
+         '\tif (GetType() != ITEM_WEAPON && GetType() != ITEM_ARMOR)\n'
+         '\t\treturn rtn;\n'
+         '\tconst char* locale_name = GetName();')
     edit(os.path.join(game, 'questmanager.cpp'),
          '\t\tsys_log(0, "CQuestManager::Kill QUEST_KILL_EVENT (pc=%d, npc=%d)", pc, npc);\n',
          '\t\tsys_log(1, "CQuestManager::Kill QUEST_KILL_EVENT (pc=%d, npc=%d)", pc, npc);\n')
@@ -657,6 +672,16 @@ def main(root):
          '\treturn GetLevel() >= 15 && GetSpecialFlag(PLAYER_STATS_MONSTER_FLAG) >= 800;\n'
          '}\n')
 
+    # ======================================================================
+    # 2.0.16 the Metin stone's skill book stops fifteen levels above it.
+    # ======================================================================
+    edit(os.path.join(game, 'item_manager.cpp'),
+         'bool ITEM_MANAGER::CreateDropItem(LPCHARACTER pkChr, LPCHARACTER pkKiller, std::vector<LPITEM> & vec_item)\n',
+         '// How far above a Metin stone a killer may be and still get the stone\'s\n'
+         '// guaranteed skill book (the top-up in CreateDropItem below).\n'
+         'static const int PLAYERBOT_METIN_BOOK_LEVEL_DELTA = 15;\n'
+         '\n'
+         'bool ITEM_MANAGER::CreateDropItem(LPCHARACTER pkChr, LPCHARACTER pkKiller, std::vector<LPITEM> & vec_item)\n')
     # ======================================================================
     # 2.0.13 item.use for quests (gm_profile.quest switches an elixir on by
     # the engine's own use path) and a full elixir at creation.
@@ -855,6 +880,24 @@ def main(root):
          '\t\t\tfound.x = keeper->GetX();\n'
          '\t\t\tfound.y = keeper->GetY();\n'
          '\t\t\tfoundShops.push_back(found);\n'
+         '\t\t\t// The client marks a result only when the VID is one of its own\n'
+         '\t\t\t// offline-shop entities - ikashop keeps that list from its spawn\n'
+         '\t\t\t// packet - so a keeper\'s VID lists the stall and marks nothing:\n'
+         '\t\t\t// "found 16 shops, none highlighted, none on the map" (sizowski,\n'
+         '\t\t\t// 12 September). What a keeper can get is a SPECIAL_EFFECT packet, sent\n'
+         '\t\t\t// to the searcher alone, on every keeper found. Not the level-up one:\n'
+         '\t\t\t// SE_LEVELUP_ON_14_FOR_GERMANY is, on this client, the German promo\n'
+         '\t\t\t// text ("Noch 1 Level-Up! ... siehe www.metin2.de") drawn over the\n'
+         '\t\t\t// character - 2.0.15 hung it over every stall found (vasils.). The\n'
+         '\t\t\t// firework is a plain effect on every client.\n'
+         '\t\t\tif (ch->GetDesc())\n'
+         '\t\t\t{\n'
+         '\t\t\t\tTPacketGCSpecialEffect effect{};\n'
+         '\t\t\t\teffect.header = HEADER_GC_SEPCIAL_EFFECT;\n'
+         '\t\t\t\teffect.type = SE_CHINA_FIREWORK;\n'
+         '\t\t\t\teffect.vid = keeper->GetVID();\n'
+         '\t\t\t\tch->GetDesc()->Packet(&effect, sizeof(effect));\n'
+         '\t\t\t}\n'
          '\t\t}\n'
          '\t}\n')
 
@@ -862,9 +905,16 @@ def main(root):
          '\n'
          '\t\tch->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("Searching ended. Found %d shops."), foundShops.size());\n',
          '\n'
-         '\t\t// The playerbots\' stalls, after the offline shops.\n'
+         '\t\t// The playerbots\' stalls, after the offline shops. They are listed\n'
+         '\t\t// and lit up, not drawn on the map, and the line says so.\n'
          '\t\tif (foundShops.size() < 400)\n'
+         '\t\t{\n'
+         '\t\t\tconst size_t offlineShops = foundShops.size();\n'
          '\t\t\tPlayerBotSearchStalls(ch, itemVnum, m_shopSearchFilters, foundShops);\n'
+         '\t\t\tif (foundShops.size() > offlineShops)\n'
+         '\t\t\t\tch->ChatPacket(CHAT_TYPE_INFO, "Stragany botow z tym towarem: %d - kazdy oznaczony fajerwerkiem.",\n'
+         '\t\t\t\t\t\t(int)(foundShops.size() - offlineShops));\n'
+         '\t\t}\n'
          '\n'
          '\t\tch->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("Searching ended. Found %d shops."), foundShops.size());\n')
 
@@ -918,8 +968,14 @@ def main(root):
          '\t// One skill book from every Metin stone, whatever its table rolled - the\n'
          '\t// table gives one at a quarter to a full chance, and a stone is where a\n'
          '\t// character learns from, so the count is topped up to one rather than\n'
-         '\t// added to. Each book takes its skill the way the table\'s own does.\n'
-         '\tif (pkChr->IsStone())\n'
+         '\t// added to. Each book takes its skill the way the table\'s own does. And\n'
+         '\t// not from a stone the killer has outgrown: the engine\'s own tables\n'
+         '\t// fade a drop out by level difference (aiPercentByDeltaLev), this\n'
+         '\t// top-up ignored it, and a player of forty-six farmed level-five stones\n'
+         '\t// for a guaranteed book each ("Drop z metinow", 12 September). Fifteen\n'
+         '\t// levels over the stone is where the top-up ends.\n'
+         '\tif (pkChr->IsStone() && pkKiller &&\n'
+         '\t\t\tpkKiller->GetLevel() <= pkChr->GetLevel() + PLAYERBOT_METIN_BOOK_LEVEL_DELTA)\n'
          '\t{\n'
          '\t\tint books = 0;\n'
          '\t\tfor (size_t i = 0; i < vec_item.size(); ++i)\n'

@@ -1597,6 +1597,19 @@ namespace
 	// ten, so pairs actually form on the maps where they matter.
 	const int PLAYERBOT_PARTY_SOLO_PERCENT = 25;
 	const int PLAYERBOT_PARTY_SOLO_PERCENT_FRONTIER = 10;
+	// What share of the population may be in a party at all, in thousandths,
+	// at the neutral PARTY weight; the slider scales it - a twentieth at 25,
+	// a half at 250. Until 2.0.18 the weight reached nothing but the planner's
+	// ranking of the party challenge, and the cohort off the frontier was the
+	// party-fighter role alone - a tenth of the population, drawn at login -
+	// so "Grupy (PT)" at 25 and at 250 gave the same thirty-seven bots in
+	// groups out of a thousand (jaksiezabic, 12 September). The role takes the
+	// first hundred places of the draw (GetPlayerBotPartyDraw): the last share
+	// the slider takes away and the first it gives back. On the frontier the
+	// base is the whole map, as it always was - the camps and bosses there
+	// are a party's work - so the neutral weight changes nothing there.
+	const int PLAYERBOT_PARTY_COHORT_PER_MILLE = 200;
+	const int PLAYERBOT_PARTY_FRONTIER_COHORT_PER_MILLE = 1000;
 	// How far a follower may fall behind a leader who is walking to a new camp
 	// before it gives the party up. The cohesion radius is for fighting as one
 	// formation; a thirty-kilometre relocation with a deferred route in the
@@ -1833,6 +1846,28 @@ namespace
 	}
 	const BYTE PLAYERBOT_DRAGON_GOD_SCROLL_MIN_PLUS = 7;
 	const BYTE PLAYERBOT_SCROLL_REFINE_MIN_PLUS = 6;
+	// A Blessing or Dragon God scroll in the bag is the whole reason to go
+	// on: under either the engine never burns the piece (DoRefineWithScroll
+	// hands it back a level down, or unchanged), so the personality's fear
+	// of +7 no longer applies. Six bots in ten aimed at +6 and stopped there
+	// with scrolls in the bag, and the scrolls went up on the counters
+	// instead - "mnostwo zwojow na serwerze, a boty ich nie uzywaja". With a
+	// scroll GetPlayerBotRefineTarget says this; without one, the old
+	// ambition. The first PLAYERBOT_REFINE_SCROLL_KEEP scrolls stay off
+	// the counter while a worn piece can still use one.
+	const BYTE PLAYERBOT_SCROLL_REFINE_MAX_PLUS = 9;
+	const int PLAYERBOT_REFINE_SCROLL_KEEP = 3;
+
+	// The two scrolls the bots refine under: neither burns the piece.
+	bool IsPlayerBotSafeRefineScroll(DWORD vnum)
+	{
+		if (vnum == PLAYERBOT_BLESSING_SCROLL_VNUM)
+			return true;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS) / sizeof(PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS[0]); ++i)
+			if (vnum == PLAYERBOT_DRAGON_GOD_SCROLL_VNUMS[i])
+				return true;
+		return false;
+	}
 	const DWORD PLAYERBOT_SCROLL_REFINE_INTERVAL = 45000;
 	// Neither map sells anything, so a visit is bounded and ends in Bokjung.
 	const DWORD PLAYERBOT_FRONTIER_MAX_VISIT_TIME = 2400000;
@@ -2005,6 +2040,11 @@ namespace
 	// WEAR_WEAPON, the bait lives in the rod's socket 2 rather than in the pouch,
 	// a cast bites after 10-40 s and then leaves a 6 s window to pull.
 	const DWORD PLAYERBOT_FISHING_ROD_VNUM = 27400;   // Wedka+1
+	// What a bot pays for the mt2009 fishing pass (unique item 27620, a day
+	// of real time) - nothing sells one, it comes out of a quest a bot cannot
+	// talk through, so it is created for the price of a rod and a bundle of
+	// wood together. Unused on r40250, which has no pass.
+	const DWORD PLAYERBOT_FISHING_PASS_PRICE = 50000;
 	const DWORD PLAYERBOT_FISHING_BAIT_VNUM = 27801;  // Robak
 	const DWORD PLAYERBOT_SHELLFISH_VNUM = 27987;     // Malz
 	// What a shell can hold: Biala / Niebieska / Krwawa Perla.
@@ -3274,6 +3314,7 @@ namespace
 			wPortalWalkTicks(0),
 			wPortalWalkRouteIndex(0),
 			bLastNavOutcome(0),
+			bRoutePartial(false),
 			dwFightProgressVID(0),
 			dwDefenceTargetVID(0),
 			dwDefenceEpisodeStart(0),
@@ -3616,6 +3657,11 @@ namespace
 		// one it was costs a byte and is the difference between a diagnosis and
 		// a guess.
 		BYTE bLastNavOutcome;
+		// The route in hand ends short of its destination on purpose: the
+		// corridor search hit its cap and handed back the nearest cell it
+		// reached (PLAYERBOT_NAV_MAX_CORRIDOR_EXPANSIONS). Running out of
+		// such a route is a replan from there, never an arrival.
+		bool bRoutePartial;
 		DWORD dwFightProgressVID;
 		// The attacker this bot is currently defending itself against, since when,
 		// and from where. See PLAYERBOT_DEFENCE_EPISODE_TIME.

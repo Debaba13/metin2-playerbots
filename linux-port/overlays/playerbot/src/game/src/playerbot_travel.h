@@ -437,10 +437,11 @@ namespace
 			return false;
 #if defined(PLAYERBOT_ENGINE_MT2009)
 		// CHARACTER::fishing() here wants level 50, the fishing pass (unique
-		// item 27620) worn, water in front of the rod and the onboarding quest
-		// done. The last two are the bank's and the session's business; the
-		// first two are asked here so a bot without them never walks to the water.
-		if (ch->GetLevel() < 50 || !ch->IsEquipUniqueItem(UNIQUE_ITEM_FISHING_PASS))
+		// item 27620) worn and water in front of the rod. The level is asked
+		// here so a bot under it never walks to the water; the pass is bought
+		// and worn on the spot (EnsurePlayerBotFishingPass), because nothing
+		// sells one and refusing without it meant no bot ever fished here.
+		if (ch->GetLevel() < 50 || !EnsurePlayerBotFishingPass(ch, dwNow))
 			return false;
 #endif
 		// A trip to a village with no measured bank is a walk to nowhere: the

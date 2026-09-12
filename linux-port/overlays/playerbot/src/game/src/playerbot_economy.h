@@ -924,11 +924,25 @@ namespace
 	// Worn pieces do not go through here: the junk rule does not apply to
 	// something the bot is wearing, and a full +9 set is not a reason to refuse
 	// a legitimate upgrade waiting in the bag.
+	//
+	// And "not scrap" is not "worth the bot's yang". The junk rule keeps a
+	// great deal on purpose - a collector's stock, anything at +4 for the
+	// counter, a piece with prize lines - and the refine pass took all of it
+	// to the anvil: a bot under a Guillotine Blade +4 with 14 000 yang left
+	// raised level-one swords, glaives, wooden earrings and copper necklaces
+	// from +1 to +3 one by one, and burned one (elgrandebgc, 12 September,
+	// "ulepszaja wszystko co popadnie, zeby potem wystawic za bezcen"). Only
+	// what the bot will wear is worth refining in the bag: an upgrade the
+	// equipment pass is about to put on, or the one higher-tier spare per slot
+	// the blacksmith can make into one. Goods are sold at what they are.
 	bool IsPlayerBotRefineBagCandidate(LPCHARACTER ch, LPITEM item)
 	{
-		return item && item->GetRefinedVnum() != 0 &&
-				IsPlayerBotEquipmentCandidate(ch, item) &&
-				!IsPlayerBotJunkItem(ch, item);
+		if (!item || item->GetRefinedVnum() == 0 ||
+				!IsPlayerBotEquipmentCandidate(ch, item) ||
+				IsPlayerBotJunkItem(ch, item))
+			return false;
+		return IsPlayerBotHigherTierSpare(ch, item) ||
+				IsPlayerBotWearableUpgrade(ch, item, item->GetCell());
 	}
 
 	bool ManagePlayerBotRefining(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
@@ -1166,6 +1180,8 @@ namespace
 			if (!item || item->GetRefinedVnum() == 0 || item->isLocked() || item->IsExchanging())
 				continue;
 			const BYTE plus = item->GetRefineLevel();
+			// The target is PLAYERBOT_SCROLL_REFINE_MAX_PLUS here by construction:
+			// this pass only runs with a scroll in the bag.
 			if (plus < PLAYERBOT_SCROLL_REFINE_MIN_PLUS || plus >= GetPlayerBotRefineTarget(ch, item))
 				continue;
 			if (!IsPlayerBotWearableAtLevel(ch, item->GetRefinedVnum()))

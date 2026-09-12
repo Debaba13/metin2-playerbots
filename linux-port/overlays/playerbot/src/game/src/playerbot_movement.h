@@ -1102,6 +1102,8 @@ namespace
 						ch->GetX(), ch->GetY(), destX, destY, routeSeed, dwNow,
 						targetSnapRadius, flexibleTargetSnap, state.vecRoute,
 						state.bNavDeferredCount >= PLAYERBOT_NAV_STARVED_ATTEMPTS);
+				state.bRoutePartial = planResult == PLAYERBOT_NAV_PLAN_FOUND &&
+						navigation.LastPlanWasPartial();
 				if (planResult == PLAYERBOT_NAV_PLAN_DEFERRED)
 				{
 					if (state.bNavDeferredCount < 255)
@@ -1190,6 +1192,18 @@ namespace
 
 		if (state.uRouteIndex >= state.vecRoute.size())
 		{
+			// A partial route ran out where the cap fell, not at the goal: plan
+			// the rest from here. Reporting an arrival even once would hand a
+			// caller a destination the bot is nowhere near.
+			if (state.bRoutePartial &&
+					DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY) > PLAYERBOT_NAV_ARRIVAL_DISTANCE)
+			{
+				state.bRoutePartial = false;
+				ClearPlayerBotRoute(state, false);
+				state.dwNextNavPlanTime = 0;
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_NO_PROGRESS;
+				return false;
+			}
 			ch->Stop();
 			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ARRIVED;
 			return true;

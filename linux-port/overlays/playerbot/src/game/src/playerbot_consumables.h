@@ -24,31 +24,47 @@ namespace
 	// refusals a minute between them. Worse, a refusal ended the whole pass, so
 	// every Moonlight chest sitting behind one of these in the bag was never
 	// reached: that is how 587 bots came to be holding nine thousand of them.
-	std::map<DWORD, DWORD> s_mapPlayerBotChestRefused;
+	//
+	// Keyed by bot AND vnum since 2.0.17. Keyed by vnum alone it was one map
+	// for the whole population, and a refusal is mostly transient - the bag
+	// had no room for the group at that moment - so the first bot in the tick
+	// with a full bag switched the Moonlight chest off for everyone for ten
+	// minutes, and with two thousand bots there always was one: a player's
+	// table showed 165 663 unopened chests in the bots' bags (uxietoszef,
+	// 12 September). What 50192 and 50193 actually were is a level limit
+	// (Skrzynia Eksperta III at fifty, Skrzynia Mistrza I at sixty), and that
+	// is asked before UseItem now, so no refusal has to be remembered for it.
+	std::map<std::pair<DWORD, DWORD>, DWORD> s_mapPlayerBotChestRefused;
+
+	// A box this bot has not grown into: the engine's own LIMIT_LEVEL on the
+	// giftbox, which UseItem would refuse with a chat line nobody reads.
+	bool IsPlayerBotChestLevelLocked(LPCHARACTER ch, LPITEM item)
+	{
+		return ch && item && item->GetLevelLimit() > ch->GetLevel();
+	}
 
 	// Opens one chest per pass. UseItem refuses when the bag has no room, and
 	// says so in the engine's own log; the bot's next town visit makes room.
 	// A box that belongs on a counter rather than in the bot's own hands.
 	//
-	// Two kinds qualify. One the engine will not let this bot open at all -
-	// 50192 and 50193, six thousand refusals a minute between them before the
-	// refusal was remembered - which is pure goods to whoever holds it. And the
+	// Two kinds qualify. One this bot cannot open - a level-locked giftbox, or
+	// one the engine refused it - which is goods to whoever holds it. And the
 	// surplus of a stack big enough that selling it costs the bot nothing: the
 	// chest pass keeps eating the stack meanwhile, so most of what drops is
 	// still opened and only what piles up is sold. A stack goes up whole
 	// because a private shop line is a whole stack; splitting one is its own
 	// change and not this one.
-	bool IsPlayerBotSurplusChest(LPITEM item)
+	bool IsPlayerBotSurplusChest(LPCHARACTER ch, LPITEM item)
 	{
-		if (!item || (item->GetVnum() != PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
+		if (!ch || !item || (item->GetVnum() != PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
 				item->GetType() != ITEM_GIFTBOX))
 			return false;
-		// A box the engine has refused stays goods. The refusal is a property of
-		// the box - 50192 and 50193 cannot be opened on this server at all, and
-		// 775 of them are sitting in bags as one cell each - not of the minute
-		// it was noticed, so the retry clock is not consulted here: that clock
-		// exists to stop the asking, not to make the box valuable again.
-		if (s_mapPlayerBotChestRefused.find(item->GetVnum()) !=
+		if (IsPlayerBotChestLevelLocked(ch, item))
+			return true;
+		// A box the engine refused this bot stays goods; the retry clock is not
+		// consulted here - it exists to stop the asking, not to make the box
+		// valuable again.
+		if (s_mapPlayerBotChestRefused.find(std::make_pair(ch->GetPlayerID(), item->GetVnum())) !=
 				s_mapPlayerBotChestRefused.end())
 			return true;
 		return item->GetCount() >= PLAYERBOT_CHEST_STALL_MIN_STACK;
@@ -122,8 +138,14 @@ namespace
 			// population opening that kind of box for the next few minutes.
 			if (item->isLocked())
 				continue;
-			std::map<DWORD, DWORD>::const_iterator refused =
-					s_mapPlayerBotChestRefused.find(item->GetVnum());
+			// A box above the bot's level is not asked for: the engine would
+			// refuse it, and remembering that refusal is what used to switch the
+			// chest off for everybody.
+			if (IsPlayerBotChestLevelLocked(ch, item))
+				continue;
+			const std::pair<DWORD, DWORD> refuseKey(ch->GetPlayerID(), item->GetVnum());
+			std::map<std::pair<DWORD, DWORD>, DWORD>::const_iterator refused =
+					s_mapPlayerBotChestRefused.find(refuseKey);
 			if (refused != s_mapPlayerBotChestRefused.end() && dwNow < refused->second)
 				continue;
 			// The same test as for the treasure box: room for the whole set the
@@ -143,9 +165,9 @@ namespace
 			}
 			// Not the end of the pass: the next box in the bag may well open,
 			// and giving up here is what kept the Moonlight chests behind these
-			// two out of reach. The refusal is remembered so the bot stops
-			// asking every eight seconds.
-			s_mapPlayerBotChestRefused[chestVnum] = dwNow + PLAYERBOT_CHEST_REFUSED_RETRY;
+			// two out of reach. The refusal is remembered - for this bot and
+			// this box - so the bot stops asking every eight seconds.
+			s_mapPlayerBotChestRefused[refuseKey] = dwNow + PLAYERBOT_CHEST_REFUSED_RETRY;
 			PlayerBotLogThrottled("chest_refused", dwNow,
 					"PLAYERBOT_CHEST: refused pid=%u name=%s vnum=%u count=%u free=%d",
 					ch->GetPlayerID(), ch->GetName(), chestVnum,

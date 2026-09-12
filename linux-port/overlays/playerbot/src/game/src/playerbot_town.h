@@ -721,6 +721,49 @@ namespace
 		return GetPlayerBotShopReason(ch, state) != PLAYERBOT_SHOP_REASON_NONE;
 	}
 
+	// What the blacksmith was paid to make this piece what it is: the fee of
+	// every step from the base item to this refine, read off the engine's own
+	// tables - the base proto is this vnum less the refine, each proto names
+	// the next (dwRefinedVnum) and its recipe (wRefineSet) - and each step
+	// charged at what it costs on average to get through it, cost * 100 /
+	// prob, because a step that fails six times in ten at +7 is paid for more
+	// than once, and the last failure takes the piece. That quotient is the
+	// risk premium: eleven percent at +1, a hundred at +6, over two hundred at
+	// +9. The walk has to land back on this vnum, or the piece is not on a
+	// plain ladder and gets no floor. Materials are not counted; they have a
+	// market of their own.
+	//
+	// Why a floor at all: the asking price scales the merchant's price of the
+	// base item by the median wallet, and on a fresh world both are pennies -
+	// Miecz+4 at 90 yang, a Sejmitar+4 at 582 (djariczek, 12 September), where
+	// the four fees alone come to 6100. Nobody sells for less than they paid
+	// the blacksmith.
+	DWORD GetPlayerBotRefineInvestment(LPITEM item)
+	{
+		if (!item || (item->GetType() != ITEM_WEAPON && item->GetType() != ITEM_ARMOR))
+			return 0;
+		const int refine = item->GetRefineLevel();
+		if (refine <= 0 || (DWORD)refine > item->GetVnum())
+			return 0;
+		DWORD vnum = item->GetVnum() - (DWORD)refine;
+		unsigned long long total = 0;
+		for (int step = 0; step < refine; ++step)
+		{
+			const TItemTable* proto = ITEM_MANAGER::instance().GetTable(vnum);
+			if (!proto || proto->dwRefinedVnum == 0)
+				return 0;
+			const TRefineTable* recipe = CRefineManager::instance().GetRefineRecipe(proto->wRefineSet);
+			if (!recipe || recipe->cost < 0)
+				return 0;
+			const int prob = std::max(1, std::min(100, (int)recipe->prob));
+			total += (unsigned long long)recipe->cost * 100ULL / (unsigned long long)prob;
+			vnum = proto->dwRefinedVnum;
+		}
+		if (vnum != item->GetVnum())
+			return 0;
+		return total > 0xFFFFFFFFULL ? 0xFFFFFFFFU : (DWORD)total;
+	}
+
 	// What a bot asks for what it puts up. A refined item has no price in the
 	// tables - the merchant value is that of the unrefined base - so above +6
 	// the number is ours. Deliberately modest: the point is that another bot can
@@ -744,12 +787,16 @@ namespace
 		// the same 150 000 as boots +7 with none.
 		const int bonusPercent = GetPlayerBotBonusPricePercent(item);
 		const BYTE refine = item->GetRefineLevel();
+		// And what it cost to make, under every way out of here - the flat
+		// prices, the scrap price, the prior, and the number the memory and
+		// the step limiter finally settle on.
+		const DWORD investment = GetPlayerBotRefineInvestment(item);
 		if (refine >= 9)
-			return ApplyPlayerBotBonusPremium(PLAYERBOT_SHOP_PRICE_PLUS9, bonusPercent);
+			return ApplyPlayerBotBonusPremium(std::max(PLAYERBOT_SHOP_PRICE_PLUS9, investment), bonusPercent);
 		if (refine == 8)
-			return ApplyPlayerBotBonusPremium(PLAYERBOT_SHOP_PRICE_PLUS8, bonusPercent);
+			return ApplyPlayerBotBonusPremium(std::max(PLAYERBOT_SHOP_PRICE_PLUS8, investment), bonusPercent);
 		if (refine == 7)
-			return ApplyPlayerBotBonusPremium(PLAYERBOT_SHOP_PRICE_PLUS7, bonusPercent);
+			return ApplyPlayerBotBonusPremium(std::max(PLAYERBOT_SHOP_PRICE_PLUS7, investment), bonusPercent);
 		// A skill book's own market, and the goods whose merchant price says
 		// nothing about what they are worth here. Both come from the audit of
 		// 8 September: the merchant charges a thousand yang for every book
@@ -766,7 +813,8 @@ namespace
 				(item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
 				refine < PLAYERBOT_SHOP_MIN_GEAR_REFINE)
 			return ApplyPlayerBotBonusPremium(
-					std::max<DWORD>(1, npcUnit * PLAYERBOT_SCRAP_PRICE_MULT), bonusPercent);
+					std::max(std::max<DWORD>(1, npcUnit * PLAYERBOT_SCRAP_PRICE_MULT), investment),
+					bonusPercent);
 		DWORD unit = npcUnit * PLAYERBOT_SHOP_MATERIAL_MARKUP;
 		if (bLevel30)
 			unit = std::max(unit, PLAYERBOT_PRIOR_LEVEL30_WEAPON);
@@ -840,6 +888,8 @@ namespace
 					PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100 / count);
 			unit = std::max(unit, std::max<DWORD>(1, std::min(walletUnit, stackCap)));
 		}
+		// And never under what the blacksmith was paid.
+		unit = std::max(unit, investment);
 		// That is the prior: what the counter asks before the market has said
 		// anything.
 		const DWORD prior = unit;
@@ -905,6 +955,10 @@ namespace
 		// than under it, because the limiter and the sale memory are both keyed
 		// by vnum and refine, the one pair that cannot tell two otherwise
 		// identical pieces apart.
+		// The memory may pull the number to a quarter of the prior and the
+		// limiter drifts from wherever the last counter had it; neither goes
+		// under the fees.
+		unit = std::max(unit, investment);
 		unit = ApplyPlayerBotBonusPremium(unit, bonusPercent);
 		const DWORD price = unit * (DWORD)item->GetCount();
 		return price == 0 ? 1U : price;
@@ -1005,6 +1059,40 @@ namespace
 		return decision;
 	}
 
+	// Is any worn piece still short of what a scroll can take it to?
+	bool PlayerBotWearsScrollWork(LPCHARACTER ch)
+	{
+		if (!ch)
+			return false;
+		static const BYTE wearSlots[] = {
+			WEAR_WEAPON, WEAR_BODY, WEAR_HEAD, WEAR_SHIELD,
+			WEAR_FOOTS, WEAR_WRIST, WEAR_NECK, WEAR_EAR
+		};
+		for (size_t i = 0; i < sizeof(wearSlots) / sizeof(wearSlots[0]); ++i)
+		{
+			LPITEM worn = ch->GetWear(wearSlots[i]);
+			if (worn && worn->GetRefinedVnum() != 0 &&
+					worn->GetRefineLevel() < PLAYERBOT_SCROLL_REFINE_MAX_PLUS)
+				return true;
+		}
+		return false;
+	}
+
+	// Scrolls lying in cells before this one: the ones the keep counts first.
+	int CountPlayerBotSafeRefineScrollsAhead(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item)
+			return 0;
+		int ahead = 0;
+		for (WORD cell = 0; cell < item->GetCell() && cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM held = ch->GetInventoryItem(cell);
+			if (held && held->GetCell() == cell && IsPlayerBotSafeRefineScroll(held->GetVnum()))
+				ahead += std::max<int>(1, held->GetCount());
+		}
+		return ahead;
+	}
+
 	int ScorePlayerBotShopStock(LPCHARACTER ch, LPITEM item, bool merchant, bool report)
 	{
 		if (!item)
@@ -1049,6 +1137,18 @@ namespace
 		// its own skills is waiting for it.
 		if (item->GetVnum() == PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
 			return GetPlayerBotStuckSkill(ch) != 0 ? -1 : 800;
+		// A Blessing or Dragon God scroll is the bot's own ladder to +9 (it
+		// lifts GetPlayerBotRefineTarget while it is in the bag), so the first
+		// PLAYERBOT_REFINE_SCROLL_KEEP stay while a worn piece can still use
+		// one; the rest are goods - another bot needs them too. Counted by cell
+		// order, because the stall splits a stack into singles first.
+		if (IsPlayerBotSafeRefineScroll(item->GetVnum()))
+		{
+			if (PlayerBotWearsScrollWork(ch) &&
+					CountPlayerBotSafeRefineScrollsAhead(ch, item) < PLAYERBOT_REFINE_SCROLL_KEEP)
+				return -1;
+			return 800;
+		}
 		// An ITEM_MATERIAL no recipe consumes is scenery, not goods: it was put
 		// up for its type, and its type is not a reason anybody would buy it.
 		if (item->GetRefinedVnum() == 0 && item->GetType() == ITEM_MATERIAL)
@@ -1102,7 +1202,7 @@ namespace
 
 		// An unopened box. Ranked between the materials and the spare gear: it
 		// is a gamble somebody might want, not a thing anybody came for.
-		if (IsPlayerBotSurplusChest(item))
+		if (IsPlayerBotSurplusChest(ch, item))
 			return 350;
 		// A specimen of a mission already handed in. The Orc Tooth never gets
 		// here: it is a refine material and the material branch above priced
@@ -2003,6 +2103,9 @@ namespace
 					price = std::max<DWORD>(1, price * (100 - stands * PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT) / 100);
 				}
 			}
+			// Neither markdown goes under what the blacksmith was paid: a
+			// discount is off the margin, not off what the piece cost to make.
+			price = std::max(price, GetPlayerBotRefineInvestment(item));
 			table[tableCount].vnum = item->GetVnum();
 			table[tableCount].count = item->GetCount();
 			table[tableCount].pos = TItemPos(INVENTORY, cell);

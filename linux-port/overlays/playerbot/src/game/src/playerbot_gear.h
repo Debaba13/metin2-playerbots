@@ -1337,10 +1337,31 @@ namespace
 		return true;
 	}
 
+	// How many Blessing and Dragon God scrolls the bag holds.
+	int CountPlayerBotSafeRefineScrolls(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		int scrolls = 0;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM held = ch->GetInventoryItem(cell);
+			if (held && held->GetCell() == cell && IsPlayerBotSafeRefineScroll(held->GetVnum()))
+				scrolls += std::max<int>(1, held->GetCount());
+		}
+		return scrolls;
+	}
+
 	BYTE GetPlayerBotRefineTarget(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item)
 			return 0;
+		// A scroll in the bag is a ladder to +9 for everybody: under it a
+		// failure costs a level or nothing, never the piece, so the ambition
+		// below - which is about not burning what was earned - does not apply
+		// while one is there. See PLAYERBOT_SCROLL_REFINE_MAX_PLUS.
+		if (CountPlayerBotSafeRefineScrolls(ch) > 0)
+			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
 
 		// Equipment is a primary progression system, not a side activity. Every bot
 		// aims for at least +6, while a stable per-character/per-family personality

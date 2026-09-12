@@ -125,6 +125,27 @@ namespace
 	// a little more and the search expands a third as much.
 	const int PLAYERBOT_NAV_GREEDY_CORRIDOR_REGIONS = 40;
 	const int PLAYERBOT_NAV_GREEDY_WEIGHT = 3;
+	// A cell the corridor search has taken off the heap stays closed. A
+	// weighted heuristic is inconsistent - a cell can be reached cheaper
+	// after it was expanded - and the search used to reopen it every time,
+	// so on a map whose water penalties make many routes nearly equal the
+	// same cells were expanded again and again: single plans of four and
+	// five seconds on Orc Valley, each a tick the whole core stood still
+	// for, and the client lagging every ten to twenty seconds (sizowski,
+	// 12 September; my own world planned the same map in under half a
+	// second). Closed once, a cell costs one expansion and the corridor
+	// bounds the search; the route is a shade longer at worst. A hard cap
+	// stands behind that: past it the search hands back the best partial
+	// route it has - to the cell nearest the goal - and the walk plans the
+	// rest from there (TPlayerBotAIState::bRoutePartial).
+	const int PLAYERBOT_NAV_MAX_CORRIDOR_EXPANSIONS = 60000;
+	// What a partial route has to gain to be worth walking: this many cells
+	// nearer the goal than where the bot stands, or the search has failed.
+	const int PLAYERBOT_NAV_PARTIAL_MIN_GAIN_CELLS = 16;
+	// A plan this long, whatever its distance bucket, says so in the log
+	// with its parts - the abstract search, the corridor, the cells it
+	// expanded - so the next slow world can be read rather than guessed.
+	const DWORD PLAYERBOT_NAV_SLOW_PLAN_MS = 250;
 	// The route cache. A far plan on Orc Valley costs 150-250 ms and most of
 	// them are the same trip - the entrance to a hub, a hub to the exit, hub
 	// to hub - asked for by bot after bot from within a few hundred units of
@@ -563,24 +584,42 @@ namespace
 				return true;
 			}
 
+			// The route just planned ends short of its goal on purpose: the
+			// corridor search hit PLAYERBOT_NAV_MAX_CORRIDOR_EXPANSIONS.
+			bool LastPlanWasPartial() const
+			{
+				return m_bLastPartial;
+			}
+
 			// A far plan is the one thing the load line cannot attribute: it costs
 			// a hundred times a near one, and only the destination and the price
-			// say which subsystem asked for it and whether the search failed.
+			// say which subsystem asked for it and whether the search failed. A
+			// slow plan of any size gets the same line, with what it spent where.
 			EPlayerBotNavPlanResult FindRoute(long startX, long startY, long targetX, long targetY,
 					DWORD seed, DWORD now, int targetSnapRadius, bool flexibleTargetSnap,
 					std::vector<PIXEL_POSITION>& outWaypoints, bool starved = false)
 			{
-				const DWORD farUsBefore = s_uPlayerBotLoadPlanBucketUs[3];
+				const DWORD usBefore = s_uPlayerBotLoadPlanUs;
 				const DWORD farCountBefore = s_uPlayerBotLoadPlanBucket[3];
+				m_lastAbstractUs = 0;
+				m_lastFineUs = 0;
+				m_lastCorridorRegions = 0;
+				m_lastFineExpanded = 0;
+				m_bLastPartial = false;
 				const EPlayerBotNavPlanResult result = FindRouteInner(startX, startY, targetX, targetY,
 						seed, now, targetSnapRadius, flexibleTargetSnap, outWaypoints, starved);
-				if (s_uPlayerBotLoadPlanBucket[3] != farCountBefore)
-					sys_log(0, "PLAYERBOT_NAV: far plan map=%ld from=(%ld,%ld) to=(%ld,%ld) result=%s cost_ms=%u waypoints=%u",
+				const DWORD costMs = (s_uPlayerBotLoadPlanUs - usBefore) / 1000;
+				const bool bFar = s_uPlayerBotLoadPlanBucket[3] != farCountBefore;
+				if (bFar || costMs >= PLAYERBOT_NAV_SLOW_PLAN_MS)
+					sys_log(0, "PLAYERBOT_NAV: %s map=%ld from=(%ld,%ld) to=(%ld,%ld) result=%s cost_ms=%u waypoints=%u abstract_ms=%u regions=%d fine_ms=%u expanded=%d partial=%d",
+							bFar ? "far plan" : "slow plan",
 							m_mapIndex, startX, startY, targetX, targetY,
 							result == PLAYERBOT_NAV_PLAN_FOUND ? "found" :
 							(result == PLAYERBOT_NAV_PLAN_DEFERRED ? "deferred" : "unreachable"),
-							(unsigned int)((s_uPlayerBotLoadPlanBucketUs[3] - farUsBefore) / 1000),
-							(unsigned int)outWaypoints.size());
+							(unsigned int)costMs, (unsigned int)outWaypoints.size(),
+							(unsigned int)(m_lastAbstractUs / 1000), m_lastCorridorRegions,
+							(unsigned int)(m_lastFineUs / 1000), m_lastFineExpanded,
+							m_bLastPartial ? 1 : 0);
 				return result;
 			}
 
@@ -962,7 +1001,8 @@ namespace
 					last.y = targetY;
 				}
 
-				if (cacheable)
+				// Never a partial one: it is a route to wherever the cap fell.
+				if (cacheable && !m_bLastPartial)
 				{
 					// Full: drop a whole goal's routes, the first in key order - a plain
 					// rule on the plans that already cost two hundred milliseconds.
@@ -1462,9 +1502,12 @@ namespace
 			}
 
 			bool FindFinePathInRegionCorridor(int startCell, int targetCell,
-					const std::vector<DWORD>& corridor, DWORD seed, std::vector<int>& path)
+					const std::vector<DWORD>& corridor, DWORD seed, std::vector<int>& path,
+					int& outExpanded, bool& outPartial)
 			{
 				path.clear();
+				outExpanded = 0;
+				outPartial = false;
 				if (corridor.empty())
 					return false;
 				std::vector<BYTE> allowed(m_regions.size(), 0);
@@ -1517,12 +1560,21 @@ namespace
 				const int moveCost[8] = { 10, 14, 10, 14, 10, 14, 10, 14 };
 				const int directionOffset = (int)(PlayerBotNavHash(seed) & 7U);
 				bool found = false;
+				int expanded = 0;
+				int bestCell = startCell;
+				const int startH = OctileDistance(startX, startY, targetX, targetY);
+				int bestH = startH;
 				while (!open.empty())
 				{
 					const TFineOpenNode current = open.top();
 					open.pop();
 					if (m_nodeToken[current.cell] != token || m_nodeCost[current.cell] != current.g)
 						continue;
+					// Closed. A negative cost is one no later, cheaper arrival can
+					// beat, so the neighbour test below never reopens the cell, and
+					// the stale test above drops any entry still on the heap for it.
+					m_nodeCost[current.cell] = -current.g - 1;
+					++expanded;
 					if (current.cell == targetCell)
 					{
 						found = true;
@@ -1531,6 +1583,14 @@ namespace
 
 					int currentX, currentY;
 					CellFromIndex(current.cell, currentX, currentY);
+					const int currentH = OctileDistance(currentX, currentY, targetX, targetY);
+					if (currentH < bestH)
+					{
+						bestH = currentH;
+						bestCell = current.cell;
+					}
+					if (expanded >= PLAYERBOT_NAV_MAX_CORRIDOR_EXPANSIONS)
+						break;
 					for (int n = 0; n < 8; ++n)
 					{
 						const int direction = (directionOffset + n) & 7;
@@ -1571,9 +1631,21 @@ namespace
 					}
 				}
 
+			outExpanded = expanded;
+				int endCell = targetCell;
 				if (!found)
-					return false;
-				for (int cursor = targetCell; cursor >= 0; cursor = m_parent[cursor])
+				{
+					// Only the cap hands back a partial route; an exhausted corridor
+					// is a real failure and stays one. And only when the nearest cell
+					// reached is worth the walk - otherwise the bot would step out
+					// and plan the identical search again.
+					if (expanded < PLAYERBOT_NAV_MAX_CORRIDOR_EXPANSIONS || bestCell == startCell ||
+							bestH + PLAYERBOT_NAV_PARTIAL_MIN_GAIN_CELLS * 10 > startH)
+						return false;
+					endCell = bestCell;
+					outPartial = true;
+				}
+				for (int cursor = endCell; cursor >= 0; cursor = m_parent[cursor])
 				{
 					path.push_back(cursor);
 					if (cursor == startCell)
@@ -1598,6 +1670,7 @@ namespace
 				if (startRegion == targetRegion)
 					return AppendLocalRegionPath(startCell, targetCell, startRegion, seed, path);
 
+				const DWORD abstractStartUs = PlayerBotClockUs();
 				++m_regionSearchToken;
 				if (m_regionSearchToken == 0)
 				{
@@ -1685,13 +1758,18 @@ namespace
 					cursor = (DWORD)parent;
 				}
 				std::reverse(corridor.begin(), corridor.end());
+				m_lastAbstractUs = PlayerBotClockUs() - abstractStartUs;
+				m_lastCorridorRegions = (int)corridor.size();
 
 				// The abstract graph decides which connected local regions form a
 				// valid corridor.  A single fine-grained A* then chooses the best
 				// real crossings inside that corridor.  This keeps reachability exact
 				// without forcing every bot through one arbitrary portal midpoint.
-				return FindFinePathInRegionCorridor(startCell, targetCell,
-						corridor, seed, path);
+				const DWORD fineStartUs = PlayerBotClockUs();
+				const bool bFound = FindFinePathInRegionCorridor(startCell, targetCell,
+						corridor, seed, path, m_lastFineExpanded, m_bLastPartial);
+				m_lastFineUs = PlayerBotClockUs() - fineStartUs;
+				return bFound;
 			}
 
 			bool m_initialized;
@@ -1726,6 +1804,12 @@ namespace
 			std::vector<int> m_regionParent;
 			std::vector<int> m_regionParentEdge;
 			DWORD m_regionSearchToken;
+			// What the last plan spent where, for the far/slow plan line.
+			DWORD m_lastAbstractUs = 0;
+			DWORD m_lastFineUs = 0;
+			int m_lastCorridorRegions = 0;
+			int m_lastFineExpanded = 0;
+			bool m_bLastPartial = false;
 	};
 }
 

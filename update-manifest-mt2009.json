@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-12T13:50:25Z",
-  "statusMessage": "Wersja 2.0.14: panel klasyczny z polskimi znakami w nazwach przedmiotów i bazowymi statystykami w dymku (wartość ataku, obrona, wymagany poziom). Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-12T20:27:16Z",
+  "statusMessage": "Wersja 2.0.19: koniec lagów z pięciosekundowych planowań tras, zwój w plecaku prowadzi bota do +9, ulepszony przedmiot nie schodzi na straganie poniżej opłat kowala, cisza w syserr, brakująca tabela logu sklepu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
   "server": {
-    "version": "2.0.14",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.14/metin2-server-update-2.0.14.zip",
-    "sha256": "AEA9344C8E9A66F0B3FDA41F829AD60C5C0E2AC5FA17B363C661FA2892F810BE"
+    "version": "2.0.19",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.19/metin2-server-update-2.0.19.zip",
+    "sha256": "6567733EB90D7900CD8001CBEBD006D0F9C68D8A115D151EF5D1C1C3425A2798"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",

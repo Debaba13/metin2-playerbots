@@ -63,6 +63,12 @@ RUN PREFIX="${M2_EXTERN}" BUILD=/build/work PORT=/build/port40250 \
 # =============================================================================
 FROM deps AS builder
 
+# A job per core ran out of memory on an 8 GB laptop: Docker Desktop gives
+# the build VM half the host, and cmd_general.cpp or char.cpp with -O2 -g
+# takes over a gigabyte per compiler, so four of them on four gigabytes
+# thrashed until the build looked stuck at "game builder 2/3 67%"
+# (.unright, 12 September). MAKE_JOBS (M2_MAKE_JOBS in .env) still wins;
+# the default is the smaller of the cores and the memory divided by 1400 MB.
 ARG MAKE_JOBS=
 ARG STRIP_BINARIES=1
 
@@ -91,7 +97,7 @@ RUN grep -q 'return fdwatch_sndbuf_left(fd);' libthecore/src/fdwatch.c \
 RUN --mount=type=cache,target=/root/.ccache set -eux; \
     find /src/server \( -name '*.o' -o -name '*.a' \) -delete || true; \
     rm -rf libthecore/src/OBJDIR libgame/src/OBJDIR; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     for m in libthecore/src libpoly libgame/src libsql libserverkey; do \
       make -C "$m" dep ${M2_MAKEVARS} >/dev/null 2>&1 || true; \
     done; \
@@ -114,7 +120,7 @@ RUN --mount=type=cache,target=/root/.ccache set -eux; \
     rm -rf db/src/.obj; \
     find db/src -name '*.o' -delete || true; \
     mkdir -p /out; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     make -C db/src -j"$J" ${M2_MAKEVARS} DBDIR=/out
 
 # Cache Layer 3: Copy and build game core
@@ -127,7 +133,7 @@ RUN set -eux; \
 RUN --mount=type=cache,target=/root/.ccache set -eux; \
     rm -rf game/src/OBJDIR; \
     find game/src -name '*.o' -delete || true; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     mkdir -p /out; \
     make -C game/src -j"$J" ${M2_MAKEVARS}; \
     make -C game/src install GAMEDIR=/out ${M2_MAKEVARS}
