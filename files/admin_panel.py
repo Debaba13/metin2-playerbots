@@ -216,8 +216,39 @@ HUNTING_MOB_NAMES_TR = {
     5126: "Güçlü Altın Maymun",
 }
 
+# A skill book is vnum 50300 (or a named book) with the skill id in socket0;
+# the bag showed only "Ksiega Umiejetnosci" and nobody could tell which
+# skill it was (Tieru, 13 September). Flatten the per-class skill tables
+# into one id -> name map so a book can spell its skill out.
+SKILL_ID_NAMES = {}
+SKILL_ID_NAMES_PL = {}
+SKILL_ID_NAMES_TR = {}
+
+
+def item_full_name(vnum, socket0, language=None):
+    """Localized name, with the skill spelled out for a skill book."""
+    language = language or (lang() if has_request_context() else "en")
+    name = localized_item_name(vnum, language)
+    try:
+        item_proto_ready()
+        vt = ITEM_TYPES.get(int(vnum or 0), (0, 0))[0]
+    except Exception:
+        vt = 0
+    # 17 = ITEM_SKILLBOOK. The skill id lives in socket0.
+    if vt == 17 and int(socket0 or 0) > 0:
+        table = {"pl": SKILL_ID_NAMES_PL, "tr": SKILL_ID_NAMES_TR}.get(language, SKILL_ID_NAMES)
+        sk = table.get(int(socket0)) or SKILL_ID_NAMES.get(int(socket0))
+        if sk:
+            name = "%s: %s" % (name, sk)
+    return name
+
 def hunting_progress_label(current, selection, remain, complete, language=None):
     language = language or (lang() if has_request_context() else "en")
+    # The level-up hunt (levelup.quest) ships in quest/_unused on the
+    # mt2009 line: no kill hook fires, so the counter reads "0/N" for good.
+    # The core ignores it (see playerbot_missions.h); the panel says nothing.
+    if ENGINE_MT2009:
+        return ""
     current, selection = int(current or 0), 2 if int(selection or 1) == 2 else 1
     remain, complete = max(0, int(remain or 0)), max(0, int(complete or 0))
     mission = HUNTING_MISSIONS.get(current)
@@ -571,6 +602,18 @@ PLAYER_SKILLS_TR = {
              (108, "Yıldırım Pençesi"), (109, "Şifa"),
              (110, "Çeviklik"), (111, "Saldırı Artışı")),
 }
+
+# Flatten the per-class skill tables into one id -> name map, so a skill book
+# (skill id in socket0) can spell its skill out in the inventory (item_full_name).
+for _grp in PLAYER_SKILLS.values():
+    for _sid, _nm in _grp:
+        SKILL_ID_NAMES_PL[_sid] = _nm
+for _grp in PLAYER_SKILLS_EN.values():
+    for _sid, _nm in _grp:
+        SKILL_ID_NAMES[_sid] = _nm
+for _grp in PLAYER_SKILLS_TR.values():
+    for _sid, _nm in _grp:
+        SKILL_ID_NAMES_TR[_sid] = _nm
 
 
 def skill_rank_label(master_type, level):
@@ -1020,6 +1063,43 @@ GM_REQUEST = os.path.join(GM_SPOOL, "gm.request")
 # build shipped it.
 AI_SPOOL     = _env_path("M2PANEL_AI_SPOOL", "/opt/m2spool")
 AI_WEIGHTS   = os.path.join(AI_SPOOL, "playerbot_weights.tsv")
+# The operator's word on single items: keep / stall / merchant / drop per
+# vnum or per item type, read by the core the way the weights are.
+AI_ITEM_POLICY = os.path.join(AI_SPOOL, "playerbot_item_policy.tsv")
+AI_ITEM_POLICY_WORDS = ("keep", "stall", "merchant", "drop", "zostaw", "stragan", "handlarz", "wyrzuc",
+                         "sakla", "tezgah", "satici", "birak")
+
+
+def read_ai_item_policy():
+    try:
+        with open(AI_ITEM_POLICY, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def check_ai_item_policy(text):
+    """The line numbers the core would skip, so the operator hears about a
+    typo now rather than watching a bot ignore the rule."""
+    bad = []
+    for no, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        key = parts[0].lower()
+        ok_key = key.isdigit() or (key.startswith("type:") and key[5:].isdigit())
+        if len(parts) != 2 or not ok_key or parts[1].lower() not in AI_ITEM_POLICY_WORDS:
+            bad.append(no)
+    return bad
+
+
+def write_ai_item_policy(text):
+    os.makedirs(AI_SPOOL, exist_ok=True)
+    tmp = AI_ITEM_POLICY + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text.replace("\r\n", "\n").rstrip("\n") + "\n")
+    os.replace(tmp, AI_ITEM_POLICY)
 AI_W_MIN, AI_W_MAX, AI_W_NEUTRAL = 25, 250, 100
 
 # Name, emoji, and the order they are shown in -- which is the order the core
@@ -3108,6 +3188,18 @@ T.update({
                   "de":"Datei konnte nicht geschrieben werden \u2014 das gemeinsame Spool-Verzeichnis ist in diesem Container nicht eingebunden.",
                   "tr":"Dosya yazılamadı \u2014 paylaşılan spool dizini bu kapsayıcıda bağlı değil."},
  "ai_save":      {"en":"Save","pl":"Zapisz","de":"Speichern","tr":"Kaydet"},
+ "ai_items_open": {"en":"📦 What the bots may sell","pl":"📦 Co boty mogą sprzedawać","tr":"📦 Botların satabileceği eşyalar"},
+ "ai_items_nav":  {"en":"📦 Item policy: merchant or stall","pl":"📦 Polityka przedmiotów: handlarz czy stragan","tr":"📦 Eşya politikası: satıcı mı tezgah mı"},
+ "ai_items_intro":{"en":"One line per item: the item number (vnum) or a whole type (type:19), a space or tab, and one word. keep - never leaves the bag; stall - counter goods, ahead of everything else; merchant - sold to the NPC merchant on the next town visit; drop - thrown away at the merchant visit without a sale. Anything not listed here follows the bots' own rules. Saved, it reaches every bot within five seconds.",
+                  "pl":"Jedna linia na przedmiot: numer przedmiotu (vnum) albo cały typ (type:19), spacja lub tabulator i jedno słowo. keep (zostaw) - nigdy nie opuszcza plecaka; stall (stragan) - towar na ladę, przed wszystkim innym; merchant (handlarz) - sprzedany handlarzowi NPC przy najbliższej wizycie w mieście; drop (wyrzuc) - wyrzucony przy wizycie u handlarza, bez sprzedaży. Czego tu nie ma, podlega własnym regułom botów. Po zapisie dociera do każdego bota w ciągu pięciu sekund.",
+                  "tr":"Eşya başına bir satır: eşya numarası (vnum) veya bir tür tamamı (type:19), bir boşluk veya sekme ve tek kelime. keep (sakla) - asla çantadan çıkmaz; stall (tezgah) - her şeyden önce tezgah malı; merchant (satici) - bir sonraki şehir ziyaretinde NPC satıcıya satılır; drop (birak) - satıcı ziyaretinde satılmadan atılır. Burada listelenmeyen her şey botların kendi kurallarını izler. Kaydedildiğinde beş saniye içinde her bota ulaşır."},
+ "ai_items_format":{"en":"Item numbers: the item search on the give-item page shows them; item types: 5 materials, 18 quest items, 19 polymorph marbles, 17 skill books, 3 usable items (scrolls, stones). A # starts a comment.",
+                  "pl":"Numery przedmiotów pokazuje wyszukiwarka na stronie nadawania przedmiotów; typy: 5 materiały, 18 przedmioty questowe, 19 marmury polimorfii, 17 księgi, 3 przedmioty użytkowe (zwoje, kamienie). Znak # zaczyna komentarz.",
+                  "tr":"Eşya numaraları: eşya verme sayfasındaki eşya aramasında görünür; eşya türleri: 5 malzemeler, 18 görev eşyaları, 19 polimorf mermerleri, 17 yetenek kitapları, 3 kullanılabilir eşyalar (tomarlar, taşlar). # işareti yorum başlatır."},
+ "ai_items_bad":  {"en":"Not saved: line(s) {n} are not '<vnum or type:N> <keep|stall|merchant|drop>'.",
+                  "pl":"Nie zapisano: linie {n} nie mają postaci '<vnum albo type:N> <keep|stall|merchant|drop>'.",
+                  "tr":"Kaydedilmedi: {n} numaralı satır(lar) '<vnum veya type:N> <keep|stall|merchant|drop>' biçiminde değil."},
+ "ai_items_live": {"en":"Saved. The bots read the file within five seconds.","pl":"Zapisano. Boty czytają plik w ciągu pięciu sekund.","tr":"Kaydedildi. Botlar dosyayı beş saniye içinde okur."},
  "ai_reset":     {"en":"Everything back to 100","pl":"Wszystko z powrotem na 100","de":"Alles zurück auf 100","tr":"Hepsini 100'e döndür"},
  "ai_rare":      {"en":"rarely","pl":"rzadko","de":"selten","tr":"nadiren"},
  "ai_often":     {"en":"often","pl":"często","de":"oft","tr":"sık"},
@@ -3886,6 +3978,13 @@ def local_open():
     # proxy in front: public, whatever the address says.
     if bool(CONF.get("trust_proxy", False)):
         return False
+    # The mt2009 line is the single-player suite: one player at their own
+    # machine, no passphrase to invent or lose ("wylacz wymog wpisywania
+    # hasla, to projekt singleplayer" - Tieru, 13 September). An operator who
+    # exposes it sets M2_PANEL_LOCAL_ONLY=0 or runs it behind the proxy,
+    # both handled above.
+    if ENGINE_MT2009:
+        return True
     return _LOCAL_BY_BIND
 
 # Said only where the installer said nothing: the 2.x package has no
@@ -4835,6 +4934,7 @@ TPL_AI = BASE.replace("__BODY__", """
 <div class="card">
 <h3>{{t('ai_nav')}}</h3>
 <p class="muted">{{t('ai_intro')}}</p>
+<p><a class="btn" href="{{url_for('ai_item_policy')}}">{{t('ai_items_open')}}</a></p>
 </div>
 
 <div class="card">
@@ -4914,6 +5014,23 @@ function m2aiReset(){
   });
 }
 </script>""")
+
+
+
+TPL_AI_ITEMS = BASE.replace("__BODY__", """
+<p><a href="{{url_for('ai_weights')}}">{{t('ai_nav')}}</a></p>
+<div class="card">
+<h3>{{t('ai_items_nav')}}</h3>
+<p class="muted">{{t('ai_items_intro')}}</p>
+<p class="muted">{{t('ai_items_format')}}</p>
+</div>
+<div class="card">
+<form method="post">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<textarea name="policy" rows="18" spellcheck="false" style="width:100%;font-family:monospace;font-size:13px"
+          placeholder="30048	stall	# Kawalek Lodu&#10;type:19	stall	# marmury polimorfii&#10;50703	drop	# Kwiat Kaki">{{policy}}</textarea>
+<button class="big" style="margin-top:10px">{{t('ai_save')}}</button>
+</form></div>""")
 
 
 
@@ -7122,6 +7239,9 @@ GEAR_HISTORY_HOWS = {
     "SHOP_BUY":              ("bought",      {"pl": "Kupione na straganie", "en": "Bought at a stall", "tr": "Tezgahtan alındı"}),
     "PLAYERBOT_SHOP_SELL":   ("vendor",      {"pl": "Sprzedane handlarzowi", "en": "Sold to merchant", "tr": "Satıcıya satıldı"}),
     "PLAYERBOT_BONUS":       ("bonus",       {"pl": "Zużyte na przemianę bonusów", "en": "Used for a bonus reroll", "tr": "Bonus değişimi için kullanıldı"}),
+    "PLAYERBOT_BONUS_ADD":   ("bonus",       {"pl": "Dodano bonus (Wzmocnienie)", "en": "Bonus line added", "tr": "Bonus eklendi (Güçlendirme)"}),
+    "PLAYERBOT_BONUS_CHANGE":("bonus",       {"pl": "Zmieniono bonusy (Zmiana)",  "en": "Bonus lines rerolled", "tr": "Bonuslar değiştirildi (Değişim)"}),
+    "PLAYERBOT_BONUS_MARBLE":("bonus",       {"pl": "Dodano 5. bonus (Marmur)",   "en": "Fifth line added (marble)", "tr": "5. bonus eklendi (Mermer)"}),
     "SAFEBOX PUT":           ("safebox",     {"pl": "Do magazynu",        "en": "Into the safebox", "tr": "Kasaya"}),
     "SAFEBOX GET":           ("safebox",     {"pl": "Z magazynu",         "en": "Out of the safebox", "tr": "Kasadan"}),
     "MOONLIGHT_GET":         ("get",         {"pl": "Ze Szkatułki Blasku", "en": "From a Moonlight chest", "tr": "Ay Işığı Sandığından"}),
@@ -10696,7 +10816,7 @@ def api_bot_inventory(pid):
 
             for it in items:
                 vnum = it.get("vnum") or 0
-                name = localized_item_name(vnum, language)
+                name = item_full_name(vnum, it.get("socket0"), language)
                 count = it.get("count") or 1
                 pos = it.get("pos") or 0
                 win = it.get("window") or ""
@@ -10772,7 +10892,7 @@ def api_bot_safebox(pid):
                 items.append({
                     "id": it.get("id"),
                     "vnum": vnum,
-                    "name": localized_item_name(vnum, language),
+                    "name": item_full_name(vnum, it.get("socket0"), language),
                     "count": it.get("count") or 1,
                     "pos": it.get("pos") or 0,
                     "sockets": [it.get("socket0") or 0, it.get("socket1") or 0,
@@ -11211,9 +11331,35 @@ def ai_weights():
         flash(t("ai_live"))
         return redirect(url_for("ai_weights"))
 
+    # HUNTING drives the level-up mission goal, which is disabled on the mt2009
+    # line (levelup.quest ships in quest/_unused - see playerbot_missions.h), so
+    # the slider would do nothing there. LEVEL is the leveling control on 2.x.
+    keys = [k for k in AI_WEIGHT_KEYS if not (ENGINE_MT2009 and k[0] == "HUNTING")]
     return render_template_string(TPL_AI, cur=read_ai_weights(),
-                                  keys=AI_WEIGHT_KEYS, wmin=AI_W_MIN,
+                                  keys=keys, wmin=AI_W_MIN,
                                   wmax=AI_W_MAX, wneutral=AI_W_NEUTRAL)
+
+
+@app.route("/ai/items", methods=["GET", "POST"])
+@login_required
+def ai_item_policy():
+    """The item policy file, edited as text: the core reads it like the
+    weights, so saving is the whole operation. A malformed line is refused
+    with its number rather than written and silently skipped by the core."""
+    if request.method == "POST":
+        text = request.form.get("policy", "")
+        bad = check_ai_item_policy(text)
+        if bad:
+            flash(t("ai_items_bad").replace("{n}", ", ".join(str(n) for n in bad)), "error")
+            return render_template_string(TPL_AI_ITEMS, policy=text)
+        try:
+            write_ai_item_policy(text)
+        except OSError:
+            flash(t("ai_failed"), "error")
+            return redirect(url_for("ai_item_policy"))
+        flash(t("ai_items_live"))
+        return redirect(url_for("ai_item_policy"))
+    return render_template_string(TPL_AI_ITEMS, policy=read_ai_item_policy())
 
 
 

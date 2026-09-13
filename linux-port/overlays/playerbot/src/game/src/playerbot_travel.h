@@ -1145,6 +1145,36 @@ namespace
 		return finder.m_found;
 	}
 
+	// The Teleport Ring recall (see PLAYERBOT_TELEPORT_RING_VNUM). Keyed by
+	// pid so the ring keeps its cooldown without a state-struct field.
+	std::map<DWORD, DWORD> s_mapPlayerBotTeleportRingReady;
+
+	bool PlayerBotHoldsTeleportRing(LPCHARACTER ch)
+	{
+		return ch && ch->GetLevel() >= PLAYERBOT_TELEPORT_RING_MIN_LEVEL &&
+				ch->CountSpecifyItem(PLAYERBOT_TELEPORT_RING_VNUM) > 0;
+	}
+
+	// Recall home now instead of walking to the exit. Same destination the
+	// walk would reach (so same core - only Chunjo bots stand on the shared
+	// frontier, and their village is on that core), just instant.
+	bool TryPlayerBotTeleportRingHome(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow,
+			long destMap, long destX, long destY, const char* reason)
+	{
+		if (!PlayerBotHoldsTeleportRing(ch))
+			return false;
+		std::map<DWORD, DWORD>::const_iterator it =
+				s_mapPlayerBotTeleportRingReady.find(ch->GetPlayerID());
+		if (it != s_mapPlayerBotTeleportRingReady.end() && dwNow < it->second)
+			return false;
+		if (!TransitionPlayerBotMap(ch, state, destMap, destX, destY, dwNow, reason))
+			return false;
+		s_mapPlayerBotTeleportRingReady[ch->GetPlayerID()] = dwNow + PLAYERBOT_TELEPORT_RING_COOLDOWN_MS;
+		sys_log(0, "PLAYERBOT_WORLD: teleport ring home pid=%u name=%s to_map=%ld (%s)",
+				ch->GetPlayerID(), ch->GetName(), destMap, reason ? reason : "");
+		return true;
+	}
+
 	bool ManagePlayerBotWorldTravel(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || state.bVisitingShop || state.bVisitingBiologist ||
@@ -1666,6 +1696,9 @@ namespace
 			if (!GetPlayerBotVillageReturn(ch, joanHome ? playerbot_empire_rules::MAP_ROLE_M1
 						: playerbot_empire_rules::MAP_ROLE_M2, destMap, destX, destY))
 				return false;
+			// Out of potions or a weapon far from town: the ring recalls now.
+			if (blocked && TryPlayerBotTeleportRingHome(ch, state, dwNow, destMap, destX, destY, reason))
+				return true;
 			return MovePlayerBotToWorldPortal(ch, state, exitX, exitY,
 					destMap, destX, destY, dwNow, reason);
 		}

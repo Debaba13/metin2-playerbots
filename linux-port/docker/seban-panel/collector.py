@@ -52,9 +52,13 @@ def init(cur):
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB""")
     cur.execute("""INSERT IGNORE INTO player.web_seban_settings (name,value) VALUES
       ('panel_name','Metin2 Singleplayer'),('stuck_minutes','5'),('theme','ocean'),('monitor_mode','vps'),
-      ('setup_complete','0'),('auth_enabled','0'),('auth_password_hash','')""")
+      ('setup_complete','1'),('auth_enabled','0'),('auth_password_hash','')""")
     # One-time branding migration for deployments created before the public-ready build.
     cur.execute("UPDATE player.web_seban_settings SET value='Metin2 Singleplayer' WHERE name='panel_name' AND value='Mt2009'")
+    # Single-player suite: no setup wizard, no passphrase - one player at their
+    # own machine (Tieru, 13 September). Skip the wizard for installs seeded
+    # before this; an operator can still turn auth on from the panel.
+    cur.execute("UPDATE player.web_seban_settings SET value='1' WHERE name='setup_complete' AND value='0'")
     cur.execute("""CREATE TABLE IF NOT EXISTS player.web_seban_item_snapshot (
       captured_at DATETIME NOT NULL, vnum INT UNSIGNED NOT NULL, amount BIGINT UNSIGNED NOT NULL,
       PRIMARY KEY(captured_at,vnum), KEY(vnum,captured_at)) ENGINE=InnoDB""")

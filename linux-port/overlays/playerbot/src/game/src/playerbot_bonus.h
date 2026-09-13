@@ -297,6 +297,15 @@ namespace
 				return immuneStun || block >= PLAYERBOT_BONUS_KEEP_BLOCK ||
 						race >= PLAYERBOT_BONUS_KEEP_RACE;
 			case WEAR_WEAPON:
+			{
+				// A level-30 or level-75 weapon a player hand-tuned is finished
+				// the moment it lands an average-damage or average-skill line
+				// over the lock, so the mixer leaves it alone (Ciapek).
+				const int lvl = item->GetLevelLimit();
+				if ((lvl == 30 || lvl == 75) &&
+						(average >= PLAYERBOT_BONUS_WEAPON_LOCK_PCT ||
+						 skill >= PLAYERBOT_BONUS_WEAPON_LOCK_PCT))
+					return true;
 				// Any weapon, not only the level-30 family: with the vnum test
 				// here a bow of forty-five with a 40% average was "unfinished"
 				// and rerolled towards the line score until the average was
@@ -308,6 +317,7 @@ namespace
 				// on the average line never stopped at all.
 				return average >= PLAYERBOT_BONUS_KEEP_AVERAGE ||
 						(IsPlayerBotCaster(ch) && skill >= PLAYERBOT_BONUS_KEEP_SKILL);
+			}
 			case WEAR_BODY:
 				return hp >= PLAYERBOT_BONUS_KEEP_HP &&
 						(attGrade > 0 || resistBow > 0 ||
@@ -391,7 +401,180 @@ namespace
 		}
 	}
 
-	// What the lines on an item add to its asking price, as a percentage.
+	// Iwakura's bonus multipliers (12 September, "MNOZNIK BONUSOW"): per slot,
+	// per line, one multiplier for the maximum roll and one for any other
+	// value, the races on three slots split at level 33; a weapon's two
+	// damage lines by tiers of their value. The multipliers compound into
+	// the asking price. "Maximum" is the engine's own: g_map_itemAttr's
+	// top value for the apply on the item's attribute set. Lines his table
+	// does not name multiply by nothing. The percent points, hundredths:
+	// 250 is x2.5.
+	enum EPlayerBotPriceSlot
+	{
+		PRICE_SLOT_HEAD = 1, PRICE_SLOT_BODY = 2, PRICE_SLOT_SHIELD = 4, PRICE_SLOT_FOOTS = 8,
+		PRICE_SLOT_WRIST = 16, PRICE_SLOT_NECK = 32, PRICE_SLOT_EAR = 64, PRICE_SLOT_WEAPON = 128,
+		PRICE_SLOT_JEWELS = PRICE_SLOT_WRIST | PRICE_SLOT_NECK | PRICE_SLOT_EAR,
+		PRICE_SLOT_ANY = 255
+	};
+	struct TPlayerBotBonusPriceRow
+	{
+		BYTE bSlots;      // EPlayerBotPriceSlot mask
+		BYTE bApply;      // APPLY_*
+		WORD wMaxPct;     // the maximum roll, hundredths
+		WORD wOtherPct;   // any other value, hundredths
+		BYTE bMinLevel;   // the item's level limit band, inclusive
+		BYTE bMaxLevel;
+	};
+	const TPlayerBotBonusPriceRow PLAYERBOT_BONUS_PRICE_ROWS[] = {
+		// helm
+		{ PRICE_SLOT_HEAD, APPLY_ATTBONUS_HUMAN, 250, 115, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_RESIST_MAGIC, 200, 115, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_MAX_STAMINA, 140, 110, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_HP_REGEN, 130, 110, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_ATT_SPEED, 200, 120, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_DODGE, 200, 140, 0, 255 },
+		{ PRICE_SLOT_HEAD, APPLY_POISON_PCT, 220, 150, 0, 255 },
+		// body
+		{ PRICE_SLOT_BODY, APPLY_MAX_HP, 250, 170, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_MAX_STAMINA, 130, 110, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_ATT_GRADE_BONUS, 250, 170, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_CAST_SPEED, 160, 115, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_STEAL_HP, 200, 160, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_STEAL_SP, 120, 105, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_CRITICAL_PCT, 130, 115, 0, 255 },
+		{ PRICE_SLOT_BODY, APPLY_RESIST_MAGIC, 180, 120, 0, 255 },
+		// shield
+		{ PRICE_SLOT_SHIELD, APPLY_IMMUNE_STUN, 300, 300, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_IMMUNE_SLOW, 120, 120, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_BLOCK, 250, 150, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_REFLECT_MELEE, 160, 110, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_GOLD_DOUBLE_BONUS, 250, 170, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_STR, 200, 140, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_INT, 200, 140, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_DEX, 200, 140, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_CON, 200, 140, 0, 255 },
+		// shoes
+		{ PRICE_SLOT_FOOTS, APPLY_MAX_HP, 250, 180, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_MAX_SP, 130, 110, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_CRITICAL_PCT, 200, 160, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_EXP_DOUBLE_BONUS, 160, 125, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_STUN_PCT, 180, 150, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_DODGE, 160, 120, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_GOLD_DOUBLE_BONUS, 250, 150, 0, 255 },
+		{ PRICE_SLOT_FOOTS, APPLY_ATT_SPEED, 170, 130, 0, 255 },
+		// bracelet
+		{ PRICE_SLOT_WRIST, APPLY_MAX_HP, 250, 180, 0, 255 },
+		{ PRICE_SLOT_WRIST, APPLY_MAX_SP, 130, 110, 0, 255 },
+		{ PRICE_SLOT_WRIST, APPLY_STEAL_HP, 200, 160, 0, 255 },
+		{ PRICE_SLOT_WRIST, APPLY_STEAL_SP, 120, 100, 0, 255 },
+		{ PRICE_SLOT_WRIST, APPLY_PENETRATE_PCT, 170, 130, 0, 255 },
+		{ PRICE_SLOT_WRIST, APPLY_RESIST_MAGIC, 180, 120, 0, 255 },
+		// necklace
+		{ PRICE_SLOT_NECK, APPLY_MAX_HP, 250, 180, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_MAX_SP, 130, 110, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_HP_REGEN, 130, 110, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_STUN_PCT, 180, 150, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_CRITICAL_PCT, 200, 160, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_PENETRATE_PCT, 170, 130, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_GOLD_DOUBLE_BONUS, 250, 150, 0, 255 },
+		{ PRICE_SLOT_NECK, APPLY_EXP_DOUBLE_BONUS, 160, 125, 0, 255 },
+		// earrings
+		{ PRICE_SLOT_EAR, APPLY_MOV_SPEED, 250, 160, 0, 255 },
+		{ PRICE_SLOT_EAR, APPLY_RESIST_BOW, 240, 130, 0, 255 },
+		{ PRICE_SLOT_EAR, APPLY_STEAL_SP, 120, 100, 0, 255 },
+		{ PRICE_SLOT_EAR, APPLY_POISON_REDUCE, 110, 100, 0, 255 },
+		{ PRICE_SLOT_EAR, APPLY_ATTBONUS_HUMAN, 250, 140, 0, 255 },
+		// the weapon-type resistances, everywhere his table lists them
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK | PRICE_SLOT_EAR, APPLY_RESIST_DAGGER, 180, 120, 0, 255 },
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK, APPLY_RESIST_BOW, 240, 130, 0, 255 },
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK | PRICE_SLOT_EAR, APPLY_RESIST_FAN, 150, 105, 0, 255 },
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK | PRICE_SLOT_EAR, APPLY_RESIST_BELL, 150, 105, 0, 255 },
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK | PRICE_SLOT_EAR, APPLY_RESIST_SWORD, 180, 120, 0, 255 },
+		{ PRICE_SLOT_BODY | PRICE_SLOT_FOOTS | PRICE_SLOT_NECK | PRICE_SLOT_EAR, APPLY_RESIST_TWOHAND, 180, 120, 0, 255 },
+		// the human line on the wrist; the shield's is above
+		{ PRICE_SLOT_WRIST, APPLY_ATTBONUS_HUMAN, 250, 140, 0, 255 },
+		{ PRICE_SLOT_SHIELD, APPLY_ATTBONUS_HUMAN, 250, 140, 0, 255 },
+		// weapon
+		{ PRICE_SLOT_WEAPON, APPLY_STR, 200, 140, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_INT, 200, 140, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_DEX, 200, 140, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_CON, 150, 110, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_CRITICAL_PCT, 200, 160, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_PENETRATE_PCT, 140, 115, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_POISON_PCT, 140, 120, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_CAST_SPEED, 130, 105, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_STUN_PCT, 200, 150, 0, 255 },
+		{ PRICE_SLOT_WEAPON, APPLY_ATTBONUS_HUMAN, 180, 130, 0, 255 },
+		// the races: mystics and devils flat, the other three by level band
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_MILGYO, 150, 110, 0, 255 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_DEVIL, 240, 150, 0, 255 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_UNDEAD, 250, 150, 33, 255 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_UNDEAD, 200, 110, 0, 32 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_ANIMAL, 150, 115, 33, 255 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_ANIMAL, 250, 130, 0, 32 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_ORC, 220, 130, 33, 255 },
+		{ PRICE_SLOT_ANY, APPLY_ATTBONUS_ORC, 180, 110, 0, 32 },
+	};
+	// A weapon's average and skill damage, by tier of the value.
+	struct TPlayerBotDamageTier { BYTE bFrom; WORD wPct; };
+	const TPlayerBotDamageTier PLAYERBOT_AVERAGE_DAMAGE_TIERS[] = {
+		{ 0, 100 }, { 10, 120 }, { 20, 150 }, { 30, 250 }, { 40, 600 }, { 46, 900 }, { 51, 1400 }, { 56, 2800 }, { 60, 7000 },
+	};
+	const TPlayerBotDamageTier PLAYERBOT_SKILL_DAMAGE_TIERS[] = {
+		{ 1, 120 }, { 11, 200 }, { 20, 400 }, { 25, 1400 }, { 30, 4000 },
+	};
+	// The whole product is capped here - hundredths, so ten thousand is a
+	// hundredfold; a weapon of sixty average and thirty skill would be
+	// 2800 times its base otherwise.
+	const long long PLAYERBOT_BONUS_PRICE_MAX_PCT = 10000;
+
+	BYTE GetPlayerBotPriceSlot(LPITEM item)
+	{
+		if (!item)
+			return 0;
+		if (item->GetType() == ITEM_WEAPON)
+			return PRICE_SLOT_WEAPON;
+		if (item->GetType() != ITEM_ARMOR)
+			return 0;
+		switch (item->GetSubType())
+		{
+			case ARMOR_BODY:   return PRICE_SLOT_BODY;
+			case ARMOR_HEAD:   return PRICE_SLOT_HEAD;
+			case ARMOR_SHIELD: return PRICE_SLOT_SHIELD;
+			case ARMOR_FOOTS:  return PRICE_SLOT_FOOTS;
+			case ARMOR_WRIST:  return PRICE_SLOT_WRIST;
+			case ARMOR_NECK:   return PRICE_SLOT_NECK;
+			case ARMOR_EAR:    return PRICE_SLOT_EAR;
+			default:           return 0;
+		}
+	}
+
+	// The top roll of an apply on this item's attribute set, from the
+	// engine's own table; zero when the table has no such line.
+	long GetPlayerBotBonusMaxRoll(LPITEM item, BYTE bApply)
+	{
+		TItemAttrMap::const_iterator it = g_map_itemAttr.find(bApply);
+		if (it == g_map_itemAttr.end())
+			return 0;
+		const TItemAttrTable& row = it->second;
+		const int set = item ? item->GetAttributeSetIndex() : -1;
+		int level = (set >= 0 && set < ATTRIBUTE_SET_MAX_NUM) ? row.bMaxLevelBySet[set] : 0;
+		if (level <= 0 || level > ITEM_ATTRIBUTE_MAX_LEVEL)
+			level = ITEM_ATTRIBUTE_MAX_LEVEL;
+		return row.lValues[level - 1];
+	}
+
+	WORD GetPlayerBotDamageTierPct(const TPlayerBotDamageTier* tiers, size_t count, long value)
+	{
+		WORD pct = 100;
+		for (size_t i = 0; i < count; ++i)
+			if (value >= tiers[i].bFrom)
+				pct = tiers[i].wPct;
+		return pct;
+	}
+
+	// What the lines on an item add to its asking price, as a percentage:
+	// Iwakura's multipliers compounded, less the one the base already is.
 	//
 	// No character is asked for, on purpose: this is what any buyer pays, not
 	// what one bot would wear, so the caster and weapon-slot weightings of
@@ -400,10 +583,11 @@ namespace
 	{
 		if (!item)
 			return 0;
-		int lines = 0;
-		int top = 0;
-		int prize = 0;
-		const bool bLevel30 = IsPlayerBotSpecialLevel30Weapon(item);
+		const BYTE slot = GetPlayerBotPriceSlot(item);
+		if (slot == 0)
+			return 0;
+		const int level = item->GetLevelLimit();
+		long long product = 100; // hundredths
 		const int count = item->GetAttributeCount();
 		for (int i = 0; i < count && i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 		{
@@ -411,25 +595,34 @@ namespace
 			const long value = item->GetAttributeValue(i);
 			if (type == 0 || value <= 0)
 				continue;
-			++lines;
-			if (IsPlayerBotTopBonusLine(type, value))
-				++top;
-			// The roll a level-30 weapon is bought for. A top line is worth its
-			// eighty percent on anything; on this set, a damage line in the
-			// upper half of what can roll is the whole reason the piece changes
-			// hands, and the price says so. See PLAYERBOT_PRIZE_AVERAGE_DAMAGE.
-			if (bLevel30 &&
-					((type == APPLY_NORMAL_HIT_DAMAGE_BONUS && value >= PLAYERBOT_PRIZE_AVERAGE_DAMAGE) ||
-					 (type == APPLY_SKILL_DAMAGE_BONUS && value >= PLAYERBOT_PRIZE_SKILL_DAMAGE)))
-				++prize;
+			WORD pct = 100;
+			if (slot == PRICE_SLOT_WEAPON && type == APPLY_NORMAL_HIT_DAMAGE_BONUS)
+				pct = GetPlayerBotDamageTierPct(PLAYERBOT_AVERAGE_DAMAGE_TIERS,
+						sizeof(PLAYERBOT_AVERAGE_DAMAGE_TIERS) / sizeof(PLAYERBOT_AVERAGE_DAMAGE_TIERS[0]), value);
+			else if (slot == PRICE_SLOT_WEAPON && type == APPLY_SKILL_DAMAGE_BONUS)
+				pct = GetPlayerBotDamageTierPct(PLAYERBOT_SKILL_DAMAGE_TIERS,
+						sizeof(PLAYERBOT_SKILL_DAMAGE_TIERS) / sizeof(PLAYERBOT_SKILL_DAMAGE_TIERS[0]), value);
+			else
+			{
+				for (size_t r = 0; r < sizeof(PLAYERBOT_BONUS_PRICE_ROWS) / sizeof(PLAYERBOT_BONUS_PRICE_ROWS[0]); ++r)
+				{
+					const TPlayerBotBonusPriceRow& row = PLAYERBOT_BONUS_PRICE_ROWS[r];
+					if (row.bApply != type || (row.bSlots & slot) == 0 ||
+							level < row.bMinLevel || level > row.bMaxLevel)
+						continue;
+					const long maxRoll = GetPlayerBotBonusMaxRoll(item, type);
+					pct = (maxRoll > 0 && value >= maxRoll) ? row.wMaxPct : row.wOtherPct;
+					break;
+				}
+			}
+			product = product * pct / 100;
+			if (product >= PLAYERBOT_BONUS_PRICE_MAX_PCT)
+			{
+				product = PLAYERBOT_BONUS_PRICE_MAX_PCT;
+				break;
+			}
 		}
-		if (lines == 0)
-			return 0;
-		const int percent = lines * PLAYERBOT_SHOP_BONUS_PER_LINE +
-				(lines >= 4 ? PLAYERBOT_SHOP_BONUS_FOUR_PLUS : 0) +
-				top * PLAYERBOT_SHOP_BONUS_TOP_LINE +
-				prize * PLAYERBOT_SHOP_BONUS_PRIZE_LINE;
-		return std::min(percent, PLAYERBOT_SHOP_BONUS_MAX_PERCENT);
+		return (int)(product - 100);
 	}
 
 	int ScorePlayerBotItemBonuses(LPCHARACTER ch, LPITEM item, BYTE wearCell)
@@ -450,6 +643,25 @@ namespace
 	// equipped item outright ("if (item2->IsEquipped()) return false"), costumes,
 	// and anything without an attribute set, so a bot has to take the piece off
 	// first - exactly as a player does.
+	// A Marmur Blogoslawienstwa in the bag: the one item that adds a fifth
+	// line (USE_ADD_ATTRIBUTE2, vnums 39004/70024/70124/76015 on these files;
+	// asked by subtype so a renamed one still counts). Nothing sells it, so
+	// it comes from drops and chests, and a bot without one stops at four
+	// like a player without one.
+	int FindPlayerBotBlessingMarbleCell(LPCHARACTER ch)
+	{
+		if (!ch)
+			return -1;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (item && item->GetType() == ITEM_USE && item->GetSubType() == USE_ADD_ATTRIBUTE2 &&
+					item->GetCount() > 0 && !item->isLocked())
+				return (int)cell;
+		}
+		return -1;
+	}
+
 	bool CanPlayerBotRerollItem(LPITEM item)
 	{
 		return item && item->GetType() != ITEM_COSTUME && !item->isLocked() &&
@@ -528,9 +740,12 @@ namespace
 			// An empty line is free power: add before rerolling, always. Only once
 			// the item is full does the quality of what it rolled start to matter,
 			// and USE_CHANGE_ATTRIBUTE needs at least one line to work on anyway.
-			// Five, not four: MAX_NORM_ATTR_NUM is 5 and AddAttribute happily
-			// fills the fifth, so stopping at four left a line on the table.
+			// Four by the stone; the fifth is the marble's, below, and only when
+			// the bag holds one.
 			const bool bWantAdd = count < PLAYERBOT_BONUS_MAX_LINES;
+			const int marbleCell = (count == PLAYERBOT_BONUS_MAX_LINES)
+					? FindPlayerBotBlessingMarbleCell(ch) : -1;
+			const bool bWantMarble = marbleCell >= 0;
 			// An item that has landed the roll its slot is bought for is finished.
 			// It can still gain a line - that cannot lose what is already there -
 			// but it is never rerolled, whatever the score says.
@@ -538,15 +753,17 @@ namespace
 			// whatever the score says: the score is a sum of good lines and a
 			// weapon full of them at twelve percent average was "good enough"
 			// to the score and not to anybody who looked at it.
-			const bool bWantChange = !bWantAdd && !HasPlayerBotFinishedBonus(ch, item, wearCell) &&
+			const bool bWantChange = !bWantAdd && !bWantMarble &&
+					item->GetRefineLevel() >= PLAYERBOT_BONUS_CHANGE_MIN_REFINE &&
+					!HasPlayerBotFinishedBonus(ch, item, wearCell) &&
 					(score < PLAYERBOT_BONUS_KEEP_SCORE ||
 					 IsPlayerBotSpecialLevel30WeaponVnum(item->GetVnum()));
-			if (!bWantAdd && !bWantChange)
+			if (!bWantAdd && !bWantMarble && !bWantChange)
 				continue;
 
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
-			if (!BuyPlayerBotBonusStone(ch, stoneVnum))
+			if (!bWantMarble && !BuyPlayerBotBonusStone(ch, stoneVnum))
 				continue;
 
 			// The piece has to come off for the engine to touch it, and it has to go
@@ -555,12 +772,31 @@ namespace
 			if (!ch->UnequipItem(item))
 				continue;
 
-			if (bWantAdd)
-				item->AddAttribute();
+			// The engine's own odds for a line, aiItemAttributeAddPercent by the
+			// count already there (100/80/60/50, and 30 for the marble's fifth);
+			// the stone or the marble is spent whether the roll lands or not,
+			// as at the counter.
+			bool landed = true;
+			if (bWantMarble)
+			{
+				landed = number(1, 100) <= aiItemAttributeAddPercent[count];
+				if (landed)
+					item->AddAttribute();
+				LPITEM marble = ch->GetInventoryItem((WORD)marbleCell);
+				if (marble)
+					marble->SetCount(marble->GetCount() - 1);
+			}
+			else if (bWantAdd)
+			{
+				landed = number(1, 100) <= aiItemAttributeAddPercent[count];
+				if (landed)
+					item->AddAttribute();
+			}
 			else
 				item->ChangeAttribute();
 
-			ConsumePlayerBotBonusStone(ch, stoneVnum);
+			if (!bWantMarble)
+				ConsumePlayerBotBonusStone(ch, stoneVnum);
 			++stonesUsed;
 
 			const int newScore = ScorePlayerBotItemBonuses(ch, item, wearCell);
@@ -572,6 +808,13 @@ namespace
 				continue;
 			}
 
+			// The gear history shows the stone spent (PLAYERBOT_BONUS); this
+			// names the piece it was spent on, which is what a player asks -
+			// "na jaki przedmiot" (Tieru, 13 September).
+			LogManager::instance().ItemLog(ch, item,
+					bWantMarble ? "PLAYERBOT_BONUS_MARBLE"
+						: (bWantAdd ? "PLAYERBOT_BONUS_ADD" : "PLAYERBOT_BONUS_CHANGE"),
+					item->GetName());
 			sys_log(0, "PLAYERBOT_BONUS: %s pid=%u name=%s vnum=%u slot=%u lines=%d->%d score=%d->%d gold=%d",
 					bWantAdd ? "added" : "rerolled", ch->GetPlayerID(), ch->GetName(),
 					item->GetVnum(), (unsigned int)wearCell, count,
@@ -595,17 +838,27 @@ namespace
 			const bool bWantAdd = count < PLAYERBOT_BONUS_MAX_LINES;
 			if (!bWantAdd && HasPlayerBotFinishedBonus(ch, item, WEAR_WEAPON))
 				continue;
+			// No change stone below +5, worn or in the bag.
+			if (!bWantAdd && item->GetRefineLevel() < PLAYERBOT_BONUS_CHANGE_MIN_REFINE)
+				continue;
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
 			if (!BuyPlayerBotBonusStone(ch, stoneVnum))
 				break;
 			const int score = ScorePlayerBotItemBonuses(ch, item, WEAR_WEAPON);
+			// The engine's odds, as for the worn pieces above.
 			if (bWantAdd)
-				item->AddAttribute();
+			{
+				if (number(1, 100) <= aiItemAttributeAddPercent[count])
+					item->AddAttribute();
+			}
 			else
 				item->ChangeAttribute();
 			ConsumePlayerBotBonusStone(ch, stoneVnum);
 			++stonesUsed;
+			LogManager::instance().ItemLog(ch, item,
+					bWantAdd ? "PLAYERBOT_BONUS_ADD" : "PLAYERBOT_BONUS_CHANGE",
+					item->GetName());
 			sys_log(0, "PLAYERBOT_BONUS: %s goods pid=%u name=%s vnum=%u lines=%d->%d score=%d->%d gold=%d",
 					bWantAdd ? "added" : "rerolled", ch->GetPlayerID(), ch->GetName(),
 					item->GetVnum(), count, item->GetAttributeCount(), score,

@@ -108,6 +108,32 @@ namespace
 		}
 	}
 
+	// Surplus refine materials, under bag pressure, that the bot cannot sell
+	// on its own counter - no demand for them, or it cannot keep a shop.
+	// What it can sell (a material somebody is short of, and the bot can open
+	// a stall) stays for the counter; the anvil's reserve is never touched.
+	void CollectPlayerBotSafeboxMaterials(LPCHARACTER ch, std::vector<WORD>& cells)
+	{
+		cells.clear();
+		if (!ch || (!IsPlayerBotBagFull(ch) &&
+				CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_BAG_PRESSURE_FREE_CELLS))
+			return;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->IsEquipped() || item->isLocked())
+				continue;
+			if (!IsPlayerBotTradeableMaterial(item))
+				continue;
+			if (PlayerBotNeedsRefineMaterial(ch, item->GetVnum()) ||
+					!IsPlayerBotSurplusMaterial(ch, item))
+				continue;
+			if (GetPlayerBotLedgerDemand(item->GetVnum()) > 0 && PlayerBotCanOpenShop(ch))
+				continue;
+			cells.push_back(cell);
+		}
+	}
+
 	bool HasPlayerBotSafeboxDeposit(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		std::vector<WORD> cells;
@@ -115,6 +141,9 @@ namespace
 		if (!cells.empty())
 			return true;
 		CollectPlayerBotSafeboxDeadStock(ch, state, cells);
+		if (!cells.empty())
+			return true;
+		CollectPlayerBotSafeboxMaterials(ch, cells);
 		return !cells.empty();
 	}
 
@@ -129,6 +158,9 @@ namespace
 		std::vector<WORD> dead;
 		CollectPlayerBotSafeboxDeadStock(ch, state, dead);
 		cells.insert(cells.end(), dead.begin(), dead.end());
+		std::vector<WORD> mats;
+		CollectPlayerBotSafeboxMaterials(ch, mats);
+		cells.insert(cells.end(), mats.begin(), mats.end());
 		int deposited = 0;
 		const DWORD dwNow = get_dword_time();
 		for (size_t i = 0; i < cells.size(); ++i)
@@ -360,7 +392,7 @@ namespace
 		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
 		const int completeState = GetPlayerBotBiologistStateIndex(missionIndex, "__complete");
 		quest::PC* pc = quest::CQuestManager::instance().GetPCForce(ch->GetPlayerID());
-		if (!pc || completeState < 0)
+		if (!pc || completeState == PLAYERBOT_QUEST_STATE_UNKNOWN)
 			return false;
 
 		GivePlayerBotBiologistReward(ch, mission);
@@ -523,7 +555,7 @@ namespace
 		{
 			const int keyState = GetPlayerBotBiologistStateIndex(missionIndex, "key_item");
 			quest::PC* pc = quest::CQuestManager::instance().GetPCForce(ch->GetPlayerID());
-			if (pc && keyState >= 0)
+			if (pc && keyState != PLAYERBOT_QUEST_STATE_UNKNOWN)
 			{
 				pc->SetQuestState(mission->questName, keyState);
 				sys_log(0, "PLAYERBOT_BIOLOGIST: teeth accepted, waiting for the soul stone pid=%u name=%s",
@@ -659,6 +691,36 @@ namespace
 	// when it would not. The four exceptions come first and ignore the TRADE
 	// weight on purpose (see EPlayerBotShopReason); the three rolls after them
 	// are what the slider moves.
+	// A weapon or armour the bot holds a worse duplicate of: the slot is
+	// filled by an equal-or-better worn piece, the spare is refined enough
+	// to be worth a counter, and it is not itself an upgrade waiting to be
+	// worn. The collector already lists such a spare; nothing opened a stall
+	// for it, so a bot on two FMS +9 sat on the second for good (Ciapek,
+	// 13 September).
+	bool HasPlayerBotSellableSpare(LPCHARACTER ch)
+	{
+		if (!ch || !ch->IsItemLoaded())
+			return false;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->IsEquipped() || item->isLocked())
+				continue;
+			const BYTE type = item->GetType();
+			if (type != ITEM_WEAPON && type != ITEM_ARMOR)
+				continue;
+			if (item->GetRefineLevel() < PLAYERBOT_SHOP_SPARE_MIN_REFINE)
+				continue;
+			if (IsPlayerBotWearableUpgrade(ch, item, cell))
+				continue;
+			const int wearCell = item->FindEquipCell(ch);
+			if (wearCell < 0 || ch->GetWear((BYTE)wearCell) == NULL)
+				continue;
+			return true;
+		}
+		return false;
+	}
+
 	BYTE GetPlayerBotShopReason(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		if (!ch || ch->GetLevel() < PLAYERBOT_SHOP_MIN_LEVEL)
@@ -670,6 +732,10 @@ namespace
 			return PLAYERBOT_SHOP_REASON_POOR;
 		if (IsPlayerBotBagFull(ch))
 			return PLAYERBOT_SHOP_REASON_BAG_FULL;
+		// A valuable spare of a slot the bot already has filled is goods it
+		// should put up, whatever the trade roll or bag pressure said.
+		if (HasPlayerBotSellableSpare(ch))
+			return PLAYERBOT_SHOP_REASON_SPARE;
 		// A trader always has the stall open when it can. For everyone else it
 		// stays what it was: an occasional thing one bot in ten does with a spare.
 		if (IsPlayerBotMerchant(state))
@@ -776,6 +842,22 @@ namespace
 				(unsigned long long)(100 + bonusPercent) / 100ULL));
 	}
 
+	// Iwakura's base for a book, at this world's yang rate. The rate is the
+	// mob_gold multiplier in percent (100 when nothing set it), the same
+	// number the panel's rates page writes.
+	DWORD GetPlayerBotBookAskingBase(DWORD dwSkill)
+	{
+		DWORD base = PLAYERBOT_PRIOR_BOOK_ORDINARY;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_BOOK_PRICES) / sizeof(PLAYERBOT_BOOK_PRICES[0]); ++i)
+			if (PLAYERBOT_BOOK_PRICES[i].dwSkill == dwSkill)
+			{
+				base = PLAYERBOT_BOOK_PRICES[i].dwPrice;
+				break;
+			}
+		const int rate = CHARACTER_MANAGER::instance().GetMobGoldAmountRate(NULL);
+		return (DWORD)((unsigned long long)base * (unsigned long long)std::max(1, rate) / 100ULL);
+	}
+
 	DWORD GetPlayerBotShopAskingPrice(LPITEM item)
 	{
 		if (!item)
@@ -821,17 +903,10 @@ namespace
 		// The opening prices. Blended away by the sale memory below as real
 		// transactions accumulate - a prior is where a price starts, not where
 		// it stays.
+		// A book asks Iwakura's price for its skill (PLAYERBOT_BOOK_PRICES),
+		// at the world's yang rate; the wallet block below is not for it.
 		if (bookSkill != 0)
-		{
-			if (bookSkill == 4)
-				unit = PLAYERBOT_PRIOR_BOOK_AURA;
-			else if (bookSkill == 63)
-				unit = PLAYERBOT_PRIOR_BOOK_ENCHANTED_BLADE;
-			else if (bookSkill == 19)
-				unit = PLAYERBOT_PRIOR_BOOK_STRONG_BODY;
-			else
-				unit = std::max(unit, PLAYERBOT_PRIOR_BOOK_ORDINARY);
-		}
+			unit = GetPlayerBotBookAskingBase(bookSkill);
 		else if (item->GetVnum() == PLAYERBOT_PEARL_FIRST_VNUM)
 			unit = PLAYERBOT_PRIOR_PEARL_WHITE;
 		else if (item->GetVnum() == PLAYERBOT_PEARL_FIRST_VNUM + 1)
@@ -857,7 +932,7 @@ namespace
 		// PLAYERBOT_MARKET_*_WALLET_* constants for why the merchant's markup
 		// alone was a giveaway. A soul stone keeps its grade table.
 		const DWORD wallet = GetPlayerBotMarketMedianWallet();
-		if (wallet > 0 && item->GetType() != ITEM_METIN)
+		if (wallet > 0 && item->GetType() != ITEM_METIN && bookSkill == 0)
 		{
 			DWORD permille = PLAYERBOT_MARKET_OTHER_WALLET_PERMILLE;
 			if (IsPlayerBotTradeableMaterial(item))
@@ -959,6 +1034,12 @@ namespace
 		// limiter drifts from wherever the last counter had it; neither goes
 		// under the fees.
 		unit = std::max(unit, investment);
+		// A book's market has some noise in it: a fifth under to a quarter
+		// over, drawn per listing. After the limiter and the memory, so the
+		// anchor they keep is the table's number and not one draw of it.
+		if (bookSkill != 0)
+			unit = std::max<DWORD>(1, (DWORD)((unsigned long long)unit *
+					(unsigned long long)number(PLAYERBOT_BOOK_PRICE_JITTER_MIN, PLAYERBOT_BOOK_PRICE_JITTER_MAX) / 100ULL));
 		unit = ApplyPlayerBotBonusPremium(unit, bonusPercent);
 		const DWORD price = unit * (DWORD)item->GetCount();
 		return price == 0 ? 1U : price;
@@ -1097,6 +1178,17 @@ namespace
 	{
 		if (!item)
 			return -1;
+		// The operator's word first: stall goes up ahead of everything, the
+		// other three never do.
+		{
+			const BYTE policy = GetPlayerBotItemPolicy(item);
+			if (policy == PLAYERBOT_ITEM_POLICY_STALL)
+				return PLAYERBOT_SHOP_POLICY_STALL_SCORE;
+			if (policy != PLAYERBOT_ITEM_POLICY_NONE)
+				return -1;
+		}
+		if (item->GetType() == ITEM_POLYMORPH)
+			return PLAYERBOT_SHOP_POLYMORPH_SCORE;
 		// A weapon from the level-30 set is the prize of this whole market. It is
 		// worth a counter slot at any refine at all, unrefined included.
 		if (IsPlayerBotSpecialLevel30Weapon(item))
@@ -1109,6 +1201,12 @@ namespace
 		if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE)
 			return 1000 + item->GetRefineLevel();
 		// A material this bot is short of stays in its own bag.
+		// And nothing out of the reserve its own anvil wants: only what is
+		// over it, by at least one pack, is goods.
+		if (IsPlayerBotTradeableMaterial(item) &&
+				(int)ch->CountSpecifyItem(item->GetVnum()) -
+					GetPlayerBotRefineMaterialReserve(ch, item->GetVnum()) < PLAYERBOT_SHOP_PACK_UNITS)
+			return -1;
 		if (PlayerBotNeedsRefineMaterial(ch, item->GetVnum()))
 			return -1;
 		if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
@@ -1207,8 +1305,8 @@ namespace
 		// A specimen of a mission already handed in. The Orc Tooth never gets
 		// here: it is a refine material and the material branch above priced
 		// it, ledger and all.
-		if (IsPlayerBotBiologistSpecimenSurplus(ch, item->GetVnum()))
-			return PLAYERBOT_SHOP_SPECIMEN_SCORE;
+		// (a specimen of a handed-in row is the merchant's now - see the junk
+		// rule - never the counter's: "boty wystawiaja przedmioty do badan".)
 
 		// Whatever is left is the bot's own business, not goods. A stall with two
 		// things worth buying beats one padded out to eight.
@@ -1682,8 +1780,13 @@ namespace
 						PlayerBotStacksTogether(item, other))
 					++lines;
 			}
+			// The base stack keeps the anvil's reserve (one unit for anything
+			// that is not a material), so a line is never cut out of what the
+			// bot came to the counter to buy.
+			const int keep = std::max(1, IsPlayerBotTradeableMaterial(item)
+					? GetPlayerBotRefineMaterialReserve(ch, item->GetVnum()) : 1);
 			int split = 0;
-			while (lines < wantLines && (int)item->GetCount() > units &&
+			while (lines < wantLines && (int)item->GetCount() - units >= keep &&
 					CountPlayerBotFreeInventoryCells(ch) > PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS)
 			{
 				const int to = ch->GetEmptyInventory(item->GetSize());
@@ -1996,8 +2099,46 @@ namespace
 		GetPlayerBotStableOffset(ch->GetPlayerID(), 0x4d4b5450U,
 				PLAYERBOT_SHOP_RING_MIN, PLAYERBOT_SHOP_RING_RADIUS,
 				offsetX, offsetY);
-		const long stallX = pitchX + offsetX;
-		const long stallY = pitchY + offsetY;
+		long stallX = pitchX + offsetX;
+		long stallY = pitchY + offsetY;
+		// A pitch the bot's ground does not join is not walked to. The town
+		// leg moved such a goal onto the bot's own component, the walk ended
+		// there, the arrival test - against the pitch - failed, and the same
+		// leg was planned again for as long as the visit lasted: one keeper on
+		// map 3 spent a night at it (AkhiGubernator, 12 September). Salted
+		// offsets are tried first; when none joins, the stand is put off and
+		// the bot goes about its business.
+		{
+			CPlayerBotNavigation& navigation = CPlayerBotNavigation::instance(ch->GetMapIndex());
+			if (navigation.Init(ch->GetMapIndex()))
+			{
+				int tries = 0;
+				while (tries < PLAYERBOT_SHOP_PITCH_TRIES &&
+						!navigation.CanReach(ch->GetX(), ch->GetY(), stallX, stallY))
+				{
+					++tries;
+					GetPlayerBotStableOffset(ch->GetPlayerID() + (DWORD)tries * 7919U,
+							0x4d4b5450U ^ (DWORD)tries,
+							PLAYERBOT_SHOP_RING_MIN, PLAYERBOT_SHOP_RING_RADIUS,
+							offsetX, offsetY);
+					stallX = pitchX + offsetX;
+					stallY = pitchY + offsetY;
+				}
+				if (!navigation.CanReach(ch->GetX(), ch->GetY(), stallX, stallY))
+				{
+					state.dwNextShopKeepTime = dwNow + number(300000, 600000);
+					ClearPlayerBotRoute(state, true);
+					sys_log(0, "PLAYERBOT_SHOP: pitch unreachable pid=%u name=%s map=%ld from=(%ld,%ld) pitch=(%ld,%ld) tries=%d",
+							ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(),
+							ch->GetX(), ch->GetY(), pitchX, pitchY, tries);
+					return false;
+				}
+				if (tries > 0)
+					PlayerBotLogThrottled("shop_pitch_moved", dwNow,
+							"PLAYERBOT_SHOP: pitch moved pid=%u name=%s map=%ld tries=%d to=(%ld,%ld)",
+							ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), tries, stallX, stallY);
+			}
+		}
 
 		SetPlayerBotAction(state, BOT_ACTION_TRAVEL, dwNow);
 		if (!MovePlayerBotTownLeg(ch, state, dwNow, stallX, stallY,
@@ -2394,7 +2535,10 @@ namespace
 					!navigation.CanReach(ch->GetX(), ch->GetY(), goalX, goalY))
 			{
 				const DWORD own = navigation.GetComponentAtWorld(ch->GetX(), ch->GetY());
-				const int radius = std::max(2, arrivalDistance / 50 - 2);
+				// The ring's corners reach radius * 50 * sqrt(2), and the arrival
+				// test at the top is against the goal, not the moved one: a
+				// corner cell past the radius was walked to and never "arrived".
+				const int radius = std::max(2, arrivalDistance / 71);
 				long bestDistance = -1;
 				for (int dy = -radius; dy <= radius && own != 0; ++dy)
 					for (int dx = -radius; dx <= radius; ++dx)
@@ -2812,6 +2956,29 @@ namespace
 			ch->SetPosition(POS_STANDING);
 			bool done = false;
 			CSafebox* box = ch->GetSafebox();
+			// The page the fee just bought is created by the DB core one round
+			// trip late, so the box that loads on the first paid visit can have
+			// no valid slot at all: IsValidPosition(0) is false and every
+			// deposit lands nowhere (deposited=0, books_left unchanged - what
+			// uxietoszef's bots showed, 74 books for good). Treat that as "not
+			// ready" and keep the errand rather than reporting a phantom
+			// deposit; the next visit finds the page and fills it, no fee again.
+			if (box && !box->IsValidPosition(0))
+			{
+				ch->CloseSafebox();
+				PlayerBotLogThrottled("safebox_not_ready", dwNow,
+						"PLAYERBOT_TOWN: safebox page not ready pid=%u name=%s books=%d",
+						ch->GetPlayerID(), ch->GetName(), CountPlayerBotSkillBooks(ch));
+				// leave bTownNeedSafebox set; back off a little and try next visit.
+				state.bTownVisitPhase = bDirect
+						? GetPlayerBotFirstDirectTownPhase(state)
+						: ((state.bTownNeedMisc || state.bTownNeedBlacksmith)
+							? BOT_TOWN_PHASE_GATE_IN : BOT_TOWN_PHASE_NONE);
+				ClearPlayerBotRoute(state, true);
+				if (state.bTownVisitPhase == BOT_TOWN_PHASE_NONE)
+					FinishPlayerBotTownVisit(ch, state, dwNow, true);
+				return true;
+			}
 			if (box)
 			{
 				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box);

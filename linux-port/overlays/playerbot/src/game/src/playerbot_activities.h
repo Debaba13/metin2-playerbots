@@ -788,16 +788,34 @@ namespace
 		// (playerbot_gear.h) and says so in the same words; the tackle purchase
 		// was written a day later without it. A stackable that already has a
 		// stack merges into it and needs no cell - that is the bait case.
+		// Room the size of the item, not of one cell: a rod is three cells
+		// high, and a bag with single holes and no free column passed the
+		// one-cell test, paid, and had the rod put on the ground - then paid
+		// again on the next tick, eight times in eight seconds, and picked the
+		// rods up later ("bot nie ogarnal ze 1 wedka wystarczy", sizowski,
+		// with a bag of fifteen).
 		const bool bMergesIntoStack = count > 1 && ch->CountSpecifyItem(vnum) > 0;
-		if (!bMergesIntoStack && ch->GetEmptyInventory(1) < 0)
+		const int size = std::max<int>(1, proto->bSize);
+		if (!bMergesIntoStack && ch->GetEmptyInventory(size) < 0)
 		{
 			PlayerBotLogThrottled("tackle_no_room", dwNow,
-					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d gold=%d",
-					what, ch->GetPlayerID(), ch->GetName(), vnum, count, ch->GetGold());
+					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d size=%d gold=%d",
+					what, ch->GetPlayerID(), ch->GetName(), vnum, count, size, ch->GetGold());
 			return false;
 		}
-		if (!ch->AutoGiveItem(vnum, count, -1, false))
+		LPITEM bought = ch->AutoGiveItem(vnum, count, -1, false);
+		if (!bought)
 			return false;
+		// And the proof: AutoGiveItem hands back an item it dropped on the
+		// ground as readily as one it put in the bag. A purchase that did not
+		// reach the bag is not paid for and is not tried again this pass.
+		if (bought->GetWindow() != INVENTORY)
+		{
+			PlayerBotLogThrottled("tackle_on_ground", dwNow,
+					"PLAYERBOT_FISHING: %s landed outside the bag pid=%u name=%s vnum=%u window=%d",
+					what, ch->GetPlayerID(), ch->GetName(), vnum, (int)bought->GetWindow());
+			return false;
+		}
 		PlayerBotChangeGold(ch, -price);
 		sys_log(0, "PLAYERBOT_FISHING: bought %s pid=%u name=%s vnum=%u count=%d price=%lld",
 				what, ch->GetPlayerID(), ch->GetName(), vnum, count, price);

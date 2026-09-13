@@ -544,6 +544,116 @@ namespace
 		++s_dwPlayerBotWeightsGeneration;
 	}
 
+	// The item policy file: one line per vnum or per type, a word after it.
+	//
+	//   30048	stall	# Kawalek Lodu
+	//   type:19	stall	# marmury polimorfii
+	//   50703	drop	# Kwiat Kaki po zaliczonym biologu
+	//
+	// Read the way the weights are: a stat every five seconds, re-read when
+	// the file changed, empty when it is gone. Written by the panel's
+	// /ai/items page or by hand.
+	const char* const PLAYERBOT_ITEM_POLICY_PATH = "/opt/m2spool/playerbot_item_policy.tsv";
+	std::map<DWORD, BYTE> s_mapPlayerBotItemPolicyByVnum;
+	std::map<BYTE, BYTE> s_mapPlayerBotItemPolicyByType;
+	time_t s_tPlayerBotItemPolicyMtime = 0;
+	long s_lPlayerBotItemPolicySize = -1;
+	DWORD s_dwPlayerBotItemPolicyNextCheck = 0;
+
+	BYTE ParsePlayerBotItemPolicyWord(const char* word)
+	{
+		if (!word)
+			return PLAYERBOT_ITEM_POLICY_NONE;
+		if (PlayerBotWeightNameEquals(word, "keep") || PlayerBotWeightNameEquals(word, "zostaw") || PlayerBotWeightNameEquals(word, "sakla"))
+			return PLAYERBOT_ITEM_POLICY_KEEP;
+		if (PlayerBotWeightNameEquals(word, "stall") || PlayerBotWeightNameEquals(word, "stragan") || PlayerBotWeightNameEquals(word, "tezgah"))
+			return PLAYERBOT_ITEM_POLICY_STALL;
+		if (PlayerBotWeightNameEquals(word, "merchant") || PlayerBotWeightNameEquals(word, "handlarz") || PlayerBotWeightNameEquals(word, "satici"))
+			return PLAYERBOT_ITEM_POLICY_MERCHANT;
+		if (PlayerBotWeightNameEquals(word, "drop") || PlayerBotWeightNameEquals(word, "wyrzuc") || PlayerBotWeightNameEquals(word, "birak"))
+			return PLAYERBOT_ITEM_POLICY_DROP;
+		return PLAYERBOT_ITEM_POLICY_NONE;
+	}
+
+	void ReadPlayerBotItemPolicyFile(const char* szPath)
+	{
+		s_mapPlayerBotItemPolicyByVnum.clear();
+		s_mapPlayerBotItemPolicyByType.clear();
+		FILE* fp = fopen(szPath, "r");
+		if (!fp)
+			return;
+		char line[256];
+		int rows = 0;
+		while (fgets(line, sizeof(line), fp))
+		{
+			char* hash = strchr(line, '#');
+			if (hash)
+				*hash = 0;
+			char key[64] = { 0 }, word[32] = { 0 };
+			if (sscanf(line, " %63s %31s", key, word) != 2)
+				continue;
+			const BYTE policy = ParsePlayerBotItemPolicyWord(word);
+			if (policy == PLAYERBOT_ITEM_POLICY_NONE)
+				continue;
+			if (strncmp(key, "type:", 5) == 0)
+			{
+				const int type = atoi(key + 5);
+				if (type > 0 && type < 256)
+					s_mapPlayerBotItemPolicyByType[(BYTE)type] = policy;
+			}
+			else
+			{
+				const long vnum = atol(key);
+				if (vnum > 0)
+					s_mapPlayerBotItemPolicyByVnum[(DWORD)vnum] = policy;
+			}
+			++rows;
+		}
+		fclose(fp);
+		sys_log(0, "PLAYERBOT_CONFIG: item policy read from %s rows=%d vnums=%u types=%u",
+				szPath, rows, (unsigned int)s_mapPlayerBotItemPolicyByVnum.size(),
+				(unsigned int)s_mapPlayerBotItemPolicyByType.size());
+	}
+
+	void RefreshPlayerBotItemPolicy(DWORD dwNow)
+	{
+		if (dwNow < s_dwPlayerBotItemPolicyNextCheck)
+			return;
+		s_dwPlayerBotItemPolicyNextCheck = dwNow + PLAYERBOT_WEIGHT_RELOAD_INTERVAL;
+		struct stat st;
+		if (stat(PLAYERBOT_ITEM_POLICY_PATH, &st) != 0)
+		{
+			if (s_lPlayerBotItemPolicySize >= 0)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: %s is gone, item policy empty", PLAYERBOT_ITEM_POLICY_PATH);
+				s_mapPlayerBotItemPolicyByVnum.clear();
+				s_mapPlayerBotItemPolicyByType.clear();
+				s_tPlayerBotItemPolicyMtime = 0;
+				s_lPlayerBotItemPolicySize = -1;
+			}
+			return;
+		}
+		if (st.st_mtime == s_tPlayerBotItemPolicyMtime && (long)st.st_size == s_lPlayerBotItemPolicySize)
+			return;
+		s_tPlayerBotItemPolicyMtime = st.st_mtime;
+		s_lPlayerBotItemPolicySize = (long)st.st_size;
+		ReadPlayerBotItemPolicyFile(PLAYERBOT_ITEM_POLICY_PATH);
+	}
+
+	// The vnum's word, else the type's, else nothing.
+	BYTE GetPlayerBotItemPolicy(LPITEM item)
+	{
+		if (!item)
+			return PLAYERBOT_ITEM_POLICY_NONE;
+		std::map<DWORD, BYTE>::const_iterator v = s_mapPlayerBotItemPolicyByVnum.find(item->GetVnum());
+		if (v != s_mapPlayerBotItemPolicyByVnum.end())
+			return v->second;
+		std::map<BYTE, BYTE>::const_iterator t = s_mapPlayerBotItemPolicyByType.find(item->GetType());
+		if (t != s_mapPlayerBotItemPolicyByType.end())
+			return t->second;
+		return PLAYERBOT_ITEM_POLICY_NONE;
+	}
+
 	DWORD GetPlayerBotWeightsGeneration()
 	{
 		if (!s_bPlayerBotWeightsInitialised)

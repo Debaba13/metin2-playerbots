@@ -842,6 +842,24 @@ namespace
 			if (target && CanPlayerBotFightOnHorse(ch, target))
 				return;
 		}
+		// The opposite case, and the one the desert bots fell into: a transport
+		// horse and a live combat target that must be fought on foot. Mounting for
+		// the leg here only to have the combat pass (combat_ready /
+		// dismount_for_target) climb down again next tick was the
+		// long_travel<->combat_ready thrash - KimJestes2 mounted and dismounted
+		// once a second on the desert for minutes, never landing a blow
+		// (sizowski). While a fight is pending the saddle is the combat pass's to
+		// give up, not this pass's to take; once the foe is gone the next leg
+		// mounts as before. Only for a real, live foe, so a stale VID cannot
+		// strand the bot on foot.
+		if (!fightOnHorse && !keepHorseAtDestination && !CanPlayerBotEverFightOnHorse(ch))
+		{
+			LPCHARACTER foe = ch->GetVictim();
+			if (!foe && state.dwTargetVID != 0)
+				foe = CHARACTER_MANAGER::instance().Find(state.dwTargetVID);
+			if (foe && !foe->IsDead())
+				return;
+		}
 		const int distance = DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY);
 		if (!allowHorse || distance <= PLAYERBOT_HORSE_DISMOUNT_DISTANCE)
 			SetPlayerBotRidingForTravel(ch, state, false, dwNow,

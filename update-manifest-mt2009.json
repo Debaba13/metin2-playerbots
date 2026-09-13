@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-12T20:27:16Z",
-  "statusMessage": "Wersja 2.0.19: koniec lagów z pięciosekundowych planowań tras, zwój w plecaku prowadzi bota do +9, ulepszony przedmiot nie schodzi na straganie poniżej opłat kowala, cisza w syserr, brakująca tabela logu sklepu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-13T08:09:17Z",
+  "statusMessage": "Wersja 2.0.24: boty zakladaja bronie 30 lvl ze srednimi, lucznicy ulepszaja sztylet do metinow (+4), koniec drzenia konia w podrozy, stragany na duplikaty dopiero od +7, a materialy pod presja plecaka ida do magazynu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
   "server": {
-    "version": "2.0.19",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.19/metin2-server-update-2.0.19.zip",
-    "sha256": "6567733EB90D7900CD8001CBEBD006D0F9C68D8A115D151EF5D1C1C3425A2798"
+    "version": "2.0.24",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.24/metin2-server-update-2.0.24.zip",
+    "sha256": "56C435B81B759BAFDE0CF63C1DDBBBCF5A9DDAE2AA24B64E0BE1F8AABDF88FB7"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",

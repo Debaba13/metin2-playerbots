@@ -939,7 +939,11 @@ def main(root):
          '// kill drops one, and a separate figure for a Metin stone. Zero is off. Read\n'
          '// from CONFIG so an operator turns it up or off without a rebuild.\n'
          'int\t\t\tg_iMoonlightChestPermille = 0;\n'
-         'int\t\t\tg_iMoonlightChestStonePermille = 0;\n')
+         'int\t\t\tg_iMoonlightChestStonePermille = 0;\n'
+         '// A Dragon Coin voucher (Kupon SM) from a Metin stone or a boss, in\n'
+         '// thousandths. Zero is off. The ItemShop currency, with a way into the game.\n'
+         'int\t\t\tg_iDragonCoinStonePermille = 0;\n'
+         'int\t\t\tg_iDragonCoinBossPermille = 0;\n')
     edit(p,
          '\t\tTOKEN("test_server")\n',
          '\t\tTOKEN("moonlight_chest_permille")\n'
@@ -954,6 +958,18 @@ def main(root):
          '\t\t\tcontinue;\n'
          '\t\t}\n'
          '\n'
+         '\t\tTOKEN("dragon_coin_stone_permille")\n'
+         '\t\t{\n'
+         '\t\t\tstr_to_number(g_iDragonCoinStonePermille, value_string);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tTOKEN("dragon_coin_boss_permille")\n'
+         '\t\t{\n'
+         '\t\t\tstr_to_number(g_iDragonCoinBossPermille, value_string);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
          '\t\tTOKEN("test_server")\n')
     p = os.path.join(game, 'item_manager.cpp')
     edit(p,
@@ -961,7 +977,9 @@ def main(root):
          '#include "item_manager.h"\n'
          '\n'
          'extern int g_iMoonlightChestPermille;\n'
-         'extern int g_iMoonlightChestStonePermille;\n')
+         'extern int g_iMoonlightChestStonePermille;\n'
+         'extern int g_iDragonCoinStonePermille;\n'
+         'extern int g_iDragonCoinBossPermille;\n')
     edit(p,
          '\tif (pkKiller->IsHorseRiding() &&\n'
          '\t\t\tGetDropPerKillPct(1000, 1000000, iDeltaPercent, "horse_skill_book_drop") >= number(1, iRandRange))\n',
@@ -997,6 +1015,21 @@ def main(root):
          '\t\tif (chestPermille > 0 && number(1, 1000) <= chestPermille)\n'
          '\t\t{\n'
          '\t\t\titem = CreateItem(50011, 1, 0, true);\n'
+         '\t\t\tif (item) vec_item.emplace_back(item);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\t// A Dragon Coin voucher (Kupon SM 50, vnum 80017) from a Metin stone\n'
+         '\t// or a boss, so the ItemShop currency has a way into the game. Off (0)\n'
+         '\t// by default; the permille is CONFIG, per stone and per boss, small on\n'
+         '\t// purpose ("niech tych kuponow za duzo nie dropi").\n'
+         '\t{\n'
+         '\t\tconst int coinPermille = pkChr->IsStone()\n'
+         '\t\t\t\t? g_iDragonCoinStonePermille\n'
+         '\t\t\t\t: (pkChr->GetMobRank() >= MOB_RANK_BOSS ? g_iDragonCoinBossPermille : 0);\n'
+         '\t\tif (coinPermille > 0 && number(1, 1000) <= coinPermille)\n'
+         '\t\t{\n'
+         '\t\t\titem = CreateItem(80017, 1, 0, true);\n'
          '\t\t\tif (item) vec_item.emplace_back(item);\n'
          '\t\t}\n'
          '\t}\n'

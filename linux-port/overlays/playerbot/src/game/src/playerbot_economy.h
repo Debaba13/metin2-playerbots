@@ -177,6 +177,61 @@ namespace
 		return merged;
 	}
 
+	// The order the bag is tidied into: potions first, then the boosters and
+	// speed potions, then chests and keys. Everything else is left where it
+	// is (99), so gear the bot is keeping does not shuffle around.
+	int GetPlayerBotSortPriority(LPITEM item)
+	{
+		if (!item)
+			return 99;
+		const DWORD vnum = item->GetVnum();
+		if ((vnum >= 27001 && vnum <= 27006) || vnum == 27051 || vnum == 27052)
+			return 0;   // red/blue/big HP-SP potions
+		if ((vnum >= 27100 && vnum <= 27105) || vnum == 27053 || vnum == 27054 ||
+				vnum == 71044 || vnum == 71045 || vnum == 71050)
+			return 1;   // green/purple potions, Hand of Critic/Penetration, Swiftness
+		const BYTE type = item->GetType();
+		if (vnum == PLAYERBOT_MOONLIGHT_CHEST_VNUM || type == ITEM_TREASURE_BOX ||
+				type == ITEM_TREASURE_KEY || type == ITEM_GIFTBOX)
+			return 2;   // Moonlight chests, silver/gold chests and keys, boss caskets
+		return 99;
+	}
+
+	// Pull single-cell consumables to the front, group by group, into the
+	// earliest empty cell before each. MoveItem only moves - it cannot delete
+	// or overwrite - so the worst case is an item that does not move.
+	void SortPlayerBotConsumablesToFront(LPCHARACTER ch)
+	{
+		if (!ch)
+			return;
+		int moves = 0;
+		for (int prio = 0; prio <= 2 && moves < PLAYERBOT_SORT_MAX_MOVES; ++prio)
+		{
+			for (WORD cell = 1; cell < PLAYERBOT_BAG_CELLS && moves < PLAYERBOT_SORT_MAX_MOVES; ++cell)
+			{
+				LPITEM item = ch->GetInventoryItem(cell);
+				if (!item || item->IsEquipped() || item->isLocked() || item->GetSize() > 1)
+					continue;
+				if (GetPlayerBotSortPriority(item) != prio)
+					continue;
+				WORD dest = 0;
+				bool found = false;
+				for (WORD f = 0; f < cell; ++f)
+					if (ch->IsEmptyItemGrid(TItemPos(INVENTORY, f), 1))
+					{
+						dest = f;
+						found = true;
+						break;
+					}
+				if (found && ch->MoveItem(TItemPos(INVENTORY, cell), TItemPos(INVENTORY, dest), 0))
+					++moves;
+			}
+		}
+		if (moves > 0)
+			sys_log(0, "PLAYERBOT_BAG: sorted pid=%u name=%s moves=%d",
+					ch->GetPlayerID(), ch->GetName(), moves);
+	}
+
 	void ManagePlayerBotStackMerge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || dwNow < state.dwNextStackMergeTime)
@@ -191,6 +246,8 @@ namespace
 		if (merged > 0)
 			sys_log(0, "PLAYERBOT_BAG: merged stacks pid=%u name=%s merges=%d",
 					ch->GetPlayerID(), ch->GetName(), merged);
+		// Then tidy: potions, boosters and chests to the front.
+		SortPlayerBotConsumablesToFront(ch);
 		// A pass that used its whole budget has more to do: back soon, not in
 		// five minutes - a closed counter leaves eight packs of one material.
 		if (merged >= PLAYERBOT_STACK_MERGES_PER_PASS)
@@ -271,6 +328,47 @@ namespace
 	{
 		return materialVnum != 0 &&
 				PlayerBotIsShortOfRefineMaterial(ch, materialVnum);
+	}
+
+	// How many units of a material this bot keeps back for its own anvil:
+	// twice the largest recipe count among the pieces it would raise - the
+	// same measure "short" uses above. The counter lists only what is over
+	// it. Without it a bot short by one bought a pack of two, was no longer
+	// short, and put both on its own counter at the price it had just paid
+	// (Zolc Niedzwiedzia x2, sizowski) - then was short again.
+	int GetPlayerBotRefineMaterialReserve(LPCHARACTER ch, DWORD materialVnum)
+	{
+		if (!ch || materialVnum == 0)
+			return 0;
+		const BYTE wearSlots[] = {
+			WEAR_WEAPON, WEAR_BODY, WEAR_SHIELD, WEAR_HEAD,
+			WEAR_FOOTS, WEAR_WRIST, WEAR_NECK, WEAR_EAR
+		};
+		std::vector<LPITEM> gear;
+		for (size_t i = 0; i < sizeof(wearSlots) / sizeof(wearSlots[0]); ++i)
+			if (ch->GetWear(wearSlots[i]))
+				gear.push_back(ch->GetWear(wearSlots[i]));
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM candidate = ch->GetInventoryItem(cell);
+			if (IsPlayerBotEquipmentCandidate(ch, candidate))
+				gear.push_back(candidate);
+		}
+		int reserve = 0;
+		for (size_t i = 0; i < gear.size(); ++i)
+		{
+			LPITEM item = gear[i];
+			if (!item || item->GetRefinedVnum() == 0 ||
+					item->GetRefineLevel() >= GetPlayerBotRefineTarget(ch, item))
+				continue;
+			const TRefineTable* recipe = CRefineManager::instance().GetRefineRecipe(item->GetRefineSet());
+			if (!recipe)
+				continue;
+			for (int m = 0; m < recipe->material_count; ++m)
+				if (recipe->materials[m].vnum == materialVnum)
+					reserve = std::max(reserve, (int)recipe->materials[m].count * 2);
+		}
+		return reserve;
 	}
 
 	bool PlayerBotNeedsAnyRefineMaterial(LPCHARACTER ch)
@@ -521,10 +619,30 @@ namespace
 		if (!ch || !item || item->IsEquipped() || item->isLocked())
 			return false;
 
-		if (IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_SELL))
-			return false;
+		// The operator's word first: merchant is scrap whatever the rules
+		// below would keep it for; keep, stall and drop are never scrap (drop
+		// is thrown away by the merchant leg, not sold).
+		{
+			const BYTE policy = GetPlayerBotItemPolicy(item);
+			if (policy == PLAYERBOT_ITEM_POLICY_MERCHANT)
+				return true;
+			if (policy != PLAYERBOT_ITEM_POLICY_NONE)
+				return false;
+		}
 
 		const DWORD vnum = item->GetVnum();
+
+		// A specimen of a Biologist row already handed in is scrap, not goods:
+		// "niech ich nie wystawiaja, sprzedaja u handlarza albo wyrzucaja".
+		// Before the anti-sell test on purpose - the quest items carry it, and
+		// the merchant leg pays the merchant's pennies for them anyway. The Orc
+		// Tooth is a refine material and takes the material branch below.
+		if (vnum >= 50701 && vnum <= 50706 && !IsPlayerBotTradeableMaterial(item) &&
+				IsPlayerBotBiologistSpecimenSurplus(ch, vnum))
+			return true;
+
+		if (IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_SELL))
+			return false;
 
 		// Level-30 weapons with average/skill damage are strategic market assets.
 		// Never vendor them: this also applies when the current owner is below level
@@ -543,8 +661,13 @@ namespace
 		// This has to come before the precious-refine keep below, or it never
 		// applies to the +4 and +5 the counter actually keeps, which is what it
 		// was written for: with it underneath, a bag of unsold +5 was for life.
+		// Only when the bag is under pressure, though: a keeper that simply has
+		// extra and does not need the yang can stand as long as the loop needs,
+		// re-listing the piece; the merchant is for a cornered bot, not a bored
+		// one ("jesli maja extra a nie potrzebuja yang, moga stac", akhigubernator).
 		if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
-				item->GetRefineLevel() <= PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE)
+				item->GetRefineLevel() <= PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE &&
+				IsPlayerBotBagUnderPressure(ch))
 		{
 			TPlayerBotAIStateMap::const_iterator st = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
 			if (st != s_mapPlayerBotAIStates.end())
@@ -615,6 +738,10 @@ namespace
 		// rare and chests are not: a bag under pressure lets the merchant have
 		// the chests, so the loot and the Moonlight chests that open by
 		// themselves still have somewhere to land.
+		// A polymorph marble is counter goods; the merchant takes it only
+		// under bag pressure with no counter to sell from, like a material.
+		if (item->GetType() == ITEM_POLYMORPH)
+			return IsPlayerBotBagUnderPressure(ch) && !PlayerBotCanOpenShop(ch);
 		if (item->GetType() == ITEM_TREASURE_BOX)
 			return CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS &&
 					!PlayerBotHasTreasureKeyFor(ch, item);
@@ -714,11 +841,15 @@ namespace
 		// few hundred yang while the next stall along sold one for 58 894.
 		// Only a material nobody wants, and only under bag pressure - or a
 		// material this bot has no counter to sell from, whoever wants it.
+		// And only under bag pressure at all: "Stalowy Grot, Futro Yeti, Kawalek
+		// Lodu ... sprzedane handlarzowi" non stop from bags with room to spare.
+		// A refine material is never merchant scrap. What it does not sell on a
+		// counter and the bag has no room for goes to the storekeeper
+		// (CollectPlayerBotSafeboxMaterials), not to the merchant for pennies:
+		// "jak nie ma miejsca to materialy niech traf ia do magazynu u Dozorcy"
+		// (Tieru, 13 September).
 		if (IsPlayerBotTradeableMaterial(item))
-			return !PlayerBotNeedsRefineMaterial(ch, vnum) &&
-					IsPlayerBotSurplusMaterial(ch, item) &&
-					(GetPlayerBotLedgerDemand(vnum) == 0 ||
-					 (IsPlayerBotBagUnderPressure(ch) && !PlayerBotCanOpenShop(ch)));
+			return false;
 		// The rest of the 30000 block is eight gift boxes and two quest items.
 		// No counter would carry those, so there junk still means junk.
 		if (vnum >= 30000 && vnum <= 30200)
@@ -843,6 +974,16 @@ namespace
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
+			// The operator said "drop": thrown away here, at the merchant,
+			// without a sale - the one place a bag is emptied on purpose.
+			if (item && !item->IsEquipped() && !item->isLocked() &&
+					GetPlayerBotItemPolicy(item) == PLAYERBOT_ITEM_POLICY_DROP)
+			{
+				sys_log(0, "PLAYERBOT_AI: discarded by policy pid=%u name=%s vnum=%u count=%u",
+						ch->GetPlayerID(), ch->GetName(), item->GetVnum(), (unsigned int)item->GetCount());
+				ITEM_MANAGER::instance().RemoveItem(item, "PLAYERBOT_DISCARD");
+				continue;
+			}
 			if (!item || !IsPlayerBotJunkItem(ch, item) ||
 					GetPlayerBotJunkMerchant(item) != category)
 				continue;
@@ -941,6 +1082,11 @@ namespace
 				!IsPlayerBotEquipmentCandidate(ch, item) ||
 				IsPlayerBotJunkItem(ch, item))
 			return false;
+		// An Archer's stone dagger is worn only on a stone, so it is neither a
+		// wearable upgrade nor a higher-tier spare - yet it must reach +4 to break
+		// stones at all (Tieru). Refine it in the bag like a worn piece.
+		if (IsPlayerBotArcherStoneWeapon(ch, item))
+			return item->GetRefineLevel() < GetPlayerBotRefineTarget(ch, item);
 		return IsPlayerBotHigherTierSpare(ch, item) ||
 				IsPlayerBotWearableUpgrade(ch, item, item->GetCell());
 	}
@@ -1402,15 +1548,23 @@ namespace
 			return false;
 		const bool sold = SellPlayerBotJunkAtMerchant(
 				ch, BOT_MERCHANT_ARMOR, "armor_merchant");
-		bool bought = NeedsPlayerBotProgressionArmor(ch) &&
-				BuyPlayerBotProgressionGear(ch,
-						GetPlayerBotProgressionArmorVnum(ch), "armor");
+		// The exact ladder tier first; when the merchant does not stock it -
+		// which is every tier below the bot except the three the shop carries,
+		// and every tier above level 26 - the best piece it does stock, so a
+		// naked slot is filled and the blacksmith can raise it to +6.
+		bool bought = false;
+		if (NeedsPlayerBotProgressionArmor(ch))
+			bought = BuyPlayerBotProgressionGear(ch,
+					GetPlayerBotProgressionArmorVnum(ch), "armor") ||
+				BuyPlayerBotBestMerchantSlotGear(ch, WEAR_BODY, "armor") || bought;
 		if (NeedsPlayerBotProgressionShield(ch))
 			bought = BuyPlayerBotProgressionGear(ch,
-					GetPlayerBotProgressionShieldVnum(ch), "shield") || bought;
+					GetPlayerBotProgressionShieldVnum(ch), "shield") ||
+				BuyPlayerBotBestMerchantSlotGear(ch, WEAR_SHIELD, "shield") || bought;
 		if (NeedsPlayerBotProgressionHelmet(ch))
 			bought = BuyPlayerBotProgressionGear(ch,
-					GetPlayerBotProgressionHelmetVnum(ch), "helmet") || bought;
+					GetPlayerBotProgressionHelmetVnum(ch), "helmet") ||
+				BuyPlayerBotBestMerchantSlotGear(ch, WEAR_HEAD, "helmet") || bought;
 		// The three slots nothing ever filled. A bot wore a bracelet, a necklace
 		// or an earring only when one happened to drop for it, because no ladder
 		// asked for them - so most of them went their whole lives with three

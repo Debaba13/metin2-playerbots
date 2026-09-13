@@ -75,13 +75,23 @@ namespace
 	// GetEmptyInventory(height) odpowiada na inne pytanie - "gdzie zmiesci sie
 	// jeden przedmiot tej wysokosci" - i nie da sie z niego zbudowac rezerwacji
 	// na kilka nagrod naraz.
+	//
+	// Asked of the item grid, not of the item pointers: SetItem puts the
+	// pointer in the top cell only and marks bItemGrid for every cell the
+	// piece covers, so a weapon of three cells looked like one occupied and
+	// two free from here. Every rule on this count was off by the height of
+	// the gear in the bag - and the stall pass looped on it: the split kept
+	// "three free cells" that were the bottoms of swords, the bundle had no
+	// cell, the merge freed one, the split took it again, every three
+	// seconds (6066 splits and 4054 merges in a quarter of an hour on one
+	// core; sizowski, 12 September: "stan chunjo m1: 2 sklepy").
 	int CountPlayerBotFreeInventoryCells(LPCHARACTER ch)
 	{
 		if (!ch)
 			return 0;
 		int free = 0;
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
-			if (!ch->GetInventoryItem(cell))
+			if (ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
 				++free;
 		return free;
 	}

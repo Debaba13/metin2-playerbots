@@ -335,6 +335,15 @@ namespace
 				multiplier = 20;
 			score += attack * 1000 * multiplier / 100;
 
+			// The prize a player looks at: a strong average line (or, for a
+			// caster, a strong skill line) makes the weapon worth wearing and
+			// then refining, over a lower weapon already at +6/+9. Gated at the
+			// lock so only a genuine prize gets it, proportional so ordering
+			// among prizes and against a real high-tier weapon still holds.
+			const long prizeLine = style > 0 ? skillPct : avgPct;
+			if (prizeLine >= PLAYERBOT_BONUS_WEAPON_LOCK_PCT)
+				score += (long long)prizeLine * PLAYERBOT_WEAPON_PRIZE_PER_PCT;
+
 			// A level-30 average-damage weapon used to be handed a flat 350000
 			// here. Damage is scored at a thousand a point, so that was more than
 			// any weapon in the game is worth and no bot ever replaced one: an
@@ -608,6 +617,18 @@ namespace
 				best = worn;
 		}
 		return best;
+	}
+
+	// The one blade an Archer keeps for Metin stones - the chosen bag weapon, or
+	// the one worn while it is on a stone. It is worth refining even though it is
+	// never a wearable upgrade or a higher-tier spare, because a bow cannot break
+	// a stone and a +0 dagger barely can.
+	bool IsPlayerBotArcherStoneWeapon(LPCHARACTER ch, LPITEM item)
+	{
+		if (!item || !IsPlayerBotArcherBuild(ch) || !IsPlayerBotStoneMeleeWeapon(ch, item))
+			return false;
+		return FindPlayerBotStoneWeapon(ch, false) == item ||
+				ch->GetWear(WEAR_WEAPON) == item;
 	}
 
 	// What the hand should hold right now: the job's weapon, or the stone
@@ -1033,6 +1054,7 @@ namespace
 		return bestVnum;
 	}
 
+	bool BuyPlayerBotProgressionGear(LPCHARACTER ch, DWORD vnum, const char* category);
 	bool HasPlayerBotProgressionGear(LPCHARACTER ch, DWORD desiredVnum, int wearCell)
 	{
 		if (!ch || desiredVnum == 0)
@@ -1363,6 +1385,13 @@ namespace
 		if (CountPlayerBotSafeRefineScrolls(ch) > 0)
 			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
 
+		// The Archer's stone dagger is a tool, not a prize: carry it to +4, where
+		// the steps are still 90% and a burn is rare, and stop - going for +6
+		// without a scroll would burn it and leave the bot breaking stones with a
+		// bow again. (A scroll, handled above, still takes it higher safely.)
+		if (IsPlayerBotArcherStoneWeapon(ch, item))
+			return PLAYERBOT_ARCHER_STONE_MIN_REFINE;
+
 		// Equipment is a primary progression system, not a side activity. Every bot
 		// aims for at least +6, while a stable per-character/per-family personality
 		// decides who risks +7, +8 or +9. The actual attempt still goes through
@@ -1426,6 +1455,87 @@ namespace
 			}
 		}
 		return false;
+	}
+
+	// The class's body-armour family base (11200/11400/11600/11800), so a
+	// warrior never buys a shaman's robe. Shields and helmets are shared.
+	DWORD GetPlayerBotArmorClassBase(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 11200;
+		switch (ch->GetJob())
+		{
+			case JOB_ASSASSIN: return 11400;
+			case JOB_SURA:     return 11600;
+			case JOB_SHAMAN:   return 11800;
+			default:           return 11200;
+		}
+	}
+
+	// The best piece an NPC merchant actually stocks for a wear slot that
+	// this bot's level and class can use. The progression ladder walks
+	// item_proto by stride and names tiers no shop sells - body armour at
+	// level 9, and everything from level 34 up - so a bot between two
+	// stocked tiers, or above the top one, could never buy and walked the
+	// world in an empty slot: a quarter of the cohort had no body armour
+	// (Tieru, 13 September). This finds the highest stocked piece the bot
+	// qualifies for, so the slot is filled and the blacksmith can raise it.
+	DWORD FindPlayerBotBestMerchantSlotVnum(LPCHARACTER ch, int wearCell)
+	{
+		if (!ch)
+			return 0;
+		DWORD lo = 0, hi = 0;
+		BYTE subtype = 0;
+		switch (wearCell)
+		{
+			case WEAR_BODY:   lo = GetPlayerBotArmorClassBase(ch); hi = lo + 199; subtype = ARMOR_BODY; break;
+			case WEAR_HEAD:   lo = 12000; hi = 12999; subtype = ARMOR_HEAD; break;
+			case WEAR_SHIELD: lo = 13000; hi = 13999; subtype = ARMOR_SHIELD; break;
+			case WEAR_FOOTS:  lo = 15000; hi = 15999; subtype = ARMOR_FOOTS; break;
+			default: return 0;
+		}
+		static const DWORD merchants[] = { 9001, 9002, 9003 };
+		DWORD bestVnum = 0;
+		int bestLevel = -1;
+		for (size_t i = 0; i < sizeof(merchants) / sizeof(merchants[0]); ++i)
+		{
+			LPSHOP shop = CShopManager::instance().GetByNPCVnum(merchants[i]);
+			if (!shop)
+				continue;
+			const std::vector<CShop::SHOP_ITEM>& offers = shop->GetItemVector();
+			for (size_t k = 0; k < offers.size(); ++k)
+			{
+				const DWORD vnum = offers[k].vnum;
+				if (vnum < lo || vnum > hi)
+					continue;
+				TItemTable* proto = ITEM_MANAGER::instance().GetTable(vnum);
+				if (!proto || proto->bType != ITEM_ARMOR || proto->bSubType != subtype)
+					continue;
+				const int reqLevel = GetPlayerBotProtoLevelLimit(proto);
+				if (reqLevel > (int)ch->GetLevel())
+					continue;
+				if (reqLevel > bestLevel)
+				{
+					bestVnum = vnum;
+					bestLevel = reqLevel;
+				}
+			}
+		}
+		return bestVnum;
+	}
+
+	// Fill an armour slot from the merchant with the best it stocks, unless
+	// the bot already holds (worn or in the bag) a piece of at least that
+	// level for the slot - so it never buys a second copy of a piece the
+	// merchant cannot better, and never a downgrade.
+	bool BuyPlayerBotBestMerchantSlotGear(LPCHARACTER ch, int wearCell, const char* category)
+	{
+		if (!ch)
+			return false;
+		const DWORD vnum = FindPlayerBotBestMerchantSlotVnum(ch, wearCell);
+		if (vnum == 0 || HasPlayerBotProgressionGear(ch, vnum, wearCell))
+			return false;
+		return BuyPlayerBotProgressionGear(ch, vnum, category);
 	}
 
 	bool BuyPlayerBotProgressionGear(LPCHARACTER ch, DWORD vnum, const char* category)
@@ -2112,9 +2222,11 @@ namespace
 #endif
 		if (!pGroup)
 		{
+			// The grid, not the pointers: see CountPlayerBotFreeInventoryCells
+			// (defined later in the include order, hence the loop repeated).
 			int freeCells = 0;
 			for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
-				if (!ch->GetInventoryItem(cell))
+				if (ch->IsEmptyItemGrid(TItemPos(INVENTORY, (WORD)cell), 1))
 					++freeCells;
 			return freeCells >= PLAYERBOT_CHEST_FREE_CELLS && ch->GetEmptyInventory(3) >= 0;
 		}

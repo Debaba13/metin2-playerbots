@@ -243,6 +243,12 @@ namespace
 	// of the goods a player buys one at a time - scrolls, soul stones - on
 	// lines of their own, because a private shop sells a line whole.
 	const DWORD PLAYERBOT_STACK_MERGE_INTERVAL = 300000;
+	// A tidy bag: potions on the first lines, then boosters, then chests -
+	// the rest left where it is (Tieru: "co jakis czas sortowac ekwipunek").
+	// Only single-cell items move, and only into an empty earlier cell with
+	// the engine's own MoveItem, which never deletes - so nothing can be
+	// lost or bugged. Bounded per pass; runs on the stack-merge clock.
+	const int PLAYERBOT_SORT_MAX_MOVES = 15;
 	// How long a bot may stand waiting for the engine's equip window before
 	// the wait is abandoned. Twelve archers stood at arrival points for
 	// twenty minutes, reset by the watchdog every ninety seconds, ticked and
@@ -261,6 +267,16 @@ namespace
 	// build the other way round.
 	const int PLAYERBOT_WEAPON_OWN_LINE_PERCENT = 100;
 	const int PLAYERBOT_WEAPON_OTHER_LINE_PERCENT = 35;
+	// A weapon carrying its build's damage line at or above the lock (25%) is
+	// the prize a player hand-made, and it must beat a refined lower weapon
+	// even unrefined - because once worn it is what the blacksmith raises.
+	// "boty maja w dupie bronie 30lvl ze srednimi ... biega w kosie +6"
+	// (sosen94): a Riba 48% or Antyk 40% in the bag while a +6/+9 lesser
+	// weapon is worn. The multiplier alone could not win it: 48% of a low
+	// unrefined base is less than a +9's raised base. Proportional to the
+	// line, so a genuinely better weapon still outscores it and a 12% one
+	// (which is not a prize) gets nothing.
+	const long long PLAYERBOT_WEAPON_PRIZE_PER_PCT = 6000;
 	// A skill line this high on a weapon is a prize line too (the bonus pass
 	// keeps an average line from PLAYERBOT_BONUS_KEEP_AVERAGE).
 	const long PLAYERBOT_WEAPON_PRIZE_SKILL_PERCENT = 15;
@@ -439,6 +455,20 @@ namespace
 	// one operator's equipment history; 12 534 pieces refined in the bag and
 	// then vendored in six hours on our own world.
 	const BYTE PLAYERBOT_PRECIOUS_REFINE = 4;
+	// A worse duplicate of a filled slot opens a stall only when it is this
+	// refined - a genuinely valuable spare, the +9 FMS the report was about.
+	// At +4 it caught 759 bots at once ("759 Prowadze stragan (zbedny
+	// duplikat)", akhigubernator): every second weapon or armour in a bag
+	// qualified, and the town filled with keepers ignoring the trade slider.
+	const BYTE PLAYERBOT_SHOP_SPARE_MIN_REFINE = 7;
+	// An Archer breaks a Metin with a dagger, and a +0 dagger breaks nothing:
+	// "powinni uzywac ulepszonych sztyletow na co najmniej +4, nie nizej bo nic
+	// z tego nie bedzie" (Tieru). The stone dagger is worn only on a stone, so it
+	// never counts as a wearable upgrade or a higher-tier spare and would never
+	// be refined in the bag - this floor makes it a refine candidate and its
+	// target. The +1..+4 steps are 90% each on this world's table, so reaching it
+	// is cheap and low-burn; a scroll in the bag still carries it higher.
+	const BYTE PLAYERBOT_ARCHER_STONE_MIN_REFINE = 4;
 	// The lowest refine an ordinary spare may carry and still be worth a counter
 	// slot. Below it nobody wants the thing: the market code buys medals,
 	// level-30 weapons and big bonus rolls, and a person walking the market sees
@@ -632,7 +662,13 @@ namespace
 	// MAX_NORM_ATTR_NUM in item_manager.h. Named here because the loop that fills
 	// an item has to know it, and reading it from the engine header would tie a
 	// tuning constant to a build detail.
-	const int PLAYERBOT_BONUS_MAX_LINES = 5;
+	// Four by the stone - the engine's USE_ADD_ATTRIBUTE refuses a fifth - and
+	// the fifth only the way a player gets it: a Marmur Blogoslawienstwa
+	// (USE_ADD_ATTRIBUTE2) on a piece of exactly four, at its own odds. The
+	// bots used to call AddAttribute() straight, no odds and up to five
+	// ("boty dodaja sobie 5 bonusow", 12 September).
+	const int PLAYERBOT_BONUS_MAX_LINES = 4;
+	const int PLAYERBOT_BONUS_MARBLE_LINES = 5;
 	// What the lines rolled on a piece add to what a stall asks for it.
 	//
 	// A counter wanted the same 150 000 for boots +7 carrying five bonus lines
@@ -666,6 +702,14 @@ namespace
 	// az im sie uda" - and thirty is a roll most weapons never see, so the
 	// rerolling never stopped where a player would have stopped it.
 	const long PLAYERBOT_BONUS_KEEP_AVERAGE = 20;
+	// A hand-tuned weapon at the two tiers players care about (level 30 and
+	// 75) is finished the moment it carries an average-damage or average-
+	// skill line at or above this - USE_CHANGE_ATTRIBUTE never touches it
+	// again. "dalem botowi fms z navi wartosci po 1000, debil zmienil bonusy"
+	// (Ciapek, 13 September). And a change stone is never spent on a +0..+4
+	// piece: raise it first, mix later.
+	const long PLAYERBOT_BONUS_WEAPON_LOCK_PCT = 25;
+	const BYTE PLAYERBOT_BONUS_CHANGE_MIN_REFINE = 5;
 	const long PLAYERBOT_BONUS_KEEP_HP = 1500;
 	const long PLAYERBOT_BONUS_KEEP_CRIT = 5;
 	// The caster's half of the same rule, and it exists because the two damage
@@ -1015,6 +1059,25 @@ namespace
 	const DWORD PLAYERBOT_PRIOR_BOOK_STRONG_BODY = 180000; // Silne Cialo (19)
 	const DWORD PLAYERBOT_PRIOR_BOOK_KEY = 140000;         // inne kluczowe dla buildu
 	const DWORD PLAYERBOT_PRIOR_BOOK_ORDINARY = 45000;
+	// Iwakura's book prices (12 September, "CENY KU"): a base per skill at the
+	// server's default yang rate, scaled by the mob_gold rate the operator
+	// set (200% doubles them), then a draw of PLAYERBOT_BOOK_PRICE_JITTER_MIN
+	// to _MAX percent per listing so two counters never ask the same number;
+	// the sale memory does the rest. A skill not in the table keeps
+	// PLAYERBOT_PRIOR_BOOK_ORDINARY. Vnums as skill_proto has them.
+	struct TPlayerBotBookPrice { DWORD dwSkill; DWORD dwPrice; };
+	const TPlayerBotBookPrice PLAYERBOT_BOOK_PRICES[] = {
+		{ 4, 75000 }, { 3, 45000 }, { 2, 32500 }, { 5, 13500 }, { 1, 10500 },      // wojownik cialo
+		{ 19, 35000 }, { 16, 32500 }, { 17, 14000 }, { 18, 7500 }, { 20, 7500 },   // wojownik umysl
+		{ 31, 22500 }, { 33, 22500 }, { 34, 12500 }, { 32, 8000 }, { 35, 8000 },   // ninja sztylet
+		{ 48, 27500 }, { 50, 22500 }, { 46, 8000 }, { 47, 6500 }, { 49, 5000 },    // ninja luk
+		{ 63, 50000 }, { 64, 40000 }, { 65, 22500 }, { 66, 12500 }, { 62, 8000 }, { 61, 4500 }, // sura bron
+		{ 78, 22500 }, { 79, 20000 }, { 77, 13000 }, { 76, 11000 }, { 80, 6000 }, { 81, 5000 }, // sura magia
+		{ 96, 37500 }, { 94, 35000 }, { 93, 15500 }, { 95, 10000 }, { 92, 6000 }, { 91, 4500 }, // szaman smok
+		{ 109, 22500 }, { 107, 12500 }, { 106, 7500 }, { 111, 5500 }, { 110, 9000 }, { 108, 9000 }, // szaman uzdr.
+	};
+	const int PLAYERBOT_BOOK_PRICE_JITTER_MIN = 80;
+	const int PLAYERBOT_BOOK_PRICE_JITTER_MAX = 125;
 	const DWORD PLAYERBOT_PRIOR_PEARL_WHITE = 2000000;
 	const DWORD PLAYERBOT_PRIOR_PEARL_BLUE = 3000000;
 	const DWORD PLAYERBOT_PRIOR_PEARL_RED = 6000000;
@@ -1845,6 +1908,29 @@ namespace
 		}
 	}
 	const BYTE PLAYERBOT_DRAGON_GOD_SCROLL_MIN_PLUS = 7;
+	// The operator's word on an item, from playerbot_item_policy.tsv in the
+	// spool (playerbot_config.h reads it like the weights): keep - never
+	// leaves the bag; stall - counter goods, ahead of everything the scorer
+	// would rank it; merchant - scrap for the general merchant; drop - thrown
+	// away at the merchant visit without a sale. A line names a vnum or a
+	// whole type (type:19). "Boty sprzedaja ulepszacze i marmury handlarzowi"
+	// (sizowski, 12 September) is what the file is for: the rules below are
+	// the defaults, the file is the operator's override.
+	enum EPlayerBotItemPolicy
+	{
+		PLAYERBOT_ITEM_POLICY_NONE = 0,
+		PLAYERBOT_ITEM_POLICY_KEEP = 1,
+		PLAYERBOT_ITEM_POLICY_STALL = 2,
+		PLAYERBOT_ITEM_POLICY_MERCHANT = 3,
+		PLAYERBOT_ITEM_POLICY_DROP = 4
+	};
+	const int PLAYERBOT_SHOP_POLICY_STALL_SCORE = 900;
+	// A polymorph marble is goods, not scrap: it went to the merchant for
+	// three hundred yang while the counters sold none.
+	const int PLAYERBOT_SHOP_POLYMORPH_SCORE = 600;
+	// Offsets tried for a pitch the bot cannot walk to before the stand is
+	// put off for a while (the open pass in playerbot_town.h).
+	const int PLAYERBOT_SHOP_PITCH_TRIES = 4;
 	const BYTE PLAYERBOT_SCROLL_REFINE_MIN_PLUS = 6;
 	// A Blessing or Dragon God scroll in the bag is the whole reason to go
 	// on: under either the engine never burns the piece (DoRefineWithScroll
@@ -1903,6 +1989,14 @@ namespace
 	// and its status said "Ide na Gore Sohan" all the while. The wait is
 	// what lets the town visit and the stall run and earn the fee.
 	const DWORD PLAYERBOT_TELEPORTER_RETRY_MS = 300000;
+	// The Teleport Ring (70058, level 30): a bot out of potions or a weapon
+	// on a frontier map recalls home with it instead of the long, dangerous
+	// walk to the exit portal ("musza isc po potki bo sie skonczyly a sa w
+	// Dolinie Orkow czy na V1", Tieru). Not consumed; a per-bot clock keeps
+	// it to the engine's own 30-minute cooldown.
+	const DWORD PLAYERBOT_TELEPORT_RING_VNUM = 70058;
+	const BYTE PLAYERBOT_TELEPORT_RING_MIN_LEVEL = 30;
+	const DWORD PLAYERBOT_TELEPORT_RING_COOLDOWN_MS = 1800000;
 	// A departure held longer than this is reported with what holds it
 	// (PLAYERBOT_DEPARTURE: overdue), once per this interval per bot.
 	const DWORD PLAYERBOT_DEPARTURE_OVERDUE_MS = 600000;
@@ -1990,6 +2084,7 @@ namespace
 		PLAYERBOT_SHOP_REASON_BOOKS,
 		PLAYERBOT_SHOP_REASON_DROPPER_ROLL,
 		PLAYERBOT_SHOP_REASON_ROLL,
+		PLAYERBOT_SHOP_REASON_SPARE,
 		PLAYERBOT_SHOP_REASON_MAX
 	};
 	const DWORD PLAYERBOT_SHOP_REEVALUATE_SPREAD_MS = 300000;   // 5 min
@@ -2012,6 +2107,7 @@ namespace
 			case PLAYERBOT_SHOP_REASON_BOOKS:            return "fazla kitap";
 			case PLAYERBOT_SHOP_REASON_DROPPER_ROLL:     return "dropper";
 			case PLAYERBOT_SHOP_REASON_ROLL:             return "rastgele";
+			case PLAYERBOT_SHOP_REASON_SPARE:            return "gereksiz kopya";
 			default:                                     return "?";
 		}
 	}

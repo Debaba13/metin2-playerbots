@@ -27,11 +27,20 @@ Unlike conventional external client-bot scripts, bots in this project are **firs
 
 - ⚔️ **Smart Combat Engine**: Full support for all character classes (Warrior, Sura BM/WP, Ninja Dagger/Archer, Shaman), smooth combo animations, projectile-based bow attacks consuming arrows, active buff maintenance, and skill rotations.
 - 🗺️ **Global 2D NavGrid (A*)**: High-resolution collision grid generated from engine map attributes (`server_attr`) coupled with Global A* and String-Pulling line-of-sight trajectory smoothing.
-- 🚪 **Multi-map Travel**: Autonomous portal traversal across M1 ↔ M2 ↔ M3 and the internal teleports of the Easy Monkey Dungeon. Bots choose zones according to level and equipment readiness.
+- 🚪 **Multi-map Travel**: Autonomous crossings M1 ↔ M2 ↔ M3, the Easy Monkey Dungeon, Orc Valley, the Yongbi Desert, Mount Sohan and the Spider Dungeon V1. Bots pick the map by level and the hub on it by the population's shared memory of where the monsters stand. When they run out of potions far from town, a bot with a Teleport Ring recalls to its village at once instead of walking to the exit portal.
+- 🏹 **Biologist missions and level-appropriate hunting**: seven Biologist missions including the Orc Tooth and the Soul Stone, taken without a dialog; ordinary hunting picks the frontier map and hub by the bot's level. (On the 2.x files the `levelup` quest ships in `_unused`, so the "Hunting: Lv X" missions are disabled — they never showed progress and sent under-geared bots at their monster.)
+- 🎁 **Chests and bosses**: Moonlight Treasure Chests and boss caskets are opened and their contents used (bonus scrolls, speed potions, the Blessing Scroll for refines from +6). Parties, guild mates first, raid the Orc Chief and the Spider Queen.
 - 💎 **Metin Stone Hunting**: Dedicated roving Metin hunters patrolling the map, shattering stones, and clearing spawned add waves.
-- 🎒 **Looting & Town Economy**: Post-battle loot collection, automated equipment evaluation including shields, appropriate merchant visits, potion restocking, and gear refinement at the **Blacksmith**.
+- 🎒 **Looting & Town Economy**: Post-battle loot collection, automated equipment evaluation including shields, buying armour from the merchant (and, when the exact tier is not stocked, the best available for the class) and refining it to at least +6 at the **Blacksmith**, appropriate merchant visits, potion restocking, and a tidied bag (potions on the first lines, then boosters and chests).
 - 🐴 **Horse Progression**: Real Horse Medal expeditions into the Monkey Dungeon, delivery to the nearest Stable Boy, and mounted long-distance travel.
-- 👥 **Party & Squad Dynamics**: Dynamic 2–3 player squad formations, cooperative exping, and pulling mobs in dense monster camps.
+- 👥 **Party & Squad Dynamics**: Dynamic 2–3 player squads, and up to 8 in Orc Valley for the Black Orc camps; cooperative exping and pulling mobs in dense monster camps.
+- 🏪 **Stalls and a bot-to-bot market**: Bots open private stalls in Bokjung and **buy from each other** — the refine material someone is short of, or a piece of gear better than what they are wearing. Anything at +7 or above is never sold to an NPC merchant. A worse duplicate of a better piece (two of the same +9) is put up for sale.
+- 🐉 **ItemShop and Dragon Coins**: the built-in ItemShop runs on Dragon Coins, and SM vouchers drop with a small chance from broken Metin stones and slain bosses.
+- 🧬 **Biologist missions**: Collecting specimens and handing them in stage by stage, driven without a quest dialog.
+- 🎣 **Fishing**: A full session — bait written into the rod's socket, waiting for the bite, and pulling inside the six-second window.
+- ✨ **Bonus rerolling**: Bots use Change and Add Attribute stones on gear they are not currently wearing.
+- 🧠 **Personality and goals**: Every bot has its own character and ambition (Metin hunter, collector, horse breeder, a "dropper" of Metins, M3, M2 or medals) that decides what it does with a given hour.
+- 🎛️ **The panel steers behaviour live**: goal weight sliders, a switch for the bots' overhead chat, scrap keepers selling cheap fodder for the blacksmith, and the Moonlight chest chance — all read by the core within five seconds, no restart. On the single-player line the panels grant full access at once, with no passphrase to type.
 - 💾 **Native MariaDB Persistence**: Each bot has its own persistent account and character entry in MariaDB, retaining Level, EXP, Yang, items, and quest flags across server restarts.
 
 ---
@@ -74,6 +83,9 @@ If you already have a configured client, replace `-ClientArchive` with `-NoClien
 Set-Location "$env:USERPROFILE\Metin2Server"
 docker compose up -d
 ```
+
+After the start two web panels are running: the classic admin panel at `http://127.0.0.1:7788` and the **Metin2 Singleplayer Panel** by seban latino at `http://127.0.0.1:7790` — a live map of the bot world, character profiles with inventories and item tooltips, rankings, economy history, host telemetry, live bot controls and bulk item grants. On the single-player line both panels open with full access and no passphrase; an operator who exposes the panel can still turn a password on.
+
 
 ### 4. Join the Game
 Point the client from the same compatible r40250 set to `127.0.0.1` (Auth port `11000`, Game ports `13000–13002`) and jump into the living world in Joan (Chunjo)!
