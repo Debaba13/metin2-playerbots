@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-13T08:09:17Z",
-  "statusMessage": "Wersja 2.0.24: boty zakladaja bronie 30 lvl ze srednimi, lucznicy ulepszaja sztylet do metinow (+4), koniec drzenia konia w podrozy, stragany na duplikaty dopiero od +7, a materialy pod presja plecaka ida do magazynu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-13T10:08:47Z",
+  "statusMessage": "PILNE 2.0.27: naprawiona wywalka rdzenia, gdy Teleporter odmawia botowi (brak poziomu/yang). Boty uzywaja wspomagaczy, kamieni bonusow i eliksirow zamiast je sprzedawac. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
   "server": {
     "version": "2.0.24",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.24/metin2-server-update-2.0.24.zip",

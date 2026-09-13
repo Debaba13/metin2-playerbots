@@ -764,17 +764,17 @@ namespace
 				count = affordable;
 				price = GetPlayerBotNpcPurchasePrice(proto, count);
 				PlayerBotLogThrottled("tackle_part_buy", dwNow,
-						"PLAYERBOT_FISHING: buying what it can afford of %s pid=%u name=%s vnum=%u count=%d price=%lld gold=%d",
+						"PLAYERBOT_FISHING: buying what it can afford of %s pid=%u name=%s vnum=%u count=%d price=%lld gold=%lld",
 						what, ch->GetPlayerID(), ch->GetName(), vnum, count,
-						price, ch->GetGold());
+						price, (long long)ch->GetGold());
 			}
 		}
 		if (price <= 0 || ch->GetGold() < price)
 		{
 			PlayerBotLogThrottled("tackle_no_gold", dwNow,
-					"PLAYERBOT_FISHING: cannot afford %s pid=%u name=%s vnum=%u count=%d price=%lld gold=%d",
+					"PLAYERBOT_FISHING: cannot afford %s pid=%u name=%s vnum=%u count=%d price=%lld gold=%lld",
 					what, ch->GetPlayerID(), ch->GetName(), vnum, count,
-					price, ch->GetGold());
+					price, (long long)ch->GetGold());
 			return false;
 		}
 		// The bag has to have room BEFORE the purchase, because AutoGiveItem
@@ -799,8 +799,8 @@ namespace
 		if (!bMergesIntoStack && ch->GetEmptyInventory(size) < 0)
 		{
 			PlayerBotLogThrottled("tackle_no_room", dwNow,
-					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d size=%d gold=%d",
-					what, ch->GetPlayerID(), ch->GetName(), vnum, count, size, ch->GetGold());
+					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d size=%d gold=%lld",
+					what, ch->GetPlayerID(), ch->GetName(), vnum, count, size, (long long)ch->GetGold());
 			return false;
 		}
 		LPITEM bought = ch->AutoGiveItem(vnum, count, -1, false);
@@ -857,8 +857,8 @@ namespace
 			if (!pass)
 				return false;
 			PlayerBotChangeGold(ch, -(int)PLAYERBOT_FISHING_PASS_PRICE);
-			sys_log(0, "PLAYERBOT_FISHING: fishing pass bought pid=%u name=%s price=%u gold=%d",
-					ch->GetPlayerID(), ch->GetName(), PLAYERBOT_FISHING_PASS_PRICE, ch->GetGold());
+			sys_log(0, "PLAYERBOT_FISHING: fishing pass bought pid=%u name=%s price=%u gold=%lld",
+					ch->GetPlayerID(), ch->GetName(), PLAYERBOT_FISHING_PASS_PRICE, (long long)ch->GetGold());
 		}
 		if (!ch->EquipItem(pass))
 		{

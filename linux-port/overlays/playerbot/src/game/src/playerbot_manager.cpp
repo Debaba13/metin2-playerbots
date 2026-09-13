@@ -58,6 +58,10 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 // spells some of them differently. Empty on r40250.
 #include "playerbot_engine_compat.h"
 
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+#include "ikarus_shop_manager.h"
+#include "playerbot_offline_policy.h"
+#endif
 #include "playerbot_types.h"
 #include "playerbot_log.h"
 #include "playerbot_config.h"
@@ -85,7 +89,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_shop_signs.h"
 #include "playerbot_llm_shop.h"
 #include "playerbot_town.h"
+#include "playerbot_offline_shop.h"
 #include "playerbot_market.h"
+#include "playerbot_offline_market.h"
 #include "playerbot_language.h"
 #include "playerbot_chat_trade.h"
 #include "playerbot_llm_bridge.h"
@@ -1707,6 +1713,10 @@ void CPlayerBotManager::Update()
 		// with a deadline this manager owns, so releasing it must not depend on
 		// which subsystem happens to win the tick - that dependency is why stalls
 		// were left standing with their sign over the keeper's head.
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+		if (ManagePlayerBotOfflineService(ch, state, dwNow))
+			continue;
+#endif
 		if (ManagePlayerBotShopLifetime(ch, state, dwNow))
 			continue;
 

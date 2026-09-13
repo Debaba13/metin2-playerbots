@@ -1087,7 +1087,7 @@ function New-M2SupportBundle {
                 $coreDir = '/opt/metin2/var/channel1/' + $core
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('playerbot-syslog-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
-                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e GM_PROFILE -e autospawn | tail -n 40000')
+                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e PLAYERBOT_OFFLINE -e PLAYERBOT_MARKET -e PLAYERBOT_BAG -e GM_PROFILE -e autospawn | tail -n 40000')
                 }
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('syserr-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
@@ -1909,9 +1909,22 @@ function Reset-M2WorldToFreshInstall {
     }
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
+        # A stopped container still holds its volume. The launcher stops the
+        # stack with `compose stop', which leaves every container in place, so
+        # `volume rm' answered "volume is in use" on a server that was
+        # perfectly stopped - four times in a row for one player, each time
+        # "czy serwer na pewno jest zatrzymany?" (NieBijOddam, 13 September).
+        # Remove whatever references the volume first; `compose up' recreates
+        # the containers on the next start, the way it does after an update.
+        $holders = @(& docker ps -a -q --filter "volume=$Volume" 2>$null | Where-Object { $_ })
+        foreach ($id in $holders) {
+            & docker rm -f $id 1>$null 2>$null
+        }
         & docker volume rm -f $Volume 1>$null 2>$null
         if ($LASTEXITCODE -ne 0) {
-            throw "Nie udalo sie usunac wolumenu '$Volume' - czy serwer na pewno jest zatrzymany?"
+            $still = @(& docker ps -a --filter "volume=$Volume" --format '{{.Names}} ({{.Status}})' 2>$null | Where-Object { $_ })
+            $who = if ($still.Count -gt 0) { ' Wciaz uzywaja go: ' + ($still -join ', ') + '.' } else { '' }
+            throw ("Nie udalo sie usunac wolumenu '$Volume'.$who Zatrzymaj Docker Desktop, uruchom go ponownie i sprobuj jeszcze raz.")
         }
     }
     finally { $ErrorActionPreference = $previous }

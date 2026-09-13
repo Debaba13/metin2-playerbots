@@ -201,12 +201,12 @@ $script:Strings = @{
         logFolder    = 'FOLDER LOGOW'
         botCount     = 'LICZBA BOTOW (0-2500)'
         importDb     = 'IMPORTUJ BAZE'
-        worldBackup  = 'KOPIA SWIATA'
+        worldBackup  = 'KOPIA / NOWY SWIAT'
         backupDialog = 'Kopia swiata'
         backupInfo   = 'Kopia zapisuje caly swiat - postacie, poziomy, ekwipunek, boty i konta gry - do jednego pliku zip w folderze backups. Serwer zostanie na czas kazdej z tych operacji zatrzymany i zapisany.'
         backupMake   = 'Zapisz kopie swiata'
         backupLoad   = 'Przywroc swiat z kopii'
-        backupReset  = 'Zacznij od zera (swieza instalacja)'
+        backupReset  = 'Wyzeruj swiat i zacznij od nowa (swieza instalacja)'
         backupPick   = 'Wybierz plik kopii'
         backupNone   = 'W folderze backups nie ma jeszcze zadnej kopii. Zapisz najpierw kopie.'
         repairDb     = 'NAPRAW DOSTEP DO BAZY'
@@ -254,12 +254,12 @@ $script:Strings = @{
         logFolder    = 'LOG FOLDER'
         botCount     = 'BOT COUNT (0-2500)'
         importDb     = 'IMPORT DATABASE'
-        worldBackup  = 'WORLD BACKUP'
+        worldBackup  = 'BACKUP / NEW WORLD'
         backupDialog = 'World backup'
         backupInfo   = 'A backup writes the whole world - characters, levels, equipment, bots and game accounts - into one zip file in the backups folder. The server is stopped and saved for each of these operations.'
         backupMake   = 'Save a backup'
         backupLoad   = 'Restore from a backup'
-        backupReset  = 'Start over (fresh install)'
+        backupReset  = 'Wipe the world and start over (fresh install)'
         backupPick   = 'Choose a backup file'
         backupNone   = 'There is no backup in the backups folder yet. Save one first.'
         repairDb     = 'REPAIR DATABASE ACCESS'
@@ -1643,16 +1643,17 @@ $worldBackupButton.Add_Click({
         Start-LauncherAction -Action 'RestoreDb' -Yes -ExtraArgs @('-RestoreSource', "$file")
         return
     }
-    # reset
+    # reset: the world is wiped and the server comes straight back up on the
+    # fresh one (-ThenStart), so "wyzeruj i zacznij od nowa" is one decision.
     $confirm = [Windows.Forms.MessageBox]::Show(
-        "Zresetować świat do stanu świeżej instalacji?`r`n`r`nZniknie CAŁY obecny świat: postacie, poziomy, ekwipunek, boty i konta gry. Launcher najpierw zapisze go do kopii zip w folderze 'backups', więc da się do niego wrócić przyciskiem KOPIA SWIATA -> Przywroc swiat z kopii.`r`n`r`nPierwszy start po resecie potrwa dłużej - baza powstaje od nowa i boty są zasiewane.",
-        'Potwierdź reset świata', 'YesNo', 'Warning')
+        "Wyzerować świat i zacząć od nowa?`r`n`r`nZniknie CAŁY obecny świat: postacie, poziomy, ekwipunek, boty i konta gry. Launcher najpierw zapisze go do kopii zip w folderze 'backups', więc da się do niego wrócić przyciskiem KOPIA SWIATA -> Przywroc swiat z kopii.`r`n`r`nPo wyzerowaniu serwer uruchomi się sam na nowym świecie. Ten start potrwa dłużej - baza powstaje od nowa i boty są zasiewane.",
+        'Potwierdź wyzerowanie świata', 'YesNo', 'Warning')
     if ($confirm -ne [Windows.Forms.DialogResult]::Yes) { return }
     $again = [Windows.Forms.MessageBox]::Show(
         "Na pewno? To ostatnie pytanie.`r`n`r`nPo kliknięciu TAK obecny świat przestaje być światem tego serwera.",
-        'Reset świata', 'YesNo', 'Warning')
+        'Wyzerowanie świata', 'YesNo', 'Warning')
     if ($again -ne [Windows.Forms.DialogResult]::Yes) { return }
-    Start-LauncherAction -Action 'ResetWorld' -Yes
+    Start-LauncherAction -Action 'ResetWorld' -Yes -ExtraArgs @('-ThenStart')
 })
 $dbAccessButton.Add_Click({
     # In-process on purpose: an action would print through the log box and the

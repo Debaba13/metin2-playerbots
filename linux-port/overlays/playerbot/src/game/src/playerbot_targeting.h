@@ -239,14 +239,16 @@ namespace
 	class CCountPlayerBotStoneAttackers
 	{
 		public:
-			CCountPlayerBotStoneAttackers(LPCHARACTER stone) :
-				m_stone(stone), m_count(0) {}
+			CCountPlayerBotStoneAttackers(LPCHARACTER stone, LPCHARACTER exclude = NULL) :
+				m_stone(stone), m_exclude(exclude), m_count(0) {}
 
 			bool operator () (LPENTITY entity)
 			{
 				if (!entity || !entity->IsType(ENTITY_CHARACTER))
 					return true;
 				LPCHARACTER attacker = static_cast<LPCHARACTER>(entity);
+				if (attacker == m_exclude)
+					return true;
 				if (!attacker || !attacker->IsPC() || attacker->IsDead() ||
 						attacker->GetMapIndex() != m_stone->GetMapIndex() ||
 						DISTANCE_APPROX(attacker->GetX() - m_stone->GetX(),
@@ -268,16 +270,37 @@ namespace
 
 		private:
 			LPCHARACTER m_stone;
+			LPCHARACTER m_exclude;
 			BYTE m_count;
 	};
 
-	BYTE CountPlayerBotStoneAttackers(LPCHARACTER stone)
+	BYTE CountPlayerBotStoneAttackers(LPCHARACTER stone, LPCHARACTER exclude = NULL)
 	{
 		if (!stone || !stone->GetSectree())
 			return 0;
-		CCountPlayerBotStoneAttackers counter(stone);
+		CCountPlayerBotStoneAttackers counter(stone, exclude);
 		stone->GetSectree()->ForEachAround(counter);
 		return counter.GetCount();
+	}
+
+	// An Archer breaks a Metin with a dagger, and only a refined one manages it.
+	// Without a +4 dagger it must not take a stone on its own - a bow does not
+	// break stones and a +0 dagger barely scratches one, so it "pada na gleba x
+	// razy i rezygnuje" - but it may still help a stone somebody else is already
+	// breaking, from range with the bow ("no chyba ze ktos inny bije kamien metin
+	// to on moze z luku go bic", Tieru). Melee classes are unchanged.
+	bool CanPlayerBotEngageStone(LPCHARACTER ch, LPCHARACTER stone)
+	{
+		if (!ch || !stone)
+			return false;
+		if (!IsPlayerBotArcherBuild(ch))
+			return true;
+		if (HasPlayerBotUsableStoneDagger(ch))
+			return true;
+		// No usable dagger: only join a stone others are already breaking. Count
+		// the other attackers, never this bot, or its own first bow shot would
+		// keep it going after the others had left.
+		return CountPlayerBotStoneAttackers(stone, ch) > 0;
 	}
 
 	void ResetPlayerBotStoneProgress(TPlayerBotAIState& state)
@@ -852,6 +875,12 @@ namespace
 				if (candidate->IsStone())
 				{
 					if (!IsPlayerBotMetinWorthFighting(m_owner, candidate))
+						return false;
+
+					// An Archer with no refined dagger does not solo a stone; it
+					// only joins one others are already breaking (then with the
+					// bow). Melee classes are unaffected.
+					if (!CanPlayerBotEngageStone(m_owner, candidate))
 						return false;
 
 					std::map<DWORD, DWORD>::const_iterator stit = m_failedStones.find(candidate->GetVID());

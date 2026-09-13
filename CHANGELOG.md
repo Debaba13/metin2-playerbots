@@ -17,6 +17,185 @@ every version here.
 
 ---
 
+## 2.0.28 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Poprawia bieganie
+botów „tam i z powrotem” po 2.0.26, daje botom matematyczny wybór broni,
+naprawia wyzerowanie świata w launcherze i uzupełnia pakiet wsparcia o logi
+sklepów offline.
+
+### Boty biegają tam i z powrotem przy pierścieniu straganów (FanFar)
+
+„Boty po aktualizacji sklepów offline biegają w jedną i drugą stronę bez celu”.
+Z pakietu wsparcia: na jednym rdzeniu ~430 z 500 botów co ~5 s rozdzielało te
+same stosy „na ladę” (8250 linii `split` w 13 minut) — a sklepy offline
+powstawały normalnie (284 na świecie po pięciu minutach). Mechanizm: dwa wyjścia
+na końcu przejścia otwierającego stragan — trwałe zawiniątko sklepu i brak yang
+na zawiniątko — odmawiały **bez ustawienia zegara**, już po rozdzieleniu stosów;
+pas scalania stosów (po wyczerpaniu budżetu wraca po 5 s) zlewał pojedyncze
+sztuki z powrotem, pas wędrówki robił krok w bok, a następny tick znów
+rozdzielał, szedł na stanowisko i odmawiał. Teraz każde takie wyjście odczekuje
+(2–4 min, a z trwałym zawiniątkiem 10–15 min), a tanie sprawdzenia — czy bot ma
+na zawiniątko, opłatę sklepu offline i rezerwę na Teleporter, i czy minęły dwie
+minuty od spawnu — stoją **przed** skanem, rozdzielaniem i marszem. Odmowa
+jest logowana (`PLAYERBOT_SHOP: refused ... reason=cannot_pay`).
+
+### Bot liczy obrażenia na cios i tak wybiera broń (Tieru)
+
+„Wprowadź matematyczny algorytm dla bota, który przelicza atak per hit z danej
+broni uwzględniając bonusy i średnie broni”. Wynik broni w wyborze ekwipunku to
+teraz jeden zwykły cios, tak jak liczy go `battle.cpp`: rzut broni (wartości
+3–4 podwojone przez silnik; sztylet i łuk jak dotąd), klasa ataku (poziom, SIŁA,
+linie klasy ataku), linie procentowe ataku, linia rasy ważona udziałem tej rasy
+na mapie, średnie obrażenia, trafienie krytyczne (drugi cios na każdy procent) i
+przebicie (połowa). To, co kandydat zmieniłby na postaci (SIŁA, klasa ataku,
+procenty, kryty), jest liczone względem postaci **bez** noszonej broni — więc
+broń w ręku i dwie w plecaku są czytane na tym samym ciele. Obrażenia
+umiejętności nie wchodzą w cios (linia PvP, której świat jeszcze nie używa);
+szybkość ataku to ciosy na sekundę, nie obrażenia na cios. Żadna sztuczna
+„premia” nie jest już potrzebna, żeby Riba 48% śr. wygrała z niższą bronią +9 —
+robią to liczby.
+
+### Wyzeruj świat i zacznij od nowa — działa (NieBijOddam)
+
+„Brak możliwości wyzerowania serwera”: cztery próby z rzędu kończyły się „Nie
+udało się usunąć wolumenu … czy serwer na pewno jest zatrzymany?”. Był
+zatrzymany — ale launcher zatrzymuje stos przez `compose stop`, które zostawia
+kontenery, a zatrzymany kontener wciąż trzyma swój wolumen. Reset usuwa najpierw
+każdy kontener, który się do wolumenu odwołuje, potem wolumen; następny start
+odtwarza kontenery jak po aktualizacji. Opcja nazywa się teraz „Wyzeruj świat i
+zacznij od nowa” (przycisk **KOPIA / NOWY SWIAT**, w menu tekstowym pozycja 17):
+po wyzerowaniu serwer uruchamia się sam na nowym świecie, bez klikania GRAJ.
+Kopia starego świata jak dotąd trafia do `backups`.
+
+### Pakiet wsparcia niesie logi sklepów offline
+
+Pakiet FanFara nie miał **ani jednej** linii o sklepach offline, bo lista
+wzorców `grep` w launcherze nie znała `PLAYERBOT_OFFLINE`; „czy sklepy w ogóle
+powstały” trzeba było wnioskować ze spisu straganów. Dochodzą `PLAYERBOT_OFFLINE`,
+`PLAYERBOT_MARKET` i `PLAYERBOT_BAG` (scalanie i sortowanie plecaka — to ono
+zdradza pętlę wyżej).
+
+### Sprostowanie do 2.0.27
+
+Opis 2.0.27 twierdził, że odmowa Teleportera była sprawdzona na żywo. Nie była:
+poprawka jest sprawdzona kompilacją na obu silnikach, a na świecie testowym nie
+dało się wymusić samej odmowy (boty z niedoborem yang nie są tam wysyłane pod
+Teleporter). Potwierdzenie przyjdzie z logów graczy; wpis w wątku kimakatsu
+poprawiony.
+
+### Dla sizowskiego: „boty nie wystawiają sklepów”
+
+Pakiet z 11:57 był jeszcze z 2.0.25: spis pokazywał 1–21 klasycznych straganów
+na rdzeń, bo po serii stoisk straganiarz odpoczywa 30–90 min, a 2.0.24 zabrało
+straganom materiały (idą do magazynu) i podniosło próg zapasowej broni do +7.
+Od 2.0.26 straganu klasycznego nie ma — bot stawia sklep offline na 8 h i idzie
+grać, a po 8 h opłaca go na nowo, jeśli został towar. Jeśli po 2.0.28 sklepów
+offline dalej nie widać, nowy pakiet wsparcia pokaże `PLAYERBOT_OFFLINE: create`
+albo powód odmowy.
+
+---
+
+## 2.0.27 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. **Pilna poprawka:
+wywałka rdzenia** — aktualizuj od razu.
+
+### Wywałka rdzenia, gdy Teleporter odmawia botowi (kimakatsu)
+
+kimakatsu zdiagnozował to co do joty: linia logu, którą bot pisze, gdy Teleporter
+odmawia mu przejazdu (za niski poziom albo za mało yang), miała dla yang miejsce
+32-bitowe, a rdzeń tej linii trzyma yang 64-bitowo. Pozostałe wartości przesuwały
+się o jedno miejsce, numer mapy trafiał tam, gdzie miał być tekst powodu, rdzeń
+próbował go czytać jako tekst — i padał. Każda odmowa zabijała rdzeń, więc ta
+linia nigdy nie trafiła do żadnego logu. Poprawione tu i w dwunastu innych
+miejscach, gdzie yang szedł do logu tym samym błędnym wzorcem (te tylko
+pokazywały złe liczby). Poprawka sprawdzona kompilacją na obu silnikach; samej
+odmowy nie udało się wymusić na świecie testowym (boty z niedoborem yang nie są
+tam w ogóle wysyłane pod Teleporter), więc potwierdzenie na żywo przyjdzie z
+logów graczy.
+
+### Boty używają wspomagaczy, kamieni bonusów i eliksirów zamiast je sprzedawać (Pasywny)
+
+„Bot zamiast użyć i dodać bony to posprzedawał handlarzowi”. Bot rozpoznawał
+wspomagacze i kamienie bonusów po numerach (vnum), a na tych plikach każda z tych
+rzeczy ma po kilka numerów — Mikstura Ataku +10 ma trzy, Zielona Siła/Zielony Czar
+(dodanie/zmiana bonusu) po trzy; kopie z ItemShopu (76xxx) nie mają do tego
+blokady sprzedaży, więc dostane z panelu szły do handlarza za grosze. Teraz bot
+rozpoznaje je po tym, **co robi z nimi gra**, nie po numerze: każdy czasowy
+wspomagacz (atak, obrona, szybkość, krytyk, przebicie, zestaw Boga Smoków,
+pierścień doświadczenia, zielone/fioletowe mikstury, soki, sushi) jest wypijany
+na początku walki — jednego rodzaju naraz, a gra sama odmawia drugiej tej samej
+mikstury, póki pierwsza działa; każdy kamień dodania/zmiany bonusu i marmur idą
+na ekwipunek (bot najpierw sięga po ten, który ma w plecaku, dopiero potem
+kupuje); **Eliksir Księżyca** (doświadczenie) jest wypijany od razu, gdy bot go
+ma; a **Wykrywacz Kamieni Metin** — botowi na nic (rysuje po kliencie), graczom
+potrzebny — trafia na ladę jako towar. Żadna z tych rzeczy nie jest już złomem
+dla handlarza. Łuk +0 bez bonusów u handlarza zostaje, jak było.
+
+## 2.0.26 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty prowadzą prawdziwe sklepy offline i idą grać dalej
+
+Dotąd bot wystawiał klasyczny stragan: stał przy nim jako tobołek i czekał, aż
+sprzeda wszystko albo minie czas. Teraz otwiera **prawdziwy sklep offline** —
+ten sam, który mają gracze na tych plikach (ikashop): niezależny byt na
+pierścieniu straganów, opłacony na 8 godzin (6000 yang), z szyldem, ceną i
+towarem wybranym po staremu — a sam bot **od razu wraca do gry**: poluje,
+expi, robi Biologa, jeździ do kowala. Co 10–15 minut wraca do sklepu na krótką
+wizytę serwisową: odbiera utarg ze skrytki sklepu, dokłada jeden przedmiot,
+raz na godzinę przelicza jedną cenę wg rynku, a wygasły sklep z towarem opłaca
+na nowo. Boty kupują też u siebie nawzajem w sklepach offline (te same reguły
+„czy chcę to kupić” co przy straganach). Każde żądanie do bazy (założenie,
+dołożenie, zmiana ceny, odbiór, zakup) jest zapisane w dzienniku i nigdy nie
+jest ponawiane po przekroczeniu czasu — silnik nie ma klucza idempotentności,
+więc powtórka mogłaby zdublować przedmiot lub yang; nierozwiązane żądanie
+tylko wstrzymuje handel tego bota, gra idzie dalej. Zmiana bazuje na pracy
+Codexa (handoff 2026-09-13): dziennik żądań z testem jednostkowym, serwis
+sklepu, zakupy, hooki `Sent/Complete` w silniku przez `playerbotify.py`, oraz
+poprawka rdzenia db, która odsyła kupującemu odmowę blokady (dwóch kupujących,
+jeden przedmiot). Sprawdzone na żywo: 47 sklepów założonych i potwierdzonych
+przez rdzeń db, 24 zakupy bot→bot, właściciele w statusie „Walczy / Podróżuje /
+Robi Biologa”, a nie „Prowadzi stragan”. Na www ranking „Stragany” czyta
+teraz tabelę sklepów offline (`player.ikashop_offlineshop`), a „mapa” to
+miejsce sklepu, nie miejsce, gdzie akurat poluje właściciel. Klasyczny stragan
+zostaje na linii r40250; na tej linii otwarty jeszcze stragan klasyczny jest
+zamykany raz przy pierwszym ticku („migrate_offline”), bez utraty przedmiotów.
+
+### Poziom startowy botów: zawsze 1
+
+Sprawdzone od podszewki po zgłoszeniu „postacie 56 lvl mają itemy z M2”: seed
+w każdej wersji w historii wstawia `level = 1`, oba wyrenderowane SQL-e też, a
+w bazie serwera z tym zgłoszeniem 1500 botów miało 1–5 lvl. Jedyna droga do
+skoku poziomu bez expa to karta „⭐ Ustaw poziom” w panelu, klikana ręcznie na
+konkretnej postaci — taki bot zostaje ze starym ekwipunkiem, aż przebierze go
+zakup zbroi (2.0.22) i premia broni (2.0.24/25). Poprawiono też mylną notatkę w
+dokumentacji o „kohorcie 50 lvl z seeda” — nigdy jej nie było.
+
+## 2.0.25 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Poprawki do 2.0.24 wg uwag Tieru.
+
+### Broń: w PvE liczą się średnie obrażenia, umiejętności zostają do PvP
+
+Premia „którą broń założyć” liczy się teraz **ze średnich obrażeń dla każdej klasy**
+— także dla sury i maga. W PvE (rozbijanie metinów i potworów zwykłym atakiem) liczą
+się średnie obrażenia, a nie umiejętności; linia umiejętności to bonus do PvP, którego
+jeszcze nie wdrożyliśmy. Dzięki temu bot zakłada Ribę 48% czy Antyka 40% średnich i już
+nie zostaje w wachlarzu +9 obok Antyka ze średnimi. Osobno: broń ze **średnimi
+umiejętności powyżej 21%** nie jest już mieszana Zmianą Bonusów u żadnej klasy — zostaje
+jako ładny bonus do PvP albo idzie na stragan offline, zamiast zostać zniszczona.
+
+### Łucznicy-ninja: sztylet +4 u kowala, albo nie zaczepiają metina sami
+
+Sztylet do metinów jest ulepszany **u kowala** do co najmniej +4 (poprzednio napisałem
+mylnie „w plecaku” — ulepszanie idzie przez kowala, tak jak dla noszonej broni). Dopóki
+łucznik nie ma sztyletu co najmniej +4, **nie zaczepia metina w pojedynkę** — samym
+łukiem i tak sobie nie poradzi. Może za to dobić metina z łuku, jeśli ktoś inny (bot
+albo gracz) już go bije.
+
 ## 2.0.24 — 2026-09-13
 
 Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.

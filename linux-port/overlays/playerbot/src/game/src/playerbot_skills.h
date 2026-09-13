@@ -513,9 +513,9 @@ namespace
 		ch->ClearSkill();
 		ch->SetSkillGroup(0);
 		state.dwNextSkillResetTime = dwNow + PLAYERBOT_SKILL_RESET_COOLDOWN;
-		sys_log(0, "PLAYERBOT_SKILL: reset at the old woman pid=%u name=%s level=%u group=%u stuck_skill=%u cost=%lld gold_left=%d points=%d",
+		sys_log(0, "PLAYERBOT_SKILL: reset at the old woman pid=%u name=%s level=%u group=%u stuck_skill=%u cost=%lld gold_left=%lld points=%d",
 				ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(),
-				(unsigned int)bOldGroup, dwStuck, cost, ch->GetGold(),
+				(unsigned int)bOldGroup, dwStuck, cost, (long long)ch->GetGold(),
 				ch->GetPoint(POINT_SKILL));
 		return true;
 	}
@@ -566,10 +566,10 @@ namespace
 		if (!scroll)
 			return false;
 		PlayerBotChangeGold(ch, -(int)PLAYERBOT_SKILL_FORGET_SCROLL_PRICE);
-		sys_log(0, "PLAYERBOT_SKILL: forget scroll bought pid=%u name=%s level=%u skill=%u skill_level=%u price=%lld gold_left=%d",
+		sys_log(0, "PLAYERBOT_SKILL: forget scroll bought pid=%u name=%s level=%u skill=%u skill_level=%u price=%lld gold_left=%lld",
 				ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), dwSkillVnum,
 				(unsigned int)ch->GetSkillLevel(dwSkillVnum), PLAYERBOT_SKILL_FORGET_SCROLL_PRICE,
-				ch->GetGold());
+				(long long)ch->GetGold());
 		return true;
 	}
 
@@ -636,10 +636,10 @@ namespace
 		if (!UsePlayerBotForgetScroll(ch, victim) &&
 				!(BuyPlayerBotReallocateBook(ch, victim) && UsePlayerBotForgetScroll(ch, victim)))
 			return;
-		sys_log(0, "PLAYERBOT_SKILL: point moved pid=%u name=%s from=%u (%u->%u) to=%u (%u) points=%d gold=%d",
+		sys_log(0, "PLAYERBOT_SKILL: point moved pid=%u name=%s from=%u (%u->%u) to=%u (%u) points=%d gold=%lld",
 				ch->GetPlayerID(), ch->GetName(), victim, (unsigned int)victimBefore,
 				(unsigned int)ch->GetSkillLevel(victim), wanted, (unsigned int)ch->GetSkillLevel(wanted),
-				ch->GetPoint(POINT_SKILL), ch->GetGold());
+				ch->GetPoint(POINT_SKILL), (long long)ch->GetGold());
 	}
 
 	void ManagePlayerBotSkills(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)

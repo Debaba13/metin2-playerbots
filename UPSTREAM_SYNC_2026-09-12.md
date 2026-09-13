@@ -453,3 +453,154 @@ follow-up but out of scope for a translation pass. No live browser test -
 this is a Flask app with no running server in this sandbox, so "renders
 without a Jinja/JS error" is what was verified, not "looks right on
 screen."
+
+## Follow-up: third upstream sync, 2.0.24 -> 2.0.28 (2026-09-13)
+
+Brought in 8 upstream commits (TieruYT/metin2-playerbots): the mt2009 line's
+new real offline-shop feature (an ikashop stand replaces the classic stall,
+2.0.26), a core-crashing 64-bit-yang log-format bug fix, a weapon-scoring
+rewrite ("score a weapon by one hit"), and assorted stall/world-reset fixes.
+Merge commit: `merge(upstream): sync 2.0.24 -> 2.0.28`.
+
+Before merging, fetched `origin/claude/sync-updates-client-o7hk2w` and found
+it 5 commits ahead of what this session had locally (`d90b04f` and earlier) -
+unrelated work from another session/process: pointing this fork's own update
+checks at `debaba13/metin2-playerbots` instead of upstream (see
+`UPDATE_SOURCE_2026-09-13.md`), an mt2009 quest fix, and the manifest file
+list glob fix upstream also independently made (see below). Fast-forwarded
+onto it before starting the upstream merge.
+
+### The `playerbot_llm_*.h` family is fork-only, not an upstream feature
+
+Before merging, `git diff --stat HEAD upstream/main` looked alarming -
+`playerbot_llm_status.h`, `playerbot_llm_bridge.h`, `playerbot_llm_chat_trade.h`,
+`playerbot_llm_shop.h` and the whole `mmo-llm-adapter/` Python tree all showed
+as full deletions. Checked against the merge-base (`08e3729`, upstream's own
+2.0.24 tip) before assuming upstream had ripped out a shared subsystem: none
+of these paths exist there, nor on `upstream/main`'s current tip. They are
+**this fork's own prior work** (see the `mmo-llm-adapter`/"isolate llm status
+and chat seams" commits in this branch's own history, predating even the
+2.0.19 sync) - upstream never had them, so the "deletion" in that diff was
+never a real conflict; the merge left them untouched, as expected.
+
+Despite the name, `playerbot_llm_status.h` is not an actual LLM/network
+integration - it is a full from-scratch Turkish rewrite of upstream's status-
+text generator (verified by reading it: plain `snprintf`/`switch` logic, no
+HTTP, no API client). The established pattern for this pair (set by the
+1.31.2 -> 2.0.14 sync, `0a60803`) is: **keep the thin stub**
+(`playerbot_status.h`/`playerbot_chat_trade.h` reduced to one `#include` of
+their `_llm_` counterpart) **and port the functional delta by hand** into the
+Turkish file, rather than adopting upstream's Polish rewrite wholesale. Reused
+that pattern again here rather than reopening the architecture question.
+
+### Conflicts (4)
+
+- **`launcher/server-update-files.mt2009.txt`** - both sides independently
+  fixed the same problem: our HEAD side had grown the explicit `playerbot_*.h`
+  enumeration to include the fork's own `playerbot_language.h`/`playerbot_llm_*.h`
+  files (from the 5-commits-ahead fast-forward above); upstream replaced the
+  whole enumeration with a `playerbot_*` glob, matching the r40250 list's
+  existing pattern and CLAUDE.md's "never write another list" rule (its own
+  commit even names the exact failure mode: a new file, `playerbot_offline_policy.h`,
+  missing from the enumerated list broke the packager). Took upstream's glob -
+  strictly better, self-maintaining, and it covers every fork-only file
+  automatically with no listing needed.
+- **`playerbot_manager.cpp`** - both sides added a new `#include` on the same
+  line after `playerbot_market.h`: ours `playerbot_language.h` (the Katman 2a
+  translation table from `CEVIRI_REHBERI.md`), upstream's
+  `playerbot_offline_market.h` (new, the offline-shop buyer side - its own
+  header comment requires it directly after `playerbot_market.h`). Kept both,
+  offline_market.h first per its stated requirement, language.h after (order-
+  independent, confirmed `playerbot_chat_trade.h` calls neither `PlayerBotText`
+  nor `FormatPlayerBotText` so nothing forces a stricter order).
+- **`playerbot_status.h`** - see above. Diffed upstream's one actual new commit
+  here (`e03a3d6`) against the merge-base version to find the real delta: a
+  `%d` -> `%lld` fix for `GetGold()` (64-bit on the 2.x line) in the Teleporter-
+  fee status line - a core-crashing bug (see next section). Ported that one
+  line into `playerbot_llm_status.h`'s equivalent Turkish line and kept the
+  stub, discarding upstream's ~570-line Polish rewrite of this file as in the
+  precedent sync (it stays retrievable from upstream's own history/repo if
+  ever needed - not worth carrying as `#if 0`'d dead code in this tree).
+- **`update-manifest-mt2009.json`** - upstream's `chore(release)` commits bump
+  `server.version`/`url`/`sha256` to their own `TieruYT/metin2-playerbots`
+  v2.0.27 release zip; this fork's manifest deliberately points at
+  `debaba13/metin2-playerbots` releases instead (established by the 5-commit
+  fast-forward's own `UPDATE_SOURCE_2026-09-13.md`). Kept our side unchanged
+  (still naming the v2.0.24 fork release) rather than bump the version number
+  to 2.0.27/28 with upstream's sha256, which would point the launcher's
+  "install the update" button at a zip this fork has not built or published
+  under that name/hash. **This is now a known gap, same shape as the one
+  `UPDATE_SOURCE_2026-09-13.md` already documents**: the manifest under-
+  reports the version relative to what the code in this branch actually
+  contains (2.0.28-equivalent), until someone runs `New-M2UpdatePackage.ps1`
+  and publishes a matching `debaba13/metin2-playerbots` release with a real
+  sha256 and bumps this file to match.
+
+### The core-crash bug, and what else needed the same fix
+
+`YANG`/`GetGold()` is `long long` on the 2.x line; thirteen log/status lines
+across the overlay still passed it to a bare `%d`. Twelve just printed wrong
+numbers; the Teleporter-refusal status line had `gold` in the middle of a
+format list with `reason=%s` after it, so the 8-byte value ate two argument
+slots, everything after it shifted, and `%s` read a map-index integer as a
+`char*` - SIGSEGV on every refusal, silently, because the crash happened
+before the line could reach any log. All twelve of the non-status-text
+instances (in `playerbot_activities.h`, `playerbot_bonus.h`, `playerbot_market.h`,
+`playerbot_skills.h`, `playerbot_town.h`, `playerbot_travel.h`) auto-merged
+cleanly with no conflict, since our side hadn't touched those exact lines -
+verified after the fact by grepping each fixed symbol (`teleporter refuses`,
+the new `PLAYERBOT_USE_AFFECT_TIMED_BUFF`/`PLAYERBOT_EXP_ELIXIR_VNUMS`/
+`PLAYERBOT_METIN_DETECTOR_VNUMS` constants) to confirm they landed. The
+thirteenth instance was the Teleporter status line inside the stubbed-out
+`playerbot_status.h` - upstream's fix couldn't reach it because our side
+doesn't compile that file's body at all - so it needed the manual port
+described above. Also swept every fork-only `playerbot_llm_*.h` file for the
+same `GetGold()`-next-to-`%d` shape in case the bug had been copied in
+during the original translation; found none beyond the one instance.
+
+### Audited for new player-visible text; found none needing translation
+
+Every upstream commit in this range touching the playerbot overlay was
+checked individually (`git log <merge-base>..upstream/main -- <file>` per
+file, then `git show <commit> -- <file>`) rather than trusting the merge to
+surface everything, since a change that auto-merges cleanly never shows up as
+a conflict to review. The new offline-shop files (`playerbot_offline_shop.h`,
+`playerbot_offline_market.h`, `playerbot_offline_policy.h`, ~450 lines, all
+gated behind `PLAYERBOT_ENGINE_MT2009 && ENABLE_IKASHOP_RENEWAL`, r40250
+untouched) contain zero player-visible strings - pure state-machine and
+journal logic, `PLAYERBOT_OFFLINE:`-prefixed operator log lines only. A
+repo-wide grep of `git diff <merge-base> upstream/main` for any added quoted
+string with a Polish diacritic, and separately for any added
+`snprintf(status, ...)`/`PlayerBotText(`/`FormatPlayerBotText(` call, turned
+up only the one Teleporter line already handled above.
+
+`files/admin_panel.py` got one real upstream change in this range (`30e571b`):
+a new `shops` ranking SQL branch reading `player.ikashop_offlineshop` on the
+mt2009 engine, reusing the existing (already-translated) map-label dict for
+its output - no new strings. `linux-port/docker/seban-panel/` got zero
+changes in this range; the large diff `git diff HEAD upstream/main` showed
+for it was entirely pre-existing (the direct-Turkish-swap work from the
+previous session), confirmed via `git log <merge-base>..upstream/main --
+linux-port/docker/seban-panel/` returning empty.
+
+### Verified
+
+- `python3 -m py_compile` on `files/admin_panel.py`, `linux-port-mt2009/port/playerbotify.py`,
+  `linux-port-mt2009/port/listify.py`; `python3 -c "import json; json.load(...)"`
+  on `update-manifest-mt2009.json`.
+- `tests/playerbot_world_rules_test.cpp` (existing) and
+  `tests/playerbot_offline_policy_test.cpp` (new, Codex's, kept as-is per
+  upstream's own commit) both compiled and ran clean locally with plain g++
+  (13.3.0) - the offline-policy test needs no engine headers at all
+  (`-I linux-port/overlays/playerbot/src/game/src`, per the build command in
+  its own header comment).
+- Manual brace/paren-balance and `#ifndef`/`#endif` count check on every
+  hand-edited file (`playerbot_manager.cpp`, `playerbot_status.h`,
+  `playerbot_llm_status.h`) - all balanced.
+- **Not verified**: the real `g++ -fsyntax-only -m32 -std=c++23` check against
+  `../m2src-cache/tree/port40250/server` that CLAUDE.md prescribes. Neither
+  `m2src-cache` nor a running Docker daemon is present in this sandbox (same
+  limitation the 1.31.2 -> 2.0.14 sync's notes recorded) - run it by hand
+  before deploying this branch.
+- Repo-wide `git grep` for leftover `<<<<<<<`/`=======`/`>>>>>>>` conflict
+  markers: none.

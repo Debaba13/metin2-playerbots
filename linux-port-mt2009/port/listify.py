@@ -129,6 +129,7 @@ def changed_engine_files(pristine):
     if not os.path.isdir(pristine):
         raise SystemExit('listify: no pristine engine tree at %s (pass --pristine)' % pristine)
     out = []
+    playerbot_glob_written = False
     for root, dirs, files in os.walk(STAGED):
         dirs[:] = sorted(d for d in dirs if d not in ('.obj', 'OBJDIR'))
         for name in sorted(files):
@@ -136,6 +137,20 @@ def changed_engine_files(pristine):
                 continue
             staged = os.path.join(root, name)
             rel = os.path.relpath(staged, STAGED).replace(os.sep, '/')
+            if rel.startswith('game/src/playerbot_'):
+                # The Playerbot sources' build-context copies are one glob,
+                # like the overlay's own line above and the r40250 list: the
+                # packager pairs every overlay playerbot_* with a copy here,
+                # and enumerating the thirty-six names meant the first new
+                # file (playerbot_offline_policy.h, 2.0.26) failed that check.
+                if not playerbot_glob_written:
+                    out.append('# Every Playerbot source has a build-context copy here, discovered like the\n'
+                               '# overlay above rather than listed: the r40250 list did this already (its\n'
+                               '# line 65) and this one enumerated thirty-six names, so the first new file\n'
+                               '# (playerbot_offline_policy.h, 2.0.26) failed the packager\'s pairing check.\n'
+                               'linux-port-mt2009/docker/game/src/server/game/src/playerbot_*')
+                    playerbot_glob_written = True
+                continue
             original = os.path.join(pristine, rel.replace('/', os.sep))
             if not os.path.isfile(original) or digest(original) != digest(staged):
                 out.append('linux-port-mt2009/docker/game/src/server/' + rel)

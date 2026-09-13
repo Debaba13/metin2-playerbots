@@ -709,6 +709,13 @@ namespace
 	// (Ciapek, 13 September). And a change stone is never spent on a +0..+4
 	// piece: raise it first, mix later.
 	const long PLAYERBOT_BONUS_WEAPON_LOCK_PCT = 25;
+	// A weapon with a skill-damage line above this is a PvP prize and is never
+	// rerolled away, whatever the class - not only a caster's. The equip pass
+	// values average damage for PvE (see the prize in playerbot_gear.h), but a
+	// big skill line is a nice PvP bonus this world will use once PvP ships, and
+	// "szkoda tracic takiego ladnego bonusu do PvP" (Tieru): the bot keeps such a
+	// weapon, or sells it whole on an offline counter, rather than mixing it off.
+	const long PLAYERBOT_BONUS_SKILL_PVP_PCT = 21;
 	const BYTE PLAYERBOT_BONUS_CHANGE_MIN_REFINE = 5;
 	const long PLAYERBOT_BONUS_KEEP_HP = 1500;
 	const long PLAYERBOT_BONUS_KEEP_CRIT = 5;
@@ -1821,6 +1828,20 @@ namespace
 	// way: a Carp for twenty movement speed, a Rudd for ten dexterity, ten
 	// minutes each (item_proto USE_ABILITY_UP).
 	const DWORD PLAYERBOT_BOOSTER_VNUMS[] = { 71044, 71045, 27866, 27873 };
+	// Since 2.0.27 a booster is recognised by what the engine does with it, not
+	// by its vnum: USE_AFFECT with value0 510 is the timed stat buff (attack
+	// +10/+15, speed, critical, penetration, the Dragon God set, the experience
+	// ring...) and USE_ABILITY_UP the shorter one (green/purple potions, juices,
+	// sushi). The list above is only the order the chest boosters come in. The
+	// ItemShop copies (76xxx) carry no ANTI_SELL, so a bot handed a Mikstura
+	// Ataku +10 from the panel vendored it ("Bot zamiast uzyc i dodac bony to
+	// posprzedawal handlarzowi", Pasywny, 13 September).
+	const int PLAYERBOT_USE_AFFECT_TIMED_BUFF = 510;
+	// Eliksir Ksiezyca (M/S/D/S): USE_SPECIAL whose special group is experience.
+	const DWORD PLAYERBOT_EXP_ELIXIR_VNUMS[] = { 39040, 39041, 39042, 72727, 72728, 72729, 72730, 76004, 76005 };
+	// Wykrywacz Kamieni Metin: useless to a bot (it draws on a client), wanted
+	// by players - counter goods, never merchant scrap.
+	const DWORD PLAYERBOT_METIN_DETECTOR_VNUMS[] = { 27989, 76006 };
 	// Fishing, the rest of the chain. A dead fish is grilled on a campfire:
 	// the Dried Wood (27600, from the Fisherman) burns for forty seconds as a
 	// campfire mob (12000) and takes fish handed to it - alive or dead - and
@@ -3218,6 +3239,9 @@ namespace
 
 	struct TPlayerBotAIState
 	{
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+		playerbot_offline::State offlineShop;
+#endif
 		TPlayerBotAIState() :
 			dwTargetVID(0),
 			dwSpawnTime(0),

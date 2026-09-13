@@ -260,6 +260,140 @@ namespace
 				(vnum >= 5110 && vnum <= 5119) || (vnum >= 7160 && vnum <= 7169);
 	}
 
+	// Every line of one apply type an item carries: the proto's fixed applies and
+	// the rolled attributes together.
+	long SumPlayerBotItemLines(LPITEM item, BYTE applyType)
+	{
+		if (!item || !item->GetProto() || applyType == 0)
+			return 0;
+		long total = 0;
+		for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
+			if (item->GetProto()->aApplies[i].bType == applyType)
+				total += item->GetProto()->aApplies[i].lValue;
+		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
+			if (item->GetAttributeType(i) == applyType)
+				total += item->GetAttributeValue(i);
+		return total;
+	}
+
+	// The lines a hit is made of, and which the hit model below reads itself -
+	// the flat scorer must not count them a second time on a weapon.
+	bool IsPlayerBotHitModelApply(BYTE applyType, LPCHARACTER ch)
+	{
+		switch (applyType)
+		{
+			case APPLY_NORMAL_HIT_DAMAGE_BONUS:
+			case APPLY_SKILL_DAMAGE_BONUS:
+			case APPLY_ATT_GRADE_BONUS:
+			case APPLY_STR:
+			case APPLY_CRITICAL_PCT:
+			case APPLY_PENETRATE_PCT:
+			case APPLY_ATTBONUS_MONSTER:
+				return true;
+			default:
+				break;
+		}
+		int racePercent = 0;
+		const int dominant = ch ? GetPlayerBotFightingRace(ch, &racePercent) : PLAYERBOT_RACE_NONE;
+		return dominant != PLAYERBOT_RACE_NONE && applyType == GetPlayerBotRaceApplyType(dominant);
+	}
+
+	// What a character brings to a hit on one point, with the weapon it wears
+	// taken back out: the candidate's own lines are then added, so the weapon in
+	// the hand and two in the bag are all read against the same body.
+	long PlayerBotPointWithoutWornWeapon(LPCHARACTER ch, BYTE point, BYTE applyType, LPITEM candidate)
+	{
+		if (!ch)
+			return 0;
+		long value = ch->GetPoint(point);
+		LPITEM worn = ch->GetWear(WEAR_WEAPON);
+		if (worn && worn != candidate)
+			value -= SumPlayerBotItemLines(worn, applyType);
+		return value;
+	}
+
+	// One ordinary hit with this weapon, expected over the dice, the way
+	// battle.cpp deals it to a monster (CalcMeleeDamage / CalcArrowDamage):
+	//
+	//   roll   = the weapon's value 3..4, doubled by the engine ("* 2")
+	//   atk    = attack grade (level*2 + STR*2 + grade lines) + roll + 2 * value 5
+	//   atk   *= 100 + attack-percent lines
+	//   atk   *= 100 + race line for the share of this map that race is
+	//   dam   *= 100 + average-damage line               (char_battle.cpp, normal hits)
+	//   a critical is a second hit, one in a hundred per percent
+	//   piercing gives part of the victim's defence back: counted at half
+	//
+	// Skill damage is no part of a hit - a PvP line this world does not use
+	// yet - and attack speed is hits per second, not damage per hit; neither
+	// is here. A school that casts is scored on the magic roll with half the
+	// physical behind it, everybody else on the physical with a quarter of the
+	// magic, as before; a dagger's interval is halved and a bow's roll is
+	// doubled by the engine, as before. What the candidate would change on the
+	// character - STR, grade, percent, critical - is measured against the
+	// character without the weapon it wears, so a Riba 48% average is worth
+	// 48% of the whole hit, attack grade included, and no fixed "prize" is
+	// needed to make it win over a lower weapon at +9: the numbers do that
+	// ("przelicza atak per hit z danej broni uwzgledniajac bonusy i srednie",
+	// Tieru, 13 September).
+	long long GetPlayerBotWeaponHitDamage(LPITEM item, LPCHARACTER ch)
+	{
+		if (!item || !item->GetProto() || item->GetType() != ITEM_WEAPON)
+			return 0;
+		const long long physical = (long long)item->GetValue(3) + item->GetValue(4);
+		const long long magical = (long long)item->GetValue(1) + item->GetValue(2);
+		long long roll = IsPlayerBotMagicSchool(ch) ? magical + physical / 2 : physical + magical / 4;
+		const BYTE sub = item->GetSubType();
+		if (sub == WEAPON_DAGGER || sub == WEAPON_BOW)
+			roll *= 2;
+
+		const long strLines = SumPlayerBotItemLines(item, APPLY_STR);
+		long long grade = 0, attPct = 0, avgPct = 0, critPct = 0, penPct = 0;
+		if (ch)
+		{
+			grade = PlayerBotPointWithoutWornWeapon(ch, POINT_ATT_GRADE, APPLY_ATT_GRADE_BONUS, item);
+			LPITEM worn = ch->GetWear(WEAR_WEAPON);
+			if (worn && worn != item)
+				grade -= 2 * SumPlayerBotItemLines(worn, APPLY_STR);
+			if (worn != item)
+				grade += SumPlayerBotItemLines(item, APPLY_ATT_GRADE_BONUS) + 2 * strLines;
+			// No item carries an attack-percent line; POINT_ATT_BONUS comes from
+			// affects and skills alone, the same for every candidate.
+			attPct = ch->GetPoint(POINT_ATT_BONUS);
+			avgPct = PlayerBotPointWithoutWornWeapon(ch, POINT_NORMAL_HIT_DAMAGE_BONUS, APPLY_NORMAL_HIT_DAMAGE_BONUS, item);
+			critPct = PlayerBotPointWithoutWornWeapon(ch, POINT_CRITICAL_PCT, APPLY_CRITICAL_PCT, item);
+			penPct = PlayerBotPointWithoutWornWeapon(ch, POINT_PENETRATE_PCT, APPLY_PENETRATE_PCT, item);
+			if (worn != item)
+			{
+				avgPct += SumPlayerBotItemLines(item, APPLY_NORMAL_HIT_DAMAGE_BONUS);
+				critPct += SumPlayerBotItemLines(item, APPLY_CRITICAL_PCT);
+				penPct += SumPlayerBotItemLines(item, APPLY_PENETRATE_PCT);
+			}
+		}
+		else
+		{
+			grade = SumPlayerBotItemLines(item, APPLY_ATT_GRADE_BONUS) + 2 * strLines;
+			attPct = 0;
+			avgPct = SumPlayerBotItemLines(item, APPLY_NORMAL_HIT_DAMAGE_BONUS);
+			critPct = SumPlayerBotItemLines(item, APPLY_CRITICAL_PCT);
+			penPct = SumPlayerBotItemLines(item, APPLY_PENETRATE_PCT);
+		}
+		long long racePct = SumPlayerBotItemLines(item, APPLY_ATTBONUS_MONSTER);
+		int racePercent = 0;
+		const int dominant = ch ? GetPlayerBotFightingRace(ch, &racePercent) : PLAYERBOT_RACE_NONE;
+		if (dominant != PLAYERBOT_RACE_NONE && racePercent > 0)
+			racePct += SumPlayerBotItemLines(item, GetPlayerBotRaceApplyType(dominant)) * racePercent / 100;
+
+		long long hit = roll + grade + 2 * (long long)item->GetValue(5);
+		if (hit < 1)
+			hit = 1;
+		hit = hit * std::max<long long>(20, 100 + attPct) / 100;
+		hit = hit * std::max<long long>(20, 100 + racePct) / 100;
+		hit = hit * std::max<long long>(20, 100 + avgPct) / 100;
+		hit = hit * std::max<long long>(100, 100 + critPct) / 100;
+		hit = hit * std::max<long long>(100, 100 + penPct / 2) / 100;
+		return hit < 1 ? 1 : hit;
+	}
+
 	long long GetPlayerBotEquipmentScore(LPITEM item, LPCHARACTER ch = NULL)
 	{
 		if (!item || !item->GetProto())
@@ -268,81 +402,9 @@ namespace
 		long long score = 1;
 		if (item->GetType() == ITEM_WEAPON)
 		{
-			// What the engine's own damage code reads: value 3 and 4 are the
-			// damage roll and value 5 is an attack bonus counted twice
-			// (battle.cpp). Refining raises these, so a refined weapon is already
-			// worth more here without anything being said about the refine.
-			const long long physical = (long long)(item->GetValue(3) + item->GetValue(4) +
-					2 * item->GetValue(5));
-
-			// Value 1 and 2 are the other roll: what SetPolyVarForAttack hands a
-			// skill as mwep, with the same value-5 bonus on top. Every bell and
-			// nearly every fan carries it, and so do 261 of the 311 swords - the
-			// sura ones. Scoring physical damage alone rated a Black Magic sura's
-			// sword by the half of it that sura never uses, and a shaman's bell by
-			// the half it uses only when it stops casting. The schools that cast
-			// take the magic roll with half the physical behind it; everybody else
-			// takes the physical with a quarter of the magic, because a Weaponry
-			// sura does still cast now and then.
-			const long long magical = (long long)(item->GetValue(1) + item->GetValue(2) +
-					2 * item->GetValue(5));
-			long long attack = IsPlayerBotMagicSchool(ch)
-					? magical + physical / 2
-					: physical + magical / 4;
-
-			// And then how often it lands, because a swing is not a swing.
-			// GET_ATTACK_SPEED halves the interval for a dagger, and a bow's roll
-			// is doubled before anything else touches it - so on both, the same
-			// numbers are worth twice what the tooltip suggests. A level-30
-			// dagger showing 40-44 outdamages a level-30 sword showing 57-73.
-			//
-			// The per-race animation speeds would sharpen this further, but they
-			// are in the client's animation data, not in anything the server
-			// reads, so only the two rules the engine states outright are used.
-			const BYTE weaponSubType = item->GetSubType();
-			if (weaponSubType == WEAPON_DAGGER || weaponSubType == WEAPON_BOW)
-				attack *= 2;
-
-			// The percent lines, as the engine applies them: average damage
-			// multiplies every ordinary hit, skill damage every cast, and both
-			// multiply *this weapon's* damage - so they scale the attack score
-			// rather than adding a flat few thousand beside a million. A
-			// ninja was found wearing a copper bow of 90-156 with a Deer Horn
-			// Bow +8 of 151-244 and +47% average in the bag; by the numbers
-			// the bag one is a third again better before the line is counted.
-			// Negative lines count too: -17% skill damage on that bow is
-			// seventeen percent of every cast.
-			long avgPct = 0, skillPct = 0;
-			for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
-			{
-				const BYTE t = item->GetProto()->aApplies[i].bType;
-				if (t == APPLY_NORMAL_HIT_DAMAGE_BONUS) avgPct += item->GetProto()->aApplies[i].lValue;
-				else if (t == APPLY_SKILL_DAMAGE_BONUS) skillPct += item->GetProto()->aApplies[i].lValue;
-			}
-			for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
-			{
-				const BYTE t = item->GetAttributeType(i);
-				if (t == APPLY_NORMAL_HIT_DAMAGE_BONUS) avgPct += item->GetAttributeValue(i);
-				else if (t == APPLY_SKILL_DAMAGE_BONUS) skillPct += item->GetAttributeValue(i);
-			}
-			const int style = GetPlayerBotSchoolStyle(ch);
-			const int avgWeight = style < 0 ? PLAYERBOT_WEAPON_OWN_LINE_PERCENT
-					: (style > 0 ? PLAYERBOT_WEAPON_OTHER_LINE_PERCENT : 60);
-			const int skillWeight = style > 0 ? PLAYERBOT_WEAPON_OWN_LINE_PERCENT
-					: (style < 0 ? PLAYERBOT_WEAPON_OTHER_LINE_PERCENT : 60);
-			long long multiplier = 100 + (avgPct * avgWeight + skillPct * skillWeight) / 100;
-			if (multiplier < 20)
-				multiplier = 20;
-			score += attack * 1000 * multiplier / 100;
-
-			// The prize a player looks at: a strong average line (or, for a
-			// caster, a strong skill line) makes the weapon worth wearing and
-			// then refining, over a lower weapon already at +6/+9. Gated at the
-			// lock so only a genuine prize gets it, proportional so ordering
-			// among prizes and against a real high-tier weapon still holds.
-			const long prizeLine = style > 0 ? skillPct : avgPct;
-			if (prizeLine >= PLAYERBOT_BONUS_WEAPON_LOCK_PCT)
-				score += (long long)prizeLine * PLAYERBOT_WEAPON_PRIZE_PER_PCT;
+			// One expected hit, a thousand a point, so the flat lines and the
+			// class preferences below keep the proportions they always had.
+			score += GetPlayerBotWeaponHitDamage(item, ch) * 1000;
 
 			// A level-30 average-damage weapon used to be handed a flat 350000
 			// here. Damage is scored at a thousand a point, so that was more than
@@ -404,18 +466,18 @@ namespace
 
 		// A weapon's two damage-percent lines were folded into its attack
 		// above; everything else is a flat line.
-		const bool bWeaponPctDone = item->GetType() == ITEM_WEAPON;
+		const bool bWeaponHitDone = item->GetType() == ITEM_WEAPON;
 		for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
 		{
 			const BYTE t = item->GetProto()->aApplies[i].bType;
-			if (bWeaponPctDone && (t == APPLY_NORMAL_HIT_DAMAGE_BONUS || t == APPLY_SKILL_DAMAGE_BONUS))
+			if (bWeaponHitDone && IsPlayerBotHitModelApply(t, ch))
 				continue;
 			score += ScorePlayerBotApply(t, item->GetProto()->aApplies[i].lValue, ch);
 		}
 		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 		{
 			const BYTE t = item->GetAttributeType(i);
-			if (bWeaponPctDone && (t == APPLY_NORMAL_HIT_DAMAGE_BONUS || t == APPLY_SKILL_DAMAGE_BONUS))
+			if (bWeaponHitDone && IsPlayerBotHitModelApply(t, ch))
 				continue;
 			score += ScorePlayerBotApply(t, item->GetAttributeValue(i), ch);
 		}
@@ -431,7 +493,7 @@ namespace
 		// from the same call the reroll scorer uses, so the pass that buys an
 		// item and the pass that rerolls it can no longer disagree about the
 		// line that made the bot pick it up.
-		if (ch)
+		if (ch && item->GetType() != ITEM_WEAPON)
 		{
 			int racePercent = 0;
 			const int dominant = GetPlayerBotFightingRace(ch, &racePercent);
@@ -631,6 +693,15 @@ namespace
 				ch->GetWear(WEAR_WEAPON) == item;
 	}
 
+	// Whether the Archer holds a dagger good enough to break a stone: at least
+	// +4, worn or in the bag. Below that a stone is not worth taking on alone -
+	// the dagger is refined at the blacksmith towards this first.
+	bool HasPlayerBotUsableStoneDagger(LPCHARACTER ch)
+	{
+		LPITEM w = FindPlayerBotStoneWeapon(ch, true);
+		return w && w->GetRefineLevel() >= PLAYERBOT_ARCHER_STONE_MIN_REFINE;
+	}
+
 	// What the hand should hold right now: the job's weapon, or the stone
 	// weapon while an Archer is on a stone.
 	bool PlayerBotWeaponFitsNow(LPCHARACTER ch, const TPlayerBotAIState& state, LPITEM item)
@@ -653,8 +724,11 @@ namespace
 		{
 			LPCHARACTER target = state.dwTargetVID != 0
 					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
+			// Only a dagger at +4 or better puts the Archer into melee; below that
+			// it stays on the bow and reaches a stone only when others are already
+			// breaking it (CanPlayerBotEngageStone).
 			const bool wantMelee = target && target->IsStone() && !target->IsDead() &&
-					FindPlayerBotStoneWeapon(ch, true) != NULL;
+					HasPlayerBotUsableStoneDagger(ch);
 			if (wantMelee != state.bMeleeForStone)
 			{
 				state.bMeleeForStone = wantMelee;

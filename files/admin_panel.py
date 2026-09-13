@@ -11013,6 +11013,26 @@ def api_bot_rankings():
                               hunting_remain ASC, p.level DESC
                     LIMIT %s
                 """), (rank_limit,))
+            elif rtype == "shops" and ENGINE_MT2009:
+                # On the 2.x line a bot's stall is a real offline shop (2.0.26):
+                # an independent entity the engine keeps in
+                # player.ikashop_offlineshop while the keeper goes on hunting, so
+                # the keeper never reports BOT_ACTION_STALL and the live status
+                # file would list nobody. The database answers this one directly;
+                # duration is minutes left, zero is an expired stand awaiting its
+                # owner's service visit. The stand's map comes from the row, not
+                # from where the keeper happens to be hunting; the live entry is
+                # still read so the row can say what the keeper is doing now.
+                live = read_playerbot_live_status()
+                cur.execute(bot_sql("""
+                    SELECT p.id, p.name, p.level, p.job, p.gold,
+                           s.map AS stall_map_index
+                    FROM player.ikashop_offlineshop s
+                    JOIN player.player p ON p.id = s.owner
+                    WHERE s.duration > 0 AND <<BOT_P_2>>
+                    ORDER BY p.level DESC
+                    LIMIT %s
+                """), (rank_limit,))
             elif rtype == "shops":
                 # An open stall exists only in the game core's memory, so this is
                 # the one ranking the database cannot answer. The live status file
@@ -11133,9 +11153,12 @@ def api_bot_rankings():
                 stall_map = ""
                 if rtype == "shops":
                     entry = live.get(r["id"]) or {}
+                    # An offline shop (2.x) stands where its row says; a classic
+                    # stall stands where its keeper does.
+                    stall_map_index = r.get("stall_map_index") or entry.get("map_index")
                     stall_map = messages.get(
                         {21: "m1", 23: "m2", 24: "m3", 1: "s1", 3: "s2", 4: "s3",
-                         41: "j1", 43: "j2", 44: "j3"}.get(entry.get("map_index"), ""), "")
+                         41: "j1", 43: "j2", 44: "j3"}.get(stall_map_index, ""), "")
 
                 bio_completed = max(0, min(len(BIOLOGIST_MISSIONS), int(r.get("biologist_completed") or 0)))
                 if bio_completed >= len(BIOLOGIST_MISSIONS):

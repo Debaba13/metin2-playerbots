@@ -190,30 +190,86 @@ namespace
 	// A booster at the start of a fight. The engine keeps one of each running
 	// at a time and refuses a second, so a failed use is the usual case and
 	// nothing to log; a minute between attempts is enough.
+	// A timed buff the way the engine sees one (see PLAYERBOT_USE_AFFECT_TIMED_BUFF).
+	bool IsPlayerBotBoosterItem(LPITEM item)
+	{
+		if (!item || item->GetType() != ITEM_USE)
+			return false;
+		if (item->GetSubType() == USE_ABILITY_UP)
+			return true;
+		return item->GetSubType() == USE_AFFECT &&
+				item->GetValue(0) == PLAYERBOT_USE_AFFECT_TIMED_BUFF;
+	}
+
+	bool IsPlayerBotExpElixir(DWORD vnum)
+	{
+		for (size_t i = 0; i < sizeof(PLAYERBOT_EXP_ELIXIR_VNUMS) / sizeof(PLAYERBOT_EXP_ELIXIR_VNUMS[0]); ++i)
+			if (PLAYERBOT_EXP_ELIXIR_VNUMS[i] == vnum)
+				return true;
+		return false;
+	}
+
+	bool IsPlayerBotMetinDetector(DWORD vnum)
+	{
+		for (size_t i = 0; i < sizeof(PLAYERBOT_METIN_DETECTOR_VNUMS) / sizeof(PLAYERBOT_METIN_DETECTOR_VNUMS[0]); ++i)
+			if (PLAYERBOT_METIN_DETECTOR_VNUMS[i] == vnum)
+				return true;
+		return false;
+	}
+
+	// Eliksir Ksiezyca is experience in a bottle: drunk the moment it is held,
+	// in or out of a fight, one per pass. The engine hands the experience out
+	// through the item special group.
+	bool ManagePlayerBotExpElixir(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (!ch || !ch->IsItemLoaded() || ch->IsDead() || ch->GetShop() || ch->GetExchange())
+			return false;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || !IsPlayerBotExpElixir(item->GetVnum()))
+				continue;
+			const DWORD vnum = item->GetVnum();
+			if (ch->UseItem(TItemPos(INVENTORY, cell)))
+			{
+				sys_log(0, "PLAYERBOT_CHEST: exp elixir pid=%u name=%s vnum=%u level=%u",
+						ch->GetPlayerID(), ch->GetName(), vnum, (unsigned int)ch->GetLevel());
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool UsePlayerBotBoosters(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || dwNow < state.dwNextBoosterTime)
 			return false;
+		ManagePlayerBotExpElixir(ch, dwNow);
 		if (state.bCurrentAction != BOT_ACTION_FIGHT || state.bVisitingShop ||
 				state.bRecoveringAfterDeath || state.bTacticalRetreat)
 			return false;
 		state.dwNextBoosterTime = dwNow + PLAYERBOT_BOOSTER_INTERVAL;
 		bool used = false;
-		for (size_t b = 0; b < sizeof(PLAYERBOT_BOOSTER_VNUMS) / sizeof(PLAYERBOT_BOOSTER_VNUMS[0]); ++b)
+		// Anything the engine treats as a timed buff, one attempt per buff line
+		// per pass: the engine itself refuses a second Mikstura Ataku while the
+		// first runs ("This effect is already activated"), so a refusal is the
+		// bot being told the buff is up, not an error. The vnum list is only the
+		// order the chest boosters come in.
+		std::set<long> triedLines;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
-			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || !IsPlayerBotBoosterItem(item))
+				continue;
+			const long line = item->GetSubType() * 1000L + item->GetValue(1);
+			if (!triedLines.insert(line).second)
+				continue;
+			const DWORD vnum = item->GetVnum();
+			if (ch->UseItem(TItemPos(INVENTORY, cell)))
 			{
-				LPITEM item = ch->GetInventoryItem(cell);
-				if (!item || item->GetVnum() != PLAYERBOT_BOOSTER_VNUMS[b])
-					continue;
-				const DWORD vnum = item->GetVnum();
-				if (ch->UseItem(TItemPos(INVENTORY, cell)))
-				{
-					sys_log(0, "PLAYERBOT_CHEST: booster pid=%u name=%s vnum=%u",
-							ch->GetPlayerID(), ch->GetName(), vnum);
-					used = true;
-				}
-				break;
+				sys_log(0, "PLAYERBOT_CHEST: booster pid=%u name=%s vnum=%u",
+						ch->GetPlayerID(), ch->GetName(), vnum);
+				used = true;
 			}
 		}
 		return used;

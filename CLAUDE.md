@@ -1343,6 +1343,32 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   in Joan browsing stalls and never levels" (gregoszky, davids998). The rule
   runs first now, up to `PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE` (+6); +7 and
   up is still never scrap.
+- **The splitter and the merger must never share a tick without a clock
+  between them.** `ManagePlayerBotPrivateShop` splits singles off every
+  stack going on the counter before the walk to the pitch, and
+  `ManagePlayerBotStackMerge` pours them back whenever no counter is open -
+  and comes straight back after five seconds when its budget of four merges
+  was used up. Two refusals at the far end of the open pass (the permanent
+  bundle 71049, no yang for the 50200 bundle) returned with no
+  `dwNextShopKeepTime`, so on the first 2.0.26 run of a world whose bots
+  were parked on the ring the pass split, walked, refused, was merged back
+  and did it again every five seconds - 8250 split lines in thirteen
+  minutes, ~430 bots a core "biegaja w jedna i druga strone bez celu"
+  (FanFar, 13 September). The cheap refusals (bundle, offline fee plus the
+  fare reserve, two minutes after a spawn) sit before the scan now and every
+  exit sets the clock. Measure it as identical `PLAYERBOT_SHOP: split`
+  lines for one pid seconds apart, beside `PLAYERBOT_BAG: merged`.
+- **The support bundle's syslog is a grep list, and a tag missing from it is
+  a subsystem that never happened.** FanFar's bundle carried zero
+  `PLAYERBOT_OFFLINE` lines while its own census counted 284 offline shops;
+  `Metin2Launcher.psm1` names every tag it keeps. A new `PLAYERBOT_<AREA>:`
+  tag has to be added there or no bundle will ever show it (OFFLINE, MARKET
+  and BAG were added in 2.0.28).
+- **`compose stop` leaves the containers, and a stopped container holds its
+  volume.** `Reset-M2WorldToFreshInstall` ran `docker volume rm` on a stopped
+  stack and got "volume is in use" four times for one player - the launcher
+  never runs `compose down`. Remove what `docker ps -a --filter
+  volume=<name>` lists first; `compose up` recreates it on the next start.
 - **Measure before tuning a budget.** `CPlayerBotManager::Update` logs
   `PLAYERBOT_LOAD:` once a minute: tick time, plans by distance bucket with
   their cost, deferrals, target searches, snapshot, map scans, saves, watchdog
@@ -1497,7 +1523,84 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `PLAYERBOT_BAG_CELLS` (compat: `INVENTORY_DEFAULT_MAX_NUM` there,
   `INVENTORY_MAX_NUM` on r40250) is the only bound the fragments use now;
   an engine array may still be sized by the engine's constant.
+- **Yang is 64-bit on the 2.x line, and `%d` for it in a log with a `%s`
+  after it is a core crash.** `YANG` is `long long` (typedef.h) and
+  `GetGold()` returns it; the r40250 line's `int` habit survived in thirteen
+  log lines. Twelve only printed wrong numbers, but the Teleporter refusal
+  (`playerbot_travel.h`) had `gold=%d fee=%d to=%ld reason=%s`: the eight
+  bytes of gold ate two slots, everything after shifted, and `reason=%s` read
+  the map number as a pointer - SIGSEGV on every refusal, so the line never
+  reached any log and the test world (bots with 250k yang) never refused
+  anybody. kimakatsu diagnosed it from the stack trace alone (13 September).
+  Cast to `(long long)` and use `%lld` for any yang in a format; the scanner
+  that found the thirteen is three lines of Python over every
+  `sys_log/sys_err/PlayerBotLogThrottled/snprintf` call, worth re-running
+  after adding a log line with gold in it. The same shape waits in anything
+  else 64-bit on this line (`GetTotalYangValue`, `price.yang`).
+- **A consumable is its subtype, not its vnum.** Mikstura Ataku +10 is 39010,
+  71014 and 76017; the bonus stones are 71084/71151/76023 (change) and
+  71085/71152/76024 (add); the ItemShop copies (76xxx) carry no ANTI_SELL. A
+  vnum list for boosters (`PLAYERBOT_BOOSTER_VNUMS`) and vnum-keyed stone
+  lookups meant a bot handed the 76xxx kind from the panel vendored it
+  (Pasywny). `IsPlayerBotBoosterItem` is USE_AFFECT with value0 510 (the
+  engine's timed stat buff: value1 the apply, value2 the amount, value3 the
+  seconds) or USE_ABILITY_UP; `FindPlayerBotBonusStoneCellLike` matches
+  type+subtype of the vnum it is given; the junk rule exempts ITEM_USE of
+  those kinds plus the exp elixirs (`PLAYERBOT_EXP_ELIXIR_VNUMS`, USE_SPECIAL
+  whose special group is experience - `ManagePlayerBotExpElixir` drinks them
+  on sight) and the Metin detector (counter goods). USE_AFFECT value0 512/513
+  are not buffs (Rada Pustelnika, Zwój Egzorcyzmu removes affects) - the 510
+  test is what keeps a bot from drinking an exorcism scroll.
+- **A bot's stall on the 2.x line is a real ikashop offline shop (2.0.26).**
+  `playerbot_offline_policy.h` (pure, unit-tested in
+  `tests/playerbot_offline_policy_test.cpp`) is a process-wide request journal
+  keyed by pid: the AI `Begin`s a request, the engine's `Send*DBPacket` marks
+  it `Sent` and the `Recv*DBPacket` handlers mark it `Complete` - those hooks
+  are exact-string edits in `ikarus_shop_manager.cpp` applied by
+  `playerbotify.py` (`apply_playerbot_offline_shops`), so the header is
+  included from an engine TU too and the map is `inline`. `EndCall` erases a
+  request the engine refused synchronously (OpenMyShop returning without
+  sending) and **a transmitted request is never retried on timeout**: ikashop
+  has no idempotency key, so a retry could double an item or the yang; the
+  bot's commerce pauses (`PLAYERBOT_OFFLINE: unresolved` in syserr) and its
+  gameplay goes on. `playerbot_offline_shop.h` (after town.h) replaces the
+  `OpenMyShop(sign, table, count, 0)` of the classic stall with a duration-1
+  shop (8 h, 6000 yang, `aOfflineShopTime[1]`) and returns - the entity owns
+  the stand, the bot hunts - then `ManagePlayerBotOfflineService` (before
+  `ManagePlayerBotShopLifetime` in the tick) walks the owner back every 10-15
+  minutes for one bounded visit: collect the shop safebox, reopen an expired
+  stand that still has goods, add one item, reprice one item an hour, close
+  edit mode. `playerbot_offline_market.h` (after market.h) is the buyer side
+  over `GetPlayerBotOfflineShops()` and feeds the ledger. All of it under
+  `PLAYERBOT_ENGINE_MT2009 && ENABLE_IKASHOP_RENEWAL`; r40250 keeps the
+  classic stall untouched. The db core edit (`ClientManagerIkarusShop.cpp`)
+  sends `SendIkarusShopBuyLockedItemPacket(peer, 0, ...)` on a refused lock,
+  which the game side reads as `owner=0` = negative acknowledgement - without
+  it the losing one of two buyers waited for ever. Things learned the first
+  hour: the cores' logs live at `/opt/metin2/var/channel1/<core>/syslog`, not
+  one level up; `OpenMyShop` refuses silently with a chat line to a bot
+  descriptor, so `PLAYERBOT_OFFLINE: refused` names what it tests (a quest
+  script running, the saddle, `GetPart(PART_MAIN)`, a busy window, the first
+  line's antiflags) - 4 of 51 opens on the test world, all in the first
+  seconds after spawn; `SetShopItems: not enough shop window` in syserr is the
+  engine's own grid refusal. Both engine files and the db file ship in
+  `server-update-files.mt2009.txt` (the .h and the db .cpp were missing from
+  it). The classic panel's "shops" ranking reads `player.ikashop_offlineshop`
+  on this line and takes the stand's map from the row, since the keeper is
+  elsewhere. A sold-out shop is deleted by the engine and the owner's next
+  service visit proceeds to the safebox anyway. A create for an owner whose
+  shop the engine already holds is not a duplicate: `RecvShopCreateNewDBPacket`
+  takes the "EXTEND DURATION" branch (duration, name and spawn refreshed, the
+  entity recreated, the new lines added) and the db core's `CreateShop` does
+  the same - that is how the native reopen works - so the boot race (a keeper
+  parked at its pitch rolling a stall before the shop list has arrived) costs
+  the bot 6000 yang and nothing else; `SubmitPlayerBotOfflineShop` still waits
+  two minutes after the bot's own spawn. Restart measured: 48 shops before,
+  54 after, entities recreated, 10 adds and 24 reprices in the first five
+  minutes of service visits.
 - **The mt2009 item finder searches offline shops; a stall is not one.**
+  (r40250 semantics; on the 2.x line since 2.0.26 a bot's stall *is* an
+  offline shop in `m_mapShops`, so the native finder lists it by itself.)
   `ikashop::CShopManager::RecvShopSearchItemClientPacket` walked `m_mapShops`
   (ikarus offline shops) and a playerbot's counter is a classic `CShop`
   (`OpenMyShop`, no duration). The category switch is a template now
@@ -1925,9 +2028,15 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   and `ManagePlayerBotHuntingProgress` return early under
   `PLAYERBOT_ENGINE_MT2009`; the classic panel's `hunting_progress_label` returns
   "" there. Bots hunt by the frontier draw and the level-banded hubs, which work.
-  The seeded high-level bots (a level-50 cohort seeded, not levelled from 1) with
-  starter gear that "cannot have reached that level in M1/M2" are those
-  identities - not a bug; the armour buy above is what re-gears them.
+  A bot far above its gear ("56 lvl with M2 items") was never seeded that way:
+  every version of `generate_seed.py` in the history inserts `level = 1`, and
+  both rendered `playerbots_seed.sql` files do too (checked 13 September - the
+  operator's own world held 1500 bots of level 1-5). The only way a bot's level
+  moves without experience is the classic panel's per-character "Ustaw poziom"
+  card (`cmd=LEVEL` -> `UPDATE player.player SET level` / `pc.set_level`), and
+  a bot raised that way keeps its village gear until the armour buy above and
+  the weapon prize re-gear it. An earlier version of this note blamed "a
+  level-50 cohort seeded"; there was no such cohort.
 - **A skill book is vnum 50300 with the skill in socket0.** The classic panel's
   `item_full_name` spells it out ("Ksiega Umiejetnosci: Aura Miecza") from
   `SKILL_ID_NAMES` (the per-class skill tables flattened) when `ITEM_TYPES` says

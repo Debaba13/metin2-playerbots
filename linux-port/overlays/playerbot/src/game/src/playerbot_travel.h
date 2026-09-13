@@ -915,8 +915,8 @@ namespace
 					ch->GetGold() < GetPlayerBotTeleporterFee(ch))
 			{
 				PlayerBotLogThrottled("teleporter_refused", dwNow,
-						"PLAYERBOT_WORLD: teleporter refuses pid=%u name=%s level=%u gold=%d fee=%d to=%ld reason=%s",
-						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), ch->GetGold(),
+						"PLAYERBOT_WORLD: teleporter refuses pid=%u name=%s level=%u gold=%lld fee=%d to=%ld reason=%s",
+						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), (long long)ch->GetGold(),
 						GetPlayerBotTeleporterFee(ch), targetMap, reason ? reason : "?");
 				// Not again this tick, nor the next thousand: the fee is earned
 				// at a counter or a merchant, and both run only on a tick the
@@ -958,8 +958,8 @@ namespace
 			if (fee > 0)
 			{
 				PlayerBotChangeGold(ch, -fee);
-				sys_log(0, "PLAYERBOT_WORLD: teleporter fee pid=%u name=%s level=%u fee=%d to=%ld gold_left=%d",
-						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), fee, targetMap, ch->GetGold());
+				sys_log(0, "PLAYERBOT_WORLD: teleporter fee pid=%u name=%s level=%u fee=%d to=%ld gold_left=%lld",
+						ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(), fee, targetMap, (long long)ch->GetGold());
 			}
 			return true;
 		}

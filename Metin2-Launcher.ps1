@@ -6,6 +6,10 @@ param(
     [int]$BotCount = -1,
     [string]$ImportSource = '',
     [string]$RestoreSource = '',
+    # ResetWorld only: bring the server up on the fresh world right away, so
+    # "wyzeruj swiat i zacznij od nowa" is one click and not a reset followed
+    # by GRAJ.
+    [switch]$ThenStart,
     [switch]$Yes
 )
 
@@ -746,6 +750,11 @@ function Reset-WorldAction {
     if ($result.Backup) {
         Write-Host ("Kopia poprzedniego świata ({0} postaci): {1}" -f $result.Players, $result.Backup) -ForegroundColor Gray
     }
+    if ($ThenStart) {
+        Write-Host 'Świat skasowany. Uruchamiam serwer z nowym światem - baza powstaje od nowa i boty są zasiewane, to potrwa dłużej niż zwykły start.' -ForegroundColor Green
+        Start-Server
+        return
+    }
     Write-Host 'Świat skasowany. Kliknij GRAJ - serwer zbuduje bazę od nowa i zasieje boty.' -ForegroundColor Green
 }
 
@@ -996,7 +1005,7 @@ function Show-Menu {
         Write-Host ' 14. Importuj bazę z innej instalacji (wyższe postacie)'
         Write-Host ' 15. Zapisz kopię świata (backup do pliku zip)'
         Write-Host ' 16. Przywróć świat z kopii'
-        Write-Host ' 17. Zresetuj świat do stanu świeżej instalacji (kopia zapisywana automatycznie)'
+        Write-Host ' 17. Wyzeruj świat i zacznij od nowa (świeża instalacja; kopia zapisywana automatycznie)'
         Write-Host ' 18. Napraw dostęp do bazy (gdy migrate/serwer nie startuje albo Navicat odrzuca hasło)'
         Write-Host ' 19. Dane do połączenia z bazą (Navicat, HeidiSQL)'
         Write-Host ' 20. Hasło do panelu WWW (pokaż / zresetuj)'

@@ -643,6 +643,19 @@ namespace
 
 		if (IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_SELL))
 			return false;
+		// What the bot uses is never scrap, whatever the vnum: a timed buff or an
+		// ability potion is drunk in the next fight, a bonus stone or marble goes
+		// on its gear, an experience elixir is drunk at once, and the Metin
+		// detector is a player thing for the counter. Only the ItemShop copies
+		// (76xxx) lack ANTI_SELL, which is how a bot handed them from the panel
+		// vendored the lot (Pasywny, 13 September).
+		if (item->GetType() == ITEM_USE)
+		{
+			const BYTE sub = item->GetSubType();
+			if (IsPlayerBotBoosterItem(item) || IsPlayerBotExpElixir(vnum) || IsPlayerBotMetinDetector(vnum) ||
+					sub == USE_ADD_ATTRIBUTE || sub == USE_CHANGE_ATTRIBUTE || sub == USE_ADD_ATTRIBUTE2)
+				return false;
+		}
 
 		// Level-30 weapons with average/skill damage are strategic market assets.
 		// Never vendor them: this also applies when the current owner is below level
