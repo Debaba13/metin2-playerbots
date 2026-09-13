@@ -737,8 +737,7 @@ namespace
 		// horse in it at all.
 		if (vnum == PLAYERBOT_HORSE_MEDAL_VNUM ||
 				vnum == PLAYERBOT_BATTLE_HORSE_BOOK_VNUM ||
-				(vnum >= 50701 && vnum <= 50706) ||
-				vnum == PLAYERBOT_ORC_TOOTH_VNUM || vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM)
+				IsPlayerBotBiologistSpecimen(vnum) || IsPlayerBotBiologistKeyItem(vnum))
 			return false;
 		// A chest is opened on the next pass, not sold; the bonus scrolls, boosters
 		// and big potions it holds carry ANTI_SELL and never reach this rule.

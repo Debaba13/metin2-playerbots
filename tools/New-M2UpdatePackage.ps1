@@ -86,6 +86,28 @@ try {
     foreach ($e in $entries) { $sourceOf[(Get-PublishedPath $e)] = $e }
     $published = @($sourceOf.Keys)
 
+    # A server package has to carry the installation's own VERSION, at the
+    # root, and this is exactly where that gets lost. The mt2009 tree is
+    # published under another name, so a PathMap holding only the directory
+    # prefix sends VERSION to linux-port/VERSION - a path nothing reads.
+    # tools/update.sh reads <root>/VERSION twice over: to report what is
+    # installed, and to decide whether there is anything to install at all. So
+    # the number never moved, the updater announced the previous version after
+    # a successful update, and every later run downloaded and unpacked the same
+    # release again ("drugi raz robie aktualizacje z 2.0.34 do 2.0.35 i drugi
+    # raz komunikat ... version 2.0.34", Mkls, 13 September). The map that does
+    # this right lives in linux-port-mt2009/README.md and in
+    # New-M2DeployTree.ps1; this is what stops a release being built from a
+    # half-remembered one.
+    if ($Type -eq 'server' -and -not ($published -contains 'VERSION')) {
+        throw ("This server package would carry no VERSION at its root, so the " +
+               "installation would keep reporting the version it already had and " +
+               "its updater would re-install this release on every run. Add the " +
+               "file to the list, or - on the mt2009 line, which publishes under " +
+               "another name - give it its own PathMap row: " +
+               "'linux-port-mt2009/VERSION' = 'VERSION'.")
+    }
+
 
     # The overlay sources and the staged build context are two copies of the
     # same files, and a package that carries one without the other is what took

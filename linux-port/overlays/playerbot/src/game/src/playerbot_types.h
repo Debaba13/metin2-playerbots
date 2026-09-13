@@ -1153,7 +1153,7 @@ namespace
 	// was still asking it a day later ("pelno w m1 sklepow gdzie Zwoje sa po
 	// 9000", Iwakura). A shop whose stamp is behind this number reprices on
 	// every service visit instead, until its whole counter has been walked.
-	const DWORD PLAYERBOT_PRICE_TABLE_VERSION = 1;
+	const DWORD PLAYERBOT_PRICE_TABLE_VERSION = 2;
 	// Iwakura's upgrade-material prices (13 September, "CENY ULEPSZACZY"): the
 	// 78 materials a blacksmith asks for, priced by hand. Unlike the books
 	// these scale with the bare yang rate (100% is x1.0), which is his own
@@ -2795,15 +2795,39 @@ namespace
 		DWORD rewardGold;
 		DWORD rewardExp;
 		const char* itemLabel;
+		// The second half of a row, when it has one: the quest waits in
+		// key_item for this item, which its own kill hook drops one time in
+		// five hundred, and pays the affect and the casket below on hand-in.
+		// Zero means the row ends when the specimens are accepted, which is
+		// what every herb row does. These used to be three constants named
+		// after the Orc Tooth, and a second row with a key could not be
+		// expressed at all.
+		DWORD keyItemVnum;
+		// Which monster's death can drop that key. It is the quest's own kill
+		// hook that decides - 631-637 for the Orc Tooth, 701-707 and 731-737
+		// for the Curse Book - and the bot only needs one of them to hunt. It
+		// was a constant named after the Elite Orc, so a second row's key phase
+		// would have sent the bot after the wrong monster entirely.
+		DWORD keyMobVnum;
+		BYTE rewardPoint;
+		int rewardPointValue;
+		DWORD rewardBoxVnum;
 	};
 
+	// The gold and experience columns are zero on purpose, and that is this
+	// world's own answer rather than a simplification: give_reward reads
+	// reward_data.lua by quest name, and that file's seventy-nine entries do
+	// not include a single biologist quest. So the herb rows pay nothing but
+	// the first one's weapon, exactly as they do for a player - see
+	// GivePlayerBotBiologistReward. Filling a row in here is all it takes if
+	// the quest ever gets a reward_data entry of its own.
 	const TPlayerBotBiologistMission PLAYERBOT_BIOLOGIST_MISSIONS[] = {
-		{ 4,  "make_herb_lv4",  50701, 173, 5,  90, 1000,  500,    "Kwiat Brzoskwini" },
-		{ 7,  "make_herb_lv7",  50702, 175, 5,  90, 3000,  2000,   "Pokrzywa" },
-		{ 10, "make_herb_lv10", 50703, 177, 5,  90, 5000,  6500,   "Kwiat Kaki" },
-		{ 15, "make_herb_lv15", 50704, 181, 5,  90, 10000, 25000,  "Korzen Gango" },
-		{ 20, "make_herb_lv20", 50705, 182, 10, 80, 15000, 95000,  "Bez" },
-		{ 25, "make_herb_lv25", 50706, 183, 10, 70, 20000, 200000, "Grzyb Tue" },
+		{ 4,  "make_herb_lv4",  50701, 173, 5,  90, 0, 0, "Kwiat Brzoskwini", 0, 0, 0, 0, 0 },
+		{ 7,  "make_herb_lv7",  50702, 175, 5,  90, 0, 0, "Pokrzywa",         0, 0, 0, 0, 0 },
+		{ 10, "make_herb_lv10", 50703, 177, 5,  90, 0, 0, "Kwiat Kaki",       0, 0, 0, 0, 0 },
+		{ 15, "make_herb_lv15", 50704, 181, 5,  90, 0, 0, "Korzen Gango",     0, 0, 0, 0, 0 },
+		{ 20, "make_herb_lv20", 50705, 182, 10, 80, 0, 0, "Bez",              0, 0, 0, 0, 0 },
+		{ 25, "make_herb_lv25", 50706, 183, 10, 70, 0, 0, "Grzyb Tue",        0, 0, 0, 0, 0 },
 		// The Orc Tooth. Ten from the Orcs (601) of the valley, one in twenty
 		// kills while the quest is open; sixty percent of what is handed in is
 		// accepted, the rest is spoiled, as in the quest without the elixir. The
@@ -2811,9 +2835,34 @@ namespace
 		// in what it carries. Then the second half: Jinunggyi's Soul Stone
 		// (30220), one in five hundred Elite Orc kills while the quest waits for
 		// it, and the reward is the quest's own, ten movement speed for good.
-		{ 30, "collect_quest_lv30", 30006, 601, 10, 60, 0, 0, "Zab Orka" }
+		{ 30, "collect_quest_lv30", 30006, 601, 10, 60, 0, 0, "Zab Orka",
+				30220, 631, POINT_MOV_SPEED, 10, 50109 },
+		// The chain does not stop at the Orc Tooth: collect_quest_lv30's last
+		// state runs lv40, and lv40 runs lv50. Both want fifteen specimens at
+		// the same sixty percent, both wait for a key item one kill in five
+		// hundred, and both pay a permanent affect and a casket - measured off
+		// this world's own quest files, not a wiki.
+		//
+		// The Curse Book is carried by the Tormentors (706, 756, level 49) of
+		// Orc Valley's central island - 68 spawn points each, and the key
+		// (30221) comes from the same quest's hook on 701-707 in the valley
+		// and 731-737 in Milgyo, both hosted. A bot of forty reaches a monster
+		// of forty-nine: PLAYERBOT_MAX_TARGET_LEVEL_DELTA is fifteen.
+		{ 40, "collect_quest_lv40", 30047, 706, 15, 60, 0, 0, "Ksiega Klatw",
+				30221, 706, POINT_ATT_SPEED, 5, 50110 },
+		// The Demon Souvenir is the row this world cannot finish, and it is
+		// here so that it starts working by itself the day that changes. Its
+		// specimen (30015) drops from the Demon Soldier (1001) and its key
+		// (30222) from 1001-1004, and all four stand on exactly one map in
+		// this world: metin2_map_deviltower1, index 66, which game2 hosts
+		// while every bot lives on game1 - a map a bot can never reach, since
+		// WarpSet needs a client. So 1001 deliberately has no row in
+		// PLAYERBOT_HUNTING_MOB_HOMES, and GetActivePlayerBotBiologistMission
+		// steps over a row whose monster stands nowhere hosted; give 1001 a
+		// row there if the map is ever moved and this one comes alive.
+		{ 50, "collect_quest_lv50", 30015, 1001, 15, 60, 0, 0, "Pamiatka Po Demonie",
+				30222, 1001, POINT_DEF_GRADE_BONUS, 60, 50111 }
 	};
-	const size_t PLAYERBOT_BIOLOGIST_ORC_TOOTH_INDEX = 6;
 	const DWORD PLAYERBOT_ORC_TOOTH_VNUM = 30006;
 	// How many specimens are worth a walk to Joan.
 	//
@@ -2832,10 +2881,10 @@ namespace
 	// what the Discord saw: a Sura of forty-two with "Korzen Gango 0/5" as its
 	// stated goal, hitting Orcs, for ever.
 	const int PLAYERBOT_BIOLOGIST_OUTGROWN_LEVELS = 10;
-	const DWORD PLAYERBOT_JINUNGGYI_STONE_VNUM = 30220;
-	const DWORD PLAYERBOT_ELITE_ORC_VNUM = 631;
-	const DWORD PLAYERBOT_ORC_TOOTH_REWARD_BOX_VNUM = 50109;
-	const int PLAYERBOT_ORC_TOOTH_REWARD_MOV_SPEED = 10;
+	// The key item, the monster that drops it, the affect and the casket used
+	// to be four constants named after the Orc Tooth, read by four different
+	// files. They are columns of the table now, so a row carries its own
+	// second half and nothing has to be told about it twice.
 	const size_t PLAYERBOT_BIOLOGIST_MISSION_COUNT =
 			sizeof(PLAYERBOT_BIOLOGIST_MISSIONS) / sizeof(PLAYERBOT_BIOLOGIST_MISSIONS[0]);
 
@@ -2915,7 +2964,11 @@ namespace
 		{ 2103, 63, 64 },
 		{ 2031, 104, 0 }, { 2032, 104, 0 }, { 2033, 104, 0 }, { 2034, 104, 0 },
 		// The Biologist's Orc Tooth: the Orc and the Elite Orc of the valley.
-		{ 601, 64, 0 }, { 631, 64, 0 }
+		{ 601, 64, 0 }, { 631, 64, 0 },
+		// The Biologist's Curse Book: the Tormentors of the valley's central
+		// island, measured at 68 spawn points each through the valley's own
+		// group_group 306. 756 is already listed above for the hunting rows.
+		{ 706, 64, 0 }
 	};
 
 	bool IsPlayerBotHuntingMobHosted(DWORD vnum, long lMapIndex = 0)

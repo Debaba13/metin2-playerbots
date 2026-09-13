@@ -63,6 +63,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_offline_policy.h"
 #endif
 #include "playerbot_types.h"
+#include "playerbot_price_tables.h"
 #include "playerbot_log.h"
 #include "playerbot_config.h"
 #include "playerbot_swing_timing.h"

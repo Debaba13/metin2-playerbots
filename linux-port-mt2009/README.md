@@ -93,8 +93,22 @@ packager is run with
 ```
 -FileList launcher\server-update-files.mt2009.txt
 -PathMap @{ 'linux-port-mt2009/docker/docker-compose.deploy.yml' = 'linux-port/docker/docker-compose.yml';
+            'linux-port-mt2009/VERSION' = 'VERSION';
+            'linux-port-mt2009/PACZKA_INFO.txt' = 'PACZKA_INFO.txt';
             'linux-port-mt2009/' = 'linux-port/' }
 ```
+
+The two single-file rows are not decoration and this block was missing them
+until 2.0.36. The map is applied longest key first, so without its own row
+`linux-port-mt2009/VERSION` is published as `linux-port/VERSION` - a path
+nothing on a player's machine reads. `tools/update.sh` reads `<root>/VERSION`
+both to report what is installed and to decide whether an update is needed at
+all, so the number never moved: the updater said "the server is now running
+version 2.0.34" after installing 2.0.35, and downloaded and unpacked the same
+release again on the next run (Mkls, 13 September). `New-M2DeployTree.ps1` has
+always carried the full map; this text is what a release was typed from, so
+the two are kept identical, and the packager now refuses a server package with
+no `VERSION` at its root.
 
 and the launcher tells the two apart by `linux-port\docker\ENGINE`
 (`Get-M2ServerEngine`). Engine-specific in the launcher: the dumps a world is

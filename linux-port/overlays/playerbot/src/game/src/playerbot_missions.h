@@ -70,15 +70,39 @@ namespace
 				ch->GetQuestFlag(GetPlayerBotBiologistFlag(mission, "__status")) == completeState;
 	}
 
-	// The Orc Tooth quest has a second half: the teeth are in, and the quest
-	// waits in key_item for Jinunggyi's Soul Stone from the Elite Orcs.
+	// Anything a row collects, and anything a row's second half waits for.
+	// Both used to be spelled out as vnums wherever they mattered - the junk
+	// rule and the stall each carried "50701..50706, the tooth, the stone" -
+	// so a new row meant finding every such list, and the two rows added for
+	// the level-40 and level-50 quests would have been sold by the first bot
+	// that walked past a merchant.
+	bool IsPlayerBotBiologistSpecimen(DWORD vnum)
+	{
+		if (vnum == 0)
+			return false;
+		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
+			if (PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum == vnum)
+				return true;
+		return false;
+	}
+
+	bool IsPlayerBotBiologistKeyItem(DWORD vnum)
+	{
+		if (vnum == 0)
+			return false;
+		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
+			if (PLAYERBOT_BIOLOGIST_MISSIONS[i].keyItemVnum == vnum)
+				return true;
+		return false;
+	}
+
 	// A specimen the bot has no mission left for: the row that wants it is
 	// handed in. Those used to stay in the bag for good ("niech dadza sklepik
-	// z zebami jesli maja nadmiar"); now they are goods. The soul stone is
-	// never surplus - it is the key to the second half of the Orc Tooth row.
+	// z zebami jesli maja nadmiar"); now they are goods. A key item is never
+	// surplus - it is what the second half of its own row is waiting for.
 	bool IsPlayerBotBiologistSpecimenSurplus(LPCHARACTER ch, DWORD vnum)
 	{
-		if (!ch || vnum == PLAYERBOT_JINUNGGYI_STONE_VNUM)
+		if (!ch || IsPlayerBotBiologistKeyItem(vnum))
 			return false;
 		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
 			if (PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum == vnum)
@@ -86,9 +110,15 @@ namespace
 		return false;
 	}
 
+	// A row with a key item has a second half: the specimens are in and the
+	// quest waits in key_item for the key. Which rows those are is the table's
+	// to say - this used to test one hard-coded index, so the Curse Book's own
+	// second half would have been invisible.
 	bool IsPlayerBotBiologistKeyPhase(LPCHARACTER ch, size_t missionIndex)
 	{
-		if (!ch || missionIndex != PLAYERBOT_BIOLOGIST_ORC_TOOTH_INDEX)
+		if (!ch || missionIndex >= PLAYERBOT_BIOLOGIST_MISSION_COUNT)
+			return false;
+		if (PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex].keyItemVnum == 0)
 			return false;
 		const int keyState = GetPlayerBotBiologistStateIndex(missionIndex, "key_item");
 		return keyState != PLAYERBOT_QUEST_STATE_UNKNOWN && ch->GetQuestFlag(GetPlayerBotBiologistFlag(
@@ -96,7 +126,7 @@ namespace
 	}
 
 	// What the mission wants carried right now, and how many: the collection
-	// item, or in the second half of the Orc Tooth quest, the one stone.
+	// item, or in a row's second half, the one key item.
 	DWORD GetPlayerBotBiologistWantedItem(LPCHARACTER ch, size_t missionIndex, int* outRequired)
 	{
 		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
@@ -104,7 +134,7 @@ namespace
 		{
 			if (outRequired)
 				*outRequired = 1;
-			return PLAYERBOT_JINUNGGYI_STONE_VNUM;
+			return mission.keyItemVnum;
 		}
 		if (outRequired)
 			*outRequired = mission.requiredCount;
@@ -137,6 +167,16 @@ namespace
 			if (ch->GetLevel() < mission.requiredLevel)
 				break;
 			if (IsPlayerBotBiologistMissionComplete(ch, i))
+				continue;
+			// A row whose monster stands on no map this world hosts can never
+			// be finished, and choosing it means saying so above the bot's head
+			// for ever. The Demon Souvenir is that row here: 1001 lives only on
+			// map 66, which game2 hosts and no bot can reach. It has to be
+			// stepped over by every pass including `last`, which is the one
+			// that takes the highest row left when everything else is outgrown
+			// - otherwise every bot of fifty would read "Pamiatka Po Demonie
+			// 0/15" exactly the way they once all read "Korzen Gango 0/5".
+			if (!IsPlayerBotHuntingMobHosted(mission.mobVnum))
 				continue;
 			last = (int)i;
 			// Outgrown rows are stepped over by both of the middle passes. A bot

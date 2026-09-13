@@ -513,8 +513,12 @@ namespace
 					GetPlayerBotBiologistFlag(*biologistMission, "collect_count")));
 			const int remaining = std::max(0,
 					(int)biologistMission->requiredCount - accepted);
+			// In a row's second half the bot hunts whatever the quest's own kill
+			// hook rolls the key on, which is the row's business and not this
+			// function's: the Orc Tooth wants the Elite Orc, the Curse Book the
+			// same Tormentor that carries the specimen.
 			if (IsPlayerBotBiologistKeyPhase(ch, biologistIndex))
-				desiredBiologistMobVnum = PLAYERBOT_ELITE_ORC_VNUM;
+				desiredBiologistMobVnum = biologistMission->keyMobVnum;
 			else if (ch->CountSpecifyItem(biologistMission->itemVnum) < remaining)
 				desiredBiologistMobVnum = biologistMission->mobVnum;
 		}

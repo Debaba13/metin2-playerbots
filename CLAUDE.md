@@ -1455,6 +1455,42 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   resets. CPU alone said "A*" once and the fix put every bot's map scan in the
   same second; the line says which plans, and how many milliseconds each.
 
+- **`AddAffect` with `IsCube = false` looks an affect up by TYPE alone.**
+  `CHARACTER::AddAffect(dwType, bApplyOn, .., bOverride, IsCube)` calls
+  `FindAffect(dwType)` when IsCube is false and `FindAffect(dwType, bApplyOn)`
+  when it is true - identically on both engines. So a second AFFECT_COLLECT
+  paid with `bOverride` true and `IsCube` false overwrites whatever collect
+  affect the character already had, whichever point it sat on. The Biologist
+  pays one per row (ten movement speed for the Orc Tooth, five attack speed for
+  the Curse Book), so the second reward would have taken the first one off.
+  Copy what the engine's own `affect.add_collect` does, because that is what a
+  player gets: `FindAffect(AFFECT_COLLECT, point)`, add the new value to the
+  old one, then `AddAffect(.., INFINITE_AFFECT_DURATION, 0, true, true)` - sum,
+  override, IsCube. `INFINITE_AFFECT_DURATION` is sixty years on both engines,
+  which is where the hand-written `60L*60L*24L*365L*60L` came from.
+
+- **A Biologist row is gated by `PLAYERBOT_HUNTING_MOB_HOMES`, and that is how
+  an impossible row is switched off.** The chain runs past the Orc Tooth -
+  `collect_quest_lv30` ends by starting lv40 and lv40 starts lv50 - but on this
+  world lv50's specimen and key come only from 1001-1004, and all four stand
+  solely on `metin2_map_deviltower1` (index 66), which `game2` hosts while every
+  bot lives on `game1`. `GetActivePlayerBotBiologistMission` therefore steps
+  over any row whose `mobVnum` is not hosted **in every pass, `last` included**:
+  that pass takes the highest row left when the rest are outgrown, so without it
+  every bot past fifty would have read "Pamiatka Po Demonie 0/15" for ever, the
+  exact shape of the old "Korzen Gango 0/5". Giving 1001 a row in that table is
+  all it takes to switch the row on the day the map moves. The panel keeps its
+  own copy of the rule (`BIOLOGIST_UNREACHABLE`) and counts eight rows, not
+  nine, or the card reads 8/9 for ever - the panel and the core have to step
+  over the same rows or they describe different games.
+  And measure the spawns rather than trusting either engine's table: r40250's
+  Orc Valley is not mt2009's. The Orc Tooth's own `mobVnum` is 601, which stands
+  there on **two** points, while what actually drops the tooth on mt2009 is
+  `mob_proto.drop_item` on the Black Orcs 636/656, 197 and 196 points. Read
+  every spawn file a map has (`regen.txt`, `base*_regen.txt`, `boss.txt`), give
+  a map's own `group.txt` precedence over the global one, and check the answer
+  against something already known to work before believing it.
+
 - **A transport horse comes off for a fight, not for the tick.** The wander
   pass mounts for a long leg at the bottom of the tick; the manager's
   "a normal horse is for transport only" dismount sat at the top of the next

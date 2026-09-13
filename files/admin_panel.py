@@ -30,7 +30,25 @@ BIOLOGIST_MISSIONS = (
     ("make_herb_lv20", 20, "Bez", 10),
     ("make_herb_lv25", 25, "Grzyb Tue", 10),
     ("collect_quest_lv30", 30, "Ząb Orka", 10),
+    # The chain does not stop at the Orc Tooth: its own last state runs
+    # collect_quest_lv40, and that one runs lv50. Both want fifteen specimens
+    # at the same sixty percent, and both end with a permanent affect - five
+    # attack speed, then sixty defence - and a casket.
+    ("collect_quest_lv40", 40, "Księga Klątw", 15),
+    ("collect_quest_lv50", 50, "Pamiątka Po Demonie", 15),
 )
+# A row whose monster stands on no map the bots' core hosts can never be
+# finished, and the game steps over it (GetActivePlayerBotBiologistMission,
+# through PLAYERBOT_HUNTING_MOB_HOMES).  The panel has to step over the same
+# rows or it names a stage the game will never choose - which is exactly the
+# "panel says one thing, ranking says another" the Gango Root produced.
+# Measured off this world's own spawn files: the Demon Souvenir's specimen and
+# key come only from 1001-1004, and all four stand solely on
+# metin2_map_deviltower1 (index 66), which game2 hosts while every bot lives on
+# game1.  Take the name out of here the day that map moves.
+BIOLOGIST_UNREACHABLE = frozenset({"collect_quest_lv50"})
+BIOLOGIST_REACHABLE = tuple(
+    m for m in BIOLOGIST_MISSIONS if m[0] not in BIOLOGIST_UNREACHABLE)
 # The specimen each row wants, and how far past a row the game stops hunting
 # it. Both mirror playerbot_missions.h: a row the bot has outgrown by
 # BIOLOGIST_OUTGROWN_LEVELS is stepped over unless the bag already holds the
@@ -41,6 +59,7 @@ BIOLOGIST_ITEM_VNUMS = {
     "make_herb_lv4": 50701, "make_herb_lv7": 50702, "make_herb_lv10": 50703,
     "make_herb_lv15": 50704, "make_herb_lv20": 50705, "make_herb_lv25": 50706,
     "collect_quest_lv30": 30006,
+    "collect_quest_lv40": 30047, "collect_quest_lv50": 30015,
 }
 BIOLOGIST_OUTGROWN_LEVELS = 10
 
@@ -5113,6 +5132,7 @@ BIOLOGIST_NAMES_EN = {
  "make_herb_lv4":"Peach Blossom","make_herb_lv7":"Bellflower",
  "make_herb_lv10":"Kaki Blossom","make_herb_lv15":"Gango Root",
  "make_herb_lv20":"Lilac","make_herb_lv25":"Tue Mushroom","collect_quest_lv30":"Orc Tooth",
+ "collect_quest_lv40":"Curse Book","collect_quest_lv50":"Demon Souvenir",
 }
 BIOLOGIST_NAMES_TR = {
  "make_herb_lv4":"Şeftali Çiçeği","make_herb_lv7":"Çançiçeği",
@@ -6723,7 +6743,7 @@ function openBotModal(pid) {
               '<div style="grid-column:1 / -1"><b>' + I18N.current_goal + ':</b> <span style="color:#60a5fa;font-weight:700">' + escapeHtml(p.goal) + '</span></div>' +
               '<div style="grid-column:1 / -1"><b>' + I18N.action + ':</b> <span style="color:#ffd700">' + escapeHtml(p.action) + '</span></div>' +
               '<div><b>' + I18N.horse + ':</b> <span style="color:#c084fc;font-weight:700">Lv ' + (p.horse_level || 0) + '</span></div>' +
-              '<div><b>' + I18N.biologist + ':</b> <span style="color:#4ade80;font-weight:700">' + (p.biologist_completed || 0) + '/7</span></div>' +
+              '<div><b>' + I18N.biologist + ':</b> <span style="color:#4ade80;font-weight:700">' + (p.biologist_completed || 0) + '/' + (p.biologist_total || 7) + '</span></div>' +
               '<div style="grid-column:1 / -1"><b>' + I18N.bio_stage + ':</b> <span style="color:#86efac">' + (p.biologist_label || I18N.no_data) + '</span></div>' +
               // Only when there is a hunt to report. On the mt2009 line
               // levelup.quest ships in quest/_unused, so hunting_progress_label
@@ -10755,7 +10775,7 @@ def api_bot_inventory(pid):
             biologist_label = messages["bio_not_started"]
             chosen = None
             fallback = None
-            for quest_name, required_level, item_name, required_count in BIOLOGIST_MISSIONS:
+            for quest_name, required_level, item_name, required_count in BIOLOGIST_REACHABLE:
                 item_name = localized_biologist_name(quest_name, item_name, language)
                 if quest_flags.get((quest_name, "__status")) == BIOLOGIST_COMPLETE_STATE:
                     completed += 1
@@ -10782,6 +10802,11 @@ def api_bot_inventory(pid):
                 accepted = quest_flags.get((chosen[1], "collect_count"), 0)
                 biologist_label = "%s: %d/%d" % (chosen[3], accepted, chosen[4])
             player["biologist_completed"] = completed
+            # How many rows there are, so the card does not carry the number in
+            # its own markup. It said "/7" outright, and a chain that grew a row
+            # would have reported 8/7 to everybody. Rows the world cannot host
+            # are not counted, or every bot would sit at 8/9 for ever.
+            player["biologist_total"] = len(BIOLOGIST_REACHABLE)
             player["biologist_label"] = biologist_label
 
             cur.execute("""
@@ -11172,18 +11197,18 @@ def api_bot_rankings():
                         {21: "m1", 23: "m2", 24: "m3", 1: "s1", 3: "s2", 4: "s3",
                          41: "j1", 43: "j2", 44: "j3"}.get(stall_map_index, ""), "")
 
-                bio_completed = max(0, min(len(BIOLOGIST_MISSIONS), int(r.get("biologist_completed") or 0)))
-                if bio_completed >= len(BIOLOGIST_MISSIONS):
+                bio_completed = max(0, min(len(BIOLOGIST_REACHABLE), int(r.get("biologist_completed") or 0)))
+                if bio_completed >= len(BIOLOGIST_REACHABLE):
                     bio_label = "%d/%d • %s" % (
-                        bio_completed, len(BIOLOGIST_MISSIONS), messages["bio_complete"])
+                        bio_completed, len(BIOLOGIST_REACHABLE), messages["bio_complete"])
                 elif bio_completed > 0:
-                    mission = BIOLOGIST_MISSIONS[bio_completed - 1]
+                    mission = BIOLOGIST_REACHABLE[bio_completed - 1]
                     bio_label = "%d/%d • %s" % (
-                        bio_completed, len(BIOLOGIST_MISSIONS),
+                        bio_completed, len(BIOLOGIST_REACHABLE),
                         localized_biologist_name(mission[0], mission[2], language))
                 else:
                     bio_label = "0/%d • %s" % (
-                        len(BIOLOGIST_MISSIONS), messages["bio_in_progress"])
+                        len(BIOLOGIST_REACHABLE), messages["bio_in_progress"])
                 hunting_complete = max(0, int(r.get("hunting_complete") or 0))
                 hunting_current = max(0, int(r.get("hunting_current") or 0))
                 hunting_remain = max(0, int(r.get("hunting_remain") or 0))

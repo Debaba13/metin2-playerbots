@@ -17,6 +17,140 @@ every version here.
 
 ---
 
+## 2.0.37 — 2026-09-13
+
+Serwer i panel. Łańcuch Biologa nie kończy się już na Zębie Orka — dochodzi
+etap 40 z nagrodami jeden do jednego z tym, co dostaje gracz. Do tego launcher
+mruga na czerwono, kiedy jest nowa wersja.
+
+### Biolog idzie dalej: Księga Klątw
+
+Quest `collect_quest_lv30` w swoim ostatnim stanie sam uruchamia `lv40`, a ten
+uruchamia `lv50` — u gracza łańcuch leci dalej, a boty kończyły na siódmym
+etapie i stały na „7/7" do końca świata.
+
+Dochodzi **Księga Klątw**: piętnaście okazów po 60% przyjęcia, potem druga
+połowa — Świątynny Kamień Duszy, jeden na pięćset zabić — a na koniec nagroda
+questa: **+5 szybkości ataku na stałe** i szkatuła.
+
+Gdzie to jest, zmierzone na plikach tego świata, nie z wiki: Księgę noszą
+Dręczyciele (706 i 756, poziom 49) z centralnej wyspy Doliny Orków, po 68
+punktów odrodzenia każdy, a klucz leci z tego samego hooka na 701–707 w Dolinie
+i 731–737 w Świątyni. Bot poziomu 40 sięga potwora 49 — limit to piętnaście
+poziomów — więc etap jest wykonalny od pierwszej chwili, w której się otwiera.
+
+### Nagroda, która kasowała poprzednią nagrodę
+
+Nagrody miały być jeden do jednego z graczem i przy okazji wyszło, że dotąd nie
+były. Silnikowe `affect.add_collect` robi trzy rzeczy: znajduje istniejący efekt
+**tego samego typu punktu**, dodaje do niego nową wartość i zapisuje z flagą
+`IsCube`. Boty wołały `AddAffect` wprost, bez sumowania i bez tej flagi.
+
+To nie jest drobiazg, bo przy `IsCube = false` silnik szuka efektu **po samym
+typie**, ignorując punkt. Nagroda za Księgę Klątw nadpisałaby wtedy prędkość
+ruchu z Zęba Orka zamiast stanąć obok niej. Teraz wypłata idzie dokładnie tą
+samą drogą co u gracza.
+
+### Etap, którego na tym świecie nie da się skończyć
+
+Kolejny etap łańcucha — **Pamiątka Po Demonie** — jest w tabeli, ale boty go nie
+wezmą, i to jest celowe. Zarówno okaz, jak i klucz pochodzą wyłącznie od
+potworów 1001–1004, a te stoją na **jednej** mapie w całym tym świecie: w Wieży
+Demona (indeks 66), którą hostuje rdzeń `game2`, podczas gdy wszystkie boty żyją
+na `game1`. Mapy, której rdzeń nie hostuje, bot nie osiągnie nigdy.
+
+Gdyby etap po prostu dopisać, każdy bot po pięćdziesiątce utknąłby na „Pamiątka
+Po Demonie 0/15" — dokładnie tak, jak kiedyś cały świat tkwił na „Korzeń Gango
+0/5". Dlatego etap, którego potwór nie stoi na żadnej hostowanej mapie, jest
+pomijany przez wszystkie reguły wyboru, a panel liczy osiem etapów zamiast
+dziewięciu, żeby nikt nie oglądał wiecznego „8/9". Wiersz zacznie działać sam,
+jeśli ta mapa kiedyś trafi na rdzeń z botami.
+
+### Launcher mruga, kiedy jest nowa wersja
+
+Stopka z wersjami zapala się na czerwono i mruga, kiedy serwer albo klient mają
+nowsze wydanie, z napisem wprost mówiącym, czego dotyczy i że trzeba kliknąć
+ZAINSTALUJ AKTUALIZACJE.
+
+## 2.0.36 — 2026-09-13
+
+Serwer. Rynek przestaje zgadywać ceny — dostaje cenniki Iwakury. Do tego
+poprawka aktualizatora na Linuksie i VPS, przez którą serwer po aktualizacji
+podawał starą wersję i instalował to samo wydanie w kółko.
+
+### Aktualizacja mówiła, że nic się nie zmieniło — i miała rację
+
+„Drugi raz robię aktualizację z 2.0.34 do 2.0.35 i drugi raz komunikat:
+*the server is now running version 2.0.34*" (Mkls).
+
+Paczka aktualizacji nie zawierała pliku `VERSION` w korzeniu instalacji.
+Zawierała go — ale pod `linux-port/VERSION`, czyli tam, gdzie **nikt go nie
+czyta**. Wzięło się to z mapowania ścieżek: drzewo 2.x wdraża się pod nazwą
+`linux-port`, a reguła przenosiła cały katalog razem z plikiem wersji.
+
+To nie był tylko mylący komunikat. `tools/update.sh` czyta `<korzeń>/VERSION`
+dwa razy: żeby powiedzieć, co jest zainstalowane, i żeby **zdecydować, czy w
+ogóle jest co instalować**. Skoro numer nigdy się nie zmieniał, porównanie
+z manifestem nigdy nie trafiało — więc każde uruchomienie pobierało i
+rozpakowywało to samo wydanie od nowa.
+
+Naprawione w trzech miejscach naraz: plik wersji trafia do korzenia,
+dokumentacja wydania nosi pełne mapowanie (brakowało w niej dwóch wierszy,
+choć narzędzie `New-M2DeployTree.ps1` miało je od zawsze), a pakowarka
+**odmawia zbudowania** paczki serwera bez `VERSION` w korzeniu. Przy okazji
+wraca do paczek `PACZKA_INFO.txt`, który ginął z tego samego powodu.
+
+Po zainstalowaniu 2.0.36 numer w korzeniu wreszcie się przesunie i kółko się
+zatrzyma.
+
+### Bronie i zbroje: 147 rodzin, cena za każdy plus
+
+Do tej pory broń i zbroja powyżej +6 miały trzy wymyślone ceny: 150 000 za +7,
+400 000 za +8, 900 000 za +9. Wymyślone, bo tabele gry nie zawierają ceny
+ulepszonego przedmiotu i trzeba ją było kiedyś zgadnąć. Skutek: **Zatruty Miecz
++9 i zwykły Miecz +9 stały na straganie za te same 900 000**.
+
+Teraz każda rodzina ma własną cenę na każdym poziomie ulepszenia, wprost z jego
+arkusza: Miecz +9 to 120 000, Zatruty Miecz +9 to 13 000 000. Rodzin jest 147 —
+miecze, sztylety, łuki, bronie dwuręczne, dzwony, wachlarze i zbroje wszystkich
+czterech klas.
+
+### Kamienie duszy w sockecie podnoszą cenę przedmiotu
+
+Też z jego arkusza, w dwóch krokach: najpierw ile kamieni siedzi w przedmiocie
+(jeden ×1.2, dwa ×1.3, trzy ×1.5), potem które konkretnie — Kamień Duszy Potwora
++4 mnoży przez 1.8, Śmierci +4 przez 1.7, i tak dalej. Pęknięty kamień nie liczy
+się wcale, dokładnie jak u niego.
+
+### Marmury, opaski, zioła, kamienie duszy, skrzynki
+
+- **Marmury polimorfii** wyceniane po potworze siedzącym w sockecie: trzynaście
+  nazwanych wyjątków (od 40 000 za Wojownika z Toporem po 75 000 za Małego
+  Trującego Pająka), reszta z pasma 15 000–35 000, losowana raz na marmur.
+- **Opaski Zapomnienia** po umiejętności — 44 pozycje. Siedem z nich Iwakura
+  oznaczył „do sprzedaży u handlarki": te nie zajmują już miejsca na straganie.
+- **Kamienie duszy** po rodzaju i stopniu: osiemnaście wyjątków (Potwora +4 za
+  350 000, Śmierci +4 za 250 000), reszta po cenie swojego stopnia.
+- **Zioła** (osiem), **Szkatuła Blasku Księżyca** 35 000 i **Medal Konny**
+  250 000.
+
+### Jak to zrobione
+
+Ceny nie są przepisane ręcznie. Generator czyta jego pliki i wiąże **każdą**
+nazwę z vnumem tego świata, pytając `item_proto` i `mob_proto`; jeśli choć
+jednej nazwy nie da się dopasować, **odmawia zapisania tabeli**. Dzięki temu
+nowa pozycja w arkuszu zatrzyma budowę zamiast po cichu zostawić starą cenę.
+Dziesięć nazw, które gra skraca („Zbr. Płyt." wobec jego „Zbroja Płytowa"),
+ma jawną tabelę aliasów — każdy sprawdzony jako jedyny kandydat.
+
+Wszystko skaluje się mnożnikiem dropu yang tak, jak napisał na górze obu
+arkuszy: cena bazowa razy stawka przez sto. Na serwerze ze stawką 100% obowiązuje
+cena z tabeli, przy 500% jest pięć razy wyższa.
+
+Numer wersji cennika idzie na 2, więc stragany stojące na starych cenach
+przeceniają się na najbliższej wizycie serwisowej, zamiast trzymać je przez całe
+osiem godzin stoiska.
+
 ## 2.0.35 — 2026-09-13
 
 Serwer. Pięć zgłoszeń z Discorda z jednego wieczoru, każde z inną przyczyną —

@@ -1244,9 +1244,30 @@ function Update-VersionFooter {
         $installedText, $latestText, $launcherText, $latestText, $clientText, $latestClientText)
     $upToDate = $script:latestServerVersion -and $installed -and $installed -ne 'unknown' -and
         $installed.Equals($script:latestServerVersion, [StringComparison]::OrdinalIgnoreCase)
-    $script:versionLabel.ForeColor = if ($upToDate) { [Drawing.Color]::LightGreen }
+    # The same question for the client, which has its own version and its own
+    # button. A player who has the newest server and an old client saw nothing
+    # but a green footer, because only the server was ever compared.
+    $clientBehind = $false
+    if ($script:latestClientVersion -and $clientInstalled -and $clientInstalled -ne 'unknown') {
+        $clientBehind = -not $clientInstalled.Equals(
+            $script:latestClientVersion, [StringComparison]::OrdinalIgnoreCase)
+    }
+    $serverBehind = $script:latestServerVersion -and $installed -and $installed -ne 'unknown' -and -not $upToDate
+    # What the blink timer below reads. A colour alone is easy to miss on a
+    # window nobody is looking at, and "nie wiedzialem ze jest nowa wersja" is
+    # what this is for: the line says so in words as well.
+    $script:updateAvailable = [bool]($serverBehind -or $clientBehind)
+    if ($script:updateAvailable) {
+        $what = if ($serverBehind -and $clientBehind) { 'SERWERA I KLIENTA' }
+            elseif ($serverBehind) { 'SERWERA' }
+            else { 'KLIENTA' }
+        $script:versionLabel.Text = ("!! NOWA WERSJA {0} - kliknij ZAINSTALUJ AKTUALIZACJE`r`n{1}" -f
+            $what, $script:versionLabel.Text)
+    }
+    $script:versionBaseColor = if ($upToDate -and -not $clientBehind) { [Drawing.Color]::LightGreen }
         elseif ($script:latestServerVersion) { [Drawing.Color]::Gold }
         else { [Drawing.Color]::Silver }
+    $script:versionLabel.ForeColor = $script:versionBaseColor
 }
 
 function Read-LatestServerVersion {
@@ -1800,6 +1821,34 @@ $statusTimer.Add_Tick({
     Read-LatestServerVersion
 })
 $statusTimer.Start()
+
+# A new version people can actually notice. The footer has always changed
+# colour when the server was behind, and that is easy to miss on a window
+# sitting in the background - so while an update is waiting the line blinks
+# red and says so in words (Tieru: "zrob migotanie na czerwono ze jest wydana
+# nowa wersja klienta lub serwera, aby ludzie to widzieli").
+#
+# The timer owns nothing but the colour: Update-VersionFooter decides whether
+# there is an update at all and what the resting colour is, so a check that
+# comes back "already newest" stops the blinking on its own.
+$script:versionBlinkOn = $false
+$blinkTimer = [Windows.Forms.Timer]::new()
+$blinkTimer.Interval = 700
+$blinkTimer.Add_Tick({
+    if (-not $script:versionLabel) { return }
+    if (-not $script:updateAvailable) {
+        if ($script:versionBlinkOn) {
+            $script:versionBlinkOn = $false
+            if ($script:versionBaseColor) { $script:versionLabel.ForeColor = $script:versionBaseColor }
+        }
+        return
+    }
+    $script:versionBlinkOn = -not $script:versionBlinkOn
+    $script:versionLabel.ForeColor = if ($script:versionBlinkOn) { [Drawing.Color]::Red }
+        elseif ($script:versionBaseColor) { $script:versionBaseColor }
+        else { [Drawing.Color]::Gold }
+})
+$blinkTimer.Start()
 
 $script:form.Add_FormClosing({
     param($sender, $eventArgs)
