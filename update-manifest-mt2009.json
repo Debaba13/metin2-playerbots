@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-13T20:35:00Z",
-  "statusMessage": "2.0.37: Biolog nie kończy się już na Zębie Orka. Quest lv30 sam uruchamia następny, a boty tego nie umiały i stały na „7/7\" do końca świata — teraz dochodzi **Księga Klątw**: piętnaście okazów po 60% przyjęcia, potem Świątynny Kamień Duszy (jeden na pięćset zabić), a na koniec nagroda questa: **+5 szybkości ataku na stałe** i szkatuła. Okaz i klucz noszą Dręczyciele z centralnej wyspy Doliny Orków, więc etap da się zrobić tam, gdzie boty i tak polują. Przy okazji nagrody idą teraz dokładnie tą samą drogą co u gracza: dotąd nowa nagroda mogła **skasować poprzednią**, bo silnik szukał efektu po samym typie. Kolejny etap (Pamiątka Po Demonie) jest w tabeli, ale celowo pomijany — jego potwory stoją wyłącznie w Wieży Demona, której rdzeń z botami nie hostuje, więc bot utknąłby na „0/15\" na zawsze; panel liczy osiem etapów. W launcherze stopka **mruga na czerwono**, kiedy jest nowa wersja serwera lub klienta. Do tego naprawa własna tego forka: lekser Lua silnika traktował każdy bajt >= 0x80 jako początek dwubajtowego znaku koreańskiego i zawsze łykał kolejny bajt razem z nim — jednobajtowe znaki tureckie (ISO-8859-9) i polskie (CP1250) na końcu stringa traciły przez to swój cudzysłów zamykający, co wywalało każdy rdzeń przy starcie locale turkey. Tylko serwer — klient zostaje 2.0.5.",
+  "publishedAt": "2026-09-13T21:35:00Z",
+  "statusMessage": "2.0.38: naprawa własna tego forka — turecki tekst (locale turkey) był łamany na cudzysłowach przez błąd lexera z 2.0.37 (patrz niżej), a do tego znaki ı/ş/ğ/ü/ö/ç renderowały się jako śmieci w czcionce klienta. Cały tekst czytany w grze (translate.lua, opisy przedmiotów, nazwy NPC, questy) zamieniony na czysty ASCII (ı/i, ş/s, ğ/g, ü/u, ö/o, ç/c) — brzydsza pisownia, ale czytelna zamiast kwadracików. Wcześniej (2.0.37): Biolog nie kończy się już na Zębie Orka — quest lv30 sam uruchamia następny, dochodzi **Księga Klątw** (piętnaście okazów, Kamień Duszy, +5 szybkości ataku na stałe i szkatuła), nagrody questa idą teraz tą samą drogą co u gracza. W launcherze stopka mruga na czerwono przy nowej wersji. Tylko serwer — klient zostaje 2.0.5.",
   "server": {
-    "version": "2.0.37",
-    "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.37/metin2-server-update-2.0.37.zip",
-    "sha256": "A7A3D6E773247BB57F601174E7CE52527278D5214C008B8332631974E323B976"
+    "version": "2.0.38",
+    "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.38/metin2-server-update-2.0.38.zip",
+    "sha256": "PLACEHOLDER_FILLED_AFTER_BUILD"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
