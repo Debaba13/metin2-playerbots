@@ -2020,6 +2020,24 @@ namespace
 				if (!offer.bSoldLogged)
 				{
 					offer.bSoldLogged = true;
+					// Gone, and how fast. A line that left within
+					// PLAYERBOT_MARKET_FAST_SALE_MS of going up is Iwakura's
+					// "wysoki popyt": the next counter carrying this thing asks
+					// more. Read here because this is the one place that knows a
+					// line has sold - the item is already out of the bag, which
+					// is why the offer carries the book's skill.
+					std::map<DWORD, DWORD>::const_iterator listed =
+							state.mapStockFirstListed.find(offer.dwItemID);
+					if (listed != state.mapStockFirstListed.end() &&
+							dwNow - listed->second < PLAYERBOT_MARKET_FAST_SALE_MS)
+					{
+						NotePlayerBotFastSale(offer.dwVnum, offer.bRefine, dwNow, offer.dwSkillVnum);
+						sys_log(0, "PLAYERBOT_MARKET: fast sale pid=%u name=%s vnum=%u+%u skill=%u in=%u s",
+								ch->GetPlayerID(), ch->GetName(), offer.dwVnum,
+								(unsigned int)offer.bRefine, offer.dwSkillVnum,
+								(unsigned int)((dwNow - listed->second) / 1000));
+					}
+					state.mapStockFirstListed.erase(offer.dwItemID);
 					char szHint[64];
 					snprintf(szHint, sizeof(szHint), "%u x%u za %u", offer.dwVnum,
 							(unsigned int)offer.wCount, offer.dwPrice);
@@ -2378,13 +2396,29 @@ namespace
 				price = std::max<DWORD>(1, price * PLAYERBOT_SHOP_POOR_DISCOUNT_PERCENT / 100);
 			// Carried home unsold before: cheaper by the stand, after the price
 			// is asked so the sale memory learns the market and not the markdown.
+			// Iwakura's band, drawn per listing, and capped in total - four
+			// stands at his upper end would otherwise leave nothing to ask for.
 			{
 				std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
 				if (unsold != state.mapStallUnsold.end() && unsold->second > 0)
 				{
 					const int stands = std::min<int>(unsold->second, PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_STANDS);
-					price = std::max<DWORD>(1, price * (100 - stands * PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT) / 100);
+					const int cut = std::min(PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_TOTAL,
+							stands * number(PLAYERBOT_MARKET_DEMAND_MIN_PERCENT,
+									PLAYERBOT_MARKET_DEMAND_MAX_PERCENT));
+					price = std::max<DWORD>(1, price * (100 - cut) / 100);
 				}
+			}
+			// And the other way: a thing buyers have been taking off the counter
+			// at once goes up. Applied here rather than inside the asking price
+			// so the market's own anchor is not dragged along with one keeper's
+			// luck - see PLAYERBOT_MARKET_DEMAND_MIN_PERCENT.
+			{
+				const int hot = GetPlayerBotDemandPercent(item->GetVnum(),
+						item->GetRefineLevel(), dwNow, GetPlayerBotSkillBookSkillVnum(item));
+				if (hot > 0)
+					price = std::max<DWORD>(1, (DWORD)((unsigned long long)price *
+							(unsigned long long)(100 + hot) / 100ULL));
 			}
 			// Neither markdown goes under what the blacksmith was paid: a
 			// discount is off the margin, not off what the piece cost to make.
@@ -2402,6 +2436,9 @@ namespace
 			offer.wCount = item->GetCount();
 			offer.dwItemID = item->GetID();
 			offer.bSoldLogged = false;
+			// Kept with the line because the sale is noticed when the item has
+			// already left the bag, and a book's market is its skill's.
+			offer.dwSkillVnum = GetPlayerBotSkillBookSkillVnum(item);
 			offer.bSlot = (BYTE)PlayerBotShopSlotToEngine(slot);
 			offers.push_back(offer);
 			if (scored[i].first > bestScore)

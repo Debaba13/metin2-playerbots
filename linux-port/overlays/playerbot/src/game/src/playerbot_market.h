@@ -275,6 +275,12 @@ namespace
 					offer.wCount = line.count;
 					offer.dwItemID = (DWORD)line.itemid;
 					offer.bSlot = (BYTE)k;
+					// A player's counter, read only to decide what to buy from
+					// it: nothing here asks this offer for a book's skill, and
+					// the demand signal is the keeper's own bookkeeping. Set
+					// anyway - TPlayerBotShopOffer has no constructor, so a
+					// field left alone is whatever was on the stack.
+					offer.dwSkillVnum = 0;
 					playerOffers.push_back(offer);
 				}
 			}

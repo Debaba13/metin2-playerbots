@@ -317,6 +317,53 @@ namespace
 		return unit;
 	}
 
+	// How hot a commodity is: how many times in a row it has left a counter
+	// almost as soon as it was put there. Iwakura's "wysoki popyt" - the bot
+	// notices and asks more next time, and keeps asking more while it keeps
+	// happening.
+	//
+	// Keyed like the sale memory, so a skill book counts per skill. This is a
+	// market-wide count on purpose: what it measures is how fast buyers take
+	// the thing, which is a fact about the thing and not about the keeper.
+	struct TPlayerBotDemandMemory
+	{
+		BYTE bFastSales;
+		DWORD dwLastFastSale;
+		TPlayerBotDemandMemory() : bFastSales(0), dwLastFastSale(0) {}
+	};
+	typedef std::map<DWORD, TPlayerBotDemandMemory> TPlayerBotDemandMap;
+	TPlayerBotDemandMap s_mapDemandMemory;
+
+	void NotePlayerBotFastSale(DWORD vnum, BYTE refine, DWORD dwNow, DWORD skillVnum = 0)
+	{
+		if (vnum == 0)
+			return;
+		TPlayerBotDemandMemory& mem = s_mapDemandMemory[PlayerBotSaleKey(vnum, refine, skillVnum)];
+		// A rush that stopped an hour ago is not a rush. Counted from the last
+		// quick sale rather than decremented on a timer, because nothing here
+		// runs on a clock of its own.
+		if (mem.dwLastFastSale != 0 && dwNow - mem.dwLastFastSale >= PLAYERBOT_MARKET_DEMAND_DECAY)
+			mem.bFastSales = 0;
+		if (mem.bFastSales < PLAYERBOT_MARKET_DEMAND_MAX_STEPS)
+			++mem.bFastSales;
+		mem.dwLastFastSale = dwNow;
+	}
+
+	// What to add to this keeper's asking price, in percent, or zero. Drawn per
+	// listing inside Iwakura's band, so two counters of a wanted thing do not
+	// show the same number.
+	int GetPlayerBotDemandPercent(DWORD vnum, BYTE refine, DWORD dwNow, DWORD skillVnum = 0)
+	{
+		TPlayerBotDemandMap::const_iterator it =
+				s_mapDemandMemory.find(PlayerBotSaleKey(vnum, refine, skillVnum));
+		if (it == s_mapDemandMemory.end() || it->second.bFastSales == 0)
+			return 0;
+		if (dwNow - it->second.dwLastFastSale >= PLAYERBOT_MARKET_DEMAND_DECAY)
+			return 0;
+		return (int)it->second.bFastSales *
+				number(PLAYERBOT_MARKET_DEMAND_MIN_PERCENT, PLAYERBOT_MARKET_DEMAND_MAX_PERCENT);
+	}
+
 	// The race a map is made of, as the population has seen it, or
 	// PLAYERBOT_RACE_NONE while the sample is too small or too mixed to call. A
 	// guess made from ten kills is worse than none. Only a fallback now: for

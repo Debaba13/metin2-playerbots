@@ -605,6 +605,42 @@ linux-port/docker/seban-panel/` returning empty.
 - Repo-wide `git grep` for leftover `<<<<<<<`/`=======`/`>>>>>>>` conflict
   markers: none.
 
+## Follow-up: fifth upstream sync, 2.0.32 -> 2.0.33 (2026-09-13)
+
+Brought in 4 upstream commits: Iwakura's supply/demand pricing for stall
+counters (extends the existing `playerbot_world_memory.h` - stall listings
+nudge price 10-25% by how fast an item sells) and a panel fix dropping the "hunting"
+ranking/tab wherever `levelup.quest` does not actually run on this engine
+line (it ships in `quest/_unused` on mt2009, so the counter was permanently
+zero and the tab was a hundred rows of "completed to Lv 0"). Merge commit:
+`merge(upstream): sync 2.0.32 -> 2.0.33`.
+
+Two conflicts:
+- `update-manifest-mt2009.json` - same shape, same resolution as the last two
+  syncs (kept this fork's own v2.0.24 release URL).
+- `linux-port/docker/seban-panel/app.py` - upstream deleted the "hunting"
+  ranking branch and its `kinds` dict entry; our side had that same branch
+  and entry already translated to Turkish (`"hunting": "Avlanma"`, the
+  `"...'e kadar tamamlandı"` query). Took upstream's removal (the ranking is
+  genuinely dead weight on mt2009, per their diagnosis) and rewrote their
+  Polish explanatory comments in English rather than carrying Polish comment
+  text into a Turkish-facing fork - the comment doesn't affect runtime, but
+  leaving it in Polish would have been an inconsistency worth avoiding while
+  touching the lines anyway.
+
+Audited both real commits for new player-visible text: none in either -
+`playerbot_world_memory.h` is pure pricing logic (no strings at all), and
+the panel commit only *removes* an already-Polish, already-broken string
+(never reached translation work in the first place, since it always showed
+"Ukończone do Lv 0"/junk data). `playerbot_status.h`, `chat_trade.h` and
+`shop_signs.h` again had zero new upstream commits in this range.
+
+Verified: both C++ unit tests compile and pass, `python3 -m py_compile` on
+`files/admin_panel.py`, `linux-port/docker/seban-panel/app.py`,
+`linux-port-mt2009/port/playerbotify.py`, `linux-port-mt2009/port/clientrootify.py`;
+JSON validity on the manifest; no leftover conflict markers. Same standing
+gap: no `m2src-cache`/Docker in this sandbox for the real syntax check.
+
 ## Follow-up: fourth upstream sync, 2.0.28 -> 2.0.32 (2026-09-13)
 
 Brought in 17 upstream commits (mostly chore(release) manifest bumps between

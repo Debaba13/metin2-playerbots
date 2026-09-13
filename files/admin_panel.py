@@ -5275,7 +5275,8 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('items', this)" style="font-size:11px;padding:3px 6px">🎒 {{m.rank_items}}</button>
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('horse', this)" style="font-size:11px;padding:3px 6px">🐴 {{m.rank_horse}}</button>
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('biologist', this)" style="font-size:11px;padding:3px 6px">🌿 {{m.rank_biologist}}</button>
-          <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('hunting', this)" style="font-size:11px;padding:3px 6px">🎯 {{m.rank_hunting}}</button>
+{% if not engine_mt2009 %}          <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('hunting', this)" style="font-size:11px;padding:3px 6px">🎯 {{m.rank_hunting}}</button>
+{% endif %}
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('shops', this)" style="font-size:11px;padding:3px 6px">🏪 {{m.rank_shops}}</button>
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('skills', this)" style="font-size:11px;padding:3px 6px">✨ {{m.rank_skills}}</button>
           <button type="button" class="btn btn-sm rank-tab" onclick="setRankCategory('plus9', this)" style="font-size:11px;padding:3px 6px">🔥 {{m.rank_plus9}}</button>
@@ -6724,7 +6725,12 @@ function openBotModal(pid) {
               '<div><b>' + I18N.horse + ':</b> <span style="color:#c084fc;font-weight:700">Lv ' + (p.horse_level || 0) + '</span></div>' +
               '<div><b>' + I18N.biologist + ':</b> <span style="color:#4ade80;font-weight:700">' + (p.biologist_completed || 0) + '/7</span></div>' +
               '<div style="grid-column:1 / -1"><b>' + I18N.bio_stage + ':</b> <span style="color:#86efac">' + (p.biologist_label || I18N.no_data) + '</span></div>' +
-              '<div style="grid-column:1 / -1"><b>' + I18N.hunting + ':</b> <span style="color:#fb923c">' + (p.hunting_label || I18N.no_data) + '</span></div>' +
+              // Only when there is a hunt to report. On the mt2009 line
+              // levelup.quest ships in quest/_unused, so hunting_progress_label
+              // returns "" and this row said "Polowanie: Brak danych" to every
+              // bot on every card (Tieru, 13 September). A row that can only
+              // ever say "no data" is not a row.
+              (p.hunting_label ? '<div style="grid-column:1 / -1"><b>' + I18N.hunting + ':</b> <span style="color:#fb923c">' + p.hunting_label + '</span></div>' : '') +
               '</div>';
 
       // Character build: stats & skills
@@ -7068,6 +7074,12 @@ def live_map():
                                   langs=LANGS,
                                   curlang=language,
                                   tile_version=PLAYERBOT_MAP_TILE_VERSION,
+                                  # The hunting ranking exists only where the
+                                  # level-up hunt runs. On mt2009 levelup.quest
+                                  # sits in quest/_unused, so every bot scores
+                                  # zero and the tab is a hundred rows of
+                                  # nothing - hidden there, kept on r40250.
+                                  engine_mt2009=ENGINE_MT2009,
                                   is_admin=bool(session.get("auth")))
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,55 @@ every version here.
 
 ---
 
+## 2.0.33 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Domknięcie systemu cen
+Iwakury: rynek reaguje teraz na to, co się sprzedaje, a co zalega.
+
+### Znika „Polowanie” tam, gdzie polowania nie ma (Tieru)
+
+Misja polowania (`levelup.quest`) leży na tej linii silnika w `quest/_unused` —
+żaden hook zabicia nie strzela, więc licznik stoi na zerze dla każdego bota.
+Rdzeń dawno to ignoruje, ale panele nadal o tym mówiły:
+
+- W karcie postaci na mapie świata wiersz **„Polowanie: Brak danych”** pokazywał
+  się przy każdym bocie. Wiersz, który potrafi powiedzieć wyłącznie „brak
+  danych”, nie jest wierszem — pojawia się teraz tylko wtedy, gdy naprawdę jest
+  co pokazać.
+- Zakładka **„Polowanie”** w rankingach botów znika z obu paneli. W panelu
+  zaawansowanym dawała sto pozycji z „Ukończone do Lv 0”.
+
+Na silniku r40250, gdzie ta misja działa, jedno i drugie zostaje bez zmian.
+
+### Podaż i popyt na straganach (Iwakura)
+
+Ostatnia część jego dokumentów cenowych, opisana tam jako „mechanizmy rynkowe”.
+Do tej pory bot miał tylko połowę: przecenę za zaleganie (sztywne −10% za każde
+stoisko) i uśrednianie po cenach, za które faktycznie kupowano. Brakowało
+reakcji na popyt — rzecz, która schodziła natychmiast, następnym razem trafiała
+na stragan za tę samą kwotę.
+
+- **Wysoki popyt**: jeśli przedmiot zniknie ze straganu w ciągu pięciu minut od
+  wystawienia, rynek to zapamiętuje i kolejne sztuki idą drożej o 10–25%.
+  Z każdą kolejną szybką sprzedażą cena rośnie dalej, do czterech kroków.
+  Godzina bez szybkiej sprzedaży i zwyżka wygasa.
+- **Niski popyt**: przecena za każde stoisko, z którego nic nie zeszło, to teraz
+  10–25% (losowane przy wystawieniu) zamiast sztywnych 10%.
+
+Jedno ograniczenie jest moje, nie jego: przecena za zaleganie ma **sufit 50%**.
+Iwakura nie podał granicy, a cztery stoiska po 25% zabrałyby całą cenę — rabat
+ma schodzić z marży, nie z przedmiotu.
+
+Obie zmiany działają na cenie tego konkretnego straganu, już po ustaleniu ceny
+rynkowej. To celowe: ogranicznik tempa zmian pozwala kotwicy rynku dryfować
+o 5% na dziesięć minut i gdyby sygnał popytu szedł przez niego, albo zostałby
+połknięty, albo pociągnąłby za sobą wszystkie inne stragany. Szybka sprzedaż
+zapisywana jest per przedmiot, a dla ksiąg per umiejętność — Aura Miecza ma
+własny popyt, nie wspólny ze wszystkimi księgami. W logu widać to jako
+`PLAYERBOT_MARKET: fast sale`.
+
+---
+
 ## 2.0.32 — 2026-09-13
 
 Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. **Naprawa błędu z

@@ -1149,11 +1149,10 @@ def bot_ranking(kind, sort_by="avg"):
         return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(DISTINCT q.szName) AS score,CONCAT(COUNT(DISTINCT q.szName),' / {len(missions)} görev') AS detail
             FROM player.player p LEFT JOIN player.quest q ON q.dwPID=p.id AND q.szName IN ({marks}) AND q.szState='__status' AND q.lValue=%s
             WHERE {base} GROUP BY p.id ORDER BY score DESC,p.level DESC LIMIT 100""", (*missions, BIOLOGIST_COMPLETE_STATE))
-    if kind == "hunting":
-        return rows(f"""SELECT p.id,p.name,p.level,p.gold,MAX(CASE WHEN q.szState='complete' THEN q.lValue ELSE 0 END) AS score,
-            CONCAT('Lv ',MAX(CASE WHEN q.szState='complete' THEN q.lValue ELSE 0 END),'''e kadar tamamlandı') AS detail
-            FROM player.player p LEFT JOIN player.quest q ON q.dwPID=p.id AND q.szName='levelup'
-            WHERE {base} GROUP BY p.id ORDER BY score DESC,p.level DESC LIMIT 100""")
+    # The "hunting" ranking was removed along with its tab: levelup.quest
+    # does not run on this engine line, so the query always returned a
+    # hundred rows of zero. A stale ?type=hunting link falls through to
+    # the default level ranking since "hunting" is no longer in kinds.
     if kind == "shops":
         keeper_ids = [pid for pid, state in live_statuses().items() if int(state.get("action") or 0) == 13]
         if not keeper_ids:
@@ -1718,7 +1717,10 @@ def api_system_current():
 def rankings():
     kinds = {
         "level": "Seviye", "armor": "Zırh", "weapon": "Silah", "weapon30": "30 Lv Silah",
-        "gold": "Yang", "items": "Eşyalar", "horse": "At", "hunting": "Avlanma", "biologist": "Biyolog",
+        # No "hunting": levelup.quest ships in quest/_unused on this engine
+        # line, no kill hook fires, and the counter stayed zero for every
+        # bot - the ranking was a hundred rows of "completed to Lv 0".
+        "gold": "Yang", "items": "Eşyalar", "horse": "At", "biologist": "Biyolog",
         "shops": "Açık Tezgahlar", "skills": "Yetenekler", "plus9": "+9 Eşya", "playtime": "Oyun Süresi", "bosses": "Bosslar",
     }
     kind = request.args.get("type", "level")

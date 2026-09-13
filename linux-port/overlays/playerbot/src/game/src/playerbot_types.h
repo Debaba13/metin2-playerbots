@@ -579,6 +579,31 @@ namespace
 	// sprzedaje u handlarza" - the +5 stays, PLAYERBOT_PRECIOUS_REFINE is four).
 	const int PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT = 10;
 	const int PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_STANDS = 4;
+	// Iwakura's supply and demand (13 September, both price documents): a thing
+	// that leaves the counter at once is put up dearer next time and keeps
+	// climbing with every quick sale, a thing that comes home unsold gets
+	// cheaper - both by ten to twenty-five percent.
+	//
+	// The markdown already existed at a flat ten percent per stand; it is now
+	// his range, drawn per listing. He gave no ceiling for it, and four stands
+	// at twenty-five percent each would take a price to nothing, so the total
+	// is capped - a discount is off the margin, not off the item.
+	//
+	// Both are applied where the unsold markdown already is: AFTER the asking
+	// price is settled. LimitPlayerBotAskStep lets the market's anchor drift
+	// five percent per ten minutes on purpose, and a demand signal pushed
+	// through it would either be swallowed or would drag every other counter
+	// with it. This moves what this keeper asks, not what the market believes.
+	const int PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_TOTAL = 50;
+	const int PLAYERBOT_MARKET_DEMAND_MIN_PERCENT = 10;
+	const int PLAYERBOT_MARKET_DEMAND_MAX_PERCENT = 25;
+	// A stand runs PLAYERBOT_SHOP_MIN..MAX_DURATION (10-25 min), so "went at
+	// once" is a line gone within the first five minutes of being put up.
+	const DWORD PLAYERBOT_MARKET_FAST_SALE_MS = 300000;
+	// How far the climb goes, and how long a commodity stays hot: an hour with
+	// no quick sale and the market has forgotten the rush.
+	const BYTE PLAYERBOT_MARKET_DEMAND_MAX_STEPS = 4;
+	const DWORD PLAYERBOT_MARKET_DEMAND_DECAY = 3600000;
 	const int PLAYERBOT_SHOP_UNSOLD_SCRAP_STANDS = 6;
 	// Gear the merchant may never have (above PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE
 	// - a shaman's warrior steel +9) used to have no end at all: discounted to
@@ -2689,6 +2714,11 @@ namespace
 		// logs the buyer's side (SHOP_BUY) and nothing for the keeper, and the
 		// keeper is the one whose history a player reads.
 		bool bSoldLogged;
+		// The skill in a book's socket, kept with the line because the demand
+		// signal is read when the item is already gone from the bag - and a
+		// skill book is not one commodity (see PlayerBotSaleKey). Zero for
+		// everything else.
+		DWORD dwSkillVnum;
 		// Where the line sits in the engine's shop, which is what CShopManager::Buy
 		// indexes by. Not the line's index in the table: a private shop is a grid
 		// of five columns and eight rows, a weapon is three cells tall and an
