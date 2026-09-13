@@ -222,3 +222,63 @@ verification pass surfaced.
   with upstream, specifically hunting for new player-visible Polish strings
   that arrived through a clean auto-merge (see gap #4 above for why these are
   easy to miss).
+
+## Follow-up: admin panel translated to Turkish (same day)
+
+Asked separately to translate `files/admin_panel.py` after the in-game bot
+text pass above. First corrected a wrong assumption I'd stated out loud
+before checking: the panel's `T` dict (used via Jinja `{{t('key')}}`) already
+carried Turkish for almost everything - 404 `"tr"` entries against 422
+`"pl"` ones. The actual gap was three other places the panel does i18n that
+the `T` dict doesn't cover:
+
+1. **Standalone Python dicts keyed by language string**, each missing a
+   `"tr"` branch and falling back to English or Polish: `BOT_PERSONALITY_LABELS`,
+   `BOT_AMBITION_LABELS`, `BOT_GOAL_LABELS`, `BOT_ACTION_LABELS` (bot status
+   panel labels), `MAP_I18N` (the whole live-map page, ~60 keys), `JOB_NAMES_MAP`.
+2. **Dicts split into a `_EN`-suffixed sibling instead of a language key**
+   (`X` = Polish, `X_EN` = English, selected by a ternary): added a third
+   `_TR` sibling and widened the selector for `PLAYER_SKILLS`/`SKILL_GROUP_NAMES`
+   (the full 8-job skill tree), `HUNTING_MOB_NAMES` (55 monster names),
+   `BIOLOGIST_NAMES` (7 quest items), and the best-effort item-name
+   transliterator (`_ITEM_PL_EXACT`/`_ITEM_PL_WORDS` -> added
+   `_ITEM_TR_EXACT`/`_ITEM_TR_WORDS`; there's no stock Turkish item-name file
+   to draw from, so this stays word-substitution, not a real per-vnum table -
+   same caveat CLAUDE.md already notes for the Polish one).
+3. **JS-embedded objects and inline ternaries**: `APPLY_META` (the ~90-entry
+   bonus/stat tooltip table) got a `tr:` value added to every entry; eight
+   `lg === 'pl' ? X : Y` ternaries in the item-tooltip builder became three-way
+   (`lg === 'pl' ? X : lg === 'tr' ? Y : Z`); and one spot with no language
+   branching at all - `'ŚR: '`/`'UM: '`/`'Plecak'`/`'Broń 30 Lv'` hardcoded
+   into the weapon30 ranking card - got the same three-way treatment.
+
+Also fixed, while reading the status-label code for the above:
+**`localize_playerbot_status()` was translating from Polish substrings that
+no longer exist.** It predates this fork's switch to Turkish bot speech
+(`playerbot_llm_status.h` has spoken Turkish for a while) and was pattern-matching
+dead Polish text, so a bot's live status silently leaked raw Turkish into
+English/German/pl panel views instead of being translated either way.
+Rewrote it around the actual Turkish patterns bots emit
+(`"... kiriyorum"`, `"... ile savasiyorum"`, `"...'nin pesindeyim"`, etc.)
+with a proper `tr` passthrough and an `en` regex table translating from
+Turkish. `GEAR_HISTORY_HOWS` and the `api_bot_gear_history` language
+selector got the same `"tr"` treatment.
+
+Verified with `python3 -m py_compile files/admin_panel.py` after every batch
+of edits, and a final full re-scan of the file for Polish diacritic
+characters not paired with a `tr`/`"tr"` counterpart nearby - the ~185
+remaining hits were all confirmed false positives (multi-line dict entries
+where `tr:`/`"tr"` sits a few lines away from the flagged `pl` line, or JS's
+unquoted `tr:` object-key shorthand which the sweep's `"tr"`-with-quotes
+check didn't recognize) by reading the surrounding code directly, not just
+the grep. No compiler run, no live UI test - this is a syntax-checked
+translation pass on a Flask app with no local server to click through, so
+say so plainly: what changed is proven to parse, not observed rendering
+correctly in a browser.
+
+**Deliberately not done in this pass** (each is its own job): seban-panel,
+the ItemShop PHP front end, and the mt2009 client's other Python UI files.
+`item_names_tr.txt`/`item_names_pl.txt` (the actual root cause of the
+`kılıç` -> `kylyc`-style corruption reported earlier) are supplied by the
+operator's own server package, not part of this repo, and can't be fixed
+from here without that file.

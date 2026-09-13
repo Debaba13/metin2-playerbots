@@ -160,6 +160,62 @@ HUNTING_MOB_NAMES_PL = {
     5126: "Silna Złota Małpa",
 }
 
+HUNTING_MOB_NAMES_TR = {
+    171: "Aç Yaban Köpeği", 172: "Aç Kurt", 173: "Aç Alfa Kurt",
+    174: "Aç Mavi Kurt", 175: "Aç Alfa Mavi Kurt",
+    176: "Aç Gri Kurt", 177: "Aç Alfa Gri Kurt",
+    178: "Aç Yaban Domuzu", 179: "Aç Kızıl Yaban Domuzu",
+    180: "Aç Ayı", 181: "Aç Grizzly",
+    182: "Aç Kara Ayı", 183: "Aç Boz Ayı",
+    184: "Aç Kaplan", 185: "Aç Beyaz Kaplan",
+    352: "Korkak Beyaz Yeminliler Okçusu",
+    354: "Korkak Beyaz Yeminliler Komutanı",
+    402: "Kara Rüzgar Manyağı", 451: "Kara Rüzgar Askeri",
+    454: "Kara Rüzgar Joh-Hwan", 551: "Güçlü Yaban Piyadesi",
+    456: "Kara Fırtına Pho-Hwan",
+    552: "Güçlü Yaban Hizmetkarı",
+    554: "Güçlü Yaban Generali",
+    601: "Ork",
+    651: "Büyük Kel Ork",
+    652: "Büyük Kel Ork Öncüsü",
+    653: "Büyük Kel Ork Savaşçısı",
+    751: "Uzun Fanatik",
+    752: "Uzun Arahan",
+    754: "Uzun Elit Arahan",
+    756: "Uzun İşkenceci",
+    757: "Uzun Çağırıcı",
+    771: "Vahşi Fanatik",
+    772: "Vahşi Arahan",
+    773: "Vahşi Arahan Savaşçısı",
+    774: "Vahşi Arahan Reisi",
+    775: "Vahşi Cellat",
+    776: "Vahşi İşkenceci",
+    777: "Vahşi Çağırıcı",
+    931: "Kötü Ölü Beden Ruhu",
+    932: "Kötü Vebalı Köpek",
+    933: "Kötü Vebalı Adam",
+    934: "Kötü Vebalı Kılıç Ustası",
+    1001: "Şeytan Askeri",
+    1301: "Ağaç Kurbağası Askeri",
+    2003: "Kızıl Zehirli Örümcek",
+    2004: "Pençeli Örümcek",
+    2005: "Örümcek Asker",
+    2031: "Genç Zehirli Örümcek",
+    2032: "Ölümcül Zehirli Örümcek",
+    2033: "Kötü Kızıl Zehirli Örümcek",
+    2034: "Pençeli Zehirli Örümcek",
+    2051: "Alçak Genç Zehirli Örümcek",
+    2052: "Alçak Ölümcül Zehirli Örümcek",
+    2102: "Çöl Uçan Gözü",
+    2103: "Akrep Kral",
+    2106: "Yılan Kılıç Ustası",
+    2158: "Güçlü Çöl Kabadayısı",
+    5123: "Güçlü Maymun Savaşçısı",
+    5124: "Güçlü Maymun Generali",
+    5125: "Güçlü Taş Maymun",
+    5126: "Güçlü Altın Maymun",
+}
+
 def hunting_progress_label(current, selection, remain, complete, language=None):
     language = language or (lang() if has_request_context() else "en")
     current, selection = int(current or 0), 2 if int(selection or 1) == 2 else 1
@@ -169,12 +225,21 @@ def hunting_progress_label(current, selection, remain, complete, language=None):
         mob_vnum, mob_name, required = mission[selection - 1]
         if language == "pl":
             mob_name = HUNTING_MOB_NAMES_PL.get(mob_vnum, mob_name)
+        elif language == "tr":
+            mob_name = HUNTING_MOB_NAMES_TR.get(mob_vnum, mob_name)
         done = max(0, required - remain)
         return "Lv %d • %s: %d/%d" % (current, mob_name, done, required)
     if complete:
-        return ("Ukończone do Lv %d" if language == "pl" else
-                "Completed through Lv %d") % complete
-    return "Jeszcze nierozpoczęte" if language == "pl" else "Not started yet"
+        if language == "pl":
+            return "Ukończone do Lv %d" % complete
+        if language == "tr":
+            return "Lv %d'e kadar tamamlandı" % complete
+        return "Completed through Lv %d" % complete
+    if language == "pl":
+        return "Jeszcze nierozpoczęte"
+    if language == "tr":
+        return "Henüz başlamadı"
+    return "Not started yet"
 
 # Party membership is intentionally restricted by the game core to this
 # deterministic ten-percent cohort.  Runtime parties are not persisted in the
@@ -216,6 +281,12 @@ BOT_PERSONALITY_LABELS = {
         6: "Wanderer", 7: "Metin dropper", 8: "M3 weapon dropper",
         9: "M2 Bestial dropper", 10: "Medal dropper",
     },
+    "tr": {
+        0: "Kararlı maceracı", 1: "Metin kırıcı", 2: "Takım arkadaşı",
+        3: "Ekipman uzmanı", 4: "Dikkatli toplayıcı", 5: "Tüccar",
+        6: "Gezgin", 7: "Metin dropper'ı", 8: "M3 silah dropper'ı",
+        9: "M2 Bestial dropper'ı", 10: "Madalya dropper'ı",
+    },
 }
 BOT_AMBITION_LABELS = {
     "pl": {
@@ -225,6 +296,10 @@ BOT_AMBITION_LABELS = {
     "en": {
         0: "Level", 1: "Equipment", 2: "Metins", 3: "Horse",
         4: "Biologist", 5: "Skills", 6: "Trade",
+    },
+    "tr": {
+        0: "Seviye", 1: "Ekipman", 2: "Metinler", 3: "At",
+        4: "Biyolog", 5: "Yetenekler", 6: "Ticaret",
     },
 }
 BOT_GOAL_LABELS = {
@@ -239,6 +314,12 @@ BOT_GOAL_LABELS = {
         3: "Get equipment", 4: "Restock", 5: "Refine equipment",
         6: "Improve skills", 7: "Hunt Metins", 8: "Party challenges",
         9: "Biologist mission", 10: "Hunting mission", 11: "Develop horse",
+    },
+    "tr": {
+        0: "Seviye kazanma", 1: "Hayatta kalma", 2: "Meslek seçme",
+        3: "Ekipman edinme", 4: "Stok tamamlama", 5: "Ekipman geliştirme",
+        6: "Yetenek geliştirme", 7: "Metin avlama", 8: "Grup hedefleri",
+        9: "Biyolog görevi", 10: "Avlanma görevi", 11: "At geliştirme",
     },
 }
 # The action id a keeper reports while its stall stands. Must match
@@ -259,6 +340,13 @@ BOT_ACTION_LABELS = {
         8: "Reading a skill book", 9: "Socketing a spirit stone", 10: "Organising a party",
         11: "Doing Biologist mission", 12: "Visiting the Stable Boy",
         13: "Keeping a stall",
+    },
+    "tr": {
+        0: "Sonraki hamleyi planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet topluyor",
+        4: "İyileşiyor", 5: "Meslek seçiyor", 6: "Ticaret yapıyor", 7: "Ekipman geliştiriyor",
+        8: "Beceri kitabı okuyor", 9: "Ruh taşı takıyor", 10: "Grup topluyor",
+        11: "Biyolog görevi yapıyor", 12: "Seyis'i ziyaret ediyor",
+        13: "Tezgah işletiyor",
     },
 }
 
@@ -325,6 +413,29 @@ def read_playerbot_live_status():
         return dict(result)
 
 
+# The bot's own status line (playerbot_llm_status.h) is Turkish, full stop -
+# there is no per-language build of the game, so this is the one text the
+# panel cannot ask the database for in the viewer's own language. For "tr"
+# that is exactly right and needs nothing; for every other panel language
+# this best-effort gloss turns the fixed phrases back into that language, the
+# same way it used to do from Polish before the bot text itself became
+# Turkish. A phrase this table does not recognise (a new one added to
+# playerbot_llm_status.h without updating this list) is shown as-is, in
+# Turkish, rather than guessed at.
+_PLAYERBOT_STATUS_PATTERNS_EN = (
+    (re.compile(r"^Bayildim - kalkmayi bekliyorum$"), "Unconscious - waiting to revive"),
+    (re.compile(r"^Olumden sonra dinleniyorum$"), "Recovering after death"),
+    (re.compile(r"^Kaciyorum - HP dusuk$"), "Retreating - low HP"),
+    (re.compile(r"^(.+?) kiriyorum$"), lambda m: "Breaking %s" % m.group(1)),
+    (re.compile(r"^(.+?) ile savasiyorum$"), lambda m: "Fighting %s" % m.group(1)),
+    (re.compile(r"^(.+?)'nin pesindeyim$"), lambda m: "Chasing %s" % m.group(1)),
+    (re.compile(r"^Ganimet topluyorum$"), "Picking up loot"),
+    (re.compile(r"^Can dolduruyorum$"), "Recovering HP"),
+    (re.compile(r"^Rakip ariyorum$"), "Looking for a target"),
+    (re.compile(r"^Daha iyi bir yer ariyorum"), "Looking for a levelling spot"),
+    (re.compile(r"^Ekipman basiyorum$"), "Refining equipment"),
+)
+
 def localize_playerbot_status(entry, language):
     if not entry:
         return None
@@ -332,25 +443,27 @@ def localize_playerbot_status(entry, language):
         return entry.get("status") or BOT_ACTION_LABELS["pl"].get(
             entry.get("action_id"), BOT_ACTION_LABELS["pl"][0])
     text = entry.get("status") or ""
-    replacements = (
-        ("Nieprzytomny - czekam na wstanie", "Unconscious - waiting to revive"),
-        ("Odpoczywam po smierci", "Recovering after death"),
-        ("Uciekam - mam malo HP", "Retreating - low HP"),
-        ("Rozbijam ", "Breaking "), ("Walcze z ", "Fighting "),
-        ("Gonie ", "Chasing "), ("Podnosze lup", "Picking up loot"),
-        ("Regeneruje HP", "Recovering HP"),
-        ("Szukam przeciwnika", "Looking for a target"),
-        ("Szukam miejsca do expa", "Looking for a levelling spot"),
-        ("Ulepszam ekwipunek", "Refining equipment"),
-    )
-    for source, target in replacements:
-        text = text.replace(source, target)
-    return text or BOT_ACTION_LABELS["en"].get(
+    if language == "tr":
+        return text or BOT_ACTION_LABELS["tr"].get(
+            entry.get("action_id"), BOT_ACTION_LABELS["tr"][0])
+    # Every other language (en, de, ...) gets the same English gloss for now;
+    # strip a leading party marker, translate the rest, then put it back.
+    prefix = ""
+    for marker in ("[GRUP] ", "[PT] "):
+        if text.startswith(marker):
+            prefix, text = marker, text[len(marker):]
+            break
+    for pattern, target in _PLAYERBOT_STATUS_PATTERNS_EN:
+        m = pattern.match(text)
+        if m:
+            text = target(m) if callable(target) else target
+            break
+    return (prefix + text) if text else BOT_ACTION_LABELS["en"].get(
         entry.get("action_id"), BOT_ACTION_LABELS["en"][0])
 
 
 def playerbot_live_labels(entry, language):
-    language = language if language in ("pl", "en") else "en"
+    language = language if language in ("pl", "en", "tr") else "en"
     if not entry:
         return {
             "personality": BOT_PERSONALITY_LABELS[language][0],
@@ -381,6 +494,13 @@ SKILL_GROUP_NAMES_EN = {
     (1, 1): "Dagger", (1, 2): "Archer",
     (2, 1): "Weaponry", (2, 2): "Black Magic",
     (3, 1): "Dragon", (3, 2): "Healing",
+}
+
+SKILL_GROUP_NAMES_TR = {
+    (0, 1): "Beden", (0, 2): "Zihin",
+    (1, 1): "Hançer", (1, 2): "Okçu",
+    (2, 1): "Silahlanma", (2, 2): "Kara Büyü",
+    (3, 1): "Ejder", (3, 2): "İyileştirme",
 }
 
 PLAYER_SKILLS = {
@@ -429,6 +549,29 @@ PLAYER_SKILLS_EN = {
              (110, "Swiftness"), (111, "Attack Up")),
 }
 
+PLAYER_SKILLS_TR = {
+    (0, 1): ((1, "Üç Yönlü Kesiş"), (2, "Kılıç Dönüşü"), (3, "Berserk"),
+             (4, "Kılıç Aurası"), (5, "Hamle")),
+    (0, 2): ((16, "Ruh Darbesi"), (17, "Ezme"), (18, "Sarsıntı"),
+             (19, "Güçlü Beden"), (20, "Kılıç Darbesi")),
+    (1, 1): ((31, "Pusu"), (32, "Hızlı Saldırı"), (33, "Dönen Hançer"),
+             (34, "Gizlenme"), (35, "Zehir Bulutu")),
+    (1, 2): ((46, "Tekrarlı Atış"), (47, "Ok Yağmuru"),
+             (48, "Ateş Oku"), (49, "Tüy Adımı"), (50, "Zehirli Ok")),
+    (2, 1): ((61, "Parmak Darbesi"), (62, "Ejder Girdabı"),
+             (63, "Büyülü Bıçak"), (64, "Korku"),
+             (65, "Büyülü Zırh"), (66, "Büyü Bozma")),
+    (2, 2): ((76, "Karanlık Darbe"), (77, "Alev Darbesi"),
+             (78, "Alev Ruhu"), (79, "Karanlık Koruma"),
+             (80, "Ruh Darbesi"), (81, "Karanlık Küre")),
+    (3, 1): ((91, "Uçan Tılsım"), (92, "Ateş Eden Ejder"),
+             (93, "Ejder Kükremesi"), (94, "Kutsama"),
+             (95, "Yansıtma"), (96, "Ejder Yardımı")),
+    (3, 2): ((106, "Yıldırım Fırlatma"), (107, "Yıldırım Çağırma"),
+             (108, "Yıldırım Pençesi"), (109, "Şifa"),
+             (110, "Çeviklik"), (111, "Saldırı Artışı")),
+}
+
 
 def skill_rank_label(master_type, level):
     master_type, level = int(master_type or 0), int(level or 0)
@@ -465,7 +608,7 @@ def parse_player_skills(raw, job, skill_group, language=None):
     base_job = int(job or 0) % 4
     group = int(skill_group or 0)
     result = []
-    skill_names = PLAYER_SKILLS if language == "pl" else PLAYER_SKILLS_EN
+    skill_names = {"pl": PLAYER_SKILLS, "tr": PLAYER_SKILLS_TR}.get(language, PLAYER_SKILLS_EN)
     for vnum, name in skill_names.get((base_job, group), ()):
         offset = vnum * 6
         master_type = raw[offset] if offset < len(raw) else 0
@@ -2074,6 +2217,48 @@ def translate_item_name_pl(name):
                       flags=re.IGNORECASE)
     return name
 
+# The fork's own Turkish counterpart of the two tables above: there is no
+# stock Turkish item_names_*.txt this project ships (only whatever the
+# operator's own reference package happens to carry, per m2-lang), so this
+# is a best-effort family translator like translate_item_name_pl, not a
+# complete per-vnum table.
+_ITEM_TR_EXACT = {
+    "Full Moon Sword": "Dolunay Kılıcı",
+    "Red Iron Blade": "Kızıl Demir Bıçak",
+    "Black Leaf Dirk": "Kara Yaprak Hançeri",
+    "Bull's Horn Bow": "Boğa Boynuzu Yayı",
+    "Antique Bell": "Antika Çan",
+    "Autumn Wind Fan": "Sonbahar Rüzgarı Yelpazesi",
+    "Battle Shield": "Savaş Kalkanı",
+    "Pentagon Shield": "Beşgen Kalkan",
+    "Horse Medal": "At Madalyası",
+    "Red Potion": "Kırmızı İksir",
+    "Blue Potion": "Mavi İksir",
+    "Green Potion": "Yeşil İksir",
+    "Purple Potion": "Mor İksir",
+}
+_ITEM_TR_WORDS = (
+    ("Skill Book", "Beceri Kitabı"), ("Armour", "Zırh"),
+    ("Armor", "Zırh"), ("Earrings", "Küpe"),
+    ("Bracelet", "Bilezik"), ("Necklace", "Kolye"),
+    ("Helmet", "Miğfer"), ("Shield", "Kalkan"), ("Boots", "Çizme"),
+    ("Shoes", "Çizme"), ("Sword", "Kılıç"), ("Blade", "Bıçak"),
+    ("Dagger", "Hançer"), ("Dirk", "Hançer"), ("Bow", "Yay"),
+    ("Bell", "Çan"), ("Fan", "Yelpaze"), ("Potion", "İksir"),
+    ("Stone", "Taş"), ("Book", "Kitap"),
+)
+
+def translate_item_name_tr(name):
+    """Turkish equivalent of translate_item_name_pl - same approach, same caveats."""
+    name = str(name or "")
+    for source, translated in _ITEM_TR_EXACT.items():
+        if name == source or name.startswith(source + "+") or name.startswith(source + " ("):
+            return translated + name[len(source):]
+    for source, translated in _ITEM_TR_WORDS:
+        name = re.sub(r"\b%s\b" % re.escape(source), translated, name,
+                      flags=re.IGNORECASE)
+    return name
+
 # On mt2009 the files above are r40250's: items.json carries that engine's
 # English names and cell sizes, item_names_pl.txt its Polish table, and the
 # panel fell back on word-by-word translation for the rest - "Leather Buty",
@@ -2179,10 +2364,18 @@ def localized_item_name(vnum, language=None):
         return ITEM_NAMES_PL[int(vnum or 0)]
     name = ITEM_NAMES.get(vnum, "")
     if not name:
-        return ("Przedmiot #%d" if language == "pl" else "Item #%d") % int(vnum or 0)
+        if language == "pl":
+            return "Przedmiot #%d" % int(vnum or 0)
+        if language == "tr":
+            return "Eşya #%d" % int(vnum or 0)
+        return "Item #%d" % int(vnum or 0)
     if ENGINE_MT2009:
         return name          # the package's own name, in the package's language
-    return translate_item_name_pl(name) if language == "pl" else name
+    if language == "pl":
+        return translate_item_name_pl(name)
+    if language == "tr":
+        return translate_item_name_tr(name)
+    return name
 
 # ---- UI translations -------------------------------------------------------
 LANGS = {"pl": "Polski", "en": "English", "de": "Deutsch", "tr": "Türkçe"}
@@ -4764,6 +4957,26 @@ MAP_I18N = {
   "copied":"Copied","paste":"paste in game [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo levelling","party_exp":"[PT] Party levelling","metin_hunt":"Hunting Metins",
   "character_missing":"Character not found","bio_not_started":"The first mission has not started yet","bio_completed":"Completed: {name}","bio_next":"Next mission at Lv {level}: {name}",
   "bio_all":"All basic missions completed","bio_complete":"complete","bio_in_progress":"in progress"
+ },
+ "tr": {
+  "title":"Canlı dünya haritası — Chunjo","live":"CANLI (1,5 sn)","subtitle":"Bot konumlarının ve gelişiminin gerçek zamanlı etkileşimli görünümü",
+  "player_panel":"Oyuncu paneli","play_browser":"Tarayıcıda oyna","show_bots":"Botları göster","names_levels":"İsimler ve seviyeler","pt_only":"Sadece grupta (PT)",
+  "level":"Seviye","all":"Tümü","map":"Harita","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Chunjo Klan Toprakları","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Shinsoo Klan Toprakları","smonkey":"Shinsoo Maymun Zindanı","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Jinno Klan Toprakları","jmonkey":"Jinno Maymun Zindanı","monkey":"Kolay Maymun Zindanı","monkey_medium":"Orta Maymun Zindanı","monkey_hard":"Zor Maymun Zindanı","orc":"Ork Vadisi","desert":"Yongbi Çölü","sohan":"Sohan Dağı","spider":"Örümcek Zindanı V1","spider_v2":"Örümcek Zindanı V2","hwang":"Hwang Tapınağı","heat":"Isı haritası","heat_deaths":"Bot ölümleri","heat_metins":"Kırılan metinler","heat_skills":"Yetenek gelişimi","search":"🔍 Bot ara (örn. botarek)...",
+  "solo_bot":"Solo bot","party_bot":"Grupta (PT)","metin_fight":"Metin ile savaşıyor","loading":"Yükleniyor...","world_stats":"Dünya istatistikleri","active_bots":"Aktif botlar",
+  "in_parties":"Gruplarda (PT)","avg_level":"Ortalama seviye","max_level":"Maks. seviye","rankings":"Bot sıralamaları","rank_level":"Seviye","rank_weapon":"Silah","rank_armor":"Zırh",
+  "rank_weapon30":"Lv 30 Silahlar","rank_items":"Eşyalar","rank_horse":"At","rank_biologist":"Biyolog","rank_hunting":"Avlanma","rank_shops":"Açık dükkanlar","rank_skills":"Yetenekler","rank_plus9":"Eşya +9","rank_stall_open":"Tezgah açık","rank_empty":"Sıralama verisi yok.","rank_show":"Göster","rank_search":"Sıralamada ara...","none":"Yok","items_short":"eşya",
+  "horse_lv":"At Lv","visible":"Görünen","characters":"karakter","in_group":"Grupta [PT]","solo":"Solo","player":"OYUNCU","bot":"Bot","class":"Sınıf","action":"Eylem","status":"Durum","personality":"Kişilik","ambition":"Hedef","current_goal":"Şu anki hedef",
+  "coordinates":"Koordinatlar","open_inventory":"Envanteri ve ekipmanı açmak için tıkla","loading_character":"Karakter ekipmanı ve istatistikleri yükleniyor","error":"Hata","not_found":"Veri bulunamadı",
+  "teleport_me":"Oyun içi karakterimi ışınla (tek tık)","position":"Konum","horse":"At","biologist":"Biyolog","bio_stage":"Biyolog aşaması","hunting":"Avlanma","no_data":"Veri yok",
+  "stats":"İstatistikler","unspent_stats":"Harcanmamış: {n} stat puanı","skills":"Yetenekler","profession_none":"Seçilmedi","profession_pending":"Meslek henüz seçilmedi.","depot":"Depo","depot_empty":"Depo boş.",
+  "unspent_skills":"Harcanmamış: {n} yetenek puanı","equipped":"Kuşanılan eşyalar","weapon":"Silah","armor":"Zırh","helmet":"Miğfer","shield":"Kalkan","bracelet":"Bilezik",
+  "boots":"Çizme","necklace":"Kolye","earrings":"Küpe","empty":"Boş","inventory":"Envanter içeriği","items_count":"eşya","inventory_empty":"Envanter boş.","quantity":"Miktar",
+  "gear_history":"Ekipman geçmişi","gear_history_hint":"Basmalar, yanmalar, kuşanmalar, hediyeler, satışlar, kasa — log.log'dan","gear_history_loading":"Geçmiş yükleniyor...","gear_history_empty":"Bu karakter için ekipman kaydı yok.","gear_history_more":"Daha eskileri göster",
+  "event_log":"Bot olay günlüğü (canlı)","track_live":"Canlı izle","copy_logs":"Günlükleri kopyala","loading_logs":"Günlükler yükleniyor:","no_logs":"Bu karakter için yakın zamanda günlük kaydı yok.",
+  "log_error":"Günlük okuma hatası","network_error":"Ağ hatası","teleporting":"Oyun içi karakterin ışınlanıyor...","teleported":"{name} oyunda botun yanına ışınlandı!","you":"seni","failure":"Başarısız",
+  "copied":"Kopyalandı","paste":"oyunda yapıştır [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo seviye atlama","party_exp":"[PT] Grupla seviye atlama","metin_hunt":"Metin avlama",
+  "character_missing":"Karakter bulunamadı","bio_not_started":"İlk görev henüz başlamadı","bio_completed":"Tamamlandı: {name}","bio_next":"Sonraki görev Lv {level}: {name}",
+  "bio_all":"Tüm temel görevler tamamlandı","bio_complete":"tamamlandı","bio_in_progress":"devam ediyor"
  }
 }
 
@@ -4776,11 +4989,18 @@ JOB_NAMES_MAP = {
         2:"Sura (M)",6:"Sura (K)",3:"Szaman (M)",7:"Szamanka (K)"},
  "en": {0:"Warrior (M)",4:"Warrior (F)",1:"Ninja (M)",5:"Ninja (F)",
         2:"Sura (M)",6:"Sura (F)",3:"Shaman (M)",7:"Shaman (F)"},
+ "tr": {0:"Savaşçı (E)",4:"Savaşçı (K)",1:"Ninja (E)",5:"Ninja (K)",
+        2:"Sura (E)",6:"Sura (K)",3:"Şaman (E)",7:"Şaman (K)"},
 }
 BIOLOGIST_NAMES_EN = {
  "make_herb_lv4":"Peach Blossom","make_herb_lv7":"Bellflower",
  "make_herb_lv10":"Kaki Blossom","make_herb_lv15":"Gango Root",
  "make_herb_lv20":"Lilac","make_herb_lv25":"Tue Mushroom","collect_quest_lv30":"Orc Tooth",
+}
+BIOLOGIST_NAMES_TR = {
+ "make_herb_lv4":"Şeftali Çiçeği","make_herb_lv7":"Çançiçeği",
+ "make_herb_lv10":"Kaki Çiçeği","make_herb_lv15":"Gango Kökü",
+ "make_herb_lv20":"Leylak","make_herb_lv25":"Tue Mantarı","collect_quest_lv30":"Ork Dişi",
 }
 
 def localized_job_name(job, language=None):
@@ -4790,7 +5010,11 @@ def localized_job_name(job, language=None):
 
 def localized_biologist_name(quest_name, polish_name, language=None):
     language = language or (lang() if has_request_context() else "en")
-    return polish_name if language == "pl" else BIOLOGIST_NAMES_EN.get(quest_name, polish_name)
+    if language == "pl":
+        return polish_name
+    if language == "tr":
+        return BIOLOGIST_NAMES_TR.get(quest_name, polish_name)
+    return BIOLOGIST_NAMES_EN.get(quest_name, polish_name)
 
 
 TPL_LIVE_MAP = BASE.replace("__BODY__", """
@@ -5602,13 +5826,17 @@ function renderRankings() {
     if (g_selectedRankCategory === 'gold') {
       detailStr = '<span style="color:#eab308;font-weight:700">' + (b.gold || 0).toLocaleString() + ' Yang</span>';
     } else if (g_selectedRankCategory === 'weapon30') {
-      var srStr = b.sr !== undefined ? '<span style="color:#4ade80;font-weight:700">ŚR: ' + (b.sr > 0 ? '+' : '') + b.sr + '%</span>' : '';
-      var umStr = b.um !== undefined && b.um !== 0 ? ' <span style="color:#38bdf8;font-weight:700">UM: ' + (b.um > 0 ? '+' : '') + b.um + '%</span>' : '';
+      var srLabel = lg === 'pl' ? 'ŚR' : lg === 'tr' ? 'ORT' : 'AVG';
+      var umLabel = lg === 'pl' ? 'UM' : lg === 'tr' ? 'YTN' : 'SKL';
+      var bagLabel = lg === 'pl' ? 'Plecak' : lg === 'tr' ? 'Çanta' : 'Bag';
+      var weapon30Fallback = lg === 'pl' ? 'Broń 30 Lv' : lg === 'tr' ? '30 Lv Silah' : 'Lv 30 Weapon';
+      var srStr = b.sr !== undefined ? '<span style="color:#4ade80;font-weight:700">' + srLabel + ': ' + (b.sr > 0 ? '+' : '') + b.sr + '%</span>' : '';
+      var umStr = b.um !== undefined && b.um !== 0 ? ' <span style="color:#38bdf8;font-weight:700">' + umLabel + ': ' + (b.um > 0 ? '+' : '') + b.um + '%</span>' : '';
       var winBadge = b.item_window === 'EQUIPMENT' ? '<span style="background:#15803d;color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;margin-left:4px">EQ</span>'
-                                                   : '<span style="background:#374151;color:#bbb;font-size:9px;padding:1px 4px;border-radius:3px;margin-left:4px">Plecak</span>';
+                                                   : '<span style="background:#374151;color:#bbb;font-size:9px;padding:1px 4px;border-radius:3px;margin-left:4px">' + bagLabel + '</span>';
       var iconUrl = b.weapon_vnum ? getItemIconUrl(b.weapon_vnum) : null;
       var iconImg = iconUrl ? '<img src="' + iconUrl + '" onerror="' + ICON_ONERROR + '" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;image-rendering:pixelated">' : '';
-      detailStr = '<div>' + iconImg + '<span style="color:#ffd700;font-weight:700">' + (b.weapon_name || 'Broń 30 Lv') + '</span> ' + winBadge + '</div><div>' + srStr + umStr + '</div>';
+      detailStr = '<div>' + iconImg + '<span style="color:#ffd700;font-weight:700">' + (b.weapon_name || weapon30Fallback) + '</span> ' + winBadge + '</div><div>' + srStr + umStr + '</div>';
     } else if (g_selectedRankCategory === 'weapon') {
       detailStr = '<span style="color:#38bdf8;font-weight:700">' + (b.weapon_name || I18N.none) + '</span>';
     } else if (g_selectedRankCategory === 'armor') {
@@ -5783,124 +6011,124 @@ var POINT_TO_APPLY = {{ point_to_apply|tojson }};
 function applyKey(type) { var k = POINT_TO_APPLY[type]; return k === undefined ? type : k; }
 
 var APPLY_META = {
-  1: {pl: "Max PŻ: +%d", en: "Max. HP +%d", f: "flat"},
-  2: {pl: "Max PE: +%d", en: "Max. SP +%d", f: "flat"},
-  3: {pl: "Witalność +%d", en: "Vitality +%d", f: "flat"},
-  4: {pl: "Inteligencja +%d", en: "Intelligence +%d", f: "flat"},
-  5: {pl: "Siła: +%d", en: "Strength +%d", f: "flat"},
-  6: {pl: "Zręczność +%d", en: "Dexterity +%d", f: "flat"},
-  7: {pl: "Szybkość Ataku +%d%%", en: "Attack Speed +%d%%", f: "percent"},
-  8: {pl: "Szybkość Ruchu %d%%", en: "Moving Speed %d%%", f: "percent"},
-  9: {pl: "Szybkość Zaklęcia +%d%%", en: "Casting Speed +%d%%", f: "percent"},
-  10: {pl: "Regeneracja PŻ: +%d%%", en: "HP Regeneration +%d%%", f: "percent"},
-  11: {pl: "Regeneracja PE: +%d%%", en: "SP Regeneration +%d%%", f: "percent"},
-  12: {pl: "Szansa na Otrucie %d%%", en: "Poisoning chance %d%%", f: "percent"},
-  13: {pl: "Szansa na Omdlenie %d%%", en: "Blackout chance %d%%", f: "percent"},
-  14: {pl: "Szansa na Spowolnienie %d%%", en: "Slowing chance %d%%", f: "percent"},
-  15: {pl: "Szansa na cios krytyczny +%d%%", en: "Chance of critical hit +%d%% ", f: "percent"},
-  16: {pl: "Szansa na przeszywające Uderzenie: %d%% ", en: "%d%% Chance for piercing Hits", f: "percent"},
-  17: {pl: "Silny przeciwko Ludziom +%d%%", en: "Strong against Half Humans +%d%%", f: "percent"},
-  18: {pl: "Silny przeciwko Zwierzętom +%d%%", en: "Strong against Animals +%d%%", f: "percent"},
-  19: {pl: "Silny przeciwko Orkom +%d%%", en: "Strong against Orcs +%d%%", f: "percent"},
-  20: {pl: "Silny przeciwko Mistykom +%d%%", en: "Strong against Mystics +%d%%", f: "percent"},
-  21: {pl: "Silny przeciwko Nieumarłym +%d%%", en: "Strong against Undead +%d%%", f: "percent"},
-  22: {pl: "Silny przeciwko Diabłom +%d%%", en: "Strong against Devils +%d%%", f: "percent"},
-  23: {pl: "%d%% obrażeń będzie dodanych do PŻ", en: "%d%% damage  will be absorbed by HP", f: "percent"},
-  24: {pl: "%d%% obrażeń będzie dodanych do PE", en: "%d%% damage will be absorbed by SP", f: "percent"},
-  25: {pl: "%d%% Szansa na kradzież PE", en: "%d%% chance to rob SP", f: "percent"},
-  26: {pl: "Szansa na odzyskanie PE: %d%%", en: "%d%% Chance to get back SP when hit", f: "percent"},
-  27: {pl: "Szansa na blok ciosów %d%%", en: "Chance to block a close-combat attack %d%% ", f: "percent"},
-  28: {pl: "Szansa na uniknięcie Strzały: %d%%", en: "Chance to avoid Arrows %d%%", f: "percent"},
-  29: {pl: "Odporność na Miecze: %d%%", en: "Sword Defence %d%%", f: "percent"},
-  30: {pl: "Odporność na Broń Dwuręczną: %d%%", en: "Two-Handed Defence %d%%", f: "percent"},
-  31: {pl: "Odporność na Sztylety: %d%%", en: "Dagger Defence %d%%", f: "percent"},
-  32: {pl: "Odporność na Dzwony: %d%%", en: "Bell Defence %d%%", f: "percent"},
-  33: {pl: "Odporność na Wachlarze: %d%%", en: "Fan Defence %d%%", f: "percent"},
-  34: {pl: "Odporność na Strzały: %d%%", en: "Arrow Resistance %d%%", f: "percent"},
-  35: {pl: "Odporność na Ogień: %d%%", en: "Fire Resistance %d%%", f: "percent"},
-  36: {pl: "Odporność na Błyskawice: %d%%", en: "Lightning Resistance %d%%", f: "percent"},
-  37: {pl: "Odporność na Magię: %d%%", en: "Magic Resistance %d%%", f: "percent"},
-  38: {pl: "Odporność na Wiatr: %d%%", en: "Wind Resistance %d%%", f: "percent"},
-  39: {pl: "%d%% Szansa na odbicie Ciosu", en: "%d%% Chance to reflect close combat hits  ", f: "percent"},
-  40: {pl: "Szansa na odbicie Klątwy: %d%%", en: "Chance to reflect Curse: %d%%", f: "percent"},
-  41: {pl: "Odporność na Trucizny: %d%%", en: "Poison Resistance %d%%", f: "percent"},
-  42: {pl: "Szansa na odzyskanie PE: %d%%", en: "%d%% Chance to restore SP", f: "percent"},
-  43: {pl: "Szansa na Bonus DOŚ: %d%%", en: "%d%% Chance for EXP Bonus", f: "percent"},
-  44: {pl: "Szansa na podwójną ilość Yang: %d%%", en: "%d%% Chance to drop double Yang", f: "percent"},
-  45: {pl: "Szansa na podwójną ilość Przedmiotów: %d%%", en: "%d%% Chance to drop double the Items", f: "percent"},
-  46: {pl: "Mikstury %d%% efekt podniesiony", en: "Potion %d%% effect raise", f: "percent"},
-  47: {pl: "Szansa na odzyskanie PŻ: %d%%", en: "%d%% Chance, to restore HP", f: "percent"},
-  48: {pl: "Odporność na Omdlenia", en: "Defence against blackouts", f: "boolean"},
-  49: {pl: "Odporność na Spowolnienia", en: "Defence against slowing", f: "boolean"},
-  50: {pl: "Niewrażliwy na Upadek", en: "Immune against falling down", f: "boolean"},
-  52: {pl: "Zasięg Łuku +%dm", en: "Arc Range +%dm", f: "flat"},
-  53: {pl: "Wartość Ataku +%d", en: "Attack Value +%d", f: "flat"},
-  54: {pl: "Obrona +%d", en: "Defence +%d", f: "flat"},
-  55: {pl: "Wartość Magicznego Ataku: +%d", en: "Magical Attack Value +%d", f: "flat"},
-  56: {pl: "Magiczna Obrona: +%d", en: "Magical Defence +%d", f: "flat"},
-  58: {pl: "Max Wytrzymałość: +%d", en: "Max. Endurance +%d", f: "flat"},
-  59: {pl: "Silny przeciwko Wojownikom +%d%%", en: "Strong against Warriorr +%d%%", f: "percent"},
-  60: {pl: "Silny przeciwko Ninja +%d%%", en: "Strong against Ninjas +%d%%", f: "percent"},
-  61: {pl: "Silny przeciwko Sura +%d%%", en: "Strong against Sura +%d%%", f: "percent"},
-  62: {pl: "Silny przeciwko Szamanom +%d%%", en: "Strong against Shamans +%d%%", f: "percent"},
-  63: {pl: "Silny przeciwko Potworom +%d%%", en: "Strength against monsters +%d%%", f: "percent"},
-  64: {pl: "Wartość Ataku: +%d%%", en: "Attack Value +%d%%", f: "percent"},
-  65: {pl: "Obrona: +%d%%", en: "Defence +%d%%", f: "percent"},
-  66: {pl: "Punkty Doświadczenia: +%d%%", en: "EXP +%d%%", f: "percent"},
-  67: {pl: "Szansa na zdobycie Przedmiotów pomnożona o %.1f", en: "Chance of capturing Items multiplied with %.1f", f: "multiplier"},
-  68: {pl: "Szansa na zdobycie Yang pomnożona o %.1f", en: "Chance of capturing Yang multiplied with %.1f", f: "multiplier"},
-  69: {pl: "Maks. PŻ +%d%%", en: "Max. HP +%d%%", f: "percent"},
-  70: {pl: "Maks. PE +%d%% ", en: "Max. SP +%d%% ", f: "percent"},
-  71: {pl: "Obrażenie Umiejętności: %d%%", en: "Skill Damage %d%%", f: "percent"},
-  72: {pl: "Średnie Obrażenia: %d%%", en: "Average Damage %d%%", f: "percent"},
-  73: {pl: "Odporność na Obrażenia Umiejętności %d%%", en: "Resistance against Skill Damage %d%%", f: "percent"},
-  74: {pl: "Odporność na Obrażenia: %d%%", en: "Average Damage Resistance %d%%", f: "percent"},
-  75: {pl: "iCafe DOŚ Bonus +%d%%", en: "iCafe EXP Bonus +%d%%", f: "percent"},
-  76: {pl: "iCafe Szansa na zdobycie Przedmiotów plus %.1f%%", en: "iCafe Chance of capturing Items plus %.1f%%", f: "percent_decimal"},
-  78: {pl: "Odporność na Wojowników: %d%%", en: "Defence chance against warrior attacks: %d%%", f: "percent"},
-  79: {pl: "Odporność na Ninja: %d%%", en: "Defence chance against ninja attacks: %d%%", f: "percent"},
-  80: {pl: "Odporność na Sura: %d%%", en: "Defence chance against sura attacks: %d%%", f: "percent"},
-  81: {pl: "Odporność na Szamanów: %d%%", en: "Defence chance against shaman attacks: %d%%", f: "percent"},
-  82: {pl: "Energia %d", en: "Energy %d ", f: "flat"},
-  84: {pl: "Bonus kostiumu %d%% ", en: "Costume bonus %d%% ", f: "percent"},
-  85: {pl: "Magiczny atak +%d%%", en: "Magic attack +%d%%", f: "percent"},
-  86: {pl: "Magiczny/krótkodystansowy atak +%d%%", en: "Magic/melee attack +%d%%", f: "percent"},
-  87: {pl: "Odporność na lód +%d%%", en: "Ice resistance +%d%%", f: "percent"},
-  88: {pl: "Odporność na ziemię +%d%%", en: "Earth resistance +%d%%", f: "percent"},
-  89: {pl: "Odporność na mrok +%d%%", en: "Resistance against darkness +%d%%", f: "percent"},
-  90: {pl: "Odporność na cios krytyczny +%d%%", en: "Resistance against critical hits +%d%%", f: "percent"},
-  91: {pl: "Odporność na przeszywający cios +%d%%", en: "Resistance against piercing hits +%d%%", f: "percent"},
-  1138: {pl: "Terror +%d%%", en: "Terror +%d%%", f: "percent"},
-  1139: {pl: "Regeneracja wytrzymałości +%d%%", en: "Stamina regeneration +%d%%", f: "percent"},
-  1140: {pl: "Atak sztyletem przeciw potworom +%d", en: "Dagger attack against monsters +%d", f: "flat"},
-  1141: {pl: "Wartość ataku przeciw potworom +%d", en: "Attack value against monsters +%d", f: "flat"},
-  1142: {pl: "Odporność na potwory +%d‰", en: "Resistance against monsters +%d‰", f: "flat"},
-  1143: {pl: "Pochłanianie obrażeń +%d%%", en: "Damage absorption +%d%%", f: "percent"},
-  1144: {pl: "Pochłanianie obrażeń od potworów +%d%%", en: "Damage absorption from monsters +%d%%", f: "percent"},
-  1145: {pl: "Przełamanie odporności na ogłuszenie", en: "Breaks stun immunity", f: "boolean"},
-  1146: {pl: "Przełamanie klątwy świątyni", en: "Breaks the temple curse", f: "boolean"},
-  1147: {pl: "Czas trwania umiejętności +%d%%", en: "Skill duration +%d%%", f: "percent"},
-  1148: {pl: "Silny przeciw potworom z Doliny Orków +%d%%", en: "Strong against Orc Valley monsters +%d%%", f: "percent"},
-  1149: {pl: "Silny przeciw Metinom +%d%%", en: "Strong against Metin stones +%d%%", f: "percent"},
-  1150: {pl: "Silny przeciw bossom +%d%%", en: "Strong against bosses +%d%%", f: "percent"},
-  1151: {pl: "Magiczny atak przeciw potworom +%d%%", en: "Magic attack against monsters +%d%%", f: "percent"},
-  1152: {pl: "Przełamanie odporności na miecz +%d%%", en: "Breaks sword resistance +%d%%", f: "percent"},
-  1153: {pl: "Przełamanie odporności na broń dwuręczną +%d%%", en: "Breaks two-handed resistance +%d%%", f: "percent"},
-  1154: {pl: "Przełamanie odporności na sztylet +%d%%", en: "Breaks dagger resistance +%d%%", f: "percent"},
-  1155: {pl: "Przełamanie odporności na dzwonek +%d%%", en: "Breaks bell resistance +%d%%", f: "percent"},
-  1156: {pl: "Przełamanie odporności na wachlarz +%d%%", en: "Breaks fan resistance +%d%%", f: "percent"},
-  1157: {pl: "Przełamanie odporności na łuk +%d%%", en: "Breaks bow resistance +%d%%", f: "percent"},
-  1158: {pl: "Szansa na zbieranie +%d%%", en: "Collecting chance +%d%%", f: "percent"},
-  1159: {pl: "Szansa na naukę +%d%%", en: "Learning chance +%d%%", f: "percent"},
-  1160: {pl: "Odporność na ludzi +%d%%", en: "Resistance against humans +%d%%", f: "percent"},
-  1161: {pl: "Magiczny atak +%d", en: "Magic attack +%d", f: "flat"},
-  1162: {pl: "Szansa na podpalenie +%d%%", en: "Chance of burning +%d%%", f: "percent"},
-  1163: {pl: "Zamiana obrażeń na PE +%d%%", en: "Damage converted to SP +%d%%", f: "percent"},
-  1164: {pl: "Szansa na rzadki łup +%d%%", en: "Rare drop chance +%d%%", f: "percent"},
-  1165: {pl: "Magiczna wartość ataku przeciw potworom +%d", en: "Magic attack value against monsters +%d", f: "flat"},
-  1166: {pl: "Szansa na unieruchomienie +%d%%", en: "Chance of rooting +%d%%", f: "percent"},
-  1167: {pl: "Atak specjalny +%d", en: "Special attack +%d", f: "flat"},
-  1168: {pl: "Kara za śmierć +%d%%", en: "Death penalty +%d%%", f: "percent"}
+  1: {pl: "Max PŻ: +%d", en: "Max. HP +%d", tr: "Maks. Can: +%d", f: "flat"},
+  2: {pl: "Max PE: +%d", en: "Max. SP +%d", tr: "Maks. Mana: +%d", f: "flat"},
+  3: {pl: "Witalność +%d", en: "Vitality +%d", tr: "Dayanıklılık +%d", f: "flat"},
+  4: {pl: "Inteligencja +%d", en: "Intelligence +%d", tr: "Zeka +%d", f: "flat"},
+  5: {pl: "Siła: +%d", en: "Strength +%d", tr: "Güç: +%d", f: "flat"},
+  6: {pl: "Zręczność +%d", en: "Dexterity +%d", tr: "Çeviklik +%d", f: "flat"},
+  7: {pl: "Szybkość Ataku +%d%%", en: "Attack Speed +%d%%", tr: "Saldırı Hızı +%d%%", f: "percent"},
+  8: {pl: "Szybkość Ruchu %d%%", en: "Moving Speed %d%%", tr: "Hareket Hızı %d%%", f: "percent"},
+  9: {pl: "Szybkość Zaklęcia +%d%%", en: "Casting Speed +%d%%", tr: "Büyü Hızı +%d%%", f: "percent"},
+  10: {pl: "Regeneracja PŻ: +%d%%", en: "HP Regeneration +%d%%", tr: "Can Yenilenmesi: +%d%%", f: "percent"},
+  11: {pl: "Regeneracja PE: +%d%%", en: "SP Regeneration +%d%%", tr: "Mana Yenilenmesi: +%d%%", f: "percent"},
+  12: {pl: "Szansa na Otrucie %d%%", en: "Poisoning chance %d%%", tr: "Zehirleme Şansı %d%%", f: "percent"},
+  13: {pl: "Szansa na Omdlenie %d%%", en: "Blackout chance %d%%", tr: "Bayıltma Şansı %d%%", f: "percent"},
+  14: {pl: "Szansa na Spowolnienie %d%%", en: "Slowing chance %d%%", tr: "Yavaşlatma Şansı %d%%", f: "percent"},
+  15: {pl: "Szansa na cios krytyczny +%d%%", en: "Chance of critical hit +%d%% ", tr: "Kritik Vuruş Şansı +%d%%", f: "percent"},
+  16: {pl: "Szansa na przeszywające Uderzenie: %d%% ", en: "%d%% Chance for piercing Hits", tr: "Delici Vuruş Şansı: %d%%", f: "percent"},
+  17: {pl: "Silny przeciwko Ludziom +%d%%", en: "Strong against Half Humans +%d%%", tr: "Yarı İnsanlara Karşı Güçlü +%d%%", f: "percent"},
+  18: {pl: "Silny przeciwko Zwierzętom +%d%%", en: "Strong against Animals +%d%%", tr: "Hayvanlara Karşı Güçlü +%d%%", f: "percent"},
+  19: {pl: "Silny przeciwko Orkom +%d%%", en: "Strong against Orcs +%d%%", tr: "Orklara Karşı Güçlü +%d%%", f: "percent"},
+  20: {pl: "Silny przeciwko Mistykom +%d%%", en: "Strong against Mystics +%d%%", tr: "Mistiklere Karşı Güçlü +%d%%", f: "percent"},
+  21: {pl: "Silny przeciwko Nieumarłym +%d%%", en: "Strong against Undead +%d%%", tr: "Yarı Ölülere Karşı Güçlü +%d%%", f: "percent"},
+  22: {pl: "Silny przeciwko Diabłom +%d%%", en: "Strong against Devils +%d%%", tr: "Şeytanlara Karşı Güçlü +%d%%", f: "percent"},
+  23: {pl: "%d%% obrażeń będzie dodanych do PŻ", en: "%d%% damage  will be absorbed by HP", tr: "Hasarın %d%%'i Cana Eklenecek", f: "percent"},
+  24: {pl: "%d%% obrażeń będzie dodanych do PE", en: "%d%% damage will be absorbed by SP", tr: "Hasarın %d%%'i Manaya Eklenecek", f: "percent"},
+  25: {pl: "%d%% Szansa na kradzież PE", en: "%d%% chance to rob SP", tr: "%d%% Mana Çalma Şansı", f: "percent"},
+  26: {pl: "Szansa na odzyskanie PE: %d%%", en: "%d%% Chance to get back SP when hit", tr: "Vurulunca Mana Kazanma Şansı: %d%%", f: "percent"},
+  27: {pl: "Szansa na blok ciosów %d%%", en: "Chance to block a close-combat attack %d%% ", tr: "Yakın Dövüş Bloklama Şansı %d%%", f: "percent"},
+  28: {pl: "Szansa na uniknięcie Strzały: %d%%", en: "Chance to avoid Arrows %d%%", tr: "Ok Kaçırma Şansı: %d%%", f: "percent"},
+  29: {pl: "Odporność na Miecze: %d%%", en: "Sword Defence %d%%", tr: "Kılıca Karşı Direnç: %d%%", f: "percent"},
+  30: {pl: "Odporność na Broń Dwuręczną: %d%%", en: "Two-Handed Defence %d%%", tr: "İki Elli Silaha Karşı Direnç: %d%%", f: "percent"},
+  31: {pl: "Odporność na Sztylety: %d%%", en: "Dagger Defence %d%%", tr: "Hançere Karşı Direnç: %d%%", f: "percent"},
+  32: {pl: "Odporność na Dzwony: %d%%", en: "Bell Defence %d%%", tr: "Çana Karşı Direnç: %d%%", f: "percent"},
+  33: {pl: "Odporność na Wachlarze: %d%%", en: "Fan Defence %d%%", tr: "Yelpazeye Karşı Direnç: %d%%", f: "percent"},
+  34: {pl: "Odporność na Strzały: %d%%", en: "Arrow Resistance %d%%", tr: "Oka Karşı Direnç: %d%%", f: "percent"},
+  35: {pl: "Odporność na Ogień: %d%%", en: "Fire Resistance %d%%", tr: "Ateşe Karşı Direnç: %d%%", f: "percent"},
+  36: {pl: "Odporność na Błyskawice: %d%%", en: "Lightning Resistance %d%%", tr: "Yıldırıma Karşı Direnç: %d%%", f: "percent"},
+  37: {pl: "Odporność na Magię: %d%%", en: "Magic Resistance %d%%", tr: "Büyüye Karşı Direnç: %d%%", f: "percent"},
+  38: {pl: "Odporność na Wiatr: %d%%", en: "Wind Resistance %d%%", tr: "Rüzgara Karşı Direnç: %d%%", f: "percent"},
+  39: {pl: "%d%% Szansa na odbicie Ciosu", en: "%d%% Chance to reflect close combat hits  ", tr: "%d%% Yakın Dövüş Yansıtma Şansı", f: "percent"},
+  40: {pl: "Szansa na odbicie Klątwy: %d%%", en: "Chance to reflect Curse: %d%%", tr: "Lanet Yansıtma Şansı: %d%%", f: "percent"},
+  41: {pl: "Odporność na Trucizny: %d%%", en: "Poison Resistance %d%%", tr: "Zehire Karşı Direnç: %d%%", f: "percent"},
+  42: {pl: "Szansa na odzyskanie PE: %d%%", en: "%d%% Chance to restore SP", tr: "%d%% Mana Geri Kazanma Şansı", f: "percent"},
+  43: {pl: "Szansa na Bonus DOŚ: %d%%", en: "%d%% Chance for EXP Bonus", tr: "%d%% Tecrübe Bonusu Şansı", f: "percent"},
+  44: {pl: "Szansa na podwójną ilość Yang: %d%%", en: "%d%% Chance to drop double Yang", tr: "%d%% Çift Yang Düşürme Şansı", f: "percent"},
+  45: {pl: "Szansa na podwójną ilość Przedmiotów: %d%%", en: "%d%% Chance to drop double the Items", tr: "%d%% Çift Eşya Düşürme Şansı", f: "percent"},
+  46: {pl: "Mikstury %d%% efekt podniesiony", en: "Potion %d%% effect raise", tr: "İksir Etkisi %d%% Artışı", f: "percent"},
+  47: {pl: "Szansa na odzyskanie PŻ: %d%%", en: "%d%% Chance, to restore HP", tr: "%d%% Can Geri Kazanma Şansı", f: "percent"},
+  48: {pl: "Odporność na Omdlenia", en: "Defence against blackouts", tr: "Bayılmaya Karşı Direnç", f: "boolean"},
+  49: {pl: "Odporność na Spowolnienia", en: "Defence against slowing", tr: "Yavaşlamaya Karşı Direnç", f: "boolean"},
+  50: {pl: "Niewrażliwy na Upadek", en: "Immune against falling down", tr: "Düşmeye Karşı Bağışık", f: "boolean"},
+  52: {pl: "Zasięg Łuku +%dm", en: "Arc Range +%dm", tr: "Yay Menzili +%dm", f: "flat"},
+  53: {pl: "Wartość Ataku +%d", en: "Attack Value +%d", tr: "Saldırı Değeri +%d", f: "flat"},
+  54: {pl: "Obrona +%d", en: "Defence +%d", tr: "Savunma +%d", f: "flat"},
+  55: {pl: "Wartość Magicznego Ataku: +%d", en: "Magical Attack Value +%d", tr: "Büyü Saldırı Değeri: +%d", f: "flat"},
+  56: {pl: "Magiczna Obrona: +%d", en: "Magical Defence +%d", tr: "Büyü Savunması: +%d", f: "flat"},
+  58: {pl: "Max Wytrzymałość: +%d", en: "Max. Endurance +%d", tr: "Maks. Dayanıklılık: +%d", f: "flat"},
+  59: {pl: "Silny przeciwko Wojownikom +%d%%", en: "Strong against Warriorr +%d%%", tr: "Savaşçılara Karşı Güçlü +%d%%", f: "percent"},
+  60: {pl: "Silny przeciwko Ninja +%d%%", en: "Strong against Ninjas +%d%%", tr: "Ninjalara Karşı Güçlü +%d%%", f: "percent"},
+  61: {pl: "Silny przeciwko Sura +%d%%", en: "Strong against Sura +%d%%", tr: "Sura'ya Karşı Güçlü +%d%%", f: "percent"},
+  62: {pl: "Silny przeciwko Szamanom +%d%%", en: "Strong against Shamans +%d%%", tr: "Şamanlara Karşı Güçlü +%d%%", f: "percent"},
+  63: {pl: "Silny przeciwko Potworom +%d%%", en: "Strength against monsters +%d%%", tr: "Canavarlara Karşı Güçlü +%d%%", f: "percent"},
+  64: {pl: "Wartość Ataku: +%d%%", en: "Attack Value +%d%%", tr: "Saldırı Değeri: +%d%%", f: "percent"},
+  65: {pl: "Obrona: +%d%%", en: "Defence +%d%%", tr: "Savunma: +%d%%", f: "percent"},
+  66: {pl: "Punkty Doświadczenia: +%d%%", en: "EXP +%d%%", tr: "Tecrübe Puanı: +%d%%", f: "percent"},
+  67: {pl: "Szansa na zdobycie Przedmiotów pomnożona o %.1f", en: "Chance of capturing Items multiplied with %.1f", tr: "Eşya Kazanma Şansı %.1f ile Çarpılır", f: "multiplier"},
+  68: {pl: "Szansa na zdobycie Yang pomnożona o %.1f", en: "Chance of capturing Yang multiplied with %.1f", tr: "Yang Kazanma Şansı %.1f ile Çarpılır", f: "multiplier"},
+  69: {pl: "Maks. PŻ +%d%%", en: "Max. HP +%d%%", tr: "Maks. Can +%d%%", f: "percent"},
+  70: {pl: "Maks. PE +%d%% ", en: "Max. SP +%d%% ", tr: "Maks. Mana +%d%%", f: "percent"},
+  71: {pl: "Obrażenie Umiejętności: %d%%", en: "Skill Damage %d%%", tr: "Yetenek Hasarı: %d%%", f: "percent"},
+  72: {pl: "Średnie Obrażenia: %d%%", en: "Average Damage %d%%", tr: "Ortalama Hasar: %d%%", f: "percent"},
+  73: {pl: "Odporność na Obrażenia Umiejętności %d%%", en: "Resistance against Skill Damage %d%%", tr: "Yetenek Hasarına Karşı Direnç %d%%", f: "percent"},
+  74: {pl: "Odporność na Obrażenia: %d%%", en: "Average Damage Resistance %d%%", tr: "Ortalama Hasara Karşı Direnç: %d%%", f: "percent"},
+  75: {pl: "iCafe DOŚ Bonus +%d%%", en: "iCafe EXP Bonus +%d%%", tr: "iCafe Tecrübe Bonusu +%d%%", f: "percent"},
+  76: {pl: "iCafe Szansa na zdobycie Przedmiotów plus %.1f%%", en: "iCafe Chance of capturing Items plus %.1f%%", tr: "iCafe Eşya Kazanma Şansı +%.1f%%", f: "percent_decimal"},
+  78: {pl: "Odporność na Wojowników: %d%%", en: "Defence chance against warrior attacks: %d%%", tr: "Savaşçı Saldırılarına Karşı Direnç: %d%%", f: "percent"},
+  79: {pl: "Odporność na Ninja: %d%%", en: "Defence chance against ninja attacks: %d%%", tr: "Ninja Saldırılarına Karşı Direnç: %d%%", f: "percent"},
+  80: {pl: "Odporność na Sura: %d%%", en: "Defence chance against sura attacks: %d%%", tr: "Sura Saldırılarına Karşı Direnç: %d%%", f: "percent"},
+  81: {pl: "Odporność na Szamanów: %d%%", en: "Defence chance against shaman attacks: %d%%", tr: "Şaman Saldırılarına Karşı Direnç: %d%%", f: "percent"},
+  82: {pl: "Energia %d", en: "Energy %d ", tr: "Enerji %d", f: "flat"},
+  84: {pl: "Bonus kostiumu %d%% ", en: "Costume bonus %d%% ", tr: "Kostüm Bonusu %d%%", f: "percent"},
+  85: {pl: "Magiczny atak +%d%%", en: "Magic attack +%d%%", tr: "Büyü Saldırısı +%d%%", f: "percent"},
+  86: {pl: "Magiczny/krótkodystansowy atak +%d%%", en: "Magic/melee attack +%d%%", tr: "Büyü/Yakın Dövüş Saldırısı +%d%%", f: "percent"},
+  87: {pl: "Odporność na lód +%d%%", en: "Ice resistance +%d%%", tr: "Buza Karşı Direnç +%d%%", f: "percent"},
+  88: {pl: "Odporność na ziemię +%d%%", en: "Earth resistance +%d%%", tr: "Toprağa Karşı Direnç +%d%%", f: "percent"},
+  89: {pl: "Odporność na mrok +%d%%", en: "Resistance against darkness +%d%%", tr: "Karanlığa Karşı Direnç +%d%%", f: "percent"},
+  90: {pl: "Odporność na cios krytyczny +%d%%", en: "Resistance against critical hits +%d%%", tr: "Kritik Vuruşa Karşı Direnç +%d%%", f: "percent"},
+  91: {pl: "Odporność na przeszywający cios +%d%%", en: "Resistance against piercing hits +%d%%", tr: "Delici Vuruşa Karşı Direnç +%d%%", f: "percent"},
+  1138: {pl: "Terror +%d%%", en: "Terror +%d%%", tr: "Terör +%d%%", f: "percent"},
+  1139: {pl: "Regeneracja wytrzymałości +%d%%", en: "Stamina regeneration +%d%%", tr: "Dayanıklılık Yenilenmesi +%d%%", f: "percent"},
+  1140: {pl: "Atak sztyletem przeciw potworom +%d", en: "Dagger attack against monsters +%d", tr: "Canavarlara Karşı Hançer Saldırısı +%d", f: "flat"},
+  1141: {pl: "Wartość ataku przeciw potworom +%d", en: "Attack value against monsters +%d", tr: "Canavarlara Karşı Saldırı Değeri +%d", f: "flat"},
+  1142: {pl: "Odporność na potwory +%d‰", en: "Resistance against monsters +%d‰", tr: "Canavarlara Karşı Direnç +%d‰", f: "flat"},
+  1143: {pl: "Pochłanianie obrażeń +%d%%", en: "Damage absorption +%d%%", tr: "Hasar Emilimi +%d%%", f: "percent"},
+  1144: {pl: "Pochłanianie obrażeń od potworów +%d%%", en: "Damage absorption from monsters +%d%%", tr: "Canavarlardan Hasar Emilimi +%d%%", f: "percent"},
+  1145: {pl: "Przełamanie odporności na ogłuszenie", en: "Breaks stun immunity", tr: "Sersemletme Bağışıklığını Kırar", f: "boolean"},
+  1146: {pl: "Przełamanie klątwy świątyni", en: "Breaks the temple curse", tr: "Tapınak Lanetini Kırar", f: "boolean"},
+  1147: {pl: "Czas trwania umiejętności +%d%%", en: "Skill duration +%d%%", tr: "Yetenek Süresi +%d%%", f: "percent"},
+  1148: {pl: "Silny przeciw potworom z Doliny Orków +%d%%", en: "Strong against Orc Valley monsters +%d%%", tr: "Ork Vadisi Canavarlarına Karşı Güçlü +%d%%", f: "percent"},
+  1149: {pl: "Silny przeciw Metinom +%d%%", en: "Strong against Metin stones +%d%%", tr: "Metin Taşlarına Karşı Güçlü +%d%%", f: "percent"},
+  1150: {pl: "Silny przeciw bossom +%d%%", en: "Strong against bosses +%d%%", tr: "Boss'lara Karşı Güçlü +%d%%", f: "percent"},
+  1151: {pl: "Magiczny atak przeciw potworom +%d%%", en: "Magic attack against monsters +%d%%", tr: "Canavarlara Karşı Büyü Saldırısı +%d%%", f: "percent"},
+  1152: {pl: "Przełamanie odporności na miecz +%d%%", en: "Breaks sword resistance +%d%%", tr: "Kılıç Direncini Kırar +%d%%", f: "percent"},
+  1153: {pl: "Przełamanie odporności na broń dwuręczną +%d%%", en: "Breaks two-handed resistance +%d%%", tr: "İki Elli Silah Direncini Kırar +%d%%", f: "percent"},
+  1154: {pl: "Przełamanie odporności na sztylet +%d%%", en: "Breaks dagger resistance +%d%%", tr: "Hançer Direncini Kırar +%d%%", f: "percent"},
+  1155: {pl: "Przełamanie odporności na dzwonek +%d%%", en: "Breaks bell resistance +%d%%", tr: "Çan Direncini Kırar +%d%%", f: "percent"},
+  1156: {pl: "Przełamanie odporności na wachlarz +%d%%", en: "Breaks fan resistance +%d%%", tr: "Yelpaze Direncini Kırar +%d%%", f: "percent"},
+  1157: {pl: "Przełamanie odporności na łuk +%d%%", en: "Breaks bow resistance +%d%%", tr: "Yay Direncini Kırar +%d%%", f: "percent"},
+  1158: {pl: "Szansa na zbieranie +%d%%", en: "Collecting chance +%d%%", tr: "Toplama Şansı +%d%%", f: "percent"},
+  1159: {pl: "Szansa na naukę +%d%%", en: "Learning chance +%d%%", tr: "Öğrenme Şansı +%d%%", f: "percent"},
+  1160: {pl: "Odporność na ludzi +%d%%", en: "Resistance against humans +%d%%", tr: "İnsanlara Karşı Direnç +%d%%", f: "percent"},
+  1161: {pl: "Magiczny atak +%d", en: "Magic attack +%d", tr: "Büyü Saldırısı +%d", f: "flat"},
+  1162: {pl: "Szansa na podpalenie +%d%%", en: "Chance of burning +%d%%", tr: "Yakma Şansı +%d%%", f: "percent"},
+  1163: {pl: "Zamiana obrażeń na PE +%d%%", en: "Damage converted to SP +%d%%", tr: "Hasarın Manaya Dönüşümü +%d%%", f: "percent"},
+  1164: {pl: "Szansa na rzadki łup +%d%%", en: "Rare drop chance +%d%%", tr: "Nadir Düşme Şansı +%d%%", f: "percent"},
+  1165: {pl: "Magiczna wartość ataku przeciw potworom +%d", en: "Magic attack value against monsters +%d", tr: "Canavarlara Karşı Büyü Saldırı Değeri +%d", f: "flat"},
+  1166: {pl: "Szansa na unieruchomienie +%d%%", en: "Chance of rooting +%d%%", tr: "Sabitleme Şansı +%d%%", f: "percent"},
+  1167: {pl: "Atak specjalny +%d", en: "Special attack +%d", tr: "Özel Saldırı +%d", f: "flat"},
+  1168: {pl: "Kara za śmierć +%d%%", en: "Death penalty +%d%%", tr: "Ölüm Cezası +%d%%", f: "percent"}
 };
 
 // One formatter for both the fixed bonuses an item is made with and the random
@@ -6122,7 +6350,7 @@ function showItemTooltip(ev, item) {
   var html = '<div class="m2-tt-name">' + name + '</div>';
 
   if (def.level && def.level > 0) {
-    html += '<div style="color:#a1a1aa;font-size:10px">' + (lg === 'pl' ? 'Wymagany Poziom: ' : 'Required Level: ') + '<b style="color:#e5e7eb">' + def.level + '</b></div>';
+    html += '<div style="color:#a1a1aa;font-size:10px">' + (lg === 'pl' ? 'Wymagany Poziom: ' : lg === 'tr' ? 'Gerekli Seviye: ' : 'Required Level: ') + '<b style="color:#e5e7eb">' + def.level + '</b></div>';
   }
 
   // Combat Stats (Attack / Defense)
@@ -6132,17 +6360,17 @@ function showItemTooltip(ev, item) {
     var minAtt = (def.value3 || 0) + (def.value5 || 0);
     var maxAtt = (def.value4 || 0) + (def.value5 || 0);
     if (minAtt > 0 || maxAtt > 0) {
-      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Wartość Ataku: ' : 'Attack Value: ') + minAtt + ' - ' + maxAtt + '</div>';
+      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Wartość Ataku: ' : lg === 'tr' ? 'Saldırı Değeri: ' : 'Attack Value: ') + minAtt + ' - ' + maxAtt + '</div>';
       hasStats = true;
     }
     var minMag = (def.value1 || 0) + (def.value5 || 0);
     var maxMag = (def.value2 || 0) + (def.value5 || 0);
     if (minMag > 0 || maxMag > 0) {
-      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Wartość Magicznego Ataku: ' : 'Magic Attack Value: ') + minMag + ' - ' + maxMag + '</div>';
+      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Wartość Magicznego Ataku: ' : lg === 'tr' ? 'Büyü Saldırı Değeri: ' : 'Magic Attack Value: ') + minMag + ' - ' + maxMag + '</div>';
       hasStats = true;
     }
     if (def.value0 > 0) {
-      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Szybkość Ataku: +' : 'Attack Speed: +') + def.value0 + '%</div>';
+      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Szybkość Ataku: +' : lg === 'tr' ? 'Saldırı Hızı: +' : 'Attack Speed: +') + def.value0 + '%</div>';
       hasStats = true;
     }
   } else if (def.type === 2) { // Armor / Equip
@@ -6153,11 +6381,11 @@ function showItemTooltip(ev, item) {
     else if (def.subtype === 4) defVal = (def.value1 || 0) + (def.value5 || 0); // Boots
 
     if (defVal > 0) {
-      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Obrona: ' : 'Defense: ') + defVal + '</div>';
+      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Obrona: ' : lg === 'tr' ? 'Savunma: ' : 'Defense: ') + defVal + '</div>';
       hasStats = true;
     }
     if (def.value0 > 0) {
-      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Szybkość Ruchu: ' : 'Movement Speed: ') + (def.subtype === 0 ? '-' : '+') + def.value0 + '%</div>';
+      statHtml += '<div class="m2-tt-stat">' + (lg === 'pl' ? 'Szybkość Ruchu: ' : lg === 'tr' ? 'Hareket Hızı: ' : 'Movement Speed: ') + (def.subtype === 0 ? '-' : '+') + def.value0 + '%</div>';
       hasStats = true;
     }
   }
@@ -6194,12 +6422,12 @@ function showItemTooltip(ev, item) {
       if (sVal === 0 && def.type !== 1 && def.type !== 2) return;
       hasSock = true;
       if (sVal === 0) {
-        sockHtml += '<div class="m2-tt-socket" style="color:#71717a">⚪ ' + (lg === 'pl' ? 'Pęknięty Kamień' : 'Broken Stone') + '</div>';
+        sockHtml += '<div class="m2-tt-socket" style="color:#71717a">⚪ ' + (lg === 'pl' ? 'Pęknięty Kamień' : lg === 'tr' ? 'Kırık Taş' : 'Broken Stone') + '</div>';
       } else if (sVal === 1) {
-        sockHtml += '<div class="m2-tt-socket" style="color:#94a3b8">⚪ ' + (lg === 'pl' ? 'Czysty Slot' : 'Empty Socket') + '</div>';
+        sockHtml += '<div class="m2-tt-socket" style="color:#94a3b8">⚪ ' + (lg === 'pl' ? 'Czysty Slot' : lg === 'tr' ? 'Boş Yuva' : 'Empty Socket') + '</div>';
       } else if (sVal >= 28000 && sVal <= 28999) {
         var sDef = (g_itemDefs && g_itemDefs[String(sVal)]) || {};
-        var sName = sDef.name || ('Kamień Duszy #' + sVal);
+        var sName = sDef.name || ((lg === 'pl' ? 'Kamień Duszy #' : lg === 'tr' ? 'Ruh Taşı #' : 'Soul Stone #') + sVal);
         sockHtml += '<div class="m2-tt-socket" style="color:#38bdf8">💎 ' + sName + '</div>';
       } else if (sVal > 1) {
         sockHtml += '<div class="m2-tt-socket" style="color:#94a3b8">⚙️ #' + sVal + '</div>';
@@ -6882,30 +7110,30 @@ def log_text(value):
 
 
 GEAR_HISTORY_HOWS = {
-    "REFINE SUCCESS":        ("refine_ok",   {"pl": "Ulepszenie udane",   "en": "Refine succeeded"}),
-    "REFINE FAIL":           ("refine_fail", {"pl": "Ulepszenie nieudane", "en": "Refine failed"}),
-    "REMOVE (REFINE FAIL)":  ("burned",      {"pl": "Spalone przy ulepszaniu", "en": "Burned in refine"}),
-    "REFINE FISH_ROD SUCCESS": ("refine_ok", {"pl": "Wędka ulepszona",    "en": "Rod refined"}),
-    "REFINE FISH_ROD FAIL":  ("refine_fail", {"pl": "Wędka nieulepszona", "en": "Rod refine failed"}),
-    "PLAYERBOT_EQUIP":       ("equip",       {"pl": "Założone",           "en": "Equipped"}),
-    "PLAYERBOT_GIFT_OUT":    ("gift_out",    {"pl": "Podarowane",         "en": "Given away"}),
-    "PLAYERBOT_GIFT_IN":     ("gift_in",     {"pl": "Dostane w prezencie", "en": "Received as gift"}),
-    "PLAYERBOT_STALL_SOLD":  ("stall_sold",  {"pl": "Sprzedane na straganie", "en": "Sold at the stall"}),
-    "SHOP_BUY":              ("bought",      {"pl": "Kupione na straganie", "en": "Bought at a stall"}),
-    "PLAYERBOT_SHOP_SELL":   ("vendor",      {"pl": "Sprzedane handlarzowi", "en": "Sold to merchant"}),
-    "PLAYERBOT_BONUS":       ("bonus",       {"pl": "Zużyte na przemianę bonusów", "en": "Used for a bonus reroll"}),
-    "SAFEBOX PUT":           ("safebox",     {"pl": "Do magazynu",        "en": "Into the safebox"}),
-    "SAFEBOX GET":           ("safebox",     {"pl": "Z magazynu",         "en": "Out of the safebox"}),
-    "MOONLIGHT_GET":         ("get",         {"pl": "Ze Szkatułki Blasku", "en": "From a Moonlight chest"}),
-    "EXCHANGE_TAKE":         ("gift_in",     {"pl": "Z wymiany",          "en": "From a trade"}),
-    "EXCHANGE_GIVE":         ("gift_out",    {"pl": "Oddane w wymianie",  "en": "Given in a trade"}),
+    "REFINE SUCCESS":        ("refine_ok",   {"pl": "Ulepszenie udane",   "en": "Refine succeeded", "tr": "Geliştirme başarılı"}),
+    "REFINE FAIL":           ("refine_fail", {"pl": "Ulepszenie nieudane", "en": "Refine failed", "tr": "Geliştirme başarısız"}),
+    "REMOVE (REFINE FAIL)":  ("burned",      {"pl": "Spalone przy ulepszaniu", "en": "Burned in refine", "tr": "Geliştirmede yandı"}),
+    "REFINE FISH_ROD SUCCESS": ("refine_ok", {"pl": "Wędka ulepszona",    "en": "Rod refined", "tr": "Olta geliştirildi"}),
+    "REFINE FISH_ROD FAIL":  ("refine_fail", {"pl": "Wędka nieulepszona", "en": "Rod refine failed", "tr": "Olta geliştirilemedi"}),
+    "PLAYERBOT_EQUIP":       ("equip",       {"pl": "Założone",           "en": "Equipped", "tr": "Kuşanıldı"}),
+    "PLAYERBOT_GIFT_OUT":    ("gift_out",    {"pl": "Podarowane",         "en": "Given away", "tr": "Hediye edildi"}),
+    "PLAYERBOT_GIFT_IN":     ("gift_in",     {"pl": "Dostane w prezencie", "en": "Received as gift", "tr": "Hediye olarak alındı"}),
+    "PLAYERBOT_STALL_SOLD":  ("stall_sold",  {"pl": "Sprzedane na straganie", "en": "Sold at the stall", "tr": "Tezgahta satıldı"}),
+    "SHOP_BUY":              ("bought",      {"pl": "Kupione na straganie", "en": "Bought at a stall", "tr": "Tezgahtan alındı"}),
+    "PLAYERBOT_SHOP_SELL":   ("vendor",      {"pl": "Sprzedane handlarzowi", "en": "Sold to merchant", "tr": "Satıcıya satıldı"}),
+    "PLAYERBOT_BONUS":       ("bonus",       {"pl": "Zużyte na przemianę bonusów", "en": "Used for a bonus reroll", "tr": "Bonus değişimi için kullanıldı"}),
+    "SAFEBOX PUT":           ("safebox",     {"pl": "Do magazynu",        "en": "Into the safebox", "tr": "Kasaya"}),
+    "SAFEBOX GET":           ("safebox",     {"pl": "Z magazynu",         "en": "Out of the safebox", "tr": "Kasadan"}),
+    "MOONLIGHT_GET":         ("get",         {"pl": "Ze Szkatułki Blasku", "en": "From a Moonlight chest", "tr": "Ay Işığı Sandığından"}),
+    "EXCHANGE_TAKE":         ("gift_in",     {"pl": "Z wymiany",          "en": "From a trade", "tr": "Takastan"}),
+    "EXCHANGE_GIVE":         ("gift_out",    {"pl": "Oddane w wymianie",  "en": "Given in a trade", "tr": "Takasta verildi"}),
 }
 
 
 @app.route("/api/bot_gear_history/<int:pid>")
 def api_bot_gear_history(pid):
     language = lang()
-    lang_key = "pl" if language == "pl" else "en"
+    lang_key = language if language in ("pl", "tr") else "en"
     try:
         limit = max(10, min(400, int(request.args.get("limit", 60))))
     except (TypeError, ValueError):
@@ -10355,7 +10583,7 @@ def api_bot_inventory(pid):
             player["goal"] = live_labels["goal"]
             player["live"] = bool(live)
             raw_skills = player.pop("skill_level", b"")
-            profession_names = SKILL_GROUP_NAMES if language == "pl" else SKILL_GROUP_NAMES_EN
+            profession_names = {"pl": SKILL_GROUP_NAMES, "tr": SKILL_GROUP_NAMES_TR}.get(language, SKILL_GROUP_NAMES_EN)
             player["profession_name"] = profession_names.get(
                 (int(player.get("job") or 0) % 4, int(player.get("skill_group") or 0)),
                 messages["profession_none"])
