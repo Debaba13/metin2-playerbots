@@ -124,6 +124,11 @@ linux-port-mt2009/docker/game/src/server/game/src/playerbot_engine_compat.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_gear.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_guild.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_guild_names.h
+linux-port-mt2009/docker/game/src/server/game/src/playerbot_language.h
+linux-port-mt2009/docker/game/src/server/game/src/playerbot_llm_bridge.h
+linux-port-mt2009/docker/game/src/server/game/src/playerbot_llm_chat_trade.h
+linux-port-mt2009/docker/game/src/server/game/src/playerbot_llm_shop.h
+linux-port-mt2009/docker/game/src/server/game/src/playerbot_llm_status.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_log.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_loot.h
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_lure.h
