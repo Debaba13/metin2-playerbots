@@ -7,7 +7,7 @@
   const toggle = document.getElementById('news-toggle');
   function setHidden(hidden) {
     ticker.classList.toggle('is-hidden', hidden);
-    toggle.textContent = hidden ? 'Wiadomości' : 'Ukryj';
+    toggle.textContent = hidden ? 'Haberler' : 'Gizle';
     toggle.setAttribute('aria-expanded', String(!hidden));
     localStorage.setItem(visibilityKey, hidden ? '1' : '0');
   }
@@ -24,7 +24,7 @@
   const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   function render(events) {
     if (!events.length) {
-      list.innerHTML = '<li class="muted">Oczekiwanie na nowe ważne wydarzenia ze świata…</li>';
+      list.innerHTML = '<li class="muted">Dünyadan yeni önemli olaylar bekleniyor…</li>';
       return;
     }
     list.innerHTML = events.slice(-8).map(event => `<li${Number(event.refine_tier) >= 8 ? ' class="refine-rare"' : ''}><time>${escape(event.time)}</time><span>${escape(event.message)}</span></li>`).join('');
@@ -34,9 +34,9 @@
   async function refresh() {
     try {
       const response = await fetch('/api/news-feed', {cache: 'no-store'});
-      if (!response.ok) throw new Error('Nie udało się pobrać wiadomości.');
+      if (!response.ok) throw new Error('Haberler alınamadı.');
       const data = await response.json();
-      if (!data.ok) throw new Error('Nieprawidłowa odpowiedź feedu.');
+      if (!data.ok) throw new Error('Geçersiz feed yanıtı.');
       const fresh = data.events.filter(event => !seen.has(event.key));
       if (fresh.length) {
         fresh.forEach(event => seen.add(event.key));
@@ -47,7 +47,7 @@
       // no new rare event in its current window, but that is not an empty feed.
       render(cached);
     } catch (_) {
-      if (!cached.length) list.innerHTML = '<li class="muted">Feed wydarzeń jest chwilowo niedostępny.</li>';
+      if (!cached.length) list.innerHTML = '<li class="muted">Olay akışı şu anda kullanılamıyor.</li>';
     }
   }
   refresh();

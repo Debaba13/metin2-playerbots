@@ -354,3 +354,102 @@ read anywhere; the actual "want a 5th line" test uses
 `PLAYERBOT_BONUS_MAX_LINES` instead. Left as-is - not something this merge
 introduced or broke, and not ours to second-guess upstream's own constant.
 **Run the real syntax check by hand before deploying this branch.**
+
+## Follow-up: seban-panel translated to Turkish (2026-09-13)
+
+Asked to translate seban-panel (`linux-port/docker/seban-panel/`) to Turkish,
+the same way the classic panel was done earlier - but seban-panel has no
+language-switching layer at all (unlike `files/admin_panel.py`'s `T` dict +
+`lang()`), so this is a straight swap: every Polish string in `app.py`,
+`item_grants.py`, all 19 Jinja templates, and the four `static/*.js` files
+now reads in Turkish. No bilingual toggle was built - the user asked for a
+direct swap, not a second i18n system.
+
+**Scope**: `app.py` (~2010 lines - map names, bot personality/goal/action
+labels, the `APPLY_LABELS` bonus-line table, flash messages, SQL literal
+strings shown to the operator, the crashed-table error page's inline HTML),
+`item_grants.py` (status labels, validation messages), every template
+(`manage.html` and `item_grants.html` were the two big ones, both dense
+single-line Jinja), and `heatmap.js`/`news-feed.js`/`live-widget.js`
+(`dashboard-charts.js` had nothing to translate).
+
+**A scripted edit corrupted app.py once, caught before it shipped.** A
+Python script meant to replace only the `APPLY_LABELS` dict used
+`re.search(r'APPLY_LABELS = \{(.*?)\n\}', ...)` - non-greedy but still
+DOTALL, so `.*?` matched forward to the *first* `\n}` anywhere in the file
+after the dict, not the dict's own close brace (which sits on the same line
+as its last entry, no `\n` before it). That swallowed everything in
+between and deleted it: the 71/72-swap comment, `PANEL_ENGINE`,
+`ENGINE_MT2009`, `ATTR_SKILL_DAMAGE`, `ATTR_AVG_DAMAGE`,
+`POINT_TO_APPLY` (a 30-line dict the mt2009 bonus-line lookup depends on),
+`EMPIRE_EXPR`, `JOB_NAMES` and the whole `SKILLS` table - 45 net lines
+gone, and `python3 -m py_compile` still passed because what was left was
+syntactically valid Python that just did less. Caught by line-counting the
+file after every edit (`wc -l` against the pre-edit count) rather than
+trusting compile success alone; the missing block was pulled back from
+`git show HEAD:...` and reinserted, translated, and the rest of the file
+was then done with the Edit tool's exact-string matching instead of a
+regex that could over-match. Every edit after that point was followed by
+`wc -l` and a `py_compile` check.
+
+**Two things translation touched that were not just text:**
+- `is_stationary_activity()`'s fishing-detection fallback matched Polish
+  substrings (`"łowi"`, `"ryb"`, `"czekam na branie"`) against the bot's
+  free-text status - but that status has come from the C++ core's Turkish
+  `playerbot_llm_status.h` for a while now (`"Balik tutuyorum - oltayi
+  bekliyorum"`), so the fallback had already gone dead before this session
+  touched it. Same root cause as the `localize_playerbot_status()` bug
+  found in the classic panel a day earlier - a Polish-text-matching
+  fallback outliving the switch to Turkish bot speech. Fixed to match
+  `"balik"`/`"olta"`/`"fishing"`.
+- `static/live-widget.js`'s `activityGroup()` had the identical shape:
+  `/łow|low|ryb|fishing|branie/` tested against `bot.action_label`, which
+  is `BOT_ACTIONS[...]` from `app.py` - now Turkish ("Balık Tutuyor" for
+  action id 14). Fixed to `/bal[ıi]k|tutuyor|fishing/`.
+- `character["honor"]["css"]` in the `/player/<pid>` route looked up a CSS
+  class by the honor title string (`"Rycerski"`, `"Szlachetny"`, ...) -
+  translating `honor_rank()`'s returned titles without updating this
+  lookup would have thrown a `KeyError` on every profile page. Caught
+  before it shipped by grepping for every reader of a value this session
+  translated, not just the definition.
+
+**`gm_commands.txt`** (148 lines, the in-game GM command reference shown
+verbatim in `<pre>`) was translated in full too - command syntax
+(`/purge`, `<nick>`, vnum placeholders) kept as-is, only the Polish
+explanations translated.
+
+**Deliberately left in Polish** (two spots, both querying stored engine
+data rather than displaying UI text): `app.py`'s two `'%małż%'`/`"małż"`
+matches, which search `log.log`'s `hint` column for the Polish word for
+"mussel" - that column holds whatever the game engine's own (Polish, on
+this world) item names wrote into it, not a string this panel controls,
+so changing the search pattern would just break shellfish-catch detection
+instead of translating anything. Same reasoning as the untouched `'%ryb%'`/
+`'%fish%'` OR in the weekly fish-ranking query.
+
+**Verification**: `python3 -m py_compile` on every changed `.py` file,
+`node --check` on every changed `.js` file, a full diacritic sweep of the
+whole `seban-panel/` tree (two intentional exceptions above, plus one
+inert dead-code line in `live-widget.js` that already matched nothing
+before this session - a `.textContent.includes('Podkład graficzny')`
+filter with no matching element anywhere in the current templates), and
+`{%`/`%}`/`{{`/`}}` tag-count parity against `git show HEAD:...` for
+every one of the 19 templates. All 17 simple templates were rendered
+through `render_template()` with representative context and returned
+without a Jinja error; `manage.html` and `item_grants.html` were rendered
+through the real Flask routes with the DB mocked out. Ran the existing
+`test_manage_settings.py` end to end (installed Flask/PyMySQL into this
+sandbox to do it) and fixed the assertions that pinned old Polish text
+(`SKILLS[(0,1)][3]`, four `MAP_NAMES` entries, `class_profile(6)['gender']`)
+to their Turkish replacements. One assertion
+(`playerbots_release_status()['tone']`) fails in this sandbox with no
+outbound GitHub access - confirmed pre-existing by running the identical
+test against the pre-translation file via `git stash`. A second failure,
+`TRACKED_MAP_OPTIONS` not matching its hardcoded expected list, is also
+pre-existing (reproduces identically against `git stash`) and predates
+this session - the list is stale against the Shinsoo/Jinno maps the
+2.0.19→2.0.24 sync (and earlier syncs) added to `MAP_BOUNDS`; worth a
+follow-up but out of scope for a translation pass. No live browser test -
+this is a Flask app with no running server in this sandbox, so "renders
+without a Jinja/JS error" is what was verified, not "looks right on
+screen."

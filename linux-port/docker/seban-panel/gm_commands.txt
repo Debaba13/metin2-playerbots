@@ -1,70 +1,70 @@
-/purge - usuwa potwory, npc itp z okolicy
-/dc <nick> - wyrzucamy z gry gracza o <nick>
-/item <ID> - dodaje przedmiot do ekwipunku
-/item <ID> <ilosc> - dodaje kilka sztuk przedmiotu
-/m <id potwora lub npc> - przywoluje potwora lub npc
-/mob - to co wyżej
-/p <id potwora lub npc> - zamiana w potwora lub npc
-/poly - to co wyżej
-/weak - klikamy na moba prawym przyciskiem, wpisujemy komende - potworowi zostaje 1HP
-/kill <nick> - zabija gracza
-/stun <nick> - omdlema gracza
-/slow <nick> - spowalnia gracza
-/a <nick> <lvl> - podnosi poziom osobie o <nick> na <lv>
-/x - dziwny efekt czatu
-/b - napis w ramce
-/k - czat bez efektów
-/m <ID potwora> - przywolywanie potwora
-/n - czat GM (ten bez nicku)
-/l <lvl> - podnosi nam poziom o <lv>
-/u - sprawdzamy ilość graczy online
-/w - sprawdzamy ilość graczy online
-/g xxx yyy - teleport, gdzie xxx i yyy współżędne mapy/miejsca
-/j <nick> <czas> - blokada pisania użytkownika <nick> na czacie na czas <czas>
-/k <nick> - zabija gracza (odpowiednik /kill)
-/xmas 1 - dzień
-/xmas 0 - noc
-/xmas_snow 0 - wylacz snieg
-/xmas_snow 1 - wlacz snieg
-/warp <nick> - przenosi GM'a do gracza
-/transfer <nick> - przenosi gracza do GM'a
-/go s - teleport na Góre Sohan
-/go t - teleport do Doliny Orkoów
-/go m - teleport do Światynii Hwang
-/go f - teleport do Piekła
-/go tr - teleport do Lasu Duchow
-/go trent2 - teleport do Czerwonego Lasu
-/go ox - teleport do areny konkursu OX
-/go d - teleport na pustynie
+/purge - çevredeki canavarları, NPC'leri vb. siler
+/dc <nick> - <nick> adlı oyuncuyu oyundan atar
+/item <ID> - envantere eşya ekler
+/item <ID> <miktar> - birden fazla eşya ekler
+/m <canavar veya NPC id> - canavar veya NPC çağırır
+/mob - yukarıdakiyle aynı
+/p <canavar veya NPC id> - canavara veya NPC'ye dönüştürür
+/poly - yukarıdakiyle aynı
+/weak - moba sağ tıklayıp komutu yazın - canavarın 1 HP'si kalır
+/kill <nick> - oyuncuyu öldürür
+/stun <nick> - oyuncuyu bayıltır
+/slow <nick> - oyuncuyu yavaşlatır
+/a <nick> <lvl> - <nick> adlı kişinin seviyesini <lv>'ye yükseltir
+/x - garip bir sohbet efekti
+/b - çerçeveli yazı
+/k - efektsiz sohbet
+/m <canavar ID> - canavar çağırma
+/n - GM sohbeti (nicksiz olan)
+/l <lvl> - kendi seviyemizi <lv>'ye yükseltir
+/u - çevrimiçi oyuncu sayısını kontrol ederiz
+/w - çevrimiçi oyuncu sayısını kontrol ederiz
+/g xxx yyy - ışınlanma; xxx ve yyy harita/konum koordinatları
+/j <nick> <süre> - <nick> adlı kullanıcının sohbette yazmasını <süre> boyunca engeller
+/k <nick> - oyuncuyu öldürür (/kill ile aynı)
+/xmas 1 - gündüz
+/xmas 0 - gece
+/xmas_snow 0 - karı kapat
+/xmas_snow 1 - karı aç
+/warp <nick> - GM'i oyuncunun yanına ışınlar
+/transfer <nick> - oyuncuyu GM'in yanına ışınlar
+/go s - Sohan Dağı'na ışınlanma
+/go t - Ork Vadisi'ne ışınlanma
+/go m - Hwang Tapınağı'na ışınlanma
+/go f - Cehenneme ışınlanma
+/go tr - Ruh Ormanı'na ışınlanma
+/go trent2 - Kızıl Orman'a ışınlanma
+/go ox - OX yarışma arenasına ışınlanma
+/go d - çöle ışınlanma
 /go A - Shinsoo M1
 /go A3 - Shinsoo M2
 /go B - Chunjo M1
 /go B3 - Chunjo M2
 /go C - Jinno M1
 /go C3 - Jinno M2
-/gwlist - pokazuje wojny gildii
-/gwcancel <gildia1> <gildia2> - konczy wojne miedzy danymi gildiami
-/pkmode 0 - Tryb PVP Pokojowy
-/pkmode 1 - Tryb PVP Agresywny
-/pkmode 2 - Tryb PVP Wolny
+/gwlist - klan savaşlarını gösterir
+/gwcancel <klan1> <klan2> - belirtilen klanlar arasındaki savaşı bitirir
+/pkmode 0 - Barışçıl PVP Modu
+/pkmode 1 - Saldırgan PVP Modu
+/pkmode 2 - Serbest PVP Modu
 
-/priv_empire 0 1:item_drop <drop w %> <time> - Zwieksza drop itemkow o dany procent na okreslony czas
-/priv_empire 0 2:gold_drop <drop w %> <time> - Zwieksza drop Yang o dany procent na okreslony czas
-/priv_empire 0 3:gold10_drop <drop w%> <time> - Zwieksza drop Yang o dany procent na okreslony czas i mnozy razy 10
-/priv_empire 0:4:exp <exp w %> <time> - Zwieksza exp o dany procent na okreslony czas
-(to samo możemu ustawić u Strażnika Wsi, jednak tam jest max 200%, tutaj możemy ustawić 1000%)
+/priv_empire 0 1:item_drop <drop %> <süre> - Belirli bir süre için eşya düşme oranını belirtilen yüzde kadar artırır
+/priv_empire 0 2:gold_drop <drop %> <süre> - Belirli bir süre için Yang düşme oranını belirtilen yüzde kadar artırır
+/priv_empire 0 3:gold10_drop <drop %> <süre> - Belirli bir süre için Yang düşme oranını belirtilen yüzde kadar artırır ve 10 ile çarpar
+/priv_empire 0:4:exp <exp %> <süre> - Belirli bir süre için tecrübeyi belirtilen yüzde kadar artırır
+(aynısını Köy Bekçisi üzerinden de ayarlayabiliriz, ancak orada maksimum %200'dür, burada %1000'e kadar ayarlayabiliriz)
 
-Komendy typu /SET
-/set <nick> skill <ilosc pkt> - dodaje dana ilosc pkt umiejetnosci
-/setskillother <nick> <id siklla> 59 - dajemy komus dany skill na P
-/set <nick> exp <ilość expa> - dodaje <nick> exp <ilość expa>
-/set <nick> gold <ilość kasy> - dodaje graczowi <nick> kasy <ilość kasy>
-/set <nick> align 200000 - ranga rycerski
-/set_sk <liczba> - zmiana profesji, gdzie <liczba> wpisujecie 1 lub 2
+/SET türü komutlar
+/set <nick> skill <puan miktarı> - belirtilen miktarda yetenek puanı ekler
+/setskillother <nick> <yetenek id> 59 - birine belirtilen yeteneği Ustalık (P) seviyesinde verir
+/set <nick> exp <exp miktarı> - <nick> adlı kişiye <exp miktarı> kadar tecrübe ekler
+/set <nick> gold <yang miktarı> - <nick> adlı oyuncuya <yang miktarı> kadar para ekler
+/set <nick> align 200000 - Şövalye rütbesi
+/set_sk <sayı> - meslek değişimi; <sayı> olarak 1 veya 2 girilir
 
-/setsk <ID-skilla> 59 - ustawiamy skill na P
+/setsk <yetenek ID> 59 - yeteneği Ustalık (P) seviyesine ayarlar
 
-Sura BM - skille P
+Sura BM - P seviyesindeki yetenekler
 
 /setsk 76 59
 /setsk 77 59
@@ -73,7 +73,7 @@ Sura BM - skille P
 /setsk 80 59
 /setsk 81 59
 
-Sura WP - skille P
+Sura WP - P seviyesindeki yetenekler
 
 /setsk 61 59
 /setsk 62 59
@@ -82,7 +82,7 @@ Sura WP - skille P
 /setsk 65 59
 /setsk 66 59
 
-Wojownik Body - skille P
+Savaşçı Beden - P seviyesindeki yetenekler
 
 /setsk 1 59
 /setsk 2 59
@@ -90,7 +90,7 @@ Wojownik Body - skille P
 /setsk 4 59
 /setsk 5 59
 
-Wojownik Mental - skille P
+Savaşçı Zihin - P seviyesindeki yetenekler
 
 /setsk 16 59
 /setsk 17 59
@@ -98,7 +98,7 @@ Wojownik Mental - skille P
 /setsk 19 59
 /setsk 20 59
 
-Szaman Smok - skille P
+Şaman Ejder - P seviyesindeki yetenekler
 
 /setsk 91 59
 /setsk 92 59
@@ -107,7 +107,7 @@ Szaman Smok - skille P
 /setsk 95 59
 /setsk 96 59
 
-Szaman Leczenie - skille P
+Şaman İyileştirme - P seviyesindeki yetenekler
 
 /setsk 106 59
 /setsk 107 59
@@ -116,7 +116,7 @@ Szaman Leczenie - skille P
 /setsk 110 59
 /setsk 111 59
 
-Ninja Dagger - skille P
+Ninja Hançer - P seviyesindeki yetenekler
 
 /setsk 31 59
 /setsk 32 59
@@ -124,7 +124,7 @@ Ninja Dagger - skille P
 /setsk 34 59
 /setsk 35 59
 
-Ninja Archer - skille P
+Ninja Okçu - P seviyesindeki yetenekler
 
 /setsk 46 59
 /setsk 47 59
@@ -132,18 +132,18 @@ Ninja Archer - skille P
 /setsk 49 59
 /setsk 50 59
 
-/setsk 121 59 - Dowodzenie P
-/setsk 122 59 - Combo P
-/setsk 124 59 - Gornictwo P
-/setsk 125 59 - Kowalstwo P
-/setsk 126 59 - Jezyk Shinsoo P
-/setsk 127 59 - Jezyk Chunjo P
-/setsk 128 59 - Jezyk Jinno P
-/setsk 129 59 - Polimorfia P
-/setsk 130 30 - 30 lvl konia
-/setsk 131 10 - Przywolanie konia 100%
+/setsk 121 59 - Komuta P
+/setsk 122 59 - Kombo P
+/setsk 124 59 - Madencilik P
+/setsk 125 59 - Demircilik P
+/setsk 126 59 - Shinsoo Dili P
+/setsk 127 59 - Chunjo Dili P
+/setsk 128 59 - Jinno Dili P
+/setsk 129 59 - Polimorfi P
+/setsk 130 30 - 30 lv at
+/setsk 131 10 - At Çağırma %100
 
-/setsk 137 59 - Ciecie z Siodla P
-/setsk 138 59 - Stapniecie Konia P
-/setsk 139 59 - Fala Mocy P
-/setsk 140 59 - skill na militara dla ninji
+/setsk 137 59 - Eyerden Kesiş P
+/setsk 138 59 - At Tepmesi P
+/setsk 139 59 - Güç Dalgası P
+/setsk 140 59 - ninja için asker yeteneği

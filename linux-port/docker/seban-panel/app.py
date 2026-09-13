@@ -27,18 +27,18 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
-# Nazwy wiosek pochodzą z questów silnika: new_quest_lv52 czyta pierwsze
-# wioski jako { "Yongan", "Joan", "Pyongmoo" } wg królestwa, a new_quest_lv7
-# nazywa drugie Jayang, Bokjung i Bakra.
+# The village names come from the engine's own quests: new_quest_lv52 reads
+# the first villages as { "Yongan", "Joan", "Pyongmoo" } by kingdom, and
+# new_quest_lv7 names the second ones Jayang, Bokjung and Bakra.
 MAP_NAMES = {
-    1: "Shinsoo M1 — Yongan", 3: "Shinsoo M2 — Jayang", 4: "Ziemia Klanu Shinsoo",
-    5: "Loch Małp Shinsoo", 44: "Ziemia Klanu Jinno", 45: "Loch Małp Jinno",
+    1: "Shinsoo M1 — Yongan", 3: "Shinsoo M2 — Jayang", 4: "Shinsoo Klan Toprakları",
+    5: "Shinsoo Maymun Zindanı", 44: "Jinno Klan Toprakları", 45: "Jinno Maymun Zindanı",
     21: "Chunjo M1 — Joan", 23: "Chunjo M2 — Bokjung",
-    24: "Ziemia Klanu Chunjo", 25: "Łatwy Loch Małp",
+    24: "Chunjo Klan Toprakları", 25: "Kolay Maymun Zindanı",
     41: "Jinno M1 — Pyongmoo", 43: "Jinno M2 — Bakra",
-    61: "Góra Sohan", 63: "Pustynia Yongbi", 64: "Dolina Orków", 104: "Loch Pająków V1",
-    65: "Świątynia Hwang", 71: "Loch Pająków V2",
-    108: "Loch Małp Normalny", 109: "Loch Małp Trudny",
+    61: "Sohan Dağı", 63: "Yongbi Çölü", 64: "Ork Vadisi", 104: "Örümcek Zindanı V1",
+    65: "Hwang Tapınağı", 71: "Örümcek Zindanı V2",
+    108: "Orta Maymun Zindanı", 109: "Zor Maymun Zindanı",
 }
 MAP_BOUNDS = {
     1: (409600, 896000, 102400, 128000), 3: (307200, 819200, 102400, 102400),
@@ -56,10 +56,10 @@ TRACKED_MAP_OPTIONS = tuple((index, MAP_NAMES[index]) for index in MAP_BOUNDS)
 MAP_RESPAWN_OPTIONS = (
     (1, "Shinsoo M1 — Yongan"), (3, "Shinsoo M2 — Jayang"), (21, "Chunjo M1 — Joan"),
     (23, "Chunjo M2 — Bokjung"), (41, "Jinno M1 — Pyongmoo"), (43, "Jinno M2 — Bakra"),
-    (4, "Ziemia Klanu Shinsoo"), (24, "Ziemia Klanu Chunjo"), (44, "Ziemia Klanu Jinno"),
-    (5, "Loch Małp Shinsoo"), (45, "Loch Małp Jinno"),
-    (25, "Łatwy Loch Małp"), (61, "Góra Sohan"), (63, "Pustynia Yongbi"), (64, "Dolina Orków"),
-    (104, "Loch Pająków V1"), (71, "Loch Pająków V2"), (108, "Loch Małp Normalny"), (109, "Loch Małp Trudny"),
+    (4, "Shinsoo Klan Toprakları"), (24, "Chunjo Klan Toprakları"), (44, "Jinno Klan Toprakları"),
+    (5, "Shinsoo Maymun Zindanı"), (45, "Jinno Maymun Zindanı"),
+    (25, "Kolay Maymun Zindanı"), (61, "Sohan Dağı"), (63, "Yongbi Çölü"), (64, "Ork Vadisi"),
+    (104, "Örümcek Zindanı V1"), (71, "Örümcek Zindanı V2"), (108, "Orta Maymun Zindanı"), (109, "Zor Maymun Zindanı"),
 )
 # Monkey Dungeons and Spider Dungeon V1 ship no stone.txt, so only their mob
 # respawns can be configured. The explicit allowlist also protects the helper.
@@ -79,12 +79,12 @@ GAME_WORLD_PORT = int(os.environ.get("PLAYERBOTS_WORLD_PORT", "13000"))
 RATE_NAMES = ("exp", "drop", "yang")
 AI_WEIGHTS_FILE = RATES_SPOOL / "playerbot_weights.tsv"
 AI_WEIGHT_KEYS = (
-    ("RESTOCK", "Mikstury", "🧪"), ("REFINE", "Kowal", "🔨"),
-    ("SKILL", "Księgi umiejętności", "📖"), ("HORSE", "Koń", "🐎"),
-    ("BIOLOG", "Biolog", "🧬"), ("METIN", "Metiny", "🗿"),
-    ("PARTY", "Grupy", "👥"), ("HUNTING", "Misje polowania", "🏹"),
-    ("LEVEL", "Bicie potworów", "⚔️"), ("FISHING", "Wędkowanie", "🎣"),
-    ("TRADE", "Stragany", "🏪"),
+    ("RESTOCK", "İksirler", "🧪"), ("REFINE", "Demirci", "🔨"),
+    ("SKILL", "Yetenek Kitapları", "📖"), ("HORSE", "At", "🐎"),
+    ("BIOLOG", "Biyolog", "🧬"), ("METIN", "Metinler", "🗿"),
+    ("PARTY", "Gruplar", "👥"), ("HUNTING", "Avlanma Görevleri", "🏹"),
+    ("LEVEL", "Canavar Avlama", "⚔️"), ("FISHING", "Balık Tutma", "🎣"),
+    ("TRADE", "Tezgahlar", "🏪"),
 )
 AI_WEIGHT_MIN, AI_WEIGHT_MAX, AI_WEIGHT_NEUTRAL = 25, 250, 100
 # These values share the live weight file with goal weights, but the core treats
@@ -101,10 +101,10 @@ BIOLOGIST_FALLBACK_MISSIONS = (
     "make_herb_lv20", "make_herb_lv25", "collect_quest_lv30",
 )
 PANEL_VERSION_FILE = Path(__file__).parent / "VERSION"
-GM_JOB_OPTIONS = ((0, "Wojownik"), (1, "Ninja"), (2, "Sura"), (3, "Szaman"))
+GM_JOB_OPTIONS = ((0, "Savaşçı"), (1, "Ninja"), (2, "Sura"), (3, "Şaman"))
 # Race IDs are stored in player.job.  0–3 retain the classic class/gender
 # pair; IDs 4–7 are the alternate client portraits and character models.
-GM_GENDER_OPTIONS = (("classic", "Klasyczna dla klasy"), ("male", "Mężczyzna"), ("female", "Kobieta"))
+GM_GENDER_OPTIONS = (("classic", "Sınıf İçin Klasik"), ("male", "Erkek"), ("female", "Kadın"))
 GM_RACE_BY_CLASS_GENDER = {
     (0, "classic"): 0, (1, "classic"): 1, (2, "classic"): 2, (3, "classic"): 3,
     (0, "male"): 0, (0, "female"): 4,
@@ -113,14 +113,14 @@ GM_RACE_BY_CLASS_GENDER = {
     (3, "male"): 7, (3, "female"): 3,
 }
 CLASS_PROFILES = {
-    0: {"name": "Wojownik", "gender": "Mężczyzna", "portrait": "warrior_m.bmp"},
-    4: {"name": "Wojownik", "gender": "Kobieta", "portrait": "warrior_w.bmp"},
-    1: {"name": "Ninja", "gender": "Kobieta", "portrait": "assassin_w.bmp"},
-    5: {"name": "Ninja", "gender": "Mężczyzna", "portrait": "assassin_m.bmp"},
-    2: {"name": "Sura", "gender": "Mężczyzna", "portrait": "sura_m.bmp"},
-    6: {"name": "Sura", "gender": "Kobieta", "portrait": "sura_w.bmp"},
-    3: {"name": "Szaman", "gender": "Kobieta", "portrait": "shaman_w.bmp"},
-    7: {"name": "Szaman", "gender": "Mężczyzna", "portrait": "shaman_m.bmp"},
+    0: {"name": "Savaşçı", "gender": "Erkek", "portrait": "warrior_m.bmp"},
+    4: {"name": "Savaşçı", "gender": "Kadın", "portrait": "warrior_w.bmp"},
+    1: {"name": "Ninja", "gender": "Kadın", "portrait": "assassin_w.bmp"},
+    5: {"name": "Ninja", "gender": "Erkek", "portrait": "assassin_m.bmp"},
+    2: {"name": "Sura", "gender": "Erkek", "portrait": "sura_m.bmp"},
+    6: {"name": "Sura", "gender": "Kadın", "portrait": "sura_w.bmp"},
+    3: {"name": "Şaman", "gender": "Kadın", "portrait": "shaman_w.bmp"},
+    7: {"name": "Şaman", "gender": "Erkek", "portrait": "shaman_m.bmp"},
 }
 GM_JOB_STARTS = {0: (6, 4, 3, 3, 600, 200), 1: (4, 3, 6, 3, 650, 200), 2: (5, 3, 3, 6, 650, 200), 3: (3, 5, 3, 5, 700, 200)}
 GM_EMPIRE_STARTS = {1: (469300, 964200, 1), 2: (55700, 157900, 21), 3: (969600, 278400, 41)}
@@ -141,16 +141,16 @@ try:
 except (OSError, ValueError):
     ITEM_DEFS = {}
 # EPlayerBotPersonality (playerbot_types.h): MERCHANT to 5, WANDERER 6.
-# Ta tabela miala 5 jako wedrowca i konczyla sie na nim, wiec straganiarz
-# czytal sie jako wedrowiec, a piec dopisanych od tamtej pory osobowosci
-# nie czytalo sie wcale.
-BOT_PERSONALITIES = {0: "Wytrwały poszukiwacz", 1: "Pogromca Metinów", 2: "Towarzysz drużyny", 3: "Mistrz ekwipunku", 4: "Rozważny zbieracz", 5: "Handlarz", 6: "Wędrowiec", 7: "Dropek Metinów", 8: "Dropek z M3", 9: "Dropek z M2", 10: "Dropek medali"}
-BOT_AMBITIONS = {0: "Poziom", 1: "Ekwipunek", 2: "Metiny", 3: "Koń", 4: "Biolog", 5: "Umiejętności"}
-BOT_GOALS = {0: "Zdobywanie poziomu", 1: "Przetrwanie", 2: "Wybór profesji", 3: "Zdobycie ekwipunku", 4: "Uzupełnienie zapasów", 5: "Ulepszanie EQ", 6: "Rozwój umiejętności", 7: "Polowanie na Metiny", 8: "Silne cele w PT", 9: "Misja Biologa", 10: "Misja Polowania", 11: "Rozwój konia"}
-BOT_ACTIONS = {0: "Planuje następny ruch", 1: "Podróżuje", 2: "Walczy", 3: "Podnosi łup", 4: "Regeneruje się", 5: "Wybiera profesję", 6: "Handluje", 7: "Ulepsza EQ", 8: "Czyta KU", 9: "Wkłada KD", 10: "Organizuje PT", 11: "Robi Biologa", 12: "Odwiedza Stajennego", 13: "Prowadzi stragan", 14: "Łowi ryby", 15: "Przegląda stragany", 16: "Wabi potwory", 17: "Odpoczywa w mieście"}
-# Akcje, w których bot stoi w miejscu z własnej woli: stragan, wędka, przegląd
-# straganów, lada NPC, kowal, trener, odpoczynek. Bez tego każdy straganiarz
-# był "Możliwie zawieszony" - a flaga z tekstu statusu łapała tylko wędkarzy.
+# This table used to have 5 as the wanderer and end there, so a keeper read
+# as a wanderer, and the five personalities appended since then read as
+# nothing at all.
+BOT_PERSONALITIES = {0: "Kararlı Maceracı", 1: "Metin Kırıcı", 2: "Takım Arkadaşı", 3: "Ekipman Ustası", 4: "Dikkatli Toplayıcı", 5: "Tüccar", 6: "Gezgin", 7: "Metin Dropper'ı", 8: "M3 Dropper'ı", 9: "M2 Dropper'ı", 10: "Madalya Dropper'ı"}
+BOT_AMBITIONS = {0: "Seviye", 1: "Ekipman", 2: "Metinler", 3: "At", 4: "Biyolog", 5: "Yetenekler"}
+BOT_GOALS = {0: "Seviye Kazanma", 1: "Hayatta Kalma", 2: "Meslek Seçme", 3: "Ekipman Edinme", 4: "Stok Tamamlama", 5: "Ekipman Geliştirme", 6: "Yetenek Geliştirme", 7: "Metin Avlama", 8: "Grup Hedefleri", 9: "Biyolog Görevi", 10: "Avlanma Görevi", 11: "At Geliştirme"}
+BOT_ACTIONS = {0: "Sonraki Hamleyi Planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet Topluyor", 4: "İyileşiyor", 5: "Meslek Seçiyor", 6: "Ticaret Yapıyor", 7: "Ekipman Geliştiriyor", 8: "Yetenek Kitabı Okuyor", 9: "Ruh Taşı Takıyor", 10: "Grup Topluyor", 11: "Biyolog Görevi Yapıyor", 12: "Seyis'i Ziyaret Ediyor", 13: "Tezgah İşletiyor", 14: "Balık Tutuyor", 15: "Tezgahlara Bakıyor", 16: "Canavar Çekiyor", 17: "Şehirde Dinleniyor"}
+# Actions where a bot stands still on purpose: stall, rod, browsing stalls,
+# an NPC counter, blacksmith, trainer, resting. Without this every keeper
+# read as "Possibly stuck" - and the status-text flag only caught anglers.
 STATIONARY_ACTIONS = {5, 6, 7, 13, 14, 15, 17}
 ITEM_TYPE_NAMES = (
     "ITEM_NONE", "ITEM_WEAPON", "ITEM_ARMOR", "ITEM_USE", "ITEM_AUTOUSE", "ITEM_MATERIAL", "ITEM_SPECIAL", "ITEM_TOOL", "ITEM_LOTTERY", "ITEM_ELK",
@@ -159,14 +159,14 @@ ITEM_TYPE_NAMES = (
     "ITEM_SPECIAL_DS", "ITEM_EXTRACT", "ITEM_SECONDARY_COIN", "ITEM_RING", "ITEM_BELT", "ITEM_PET", "ITEM_MEDIUM", "ITEM_GACHA", "ITEM_SOUL", "ITEM_PASSIVE",
 )
 APPLY_LABELS = {
-    1: ("Maks. PŻ", ""), 2: ("Maks. PM", ""), 3: ("Witalność", ""), 4: ("Inteligencja", ""), 5: ("Siła", ""), 6: ("Zręczność", ""), 7: ("Szybkość ataku", "%"), 8: ("Szybkość ruchu", "%"), 9: ("Szybkość zaklęcia", "%"), 10: ("Regeneracja PŻ", "%"), 11: ("Regeneracja PM", "%"), 12: ("Odporność na truciznę", "%"), 13: ("Szansa na omdlenie", "%"), 14: ("Szansa na spowolnienie", "%"), 15: ("Szansa na cios krytyczny", "%"), 16: ("Szansa na przeszywający", "%"), 17: ("Wartość ataku", ""), 18: ("Silny przeciw ludziom", "%"), 19: ("Silny przeciw zwierzętom", "%"), 20: ("Silny przeciw orkom", "%"), 21: ("Silny przeciw mistykom", "%"), 22: ("Silny przeciw nieumarłym", "%"), 23: ("Silny przeciw diabłom", "%"), 24: ("Kradzież PŻ", "%"), 25: ("Kradzież PM", "%"), 26: ("Spalenie PM", "%"), 27: ("Odzyskanie PM po obrażeniach", "%"), 28: ("Szansa na blok", "%"), 29: ("Szansa na unik strzał", "%"), 30: ("Odporność na miecze", "%"), 31: ("Odporność na broń dwuręczną", "%"), 32: ("Odporność na sztylety", "%"), 33: ("Odporność na dzwony", "%"), 34: ("Odporność na wachlarze", "%"), 35: ("Odporność na strzały", "%"), 36: ("Odporność na ogień", "%"), 37: ("Odporność na błyskawice", "%"), 38: ("Odporność na magię", "%"), 39: ("Odporność na wiatr", "%"), 40: ("Odbicie obrażeń fizycznych", "%"), 41: ("Odbicie klątwy", "%"), 42: ("Skrócenie trucia", "%"), 43: ("Odzyskanie PM po zabiciu", "%"), 44: ("Bonus doświadczenia", "%"), 45: ("Bonus Yang", "%"), 46: ("Bonus dropu przedmiotów", "%"), 47: ("Bonus mikstur", "%"), 48: ("Odzyskanie PŻ po zabiciu", "%"), 49: ("Odporność na omdlenie", ""), 50: ("Odporność na spowolnienie", ""), 51: ("Odporność na przewrócenie", ""), 52: ("Bonus umiejętności", "%"), 53: ("Zasięg łuku", "%"), 54: ("Wartość ataku", ""), 55: ("Wartość obrony", ""), 56: ("Magiczna wartość ataku", ""), 57: ("Magiczna wartość obrony", ""), 58: ("Szansa na klątwę", "%"), 59: ("Maks. wytrzymałość", ""), 60: ("Silny przeciw wojownikom", "%"), 61: ("Silny przeciw ninja", "%"), 62: ("Silny przeciw surom", "%"), 63: ("Silny przeciw szamanom", "%"), 64: ("Silny przeciw potworom", "%"), 70: ("Maks. PŻ", "%"), 71: ("Obrażenia umiejętności", "%"), 72: ("Średnie obrażenia", "%"), 73: ("Odporność na umiejętności", "%"), 74: ("Odporność na średnie obrażenia", "%"), 75: ("Bonus doświadczenia", "%"), 76: ("Bonus dropu", "%"), 77: ("Kradzież PŻ", "%"), 78: ("Odporność na wojowników", "%"), 79: ("Odporność na ninja", "%"), 80: ("Odporność na sury", "%"), 81: ("Odporność na szamanów", "%"), 82: ("Energia", "%"), 83: ("Wartość obrony", ""), 84: ("Bonus atrybutów kostiumu", "%"), 85: ("Magiczny atak", "%"), 86: ("Atak fizyczny i magiczny", "%"), 87: ("Odporność na lód", "%"), 88: ("Odporność na ziemię", "%"), 89: ("Odporność na mrok", "%"), 90: ("Odporność na cios krytyczny", "%"), 91: ("Odporność na przeszywający", "%"), 1138: ("Terror", "%"), 1139: ("Regeneracja wytrzymałości", "%"), 1140: ("Atak sztyletem przeciw potworom", ""), 1141: ("Wartość ataku przeciw potworom", ""), 1142: ("Odporność na potwory", "‰"), 1143: ("Pochłanianie obrażeń", "%"), 1144: ("Pochłanianie obrażeń od potworów", "%"), 1145: ("Przełamanie odporności na ogłuszenie", ""), 1146: ("Przełamanie klątwy świątyni", ""), 1147: ("Czas trwania umiejętności", "%"), 1148: ("Silny przeciw potworom z Doliny Orków", "%"), 1149: ("Silny przeciw Metinom", "%"), 1150: ("Silny przeciw bossom", "%"), 1151: ("Magiczny atak przeciw potworom", "%"), 1152: ("Przełamanie odporności na miecz", "%"), 1153: ("Przełamanie odporności na broń dwuręczną", "%"), 1154: ("Przełamanie odporności na sztylet", "%"), 1155: ("Przełamanie odporności na dzwonek", "%"), 1156: ("Przełamanie odporności na wachlarz", "%"), 1157: ("Przełamanie odporności na łuk", "%"), 1158: ("Szansa na zbieranie", "%"), 1159: ("Szansa na naukę", "%"), 1160: ("Odporność na ludzi", "%"), 1161: ("Magiczny atak", ""), 1162: ("Szansa na podpalenie", "%"), 1163: ("Zamiana obrażeń na PE", "%"), 1164: ("Szansa na rzadki łup", "%"), 1165: ("Magiczna wartość ataku przeciw potworom", ""), 1166: ("Szansa na unieruchomienie", "%"), 1167: ("Atak specjalny", ""), 1168: ("Kara za śmierć", "%")}
-# 71 i 72 są w tablicy powyżej, we właściwej kolejności: common/length.h
-# niesie numery we własnych komentarzach - APPLY_SKILL_DAMAGE_BONUS to 71,
-# APPLY_NORMAL_HIT_DAMAGE_BONUS to 72. Stała tu wcześniej poprawka
-# nadpisująca błędną tablicę i tłumacząca ją tym, że "w tej kompilacji pola
-# są odwrotne" - nic ich nie odwraca. Uzasadnienie było nieprawdziwe, a samo
-# nadpisanie sięgało tylko opisów przedmiotów, więc ranking - który bierze
-# dane z osobnego zapytania - pokazywał je zamienione jeszcze długo potem.
+    1: ("Maks. Can", ""), 2: ("Maks. Mana", ""), 3: ("Dayanıklılık", ""), 4: ("Zeka", ""), 5: ("Güç", ""), 6: ("Çeviklik", ""), 7: ("Saldırı Hızı", "%"), 8: ("Hareket Hızı", "%"), 9: ("Büyü Hızı", "%"), 10: ("Can Yenilenmesi", "%"), 11: ("Mana Yenilenmesi", "%"), 12: ("Zehire Karşı Direnç", "%"), 13: ("Bayıltma Şansı", "%"), 14: ("Yavaşlatma Şansı", "%"), 15: ("Kritik Vuruş Şansı", "%"), 16: ("Delici Vuruş Şansı", "%"), 17: ("Saldırı Değeri", ""), 18: ("İnsanlara Karşı Güçlü", "%"), 19: ("Hayvanlara Karşı Güçlü", "%"), 20: ("Orklara Karşı Güçlü", "%"), 21: ("Mistiklere Karşı Güçlü", "%"), 22: ("Yarı Ölülere Karşı Güçlü", "%"), 23: ("Şeytanlara Karşı Güçlü", "%"), 24: ("Can Çalma Şansı", "%"), 25: ("Mana Çalma Şansı", "%"), 26: ("Mana Yakma Şansı", "%"), 27: ("Vurulunca Mana Kazanma Şansı", "%"), 28: ("Blok Şansı", "%"), 29: ("Ok Kaçırma Şansı", "%"), 30: ("Kılıca Karşı Direnç", "%"), 31: ("İki Elli Silaha Karşı Direnç", "%"), 32: ("Hançere Karşı Direnç", "%"), 33: ("Çana Karşı Direnç", "%"), 34: ("Yelpazeye Karşı Direnç", "%"), 35: ("Oka Karşı Direnç", "%"), 36: ("Ateşe Karşı Direnç", "%"), 37: ("Yıldırıma Karşı Direnç", "%"), 38: ("Büyüye Karşı Direnç", "%"), 39: ("Rüzgara Karşı Direnç", "%"), 40: ("Fiziksel Hasar Yansıtma Şansı", "%"), 41: ("Lanet Yansıtma Şansı", "%"), 42: ("Zehirlenme Süresini Kısaltma", "%"), 43: ("Öldürünce Mana Kazanma Şansı", "%"), 44: ("Tecrübe Bonusu", "%"), 45: ("Yang Bonusu", "%"), 46: ("Eşya Düşme Bonusu", "%"), 47: ("İksir Bonusu", "%"), 48: ("Öldürünce Can Kazanma Şansı", "%"), 49: ("Bayılmaya Karşı Direnç", ""), 50: ("Yavaşlamaya Karşı Direnç", ""), 51: ("Devrilmeye Karşı Direnç", ""), 52: ("Yetenek Bonusu", "%"), 53: ("Yay Menzili", "%"), 54: ("Saldırı Değeri", ""), 55: ("Savunma Değeri", ""), 56: ("Büyü Saldırı Değeri", ""), 57: ("Büyü Savunma Değeri", ""), 58: ("Lanet Şansı", "%"), 59: ("Maks. Dayanıklılık", ""), 60: ("Savaşçılara Karşı Güçlü", "%"), 61: ("Ninjalara Karşı Güçlü", "%"), 62: ("Sura'ya Karşı Güçlü", "%"), 63: ("Şamanlara Karşı Güçlü", "%"), 64: ("Canavarlara Karşı Güçlü", "%"), 70: ("Maks. Can", "%"), 71: ("Yetenek Hasarı", "%"), 72: ("Ortalama Hasar", "%"), 73: ("Yetenek Hasarına Karşı Direnç", "%"), 74: ("Ortalama Hasara Karşı Direnç", "%"), 75: ("Tecrübe Bonusu", "%"), 76: ("Düşme Bonusu", "%"), 77: ("Can Çalma Şansı", "%"), 78: ("Savaşçı Saldırılarına Karşı Direnç", "%"), 79: ("Ninja Saldırılarına Karşı Direnç", "%"), 80: ("Sura Saldırılarına Karşı Direnç", "%"), 81: ("Şaman Saldırılarına Karşı Direnç", "%"), 82: ("Enerji", "%"), 83: ("Savunma Değeri", ""), 84: ("Kostüm Bonusu", "%"), 85: ("Büyü Saldırısı", "%"), 86: ("Fiziksel ve Büyü Saldırısı", "%"), 87: ("Buza Karşı Direnç", "%"), 88: ("Toprağa Karşı Direnç", "%"), 89: ("Karanlığa Karşı Direnç", "%"), 90: ("Kritik Vuruşa Karşı Direnç", "%"), 91: ("Delici Vuruşa Karşı Direnç", "%"), 1138: ("Terör", "%"), 1139: ("Dayanıklılık Yenilenmesi", "%"), 1140: ("Canavarlara Karşı Hançer Saldırısı", ""), 1141: ("Canavarlara Karşı Saldırı Değeri", ""), 1142: ("Canavarlara Karşı Direnç", "‰"), 1143: ("Hasar Emilimi", "%"), 1144: ("Canavarlardan Hasar Emilimi", "%"), 1145: ("Sersemletme Bağışıklığını Kırma", ""), 1146: ("Tapınak Lanetini Kırma", ""), 1147: ("Yetenek Süresi", "%"), 1148: ("Ork Vadisi Canavarlarına Karşı Güçlü", "%"), 1149: ("Metin Taşlarına Karşı Güçlü", "%"), 1150: ("Boss'lara Karşı Güçlü", "%"), 1151: ("Canavarlara Karşı Büyü Saldırısı", "%"), 1152: ("Kılıç Direncini Kırma", "%"), 1153: ("İki Elli Silah Direncini Kırma", "%"), 1154: ("Hançer Direncini Kırma", "%"), 1155: ("Çan Direncini Kırma", "%"), 1156: ("Yelpaze Direncini Kırma", "%"), 1157: ("Yay Direncini Kırma", "%"), 1158: ("Toplama Şansı", "%"), 1159: ("Öğrenme Şansı", "%"), 1160: ("İnsanlara Karşı Direnç", "%"), 1161: ("Büyü Saldırısı", ""), 1162: ("Yakma Şansı", "%"), 1163: ("Hasarın Manaya Dönüşümü", "%"), 1164: ("Nadir Düşme Şansı", "%"), 1165: ("Canavarlara Karşı Büyü Saldırı Değeri", ""), 1166: ("Sabitleme Şansı", "%"), 1167: ("Özel Saldırı", ""), 1168: ("Ölüm Cezası", "%")}
+# 71 and 72 are in the table above, in the right order: common/length.h
+# carries the numbers in its own comments - APPLY_SKILL_DAMAGE_BONUS is 71,
+# APPLY_NORMAL_HIT_DAMAGE_BONUS is 72. A "fix" used to stand here that
+# overwrote the table and explained it as "the fields are swapped in this
+# build" - nothing swaps them. The justification was untrue, and the
+# overwrite only reached item descriptions, so the ranking - which reads
+# from a separate query - kept showing them swapped long after.
 # Which engine the panel looks at (PLAYERBOTS_ENGINE). mt2009 keeps an
 # item's bonus lines as POINT_* numbers: the two damage lines are 121 and
 # 122 there, every attrtype goes through POINT_TO_APPLY before APPLY_LABELS,
@@ -192,18 +192,18 @@ POINT_TO_APPLY = {6: 1, 8: 2, 13: 3, 15: 4, 12: 5, 14: 6, 17: 7, 19: 8, 21: 9, 3
 # The kingdom of a character: the index, then (r40250 only) the account.
 EMPIRE_EXPR = "COALESCE(NULLIF(pi.empire,0),0)" if ENGINE_MT2009 else "COALESCE(NULLIF(pi.empire,0),a.empire,0)"
 
-JOB_NAMES = ("Wojownik", "Ninja", "Sura", "Szaman")
+JOB_NAMES = ("Savaşçı", "Ninja", "Sura", "Şaman")
 SKILLS = {
     # Exact vnum/name pairs from Tieru's current panel. The old mapping put
     # display names next to the wrong VNUMs, hence correct icons looked wrong.
-    (0, 1): ((1, "Trzystronne Cięcie"), (2, "Wir Miecza"), (3, "Berserk"), (4, "Aura Miecza"), (5, "Szarża")),
-    (0, 2): ((16, "Duchowe Uderzenie"), (17, "Tąpnięcie"), (18, "Uderzenie Miecza"), (19, "Silne Ciało"), (20, "Walnięcie")),
-    (1, 1): ((31, "Zasadzka"), (32, "Szybki Atak"), (33, "Wirujący Sztylet"), (34, "Krycie się"), (35, "Trująca Chmura")),
-    (1, 2): ((46, "Powtarzalny Strzał"), (47, "Deszcz Strzał"), (48, "Ognista Strzała"), (49, "Bezszelestny Chód"), (50, "Trująca Strzała")),
-    (2, 1): ((61, "Uderzenie Palcem"), (62, "Smoczy Wir"), (63, "Czarowane Ostrze"), (64, "Strach"), (65, "Czarowana Zbroja"), (66, "Rozproszenie Magii")),
-    (2, 2): ((76, "Mroczne Uderzenie"), (77, "Ogniste Uderzenie"), (78, "Ognisty Duch"), (79, "Mroczna Ochrona"), (80, "Duchowy Cios"), (81, "Mroczna Sfera")),
-    (3, 1): ((91, "Latający Talizman"), (92, "Strzelający Smok"), (93, "Smoczy Skowyt"), (94, "Błogosławieństwo"), (95, "Odbicie"), (96, "Pomoc Smoka")),
-    (3, 2): ((106, "Błyskawiczny Rzut"), (107, "Przywołanie Błyskawicy"), (108, "Burzowy Szpon"), (109, "Leczenie"), (110, "Zwinność"), (111, "Zwiększenie Ataku")),
+    (0, 1): ((1, "Üç Yönlü Kesiş"), (2, "Kılıç Dönüşü"), (3, "Berserk"), (4, "Kılıç Aurası"), (5, "Hamle")),
+    (0, 2): ((16, "Ruh Darbesi"), (17, "Ezme"), (18, "Kılıç Darbesi"), (19, "Güçlü Beden"), (20, "Vuruş")),
+    (1, 1): ((31, "Pusu"), (32, "Hızlı Saldırı"), (33, "Dönen Hançer"), (34, "Gizlenme"), (35, "Zehir Bulutu")),
+    (1, 2): ((46, "Tekrarlı Atış"), (47, "Ok Yağmuru"), (48, "Ateş Oku"), (49, "Sessiz Adım"), (50, "Zehirli Ok")),
+    (2, 1): ((61, "Parmak Darbesi"), (62, "Ejder Girdabı"), (63, "Büyülü Bıçak"), (64, "Korku"), (65, "Büyülü Zırh"), (66, "Büyü Bozma")),
+    (2, 2): ((76, "Karanlık Darbe"), (77, "Alev Darbesi"), (78, "Alev Ruhu"), (79, "Karanlık Koruma"), (80, "Ruh Darbesi"), (81, "Karanlık Küre")),
+    (3, 1): ((91, "Uçan Tılsım"), (92, "Ateş Eden Ejder"), (93, "Ejder Kükremesi"), (94, "Kutsama"), (95, "Yansıtma"), (96, "Ejder Yardımı")),
+    (3, 2): ((106, "Yıldırım Fırlatma"), (107, "Yıldırım Çağırma"), (108, "Fırtına Pençesi"), (109, "Şifa"), (110, "Çeviklik"), (111, "Saldırı Artışı")),
 }
 try:
     ITEM_ICONS = json.loads((Path(__file__).parent / "static" / "item_icons.json").read_text(encoding="utf-8"))
@@ -216,20 +216,20 @@ except (OSError, json.JSONDecodeError):
 try:
     GM_COMMANDS = (Path(__file__).parent / "gm_commands.txt").read_text(encoding="utf-8", errors="replace")
 except OSError:
-    GM_COMMANDS = "Brak pliku z komendami."
+    GM_COMMANDS = "Komut dosyası bulunamadı."
 
 
-# MyISAM nie przezywa nieczystego zatrzymania, a ten panel czyta na stronie
-# glownej najruchliwsza tabele w calym swiecie - log.log, dla rankingu wedkarzy.
-# Gdy jest uszkodzona, kazde zapytanie do niej rzuca wyjatkiem, Flask pokazuje
-# wlasne "Internal Server Error", i to zrzut ekranu tej strony trafia na
-# Discorda - bez nazwy tabeli, bez przyczyny, bez niczego do zrobienia
-# (archonek, 10 wrzesnia: "klikam i blad wyskakuje"; zwykly panel dzialal, bo
-# jego strona glowna do log.log nie zaglada). Aktualizacja tego nie naprawia:
-# uszkodzenie siedzi w danych na wolumenie, nie w obrazie.
+# MyISAM does not survive an unclean stop, and this panel's front page reads
+# the busiest table in the whole world - log.log, for the fishing ranking.
+# When it is damaged, every query against it throws, Flask shows its own
+# "Internal Server Error", and that page's screenshot is what reaches
+# Discord - no table name, no cause, nothing to act on (archonek, 10
+# September: "I click and an error pops up"; the classic panel worked fine,
+# because its front page never touches log.log). An update does not fix
+# this: the damage sits in the data on the volume, not in the image.
 #
-# Numery bledow: 1194 "is marked as crashed and should be repaired",
-# 1195 i 144 "last repair failed", 145 to samo dla starszych serwerow.
+# Error numbers: 1194 "is marked as crashed and should be repaired",
+# 1195 and 144 "last repair failed", 145 the same for older servers.
 CRASHED_TABLE_ERRNOS = (144, 145, 1194, 1195)
 
 
@@ -238,42 +238,42 @@ def handle_crashed_table(error):
     errno = error.args[0] if error.args else 0
     message = str(error.args[1]) if len(error.args) > 1 else str(error)
     if errno not in CRASHED_TABLE_ERRNOS:
-        # Nie nasza sprawa - niech Flask pokaze swoje 500 i zapisze slad.
+        # Not our concern - let Flask show its own 500 and log the trace.
         raise error
     table = ""
     match = re.search(r"Table '([^']+)'", message)
     if match:
         table = match.group(1).replace("./", "").replace("/", ".")
-    named = ("Tabela <code>%s</code>" % escape(table)) if table else "Jedna z tabel bazy"
-    body = """<!doctype html><html lang="pl"><head><meta charset="utf-8">
-<title>Uszkodzona tabela bazy</title>
+    named = ("<code>%s</code> Tablosu" % escape(table)) if table else "Veritabanı Tablolarından Biri"
+    body = """<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<title>Bozuk Veritabanı Tablosu</title>
 <style>body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:52em;margin:3em auto;padding:0 1.5em;line-height:1.6;color:#222}
 h1{font-size:1.5em}code{background:#f2f2f2;padding:.15em .35em;border-radius:3px}
 pre{background:#f2f2f2;padding:1em;border-radius:5px;overflow-x:auto}
 .note{background:#fff8e1;border-left:4px solid #e0a800;padding:.8em 1em;margin:1.5em 0}</style>
 </head><body>
-<h1>Uszkodzona tabela bazy danych</h1>
-<p>%s jest oznaczona jako uszkodzona, wiec panel nie moze jej odczytac.
-Silnik gry uzywa tabel MyISAM, a te nie przezywaja nagłego zatrzymania -
-wystarczy zamkniecie Dockera w trakcie zapisu albo zanik zasilania.</p>
-<div class="note"><strong>Aktualizacja serwera tego nie naprawi.</strong>
-Uszkodzenie jest w danych na dysku, a nie w programie - nowa wersja czyta te
-same pliki.</div>
-<h2>Jak naprawic</h2>
-<p>Otworz PowerShell w folderze serwera, w podkatalogu <code>linux-port\\docker</code>
-(w launcherze przycisk FOLDER SERWERA), i uruchom:</p>
+<h1>Bozuk Veritabanı Tablosu</h1>
+<p>%s bozuk olarak işaretlenmiş, bu yüzden panel onu okuyamıyor.
+Oyun motoru MyISAM tabloları kullanır ve bunlar ani bir durmayı
+kaldıramaz - Docker'ın yazma sırasında kapanması ya da elektrik kesintisi yeterlidir.</p>
+<div class="note"><strong>Sunucu güncellemesi bunu düzeltmez.</strong>
+Bozukluk diskteki verilerdedir, programda değil - yeni sürüm de aynı
+dosyaları okur.</div>
+<h2>Nasıl Onarılır</h2>
+<p>Sunucu klasöründe, <code>linux-port\\docker</code> alt klasöründe
+PowerShell açın (launcher'da SUNUCU KLASÖRÜ butonu) ve şunu çalıştırın:</p>
 <pre>docker compose exec mariadb mysqlcheck -uroot -p --auto-repair --databases log player account common</pre>
-<p>Zapyta o haslo - to <code>M2_DB_ROOT_PASSWORD</code> z pliku <code>.env</code>
-w tym samym folderze. Naprawa duzej tabeli logow potrafi potrwac kilka minut.</p>
-<h2>Jesli naprawa sie nie uda</h2>
-<p>Baza <code>log</code> to wylacznie historia: co kto podniosl, ulepszyl i
-powiedzial. Gra jej nie czyta i zadna postac, przedmiot ani bot od niej nie
-zaleza. Jesli <code>mysqlcheck</code> zglosi, ze nie da rady, mozna te tabele
-oproznic bez straty dla swiata:</p>
+<p>Şifre soracak - bu aynı klasördeki <code>.env</code> dosyasındaki
+<code>M2_DB_ROOT_PASSWORD</code>'tur. Büyük log tablosunun onarımı birkaç dakika sürebilir.</p>
+<h2>Onarım Başarısız Olursa</h2>
+<p><code>log</code> veritabanı sadece geçmiş bilgisidir: kimin ne aldığı,
+geliştirdiği ve söylediği. Oyun onu okumaz ve hiçbir karakter, eşya ya da bot
+ona bağlı değildir. Eğer <code>mysqlcheck</code> başarısız olduğunu bildirirse,
+bu tabloları dünyaya zarar vermeden boşaltabilirsiniz:</p>
 <pre>docker compose exec mariadb mariadb -uroot -p -e "TRUNCATE log.log; TRUNCATE log.levellog; TRUNCATE log.shout_log;"</pre>
-<div class="note">Nie rob tego dla baz <code>player</code>, <code>account</code>
-ani <code>common</code> - tam sa postacie, konta i boty.</div>
-<p style="margin-top:2em;color:#666;font-size:.9em">Blad bazy: %s (%s)</p>
+<div class="note">Bunu <code>player</code>, <code>account</code>
+ya da <code>common</code> veritabanları için YAPMAYIN - orada karakterler, hesaplar ve botlar var.</div>
+<p style="margin-top:2em;color:#666;font-size:.9em">Veritabanı hatası: %s (%s)</p>
 </body></html>""" % (named, errno, escape(message))
     return body, 500
 
@@ -321,7 +321,7 @@ def cp1250_hex_text(value):
 def map_name(index):
     """Name only maps which this Playerbots world actually runs."""
     index = int(index or 0)
-    return MAP_NAMES.get(index, f"Poza aktywnym światem (mapa #{index})")
+    return MAP_NAMES.get(index, f"Aktif dünyanın dışında (harita #{index})")
 
 
 def changelog_entries():
@@ -338,7 +338,7 @@ def changelog_entries():
                 entries.append(current)
             heading = line[3:].strip()
             timestamp, separator, version = heading.partition(" · ")
-            current = {"timestamp": timestamp if separator else "Wcześniejsza wersja", "version": version if separator else heading, "changes": []}
+            current = {"timestamp": timestamp if separator else "Önceki sürüm", "version": version if separator else heading, "changes": []}
         elif current and line.startswith("- "):
             current["changes"].append(line[2:].strip())
     if current:
@@ -378,9 +378,9 @@ def validate_display_settings(form):
         stuck = 5
     theme, monitor_mode = form.get("theme", "ocean"), form.get("monitor_mode", "vps")
     if not name:
-        return None, "Nazwa panelu nie może być pusta."
+        return None, "Panel adı boş olamaz."
     if theme not in ("ocean", "ember", "forest") or monitor_mode not in ("vps", "docker"):
-        return None, "Nieprawidłowe ustawienia wyglądu lub monitoringu."
+        return None, "Geçersiz görünüm veya izleme ayarları."
     return {"panel_name": name, "stuck_minutes": str(stuck), "theme": theme, "monitor_mode": monitor_mode}, None
 
 
@@ -405,16 +405,16 @@ def honor_rank(value):
     """The core stores alignment in tenths; return the in-game value and colour."""
     points = int(float(value or 0) / 10)
     bands = (
-        (12000, "Rycerski", "knightly"), (8000, "Szlachetny", "noble"),
-        (4000, "Dobry", "good"), (1000, "Przyjazny", "friendly"),
-        (0, "Neutralny", "neutral"), (-3999, "Agresywny", "aggressive"),
-        (-7999, "Nieuczciwy", "dishonest"), (-11999, "Złośliwy", "malicious"),
-        (-20000, "Okrutny", "cruel"),
+        (12000, "Şövalye Ruhlu", "knightly"), (8000, "Asil", "noble"),
+        (4000, "İyi", "good"), (1000, "Dostane", "friendly"),
+        (0, "Nötr", "neutral"), (-3999, "Saldırgan", "aggressive"),
+        (-7999, "Sahtekar", "dishonest"), (-11999, "Kötü Niyetli", "malicious"),
+        (-20000, "Acımasız", "cruel"),
     )
     for threshold, title, css in bands:
         if points >= threshold:
             return {"points": points, "title": title, "css": css}
-    return {"points": points, "title": "Okrutny", "css": "cruel"}
+    return {"points": points, "title": "Acımasız", "css": "cruel"}
 
 
 def live_label(field, value):
@@ -430,7 +430,7 @@ def is_stationary_activity(status, action=None):
     except (TypeError, ValueError):
         pass
     text = str(status or "").casefold()
-    return any(marker in text for marker in ("łowi", "lowi", "ryb", "fishing", "czekam na branie"))
+    return any(marker in text for marker in ("balik", "olta", "fishing"))
 
 
 def apply_text(apply_type, value):
@@ -450,19 +450,19 @@ def item_base_stats(vnum):
     stats, item_type = [], int(proto.get("type") or 0)
     level = int(proto.get("level") or 0)
     if level:
-        stats.append(f"Wymagany poziom: {level}")
+        stats.append(f"Gerekli seviye: {level}")
     value = lambda index: int(proto.get(f"value{index}") or 0)
     if item_type == 1:  # ITEM_WEAPON: magic 1/2, physical 3/4.
         attack_min, attack_max = value(3), value(4)
         magic_min, magic_max = value(1), value(2)
         if attack_min or attack_max:
-            stats.append(f"Wartość ataku: {attack_min}–{attack_max}" if attack_min != attack_max else f"Wartość ataku: {attack_max}")
+            stats.append(f"Saldırı değeri: {attack_min}–{attack_max}" if attack_min != attack_max else f"Saldırı değeri: {attack_max}")
         if magic_min or magic_max:
-            stats.append(f"Wartość magicznego ataku: {magic_min}–{magic_max}" if magic_min != magic_max else f"Wartość magicznego ataku: {magic_max}")
+            stats.append(f"Büyü saldırı değeri: {magic_min}–{magic_max}" if magic_min != magic_max else f"Büyü saldırı değeri: {magic_max}")
     elif item_type == 2:  # ITEM_ARMOR, including body armour and shields.
         defense = value(1)
         if defense:
-            stats.append(f"Wartość obrony: {defense}")
+            stats.append(f"Savunma değeri: {defense}")
     return stats
 
 
@@ -533,16 +533,16 @@ def news_feed_events():
             match = re.search(r"\+([789])(?:\s|$)", hint)
             if match:
                 item_name = cp1250_hex_text(row.get("item_name_hex")) or hint.strip()
-                message = f"{name} ulepszył {item_name}"
+                message = f"{name}, {item_name} eşyasını geliştirdi"
         elif how == "SKILLUP":
             match = re.search(r"SkillUp:\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)", hint)
             if match:
                 vnum, master, level = map(int, match.groups())
                 rank = skill_rank(master, level)
                 if (rank.startswith("M") and rank != "M1") or rank.startswith("G") or rank == "P":
-                    message = f"{name} rozwinął {SKILL_NAMES.get(vnum, f'umiejętność #{vnum}')} na {rank}"
+                    message = f"{name}, {SKILL_NAMES.get(vnum, f'#{vnum} yeteneğini')} {rank} seviyesine geliştirdi"
         elif how == "GET" and "małż" in hint.casefold():
-            message = f"{name} znalazł Małż podczas połowu"
+            message = f"{name} balık tutarken Midye buldu"
         if message:
             seen.add(key)
             events.append({"key": key, "time": row["time"].strftime("%H:%M") if hasattr(row.get("time"), "strftime") else str(row.get("time"))[11:16], "message": message, "refine_tier": int(match.group(1)) if how == "REFINE SUCCESS" and match else 0})
@@ -641,7 +641,7 @@ def read_rate_status():
 
 def read_map_regen_status():
     status_file = RATES_SPOOL / "map-regens.status"
-    result = {"state": "idle", "message": "Brak zapisanej zmiany", "values": {}, "stones": {}}
+    result = {"state": "idle", "message": "Kaydedilmiş değişiklik yok", "values": {}, "stones": {}}
     try:
         for line in status_file.read_text(encoding="utf-8", errors="replace").splitlines():
             key, separator, value = line.partition("=")
@@ -688,7 +688,7 @@ def update_status():
         result["percent"] = 0
     if result["state"] == "running":
         result["percent"] = max(5, result["percent"])
-    result["message"] = result.get("message", "Aktualizator czeka na zlecenie." if result["watcher_ready"] else "Aktualizator nie jest uruchomiony.")
+    result["message"] = result.get("message", "Güncelleyici bir talep bekliyor." if result["watcher_ready"] else "Güncelleyici çalışmıyor.")
     try:
         result["log"] = (UPDATE_SPOOL / "update.log").read_text(encoding="utf-8", errors="replace").splitlines()[-18:]
     except OSError:
@@ -703,7 +703,7 @@ def installed_playerbots_version():
         match = re.search(r"version ([0-9]+(?:\.[0-9]+)+)", current.get("message", ""))
         if match:
             return match.group(1)
-    return os.environ.get("PLAYERBOTS_VERSION", "nieustawiona")
+    return os.environ.get("PLAYERBOTS_VERSION", "ayarlanmamış")
 
 
 def version_key(value):
@@ -723,10 +723,10 @@ def latest_playerbots_release():
             payload = json.load(response)
         tag = str(payload.get("tag_name") or "").strip()
         if not version_key(tag):
-            raise ValueError("GitHub nie zwrócił poprawnego numeru wydania.")
+            raise ValueError("GitHub geçerli bir sürüm numarası döndürmedi.")
         result["latest"] = tag.lstrip("vV")
     except (OSError, ValueError, HTTPError, URLError, json.JSONDecodeError) as exc:
-        result["error"] = str(exc)[:120] or "Nie udało się połączyć z GitHub."
+        result["error"] = str(exc)[:120] or "GitHub'a bağlanılamadı."
     _playerbots_release_cache.clear()
     _playerbots_release_cache.update(result)
     return dict(result)
@@ -741,9 +741,9 @@ def playerbots_release_status():
         behind = installed_key < latest_key
         return {"installed": installed, "latest": latest, "behind": behind,
                 "tone": "outdated" if behind else "current",
-                "label": f"Dostępna {latest}" if behind else "Aktualna"}
+                "label": f"{latest} Mevcut" if behind else "Güncel"}
     return {"installed": installed, "latest": latest, "behind": False, "tone": "unknown",
-            "label": "Nie sprawdzono GitHub" if latest_info.get("error") else "Brak wersji lokalnej"}
+            "label": "GitHub kontrol edilmedi" if latest_info.get("error") else "Yerel sürüm yok"}
 
 
 def update_csrf_token():
@@ -758,9 +758,9 @@ def queue_tieru_update():
     """Request only the updater's fixed sequence; no command, URL or path crosses this boundary."""
     current = update_status()
     if not current["watcher_ready"]:
-        raise RuntimeError("Aktualizator nie jest gotowy. Administrator musi uruchomić usługę updater.")
+        raise RuntimeError("Güncelleyici hazır değil. Yönetici updater servisini başlatmalı.")
     if current.get("state") == "running":
-        raise RuntimeError("Aktualizacja już trwa. Poczekaj na jej zakończenie.")
+        raise RuntimeError("Güncelleme zaten devam ediyor. Bitmesini bekleyin.")
     version = installed_playerbots_version().strip()
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
         version = "0"
@@ -823,9 +823,9 @@ def write_ai_weights(values):
     """Atomically replace known values without erasing newer-core settings."""
     RATES_SPOOL.mkdir(parents=True, exist_ok=True)
     content = [
-        "# Metin2 Playerbots — wagi celów ustawione przez Seban Panel.",
-        "# 25 = rzadko · 100 = domyślnie · 250 = często.",
-        "# Rdzeń odczytuje plik co pięć sekund; restart nie jest wymagany.", "",
+        "# Metin2 Playerbots — Seban Panel tarafından ayarlanan hedef ağırlıkları.",
+        "# 25 = nadiren · 100 = varsayılan · 250 = sık.",
+        "# Çekirdek dosyayı her beş saniyede okur; yeniden başlatma gerekmez.", "",
     ]
     content.extend(f"{key}\t{values[key]}" for key, _, _ in AI_WEIGHT_KEYS)
     content.append(f"CHAT\t{1 if values.get('CHAT', 1) else 0}")
@@ -858,9 +858,9 @@ def restart_progress():
             if sep:
                 result[key] = value
         result["percent"] = max(0, min(100, int(result.get("percent", 0))))
-        result["stage"] = result.get("message", "Oczekiwanie na stan serwera")
+        result["stage"] = result.get("message", "Sunucu durumu bekleniyor")
         if (RATES_SPOOL / "server-settings.request").exists() and result.get("state") != "running":
-            result.update(state="running", percent=5, stage="Zlecenie oczekuje na serwer")
+            result.update(state="running", percent=5, stage="Talep sunucuyu bekliyor")
         return result
     except (OSError, ValueError):
         pass
@@ -869,15 +869,15 @@ def restart_progress():
     state = status.get("state", "unknown")
     if state == "running":
         if not auth:
-            return {"percent": 25, "stage": "Zatrzymywanie procesów gry", "state": state}
+            return {"percent": 25, "stage": "Oyun süreçleri durduruluyor", "state": state}
         if not world:
-            return {"percent": 65, "stage": "Serwer logowania działa — uruchamianie świata", "state": state}
-        return {"percent": 85, "stage": "Sprawdzanie kanału i usług", "state": state}
+            return {"percent": 65, "stage": "Giriş sunucusu çalışıyor — dünya başlatılıyor", "state": state}
+        return {"percent": 85, "stage": "Kanal ve servisler kontrol ediliyor", "state": state}
     if state == "ok" and auth and world:
-        return {"percent": 100, "stage": "Serwer działa", "state": state}
+        return {"percent": 100, "stage": "Sunucu çalışıyor", "state": state}
     if state == "failed":
-        return {"percent": 100, "stage": status.get("message", "Restart nie powiódł się"), "state": state}
-    return {"percent": 100 if auth and world else 40, "stage": "Serwer działa" if auth and world else "Oczekiwanie na usługi", "state": state}
+        return {"percent": 100, "stage": status.get("message", "Yeniden başlatma başarısız oldu"), "state": state}
+    return {"percent": 100 if auth and world else 40, "stage": "Sunucu çalışıyor" if auth and world else "Servisler bekleniyor", "state": state}
 
 
 # On the mt2009 line a rate is not a rewritten table but six event flags the
@@ -948,16 +948,16 @@ def server_settings_status():
     result = {"ready": worker_ready, "ready_age": ready_age, "pending": request.exists(), "request_age": request_age,
               "can_clear": bool(request_age is not None and request_age >= SERVER_SETTINGS_STALE_SECONDS and not worker_ready)}
     if worker_ready:
-        result["message"] = "Helper ustawień serwera jest gotowy."
+        result["message"] = "Sunucu ayarları yardımcısı hazır."
     elif result["pending"]:
-        result["message"] = "Zlecenie nie jest odbierane przez helper gry. Sprawdź instalację integracji; po 10 minutach można usunąć wyłącznie zaległe zlecenie."
+        result["message"] = "Talep oyun yardımcısı tarafından alınmıyor. Entegrasyon kurulumunu kontrol edin; 10 dakika sonra yalnızca bekleyen talep silinebilir."
     else:
         # Telling the operator to install something this build never ships is
         # not help, and the warning fired on every visit to the console even
         # though both buttons that matter work without the helper.
-        result["message"] = ("Ta wersja serwera nie zawiera silnikowej integracji Sebana, "
-                             "więc zmiana respawnów map jest niedostępna. Restart serwera "
-                             "i zmiana rat działają normalnie i niczego nie wymagają.")
+        result["message"] = ("Bu sunucu sürümü Seban'ın motor entegrasyonunu içermiyor, "
+                             "bu yüzden harita respawn değişikliği kullanılamıyor. Sunucu yeniden "
+                             "başlatma ve oran değişikliği normal şekilde çalışır ve hiçbir şey gerektirmez.")
     return result
 
 
@@ -1020,7 +1020,7 @@ def queue_map_regen_changes(changes):
     temporary.write_text("\n".join(request_data) + "\n", encoding="utf-8")
     os.replace(temporary, RATES_SPOOL / "map-regens.request")
     (RATES_SPOOL / "map-regens.status").write_text(
-        "state=running\ntime=%s\nmessage=Zapisano zestaw zmian respawnu; rdzenie zostaną ponownie uruchomione.\n" % int(time.time()),
+        "state=running\ntime=%s\nmessage=Respawn değişiklik seti kaydedildi; çekirdekler yeniden başlatılacak.\n" % int(time.time()),
         encoding="utf-8",
     )
 
@@ -1096,11 +1096,11 @@ def bot_ranking(kind, sort_by="avg"):
             "skill": "skill_damage DESC, avg_damage DESC, p.level DESC",
             "upgrade": "MOD(i.vnum,10) DESC, avg_damage DESC, skill_damage DESC, p.level DESC",
         }.get(sort_by, "avg_damage DESC, skill_damage DESC, p.level DESC")
-        # avg_damage czyta APPLY_NORMAL_HIT_DAMAGE_BONUS (72), a
-        # skill_damage APPLY_SKILL_DAMAGE_BONUS (71) - tak, jak nazywa je
-        # common/length.h. Do 1.33.0 aliasy byly odwrotne, wiec ORDER BY
-        # wybieral pierwsza setke po niewlasciwej kolumnie i poprawianie
-        # samego sortowania w Pythonie nic by nie dalo.
+        # avg_damage reads APPLY_NORMAL_HIT_DAMAGE_BONUS (72), and
+        # skill_damage APPLY_SKILL_DAMAGE_BONUS (71) - exactly as
+        # common/length.h names them. Up to 1.33.0 the aliases were swapped,
+        # so ORDER BY picked the first hundred by the wrong column, and
+        # fixing the sort alone in Python would not have helped.
         result = rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS item_name,
             IF(GREATEST(CASE WHEN i.attrtype0={ATTR_SKILL_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_SKILL_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_SKILL_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_SKILL_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_SKILL_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_SKILL_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_SKILL_DAMAGE} THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0={ATTR_SKILL_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_SKILL_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_SKILL_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_SKILL_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_SKILL_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_SKILL_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_SKILL_DAMAGE} THEN i.attrvalue6 ELSE -999 END)) AS skill_damage,
             IF(GREATEST(CASE WHEN i.attrtype0={ATTR_AVG_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_AVG_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_AVG_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_AVG_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_AVG_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_AVG_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_AVG_DAMAGE} THEN i.attrvalue6 ELSE -999 END)=-999,0,GREATEST(CASE WHEN i.attrtype0={ATTR_AVG_DAMAGE} THEN i.attrvalue0 ELSE -999 END,CASE WHEN i.attrtype1={ATTR_AVG_DAMAGE} THEN i.attrvalue1 ELSE -999 END,CASE WHEN i.attrtype2={ATTR_AVG_DAMAGE} THEN i.attrvalue2 ELSE -999 END,CASE WHEN i.attrtype3={ATTR_AVG_DAMAGE} THEN i.attrvalue3 ELSE -999 END,CASE WHEN i.attrtype4={ATTR_AVG_DAMAGE} THEN i.attrvalue4 ELSE -999 END,CASE WHEN i.attrtype5={ATTR_AVG_DAMAGE} THEN i.attrvalue5 ELSE -999 END,CASE WHEN i.attrtype6={ATTR_AVG_DAMAGE} THEN i.attrvalue6 ELSE -999 END)) AS avg_damage
@@ -1124,25 +1124,25 @@ def bot_ranking(kind, sort_by="avg"):
         return rows(f"SELECT p.id,p.name,p.level,p.gold,p.playtime AS score,CONCAT(FLOOR(p.playtime/60),' h') AS detail FROM player.player p WHERE {base} ORDER BY p.playtime DESC,p.level DESC LIMIT 100")
     if kind == "bosses":
         return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(*) AS score,
-            CONCAT(COUNT(*),' zabitych bossów · 7 dni') AS detail
+            CONCAT(COUNT(*),' boss öldürüldü · 7 gün') AS detail
             FROM log.log l JOIN player.player p ON p.id=l.who
             WHERE {base} AND l.how='BOSS_KILL' AND l.time >= NOW() - INTERVAL 7 DAY
             GROUP BY p.id,p.name ORDER BY score DESC,p.level DESC,p.name LIMIT 100""")
     if kind == "items":
-        return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(i.id) AS score,CONCAT(COUNT(i.id),' przedmiotów') AS detail
+        return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(i.id) AS score,CONCAT(COUNT(i.id),' eşya') AS detail
             FROM player.player p LEFT JOIN player.item i ON i.owner_id=p.id AND i.window='INVENTORY'
             WHERE {base} GROUP BY p.id ORDER BY score DESC,p.level DESC LIMIT 100""")
     if kind == "horse":
-        return rows(f"SELECT p.id,p.name,p.level,p.gold,p.horse_level AS score,CONCAT('Koń Lv ',p.horse_level) AS detail FROM player.player p WHERE {base} ORDER BY p.horse_level DESC,p.level DESC LIMIT 100")
+        return rows(f"SELECT p.id,p.name,p.level,p.gold,p.horse_level AS score,CONCAT('At Lv ',p.horse_level) AS detail FROM player.player p WHERE {base} ORDER BY p.horse_level DESC,p.level DESC LIMIT 100")
     if kind == "biologist":
         missions = biologist_missions()
         marks = ",".join(["%s"] * len(missions))
-        return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(DISTINCT q.szName) AS score,CONCAT(COUNT(DISTINCT q.szName),' / {len(missions)} misji') AS detail
+        return rows(f"""SELECT p.id,p.name,p.level,p.gold,COUNT(DISTINCT q.szName) AS score,CONCAT(COUNT(DISTINCT q.szName),' / {len(missions)} görev') AS detail
             FROM player.player p LEFT JOIN player.quest q ON q.dwPID=p.id AND q.szName IN ({marks}) AND q.szState='__status' AND q.lValue=%s
             WHERE {base} GROUP BY p.id ORDER BY score DESC,p.level DESC LIMIT 100""", (*missions, BIOLOGIST_COMPLETE_STATE))
     if kind == "hunting":
         return rows(f"""SELECT p.id,p.name,p.level,p.gold,MAX(CASE WHEN q.szState='complete' THEN q.lValue ELSE 0 END) AS score,
-            CONCAT('Ukończone do Lv ',MAX(CASE WHEN q.szState='complete' THEN q.lValue ELSE 0 END)) AS detail
+            CONCAT('Lv ',MAX(CASE WHEN q.szState='complete' THEN q.lValue ELSE 0 END),'''e kadar tamamlandı') AS detail
             FROM player.player p LEFT JOIN player.quest q ON q.dwPID=p.id AND q.szName='levelup'
             WHERE {base} GROUP BY p.id ORDER BY score DESC,p.level DESC LIMIT 100""")
     if kind == "shops":
@@ -1150,30 +1150,29 @@ def bot_ranking(kind, sort_by="avg"):
         if not keeper_ids:
             return []
         placeholders = ",".join(["%s"] * len(keeper_ids))
-        return rows(f"SELECT p.id,p.name,p.level,p.gold,'Stragan otwarty' AS detail FROM player.player p WHERE p.id IN ({placeholders}) ORDER BY p.level DESC LIMIT 100", keeper_ids)
+        return rows(f"SELECT p.id,p.name,p.level,p.gold,'Tezgah açık' AS detail FROM player.player p WHERE p.id IN ({placeholders}) ORDER BY p.level DESC LIMIT 100", keeper_ids)
     if kind == "skills":
-        # Kazdy bot z profesja, a nie czterysta najwyzszych poziomem.
-        # Ranking umiejetnosci posortowany najpierw po poziomie odpowiada
-        # na inne pytanie: bot z trzydziestki z mistrzowska umiejetnoscia
-        # stal pod czterystoma piecdziesiatkami bez zadnej i nie pokazywal
-        # sie wcale. Punktowanie i tak jest w Pythonie, bo skill_level to
-        # blob, wiec caly zbior musi wrocic.
+        # Every bot with a profession, not the four hundred highest by level.
+        # A skill ranking sorted by level first answers a different question:
+        # a bot of thirty with a Master skill stood behind four hundred
+        # fifties with none and never showed up at all. Scoring is in Python
+        # anyway, because skill_level is a blob, so the whole set has to come back.
         roster = rows(f"SELECT p.id,p.name,p.level,p.gold,p.job,p.skill_group,p.skill_level FROM player.player p WHERE {base} AND p.skill_group>0 ")
         for bot in roster:
             best = max(parse_skills(bot.get("skill_level"), bot.get("job"), bot.get("skill_group")), key=lambda skill: (3 if skill["rank"] == "P" else 2 if skill["rank"].startswith("G") else 1 if skill["rank"].startswith("M") else 0, skill["level"]), default=None)
             bot["score"] = (3 if best and best["rank"] == "P" else 2 if best and best["rank"].startswith("G") else 1 if best and best["rank"].startswith("M") else 0, best["level"] if best else 0)
-            bot["detail"] = f"{best['name']} · {best['rank']}" if best else "Brak rozwiniętych umiejętności"
+            bot["detail"] = f"{best['name']} · {best['rank']}" if best else "Geliştirilmiş yetenek yok"
         return sorted(roster, key=lambda bot: (bot["score"], bot["level"]), reverse=True)[:100]
     if kind == "plus9":
-        # Ktore vnumy sa sprzetem, rozstrzyga item_proto, a nie liczba:
-        # "ponizej 12000" mialo odsiac materialy, a odsiewalo kazda tarcze
-        # (13xxx) i cala bizuterie razem z nimi. type 1 to ITEM_WEAPON,
-        # 2 to ITEM_ARMOR - dokladnie ten zbior, ktorego lancuch ulepszen
-        # biegnie base+0..9.
+        # item_proto, not a number, decides which vnums are equipment:
+        # "under 12000" was meant to screen out materials and screened out
+        # every shield (13xxx) and all jewellery with them. type 1 is
+        # ITEM_WEAPON, 2 is ITEM_ARMOR - exactly the set whose refine
+        # ladder runs base+0..9.
         return rows(f"""SELECT p.id,p.name,p.level,p.gold,i.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',i.vnum)) AS detail
             FROM player.item i JOIN player.player p ON p.id=i.owner_id LEFT JOIN player.item_proto ip ON ip.vnum=i.vnum
             WHERE {base} AND ip.type IN (1,2) AND MOD(i.vnum,10)=9 ORDER BY i.vnum DESC,p.level DESC LIMIT 100""")
-    return rows(f"SELECT p.id,p.name,p.level,p.gold,p.level AS score,'Poziom' AS detail FROM player.player p WHERE {base} ORDER BY p.level DESC,p.exp DESC LIMIT 100")
+    return rows(f"SELECT p.id,p.name,p.level,p.gold,p.level AS score,'Seviye' AS detail FROM player.player p WHERE {base} ORDER BY p.level DESC,p.exp DESC LIMIT 100")
 
 
 def login_required(view):
@@ -1223,7 +1222,7 @@ def login():
             session["seban_admin"] = True
             session.permanent = True
             return redirect(request.args.get("next") or url_for("dashboard"))
-        flash("Nieprawidłowe hasło.", "error")
+        flash("Yanlış şifre.", "error")
     return render_template("login.html")
 
 
@@ -1243,7 +1242,7 @@ def setup():
         password = request.form.get("panel_password", "")
         enable_auth = request.form.get("auth_enabled") == "1"
         if enable_auth and len(password) < 8:
-            error = "Hasło panelu musi mieć co najmniej 8 znaków."
+            error = "Panel şifresi en az 8 karakter olmalı."
         if error:
             flash(error, "error")
         else:
@@ -1251,7 +1250,7 @@ def setup():
             write_settings(values)
             if enable_auth:
                 session["seban_admin"] = True
-            flash("Konfiguracja została zapisana.")
+            flash("Yapılandırma kaydedildi.")
             return redirect(url_for("dashboard"))
     return render_template("setup.html", current=current)
 
@@ -1291,7 +1290,7 @@ def dashboard():
     try:
         restart_label = datetime.fromtimestamp(int(restart_time)).strftime("%d.%m.%Y, %H:%M:%S")
     except (TypeError, ValueError, OSError):
-        restart_label = "Brak danych"
+        restart_label = "Veri yok"
     release_status = playerbots_release_status()
     world_summary = {
         "bots": len(live_roster),
@@ -1310,24 +1309,24 @@ def dashboard():
         if bot["id"] in live:
             bot["map_index"] = live[bot["id"]]["map_index"]
     quick_rankings = []
-    quick_rankings.append({"title": "Poziom", "subtitle": "najwyższe poziomy", "items": [{"id": row["id"], "name": row["name"], "value": f"Lv {row['level']}"} for row in top]})
+    quick_rankings.append({"title": "Seviye", "subtitle": "en yüksek seviyeler", "items": [{"id": row["id"], "name": row["name"], "value": f"Lv {row['level']}"} for row in top]})
     playtime = bot_ranking("playtime")[:10]
-    quick_rankings.append({"title": "Czas gry", "subtitle": "najdłużej online", "items": [{"id": row["id"], "name": row["name"], "value": row["detail"]} for row in playtime]})
+    quick_rankings.append({"title": "Oyun Süresi", "subtitle": "en uzun süre çevrimiçi", "items": [{"id": row["id"], "name": row["name"], "value": row["detail"]} for row in playtime]})
     gold = bot_ranking("gold")[:10]
-    quick_rankings.append({"title": "Yang", "subtitle": "najwięcej przy postaci", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row.get('gold') or 0):,}".replace(",", " ")} for row in gold]})
+    quick_rankings.append({"title": "Yang", "subtitle": "karakterde en fazla", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row.get('gold') or 0):,}".replace(",", " ")} for row in gold]})
     weapon30 = bot_ranking("weapon30")[:10]
-    quick_rankings.append({"title": "Broń 30 Lv", "subtitle": "średnie / umiejętności", "items": [{"id": row["id"], "name": row["name"], "value": f"Śr. {int(row.get('avg_damage') or 0)}% · Um. {int(row.get('skill_damage') or 0)}%"} for row in weapon30]})
+    quick_rankings.append({"title": "30 Lv Silah", "subtitle": "ortalama / yetenek", "items": [{"id": row["id"], "name": row["name"], "value": f"Ort. {int(row.get('avg_damage') or 0)}% · Yet. {int(row.get('skill_damage') or 0)}%"} for row in weapon30]})
     metins = rows("""SELECT p.id,p.name,COUNT(*) AS score FROM log.log l JOIN player.player p ON p.id=l.who
                      WHERE """ + BOT_IS + """ AND l.how='STONE_KILL' AND l.time >= NOW() - INTERVAL 7 DAY
                      GROUP BY p.id,p.name ORDER BY score DESC,p.name LIMIT 10""")
-    quick_rankings.append({"title": "Metiny", "subtitle": "rozbite · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in metins]})
+    quick_rankings.append({"title": "Metinler", "subtitle": "kırılan · son 7 gün", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} adet"} for row in metins]})
     bosses = bot_ranking("bosses")[:10]
-    quick_rankings.append({"title": "Bossy", "subtitle": "zabite · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in bosses]})
+    quick_rankings.append({"title": "Bosslar", "subtitle": "öldürülen · son 7 gün", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} adet"} for row in bosses]})
     fish = rows("""SELECT p.id,p.name,COUNT(*) AS score FROM log.log l JOIN player.player p ON p.id=l.who
                    WHERE """ + BOT_IS + """ AND l.time >= NOW() - INTERVAL 7 DAY
                      AND (l.what LIKE '%%ryb%%' OR l.what LIKE '%%fish%%')
                    GROUP BY p.id,p.name ORDER BY score DESC,p.name LIMIT 10""")
-    quick_rankings.append({"title": "Ryby", "subtitle": "wyłowione · ostatnie 7 dni", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} szt."} for row in fish]})
+    quick_rankings.append({"title": "Balıklar", "subtitle": "yakalanan · son 7 gün", "items": [{"id": row["id"], "name": row["name"], "value": f"{int(row['score'])} adet"} for row in fish]})
     ranking_ids = {item["id"] for ranking in quick_rankings for item in ranking["items"]}
     if ranking_ids:
         placeholders = ",".join(["%s"] * len(ranking_ids))
@@ -1409,12 +1408,12 @@ def player(pid):
         character["goal"] = live_label("goal", live.get("goal"))
         character["action"] = live.get("status") or live_label("action", live.get("action"))
     else:
-        character.update({"personality": "Bot offline", "ambition": "—", "goal": "—", "action": "—"})
+        character.update({"personality": "Bot çevrimdışı", "ambition": "—", "goal": "—", "action": "—"})
     character["job_name"] = class_profile(character.get("job"))["name"]
     character["class_profile"] = class_profile(character.get("job"))
     character["experience"] = experience_progress(character.get("level"), character.get("exp"))
     character["honor"] = honor_rank(character.get("alignment"))
-    character["honor"]["css"] = {"Rycerski": "knightly", "Szlachetny": "noble", "Dobry": "good", "Przyjazny": "friendly", "Neutralny": "neutral", "Agresywny": "aggressive", "Nieuczciwy": "dishonest", "Złośliwy": "malicious", "Okrutny": "cruel"}[character["honor"]["title"]]
+    character["honor"]["css"] = {"Şövalye Ruhlu": "knightly", "Asil": "noble", "İyi": "good", "Dostane": "friendly", "Nötr": "neutral", "Saldırgan": "aggressive", "Sahtekar": "dishonest", "Kötü Niyetli": "malicious", "Acımasız": "cruel"}[character["honor"]["title"]]
     character["max_hp"] = max(int(character.get("max_hp") or 0), int(character.get("hp") or 0), 1)
     # The live Playerbots feed exposes exact max HP.  The original server
     # schema does not persist max MP, so an offline character is shown as a
@@ -1554,15 +1553,15 @@ def accounts():
         # longer one is "Data too long" from the database, not a form error.
         login_max = 16 if ENGINE_MT2009 else 30
         if not (3 <= len(login) <= login_max and login.replace("_", "").isalnum() and len(password) >= 6 and authority in authorities):
-            flash(f"Login ma mieć 3–{login_max} znaków (litery, cyfry, _), a hasło minimum 6 znaków.", "error")
+            flash(f"Giriş adı 3–{login_max} karakter olmalı (harf, rakam, _), şifre ise en az 6 karakter.", "error")
         elif not (deletion_code.isdigit() and len(deletion_code) == 7):
-            flash("Kod usunięcia postaci ma zawierać dokładnie 7 cyfr.", "error")
+            flash("Karakter silme kodu tam olarak 7 rakam olmalı.", "error")
         elif authority != "PLAYER" and not re.fullmatch(GM_NAME_PATTERN, gm_name):
-            flash("Nick postaci GM ma mieć 2–24 znaki. Dozwolony jest też jeden prefiks, np. [GM]Seban lub [GA]Seban.", "error")
+            flash("GM karakter adı 2–24 karakter olmalı. Bir ön ek de kullanılabilir, örn. [GM]Seban veya [GA]Seban.", "error")
         elif authority != "PLAYER" and gm_job not in dict(GM_JOB_OPTIONS):
-            flash("Wybierz poprawną klasę postaci GM.", "error")
+            flash("Geçerli bir GM karakter sınıfı seçin.", "error")
         elif authority != "PLAYER" and gm_gender not in dict(GM_GENDER_OPTIONS):
-            flash("Wybierz prawidłową płeć postaci GM.", "error")
+            flash("Geçerli bir GM karakter cinsiyeti seçin.", "error")
         else:
             account_id = None
             player_id = None
@@ -1572,7 +1571,7 @@ def accounts():
                         if authority != "PLAYER":
                             cur.execute("SELECT id FROM player.player WHERE name=%s LIMIT 1", (gm_name,))
                             if cur.fetchone():
-                                raise ValueError("Taki nick postaci już istnieje.")
+                                raise ValueError("Bu karakter adı zaten mevcut.")
                         con.begin()
                         # The mt2009 account table has no empire column (the kingdom
                         # lives in player_index, written below for a GM character and
@@ -1602,9 +1601,9 @@ def accounts():
                             cur.execute("INSERT INTO common.gmlist (mAccount,mName,mContactIP,mServerIP,mAuthority) VALUES (%s,%s,'','ALL',%s)", (login, gm_name, authority))
                         con.commit()
                 if authority != "PLAYER":
-                    flash(f"Utworzono konto i postać GM „{gm_name}”. Postać jest dostępna od razu; uprawnienia GM staną się aktywne po restarcie usług gry.")
+                    flash(f"“{gm_name}” GM hesabı ve karakteri oluşturuldu. Karakter hemen kullanılabilir; GM yetkileri oyun servisleri yeniden başlatıldıktan sonra aktif olur.")
                 else:
-                    flash("Konto utworzone.")
+                    flash("Hesap oluşturuldu.")
                 return redirect(url_for("accounts"))
             except (pymysql.MySQLError, ValueError) as exc:
                 try: con.rollback()
@@ -1623,7 +1622,7 @@ def accounts():
                                 cleanup.execute("DELETE FROM account.account WHERE id=%s AND login=%s", (account_id, login))
                     except pymysql.MySQLError:
                         pass
-                flash(f"Nie utworzono konta: {exc.args[1] if isinstance(exc, pymysql.MySQLError) and len(exc.args)>1 else exc}", "error")
+                flash(f"Hesap oluşturulamadı: {exc.args[1] if isinstance(exc, pymysql.MySQLError) and len(exc.args)>1 else exc}", "error")
     account_query = request.args.get("q", "").strip()[:60]
     display = request.args.get("display", "100")
     if display not in ("100", "1000", "all"):
@@ -1709,9 +1708,9 @@ def api_system_current():
 @login_required
 def rankings():
     kinds = {
-        "level": "Poziom", "armor": "Zbroja", "weapon": "Broń", "weapon30": "Broń 30 Lv",
-        "gold": "Yang", "items": "Przedmioty", "horse": "Koń", "hunting": "Polowanie", "biologist": "Biolog",
-        "shops": "Otwarte stragany", "skills": "Umiejętności", "plus9": "Przedmiot +9", "playtime": "Czas gry", "bosses": "Bossy",
+        "level": "Seviye", "armor": "Zırh", "weapon": "Silah", "weapon30": "30 Lv Silah",
+        "gold": "Yang", "items": "Eşyalar", "horse": "At", "hunting": "Avlanma", "biologist": "Biyolog",
+        "shops": "Açık Tezgahlar", "skills": "Yetenekler", "plus9": "+9 Eşya", "playtime": "Oyun Süresi", "bosses": "Bosslar",
     }
     kind = request.args.get("type", "level")
     if kind not in kinds:
@@ -1743,7 +1742,7 @@ def rankings():
             row["experience"] = progress.get(row["id"], {"percent": 0})
     for row in ranking:
         if kind == "weapon30":
-            row["detail"] = "Średnie obrażenia: %s%% · Obrażenia umiejętności: %s%% · %s" % (
+            row["detail"] = "Ortalama hasar: %s%% · Yetenek hasarı: %s%% · %s" % (
                 int(row.get("avg_damage") or 0), int(row.get("skill_damage") or 0), game_text(row.get("item_name")))
         else:
             row["detail"] = game_text(row.get("detail"))
@@ -1792,7 +1791,7 @@ def manage():
 def manage_update():
     current = settings()
     if current.get("auth_enabled") != "1" or not session.get("seban_admin"):
-        flash("Aktualizacje z panelu wymagają włączonej ochrony hasłem.", "error")
+        flash("Panelden güncelleme yapabilmek için şifre korumasının açık olması gerekir.", "error")
         return redirect(url_for("manage"))
     supplied = request.form.get("update_csrf", "")
     expected = session.get("seban_update_csrf", "")
@@ -1803,7 +1802,7 @@ def manage_update():
     except (OSError, RuntimeError) as exc:
         flash(str(exc), "error")
     else:
-        flash("Pobrano zlecenie aktualizacji. Serwer zostanie przebudowany przez odizolowany updater; postęp jest widoczny poniżej.")
+        flash("Güncelleme talebi alındı. Sunucu izole updater tarafından yeniden derlenecek; ilerleme aşağıda görünür.")
     return redirect(url_for("manage"))
 
 
@@ -1819,18 +1818,18 @@ def manage_settings():
     password = request.form.get("panel_password", "")
     if enable_auth:
         if password and len(password) < 8:
-            flash("Nowe hasło musi mieć co najmniej 8 znaków.", "error")
+            flash("Yeni şifre en az 8 karakter olmalı.", "error")
             return redirect(url_for("manage"))
         password_hash = generate_password_hash(password) if password else current.get("auth_password_hash", "")
         if not password_hash:
-            flash("Aby włączyć ochronę, ustaw hasło panelu.", "error")
+            flash("Korumayı etkinleştirmek için panel şifresi belirleyin.", "error")
             return redirect(url_for("manage"))
     else:
         password_hash = ""
         session.clear()
     values.update({"auth_enabled": "1" if enable_auth else "0", "auth_password_hash": password_hash, "setup_complete": "1"})
     write_settings(values)
-    flash("Ustawienia panelu zapisane.")
+    flash("Panel ayarları kaydedildi.")
     return redirect(url_for("manage"))
 
 
@@ -1841,11 +1840,11 @@ def manage_restart_config():
     values, changes = {}, {}
     try:
         if action not in ("apply", "restart"):
-            raise ValueError("Nieprawidłowa akcja.")
+            raise ValueError("Geçersiz işlem.")
         if action == "apply":
             values = {name: int(request.form.get(name, "")) for name in RATE_NAMES}
             if any(not 1 <= value <= 10000 for value in values.values()):
-                raise ValueError("Mnożniki muszą mieścić się w zakresie 1–10 000%.")
+                raise ValueError("Çarpanlar 1–10.000% aralığında olmalı.")
             for index, name in MAP_RESPAWN_OPTIONS:
                 for prefix in ("", "stone_"):
                     if prefix and index not in MAP_STONE_RESPAWN_IDS:
@@ -1860,20 +1859,20 @@ def manage_restart_config():
                     else:
                         seconds = int(raw)
                         if not 1 <= seconds <= 3600:
-                            raise ValueError(f"{name}: respawn musi mieścić się w zakresie 1–3600 sekund.")
+                            raise ValueError(f"{name}: respawn 1–3600 saniye aralığında olmalı.")
                         changes[key] = seconds
         queue_server_settings(action, values, changes)
     except ValueError as exc:
-        flash(str(exc) if "invalid literal" not in str(exc) else "Wpisz całkowite wartości liczbowe.", "error")
+        flash(str(exc) if "invalid literal" not in str(exc) else "Tam sayı değerleri girin.", "error")
     except RuntimeError as exc:
         flash(str(exc), "error")
     except FileExistsError:
-        flash("Poprzednie zlecenie nadal trwa. Poczekaj na zakończenie restartu.", "error")
+        flash("Önceki talep hâlâ devam ediyor. Yeniden başlatmanın bitmesini bekleyin.", "error")
     except OSError:
-        flash("Nie udało się zapisać zlecenia do kolejki gry.", "error")
+        flash("Talep oyun kuyruğuna kaydedilemedi.", "error")
     else:
-        flash("Zestaw zapisany do kolejki: jeden restart zastosuje raty i respawn." if action == "apply"
-              else "Zlecono restart bez zapisywania zmian w formularzu.")
+        flash("Küme kuyruğa kaydedildi: bir yeniden başlatma oranları ve respawn'ı uygulayacak." if action == "apply"
+              else "Formdaki değişiklikler kaydedilmeden yeniden başlatma talep edildi.")
     return redirect(url_for("manage"))
 
 
@@ -1882,16 +1881,16 @@ def manage_restart_config():
 def manage_restart_clear_stale():
     support = server_settings_status()
     if not support["can_clear"]:
-        flash("Nie można usunąć zlecenia: helper może jeszcze je przetwarzać albo zlecenie nie jest wystarczająco stare.", "error")
+        flash("Talep silinemiyor: yardımcı hâlâ işliyor olabilir ya da talep yeterince eski değil.", "error")
         return redirect(url_for("manage"))
     try:
         (RATES_SPOOL / "server-settings.request").unlink()
         (RATES_SPOOL / "server-settings.status").write_text(
-            "state=failed\npercent=0\nmessage=Usunięto zaległe zlecenie bez aktywnego helpera gry.\ntime=%s\n" % int(time.time()), encoding="utf-8")
+            "state=failed\npercent=0\nmessage=Aktif oyun yardımcısı olmadan bekleyen talep silindi.\ntime=%s\n" % int(time.time()), encoding="utf-8")
     except OSError:
-        flash("Nie udało się usunąć zaległego zlecenia z kolejki.", "error")
+        flash("Bekleyen talep kuyruktan silinemedi.", "error")
     else:
-        flash("Usunięto zaległe zlecenie. Zainstaluj integrację gry, zanim zlecisz kolejną zmianę.")
+        flash("Bekleyen talep silindi. Bir sonraki değişikliği talep etmeden önce oyun entegrasyonunu kurun.")
     return redirect(url_for("manage"))
 
 
@@ -1902,7 +1901,7 @@ def manage_map_respawns():
     map_index = request.form.get("map_index", "")
     action = request.form.get("action", "")
     if map_index not in known_maps or action not in ("set", "reset"):
-        flash("Nieprawidłowa mapa lub akcja.", "error")
+        flash("Geçersiz harita veya işlem.", "error")
         return redirect(url_for("manage"))
     seconds = None
     if action == "set":
@@ -1911,14 +1910,14 @@ def manage_map_respawns():
         except ValueError:
             seconds = 0
         if not 1 <= seconds <= 3600:
-            flash("Czas respawnu musi mieścić się w zakresie 1–3600 sekund.", "error")
+            flash("Respawn süresi 1–3600 saniye aralığında olmalı.", "error")
             return redirect(url_for("manage"))
     try:
         queue_map_regen_change(map_index, action, seconds)
     except OSError:
-        flash("Nie udało się zapisać zmiany mapy do kolejki gry.", "error")
+        flash("Harita değişikliği oyun kuyruğuna kaydedilemedi.", "error")
         return redirect(url_for("manage"))
-    flash("Zmiana respawnu została zlecona. Gra zastosuje ją i uruchomi rdzenie ponownie.")
+    flash("Respawn değişikliği talep edildi. Oyun onu uygulayacak ve çekirdekleri yeniden başlatacak.")
     return redirect(url_for("manage"))
 
 
@@ -1957,9 +1956,9 @@ def manage_behavior():
     try:
         write_ai_weights(values)
     except OSError:
-        flash("Nie udało się zapisać wag Playerbots.", "error")
+        flash("Playerbots ağırlıkları kaydedilemedi.", "error")
     else:
-        flash("Zachowanie botów zapisane — nowy plan działania wejdzie w życie do 5 sekund, bez restartu.")
+        flash("Bot davranışı kaydedildi — yeni plan 5 saniye içinde, yeniden başlatmadan devreye girer.")
     return redirect(url_for("manage"))
 
 
@@ -1967,10 +1966,10 @@ def manage_behavior():
 @login_required
 def manage_restart():
     if request.form.get("confirmation", "").strip().upper() != "RESTART":
-        flash("Aby potwierdzić restart, wpisz RESTART.", "error")
+        flash("Yeniden başlatmayı onaylamak için RESTART yazın.", "error")
         return redirect(url_for("manage"))
     queue_rate_restart(read_rates())
-    flash("Restart został zlecony. Pasek postępu pokaże kolejne etapy.")
+    flash("Yeniden başlatma talep edildi. İlerleme çubuğu sonraki aşamaları gösterecek.")
     return redirect(url_for("manage"))
 
 

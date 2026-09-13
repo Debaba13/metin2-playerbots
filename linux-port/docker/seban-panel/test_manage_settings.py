@@ -94,19 +94,19 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     panel.write_ai_weights(weights)
     saved=weights_file.read_text()
     assert 'BOOKS\t1' in saved and 'CHEST\t11' in saved and 'CHEST_STONE\t301' in saved and 'FUTURE_KEY\t77' in saved
-    assert panel.SKILLS[(0,1)][3] == (4, 'Aura Miecza') and len(panel.SKILLS[(0,1)]) == 5
+    assert panel.SKILLS[(0,1)][3] == (4, 'Kılıç Aurası') and len(panel.SKILLS[(0,1)]) == 5
     # Tieru ships master icons as *_m.png for M/G/P; *_p.png does not exist.
     skill_bytes=bytes(24) + bytes([3, 35])
     assert panel.parse_skills(skill_bytes, 0, 1)[0]['icon_suffix'] == '_m'
-    assert panel.MAP_NAMES[61] == 'Góra Sohan' and panel.MAP_NAMES[104] == 'Loch Pająków V1'
-    assert panel.MAP_NAMES[108] == 'Loch Małp Normalny' and panel.MAP_NAMES[109] == 'Loch Małp Trudny'
+    assert panel.MAP_NAMES[61] == 'Sohan Dağı' and panel.MAP_NAMES[104] == 'Örümcek Zindanı V1'
+    assert panel.MAP_NAMES[108] == 'Orta Maymun Zindanı' and panel.MAP_NAMES[109] == 'Zor Maymun Zindanı'
     assert panel.playerbots_release_status()['tone'] in ('current', 'outdated')
     assert panel.MAP_BOUNDS[61] == (358400, 153600, 153600, 153600)
     assert 61 in panel.MAP_STONE_RESPAWN_IDS and not {25, 104, 108, 109} & panel.MAP_STONE_RESPAWN_IDS
     assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [21, 23, 24, 25, 61, 63, 64, 104, 108, 109]
     assert panel.changelog_entries()[0]['version'] == '1.40.0'
     assert (Path(panel.__file__).parent / 'static' / 'inventory-background.svg').is_file()
-    assert panel.class_profile(5)['portrait'] == 'assassin_m.bmp' and panel.class_profile(6)['gender'] == 'Kobieta'
+    assert panel.class_profile(5)['portrait'] == 'assassin_m.bmp' and panel.class_profile(6)['gender'] == 'Kadın'
     assert panel.empire_info(2)['name'] == 'Chunjo' and panel.empire_info(999)['flag'] == ''
     assert (Path(panel.__file__).parent / 'static' / 'empires' / 'chunjo.png').is_file()
     with patch.object(panel, 'rows', return_value=[]) as ranking_rows:

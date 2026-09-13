@@ -5,23 +5,23 @@ import time
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
 
-# 200, bo tyle wynosi pelny stos i tyle jest w stanie wydac silnik za jednym
-# razem. pc.give_item2 czyta ilosc jako int i podaje ja do
-# CHARACTER::AutoGiveItem(DWORD, BYTE, ...) - jeden bajt: 256 staje sie zerem,
-# 300 czterdziestoma czterema, 65535 dwiescia piecdziesiecioma pieciema. Nic
-# tego nie zglaszalo, bo niezerowe item_id wygladalo na sukces, wiec paczka
-# konczyla sie statusem "Nadano" i mniejsza liczba sztuk, niz proszono.
-# Quest odrzuca teraz wszystko powyzej 200 statusem qty_too_big; panel nie
-# powinien takiej liczby w ogole proponowac.
+# 200, because that is a full stack and what the engine can hand out in one
+# go. pc.give_item2 reads the count as an int and passes it to
+# CHARACTER::AutoGiveItem(DWORD, BYTE, ...) - one byte: 256 becomes zero,
+# 300 becomes forty-four, 65535 becomes two hundred fifty-five. Nothing
+# reported this, because a non-zero item_id looked like success, so the
+# batch ended up "Granted" with fewer pieces than asked for.
+# The quest now refuses anything above 200 with qty_too_big; the panel
+# should not offer such a count at all.
 MAX_ITEM_COUNT, MAX_PENDING = 200, 10
-JOBS = (("", "Każda klasa"), ("0", "Wojownik"), ("1", "Ninja"), ("2", "Sura"), ("3", "Szaman"))
-TERMINAL = {"done": "Nadano", "has_item": "Już posiada", "full": "Brak miejsca w ekwipunku",
-    "failed": "Gra nie mogła utworzyć przedmiotu", "bad_args": "Nieprawidłowy VNUM lub ilość",
-    "no_skill": "Warunek nie jest już spełniony", "gone": "Postać nie istnieje",
-    "qty_too_big": "Ilość ponad 200 — gra nie wyda tego za jednym razem",
-    "partial": "Wydano mniej, niż proszono (sprawdź plecak)",
-    "cancelled": "Anulowano", "review": "Wymaga sprawdzenia", "unknown_cmd": "Quest wymaga aktualizacji"}
-LABELS = {"waiting": "Czeka na wysłanie", "queued": "Przekazano aktywnej postaci", **TERMINAL}
+JOBS = (("", "Her Sınıf"), ("0", "Savaşçı"), ("1", "Ninja"), ("2", "Sura"), ("3", "Şaman"))
+TERMINAL = {"done": "Verildi", "has_item": "Zaten Sahip", "full": "Envanterde Yer Yok",
+    "failed": "Oyun eşyayı oluşturamadı", "bad_args": "Geçersiz VNUM veya Miktar",
+    "no_skill": "Koşul Artık Sağlanmıyor", "gone": "Karakter Yok",
+    "qty_too_big": "Miktar 200'ün üzerinde — oyun bunu tek seferde vermez",
+    "partial": "İstenenden Az Verildi (çantayı kontrol edin)",
+    "cancelled": "İptal Edildi", "review": "Kontrol Gerekiyor", "unknown_cmd": "Quest Güncelleme Gerektiriyor"}
+LABELS = {"waiting": "Gönderilmeyi Bekliyor", "queued": "Aktif Karaktere İletildi", **TERMINAL}
 
 # The worker is a separate container (seban-item-grants) and the page could
 # not tell whether it was running: a batch that stopped at 333 recipients
@@ -78,34 +78,34 @@ def number(raw, label, maximum, empty=True):
     if empty and not raw:
         return None
     try: value = int(raw)
-    except ValueError: abort(400, f"{label}: wpisz liczbę całkowitą.")
-    if not 0 <= value <= maximum: abort(400, f"{label}: dozwolony zakres to 0–{maximum}.")
+    except ValueError: abort(400, f"{label}: tam sayı girin.")
+    if not 0 <= value <= maximum: abort(400, f"{label}: geçerli aralık 0–{maximum}.")
     return value
 
 
 def criteria_from(values):
     job = values.get("job", "")
-    if job not in dict(JOBS): abort(400, "Nieprawidłowa klasa postaci.")
+    if job not in dict(JOBS): abort(400, "Geçersiz karakter sınıfı.")
     criteria = {
-        "min_level": number(values.get("min_level"), "Minimalny poziom", 120),
-        "max_level": number(values.get("max_level"), "Maksymalny poziom", 120),
-        "min_horse": number(values.get("min_horse"), "Minimalny poziom konia", 30),
-        "min_playtime": number(values.get("min_playtime"), "Minimalny czas gry", 100000),
-        "min_riding": number(values.get("min_riding"), "Minimalne jeździectwo", 30),
+        "min_level": number(values.get("min_level"), "Minimum seviye", 120),
+        "max_level": number(values.get("max_level"), "Maksimum seviye", 120),
+        "min_horse": number(values.get("min_horse"), "Minimum at seviyesi", 30),
+        "min_playtime": number(values.get("min_playtime"), "Minimum oyun süresi", 100000),
+        "min_riding": number(values.get("min_riding"), "Minimum binicilik", 30),
         "job": int(job) if job else None,
     }
     if criteria["min_level"] is not None and criteria["max_level"] is not None and criteria["min_level"] > criteria["max_level"]:
-        abort(400, "Minimalny poziom nie może być wyższy od maksymalnego.")
+        abort(400, "Minimum seviye maksimum seviyeden yüksek olamaz.")
     return {key: value for key, value in criteria.items() if value is not None}
 
 
 def criteria_text(criteria):
     labels = []
-    for key, text in (("min_level", "Lv ≥ {}"), ("max_level", "Lv ≤ {}"), ("min_horse", "Koń ≥ {}"),
-                      ("min_playtime", "Czas ≥ {} h"), ("min_riding", "Jeździectwo ≥ {}")):
+    for key, text in (("min_level", "Lv ≥ {}"), ("max_level", "Lv ≤ {}"), ("min_horse", "At ≥ {}"),
+                      ("min_playtime", "Süre ≥ {} sa"), ("min_riding", "Binicilik ≥ {}")):
         if key in criteria: labels.append(text.format(criteria[key]))
     if "job" in criteria: labels.append(dict(JOBS)[str(criteria["job"])])
-    return " · ".join(labels) or "Bez warunków"
+    return " · ".join(labels) or "Koşul yok"
 
 
 def where_for(criteria, alias="p"):
@@ -248,32 +248,32 @@ def install(app, db, login_required, game_text):
     def manage_items():
         token = session.setdefault("grant_csrf", secrets.token_hex(32))
         try: vnum = int(request.values.get("vnum", "50051"))
-        except (TypeError, ValueError): abort(400, "Nieprawidłowy VNUM.")
-        if not 1 <= vnum <= 2147483647: abort(400, "Nieprawidłowy VNUM.")
-        quantity = number(request.values.get("quantity", "1"), "Ilość", MAX_ITEM_COUNT, False)
+        except (TypeError, ValueError): abort(400, "Geçersiz VNUM.")
+        if not 1 <= vnum <= 2147483647: abort(400, "Geçersiz VNUM.")
+        quantity = number(request.values.get("quantity", "1"), "Miktar", MAX_ITEM_COUNT, False)
         criteria = criteria_from(request.values)
         only_missing = (request.values.getlist("only_missing") or ["1"])[-1] == "1"
         with db() as con, con.cursor() as cur:
             init(cur)
             if request.method == "POST" and not secrets.compare_digest(request.form.get("csrf", ""), token):
-                abort(400, "Odśwież formularz i spróbuj ponownie.")
+                abort(400, "Formu yenileyip tekrar deneyin.")
             if request.method == "POST" and request.form.get("action") == "cancel":
                 cur.execute("UPDATE player.web_seban_grants SET status='cancelled',updated=NOW() WHERE status='waiting' AND batch=%s", (request.form.get("batch", ""),))
-                flash(f"Anulowano oczekujące nadania: {cur.rowcount}.")
+                flash(f"Bekleyen verme iptal edildi: {cur.rowcount}.")
                 return redirect(url_for("manage_items", vnum=vnum))
             cur.execute("SELECT vnum,locale_name,type,size FROM player.item_proto WHERE vnum=%s", (vnum,))
             item = cur.fetchone()
-            if not item: abort(404, "Nie ma przedmiotu o tym VNUM.")
+            if not item: abort(404, "Bu VNUM'a sahip bir eşya yok.")
             if not grantable_item(item):
-                abort(400, "Ten przedmiot nie jest obsługiwany przez zwykły ekwipunek.")
+                abort(400, "Bu eşya normal envanter tarafından desteklenmiyor.")
             recipients = candidates(cur, vnum, criteria, only_missing)
             fingerprint = json.dumps((vnum, quantity, criteria, only_missing), sort_keys=True)
             if request.method == "POST":
                 preview = session.get("grant_preview")
                 if not preview or preview.get("fingerprint") != fingerprint or time.time() - preview["time"] > 900:
-                    abort(400, "Najpierw odśwież podgląd odbiorców.")
+                    abort(400, "Önce alıcı önizlemesini yenileyin.")
                 cur.execute("SELECT GET_LOCK('seban_item_grants',10) AS acquired")
-                if cur.fetchone()["acquired"] != 1: abort(409, "Inne nadanie jest właśnie zapisywane.")
+                if cur.fetchone()["acquired"] != 1: abort(409, "Başka bir verme işlemi şu anda kaydediliyor.")
                 try:
                     con.begin()
                     recipients = candidates(cur, vnum, criteria, only_missing)
@@ -289,7 +289,7 @@ def install(app, db, login_required, game_text):
                 finally:
                     cur.execute("SELECT RELEASE_LOCK('seban_item_grants')")
                 session.pop("grant_preview", None)
-                flash(f"Zlecono {quantity}× VNUM {vnum} dla {len(recipients)} postaci.")
+                flash(f"{len(recipients)} karakter için {quantity}× VNUM {vnum} talep edildi.")
                 return redirect(url_for("manage_items", vnum=vnum))
             session["grant_preview"] = {"fingerprint": fingerprint, "batch": secrets.token_hex(16), "time": time.time()}
             stats = worker_stats(cur)
