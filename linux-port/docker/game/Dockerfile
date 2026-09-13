@@ -199,7 +199,13 @@ COPY src/serverfiles/share/locale /quest-src/locale
 #       decades of warnings, which are not news and not ours to fix.
 #    3. For each locale: qc reads `quest_functions' from its working directory
 #       and refuses any name not listed there ("Calls undeclared function!"),
-#       so mysql_direct_query is declared before the compile.
+#       so mysql_direct_query is declared before the compile. qc's check has
+#       no notion of Lua scoping -- it flags every bareword call that is not
+#       either in this file or a quest-state name, so web_admin.quest's own
+#       "local function wa_query(q) ... end" wrapper (needed because
+#       mysql_direct_query returns its rows in a different position on
+#       r40250 vs. mt2009) trips it exactly like an unknown engine function
+#       would. wa_query is declared for the same reason mysql_direct_query is.
 #    4. Compile in a scratch directory with an empty object/, so the result is
 #       only web_admin's own output.
 #    5. qc exits 0 whether or not it wrote anything, so the outputs that must
@@ -241,6 +247,8 @@ RUN set -eux; \
       cp "$questdir/quest_functions" /tmp/qc-work/quest_functions; \
       grep -qx 'mysql_direct_query' /tmp/qc-work/quest_functions \
         || echo 'mysql_direct_query' >> /tmp/qc-work/quest_functions; \
+      grep -qx 'wa_query' /tmp/qc-work/quest_functions \
+        || echo 'wa_query' >> /tmp/qc-work/quest_functions; \
       sed 's/\r$//' /quest-add/web_admin.quest > /tmp/qc-work/web_admin.quest; \
       ( cd /tmp/qc-work && /src/server/game/src/quest/qc web_admin.quest ); \
       test -s /tmp/qc-work/object/state/web_admin \
