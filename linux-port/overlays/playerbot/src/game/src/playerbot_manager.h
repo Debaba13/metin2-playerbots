@@ -60,6 +60,14 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		void	ReportPlayerBotRegistryShortfall(unsigned int usable);
 		// Re-queues registered identities that are not in the world.
 		void	TopUpMissingBots(DWORD dwNow);
+		// Which registered bots a GM has banned, and taking them out of the
+		// world. Every bot account is status='BLOCK' by design (so no human can
+		// log into one), so that column cannot tell a banned bot from a normal
+		// one - only the ban ledger account.account_block can, and it is empty
+		// until somebody runs /block_player. A banned bot is despawned here and
+		// SpawnPendingBatch/TopUpMissingBots never bring it back, so a ban is no
+		// longer undone by the top-up a minute later (mateuszp211).
+		void	RefreshBannedBots(DWORD dwNow);
 
 		TPlayerBotMap		m_mapBots;
 		THandleToPlayerMap	m_mapHandles;
@@ -78,6 +86,10 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		size_t			m_uSpawnWindowTotal;
 		// When to count the world again and re-queue whoever is missing.
 		DWORD			m_dwNextTopUpTime;
+		// Registered PIDs a GM has banned (account.account_block), and when to
+		// read that ledger next. Kept out of the world and out of the spawn queue.
+		std::set<DWORD>		m_setBannedBots;
+		DWORD			m_dwNextBanCheckTime;
 		bool			m_bRegistryLoaded;
 		bool			m_bRegistryAvailable;
 };

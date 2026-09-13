@@ -541,6 +541,11 @@ namespace
 	const DWORD PLAYERBOT_SHOP_PRICE_PLUS7 = 150000;
 	const DWORD PLAYERBOT_SHOP_PRICE_PLUS8 = 400000;
 	const DWORD PLAYERBOT_SHOP_PRICE_PLUS9 = 900000;
+	// Iwakura's price competition: two bots holding the same +N with the same
+	// bonus lines would otherwise both ask the flat price above, so a market of
+	// stalls shows one number instead of a spread. A stable per-keeper swing of
+	// up to this many percent (Iwakura's "1-20%") lets one undercut the other.
+	const DWORD PLAYERBOT_SHOP_PRICE_JITTER_PCT = 20;
 	// Refine materials go up at a small markup over the merchant price, so a bot
 	// that needs one can buy it from a neighbour instead of farming for it.
 	const DWORD PLAYERBOT_SHOP_MATERIAL_MARKUP = 3;
@@ -892,10 +897,25 @@ namespace
 	const BYTE PLAYERBOT_BATTLE_HORSE_FROM_HORSE_LEVEL = 10;
 	const int PLAYERBOT_BATTLE_HORSE_KILLS = 100;
 	const DWORD PLAYERBOT_BATTLE_HORSE_FEE = 500000;
-	// The Black Wind band, which is what the desert on this server is stocked
-	// with. The quest names 2105 and 2107; neither is spawned anywhere here.
-	const DWORD PLAYERBOT_BATTLE_HORSE_MOB_FIRST = 401;
-	const DWORD PLAYERBOT_BATTLE_HORSE_MOB_LAST = 404;
+	// The two archers the stable keeper's quest names, and the wiki with it:
+	// Skorpion Lucznik (2105, level 47) and Wezowy Lucznik (2107, level 51).
+	// Both stand on the desert, 998 and 760 spawn points of
+	// metin2_map_n_desert_01 - the very map the quest sends a player to.
+	//
+	// Until 2.0.31 this was "the Black Wind band, 401 to 404", on the written
+	// claim that 2105 and 2107 were spawned nowhere in this world. Both halves
+	// were wrong and one mistake made both: the desert's regen.txt is `r` lines
+	// whose last field is a group_group id, so 401-404 are group ids and not
+	// monster vnums - the exact field CLAUDE.md warns about. Resolved through
+	// the global group_group.txt and group.txt, the desert really does carry
+	// 2105 and 2107, while vnums 401-404 are the Black Wind band, which lives
+	// on the three second villages (a3/b3/c3) and never sets foot in the
+	// desert. So the trial counted kills of monsters no bot on it could ever
+	// meet, and every bot read "Zdobywam konia bojowego na pustyni (0/100)"
+	// for ever (sosen, 13 September). Measure a spawn table by resolving its
+	// groups; never by grepping a number out of regen.txt.
+	const DWORD PLAYERBOT_BATTLE_HORSE_MOB_SCORPION_ARCHER = 2105;
+	const DWORD PLAYERBOT_BATTLE_HORSE_MOB_SNAKE_ARCHER = 2107;
 	// "Zdjecie Konia", taken away, and "Ksiega Opanc. Konia", handed over.
 	const DWORD PLAYERBOT_HORSE_PHOTO_VNUM = 50051;
 	const DWORD PLAYERBOT_BATTLE_HORSE_BOOK_VNUM = 50052;
@@ -1066,25 +1086,126 @@ namespace
 	const DWORD PLAYERBOT_PRIOR_BOOK_STRONG_BODY = 180000; // Silne Cialo (19)
 	const DWORD PLAYERBOT_PRIOR_BOOK_KEY = 140000;         // inne kluczowe dla buildu
 	const DWORD PLAYERBOT_PRIOR_BOOK_ORDINARY = 45000;
-	// Iwakura's book prices (12 September, "CENY KU"): a base per skill at the
-	// server's default yang rate, scaled by the mob_gold rate the operator
-	// set (200% doubles them), then a draw of PLAYERBOT_BOOK_PRICE_JITTER_MIN
-	// to _MAX percent per listing so two counters never ask the same number;
-	// the sale memory does the rest. A skill not in the table keeps
-	// PLAYERBOT_PRIOR_BOOK_ORDINARY. Vnums as skill_proto has them.
+	// Iwakura's book prices, second table (13 September, "CENY KU"): a base per
+	// skill, scaled by the world's yang rate, then a draw of
+	// PLAYERBOT_BOOK_PRICE_JITTER_MIN to _MAX percent per listing so two
+	// counters never ask the same number; the sale memory does the rest. A
+	// skill not in the table keeps PLAYERBOT_PRIOR_BOOK_ORDINARY. Vnums as
+	// skill_proto has them, and the order inside each group is his - the two
+	// tables list the same skills in the same order, so only the numbers moved.
 	struct TPlayerBotBookPrice { DWORD dwSkill; DWORD dwPrice; };
 	const TPlayerBotBookPrice PLAYERBOT_BOOK_PRICES[] = {
-		{ 4, 75000 }, { 3, 45000 }, { 2, 32500 }, { 5, 13500 }, { 1, 10500 },      // wojownik cialo
-		{ 19, 35000 }, { 16, 32500 }, { 17, 14000 }, { 18, 7500 }, { 20, 7500 },   // wojownik umysl
-		{ 31, 22500 }, { 33, 22500 }, { 34, 12500 }, { 32, 8000 }, { 35, 8000 },   // ninja sztylet
-		{ 48, 27500 }, { 50, 22500 }, { 46, 8000 }, { 47, 6500 }, { 49, 5000 },    // ninja luk
-		{ 63, 50000 }, { 64, 40000 }, { 65, 22500 }, { 66, 12500 }, { 62, 8000 }, { 61, 4500 }, // sura bron
-		{ 78, 22500 }, { 79, 20000 }, { 77, 13000 }, { 76, 11000 }, { 80, 6000 }, { 81, 5000 }, // sura magia
-		{ 96, 37500 }, { 94, 35000 }, { 93, 15500 }, { 95, 10000 }, { 92, 6000 }, { 91, 4500 }, // szaman smok
-		{ 109, 22500 }, { 107, 12500 }, { 106, 7500 }, { 111, 5500 }, { 110, 9000 }, { 108, 9000 }, // szaman uzdr.
+		{ 4, 123500 }, { 3, 58500 }, { 2, 42250 }, { 5, 17550 }, { 1, 13650 },       // wojownik cialo
+		{ 19, 45500 }, { 16, 42250 }, { 17, 18200 }, { 18, 9750 }, { 20, 9750 },     // wojownik umysl
+		{ 31, 29250 }, { 33, 29250 }, { 34, 16250 }, { 32, 10400 }, { 35, 10400 },   // ninja sztylet
+		{ 48, 35750 }, { 50, 29250 }, { 46, 10400 }, { 47, 8450 }, { 49, 6500 },     // ninja luk
+		{ 63, 65000 }, { 64, 52000 }, { 65, 29250 }, { 66, 16250 }, { 62, 10400 }, { 61, 5850 }, // sura bron
+		{ 78, 29250 }, { 79, 26000 }, { 77, 16900 }, { 76, 14300 }, { 80, 7800 }, { 81, 6500 },  // sura magia
+		{ 96, 48750 }, { 94, 45500 }, { 93, 20150 }, { 95, 13000 }, { 92, 7800 }, { 91, 5850 },  // szaman smok
+		{ 109, 29250 }, { 107, 16250 }, { 106, 9750 }, { 111, 7150 }, { 110, 11700 }, { 108, 11700 }, // szaman uzdr.
 	};
+	// And how the yang rate scales them. Iwakura's table is a straight line
+	// through his own numbers: 100% -> x1.1, 200% -> x2.2, 500% -> x5.5,
+	// 900% -> x9.9, 1500% -> x16.5, which is rate * 11 / 1000 exactly. His two
+	// round entries (1000% -> x11.1 and 10000% -> x111.0) sit about one percent
+	// above that line and are taken as his own rounding, not a second rule -
+	// a kink at those two points would make the curve disagree with the five
+	// others. Until 2.0.31 the scale was the bare rate (100% -> x1.0), so every
+	// book was a tenth under the table it was supposed to implement.
+	const DWORD PLAYERBOT_BOOK_RATE_NUMERATOR = 11;
+	const DWORD PLAYERBOT_BOOK_RATE_DENOMINATOR = 1000;
 	const int PLAYERBOT_BOOK_PRICE_JITTER_MIN = 80;
 	const int PLAYERBOT_BOOK_PRICE_JITTER_MAX = 125;
+	// Iwakura's upgrade-material prices (13 September, "CENY ULEPSZACZY"): the
+	// 78 materials a blacksmith asks for, priced by hand. Unlike the books
+	// these scale with the bare yang rate (100% is x1.0), which is his own
+	// rule for this table - see GetPlayerBotMaterialAskingBase.
+	//
+	// Two of his names exist twice in item_names_pl.txt as separate vnums -
+	// Nieznany Talizman+ (30079, 30084) and Zabie Udka (30061, 30116) - so
+	// both carry the price; a name is not an item and the bot prices items.
+	// "Worek Z Pajeczymi Jajami" is 30058, spelled "Worek Z Pajecz. Jajami"
+	// in the game's own table.
+	//
+	// Note his pearls invert what this file assumed: white 1.1M, blue 820k,
+	// blood 650k, where the old priors rose the other way (2M/3M/6M). His
+	// table wins because it is the one the market is being tuned to; the old
+	// PLAYERBOT_PRIOR_PEARL_* stay as the fallback for anything not listed
+	// here. The shell (27987) moves the other way, 100k down to 93k.
+	struct TPlayerBotMaterialPrice { DWORD dwVnum; DWORD dwPrice; };
+	const TPlayerBotMaterialPrice PLAYERBOT_MATERIAL_PRICES[] = {
+		{ 30007, 45000 }, { 30076, 25000 },   // Amulet Orka, +
+		{ 27992, 1100000 },                   // Biala Perla
+		{ 30034, 25000 }, { 30073, 42000 },   // Biala Wstega, +
+		{ 30032, 45000 }, { 30074, 20000 },   // Czarny Uniform, +
+		{ 30018, 50000 },                     // Czerwona Wstega
+		{ 30008, 85000 }, { 30078, 28000 },   // Ezoteryczny Przewodnik, +
+		{ 30052, 20000 },                     // Flaga
+		{ 30023, 8000 }, { 30038, 9000 },     // Futro Bialego Tygrysa, Skora Tygrysa
+		{ 30027, 2000 }, { 30070, 6000 },     // Futro Wilka, +
+		{ 30014, 35000 }, { 30089, 55000 },   // Futro Yeti, +
+		{ 30045, 20000 },                     // Igla Skorpiona
+		{ 30060, 35000 },                     // Jezyk Zaby
+		{ 30021, 62000 },                     // Kawalek Klejnotu
+		{ 30048, 15000 }, { 30088, 35000 },   // Kawalek Lodu, +
+		{ 30039, 18000 }, { 30085, 20000 },   // Kawalek Plotna, +
+		{ 30005, 29000 },                     // Kawalek Zepsutej Zbroi
+		{ 30011, 9000 },                      // Klab
+		{ 30016, 40000 }, { 30087, 18000 },   // Klejnot Demona, +
+		{ 30035, 13000 },                     // Krem Do Twarzy
+		{ 27994, 650000 },                    // Krwawa Perla
+		{ 30047, 84000 }, { 30080, 18000 },   // Ksiega Klatw, +
+		{ 30040, 10000 },                     // Lisc
+		{ 30050, 74000 }, { 30090, 15000 },   // Matowy Lod, +
+		{ 30049, 12000 },                     // Lodowy Rog Wieloryba
+		{ 27987, 93000 },                     // Malz
+		{ 27993, 820000 },                    // Niebieska Perla
+		{ 30053, 21000 }, { 30072, 14000 },   // Niedzwiedzia Skora, +
+		{ 30009, 31000 }, { 30083, 35000 },   // Nieznane Lekarstwo, +
+		{ 30051, 44000 }, { 30079, 49000 }, { 30084, 49000 }, // Nieznany Talizman, + (dwa vnumy)
+		{ 30059, 17000 },                     // Nogi Pajaka
+		{ 30003, 5000 },                      // Nos Swini
+		{ 30057, 41000 },                     // Oczy Pajaka
+		{ 30046, 25000 }, { 30081, 13000 },   // Ogon Skorpiona, +
+		{ 30022, 40000 }, { 30082, 20000 },   // Ogon Weza, +
+		{ 30031, 23000 },                     // Ornament
+		{ 30017, 14000 },                     // Ozdobna Spinka Do Wlosow
+		{ 30056, 19000 },                     // Pajecza Siec
+		{ 30015, 75000 }, { 30086, 30000 },   // Pamiatka Po Demonie, +
+		{ 30042, 15000 },                     // Pazur Tygrysa
+		{ 30019, 45000 },                     // Plonaca Grzywa
+		{ 27799, 57000 },                     // Rybia Osc
+		{ 30041, 26000 }, { 30075, 92000 },   // Shuriken, +
+		{ 30067, 12000 },                     // Skora Weza
+		{ 30033, 15000 },                     // Stluczona Porcelana
+		{ 30091, 56000 },                     // Symbol Wojownika
+		{ 30055, 69000 },                     // Szpon Skorpiona
+		{ 30037, 7000 },                      // Szpon Tygrysa
+		{ 30028, 5000 }, { 30069, 5000 },     // Szpon Wilka, +
+		{ 30025, 25000 },                     // Worek Z Pajecza Trucizna
+		{ 30058, 36000 },                     // Worek Z Pajeczymi Jajami
+		{ 30030, 16000 },                     // Zardzewiale Ostrze
+		{ 30004, 6000 },                      // Zab Dzika
+		{ 30006, 95000 }, { 30077, 16000 },   // Zab Orka, +
+		{ 30092, 10000 },                     // Zdobycz Dzikusa
+		{ 30061, 33000 }, { 30116, 33000 },   // Zabie Udka (dwa vnumy)
+		{ 30010, 27000 }, { 30071, 12000 },   // Zolc Niedzwiedzia, +
+		// Dopisane przez Iwakure osobno (13 wrzesnia): "Zwoj Blogoslawienstwa
+		// za 150k, bedzie z glowy". Nie jest ulepszaczem w sensie recepty, ale
+		// wycenia sie tak samo i na tym samym straganie stoi.
+		{ 25040, 150000 },                    // Zwoj Blogoslawienstwa
+	};
+	// Smart rounding (Iwakura, 13 September): a player puts a round number on a
+	// counter, so "1 591 511" reads as a machine and "1 595 000" reads as a
+	// person. The step is the price's own order of magnitude over
+	// PLAYERBOT_PRICE_ROUND_DIVISOR and the price goes up to the next one, which
+	// reproduces all five of his worked examples: 12 555 -> 12 600 (step 50),
+	// 401 501 -> 402 000 (500), 1 241 412 -> 1 245 000 (5 000),
+	// 11 512 125 -> 11 550 000 (50 000), 121 314 515 -> 121 500 000 (500 000).
+	// Each lands inside the range he gave. Below the minimum nothing is
+	// rounded: a material at 300 yang is not made prettier by becoming 400.
+	const DWORD PLAYERBOT_PRICE_ROUND_MIN = 10000;
+	const DWORD PLAYERBOT_PRICE_ROUND_DIVISOR = 200;
 	const DWORD PLAYERBOT_PRIOR_PEARL_WHITE = 2000000;
 	const DWORD PLAYERBOT_PRIOR_PEARL_BLUE = 3000000;
 	const DWORD PLAYERBOT_PRIOR_PEARL_RED = 6000000;
@@ -1734,6 +1855,19 @@ namespace
 	// from - but an unopened box is the one thing in this market a player can
 	// gamble on, and there was never one on a counter.
 	const DWORD PLAYERBOT_CHEST_STALL_MIN_STACK = 5;
+	// A share of the population trades its resources instead of spending all
+	// of them on itself. "Zaden bot nie sprzedaje szkat blasku i zwojow
+	// blogoslawienstwa" (sizowski, 13 September), and his own proposal was a
+	// proportion rather than a switch: "4 uzywaja do rozwijania postaci, 1
+	// sprzedaje - jak prawdziwy gracz". So one bot in five is a trader, drawn
+	// by pid the way the scrap keeper is, and the two roles are salted apart.
+	// A trader still opens chests and still refines - it simply keeps a much
+	// smaller reserve, so the surplus reaches a counter instead of the bag.
+	const int PLAYERBOT_RESOURCE_TRADER_PERCENT = 20;
+	// What a trader keeps back: two of a chest stack (against five) and one
+	// safe refine scroll (against three).
+	const DWORD PLAYERBOT_CHEST_TRADER_MIN_STACK = 2;
+	const int PLAYERBOT_REFINE_SCROLL_TRADER_KEEP = 1;
 	// The Forgetting Scroll (ITEM_SKILLFORGET): one level off a skill and the
 	// point back. A skill that reached seventeen without turning Master is
 	// left there rather than pushed on - every further point is a point the

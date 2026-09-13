@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-13T10:08:47Z",
-  "statusMessage": "PILNE 2.0.27: naprawiona wywalka rdzenia, gdy Teleporter odmawia botowi (brak poziomu/yang). Boty uzywaja wspomagaczy, kamieni bonusow i eliksirow zamiast je sprzedawac. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-13T17:00:00Z",
+  "statusMessage": "2.0.32 - WAZNA POPRAWKA: jesli masz 2.0.31, zaktualizuj sie. Tamto wydanie potrafilo zablokowac start serwera komunikatem \"port 13001 zajmuje com.docker.backend\" - launcher nie rozpoznawal zakresu portow i uznawal Twoj wlasny dzialajacy serwer za obcy program. Nie trzeba nic czyscic w Dockerze. Poza tym: przywracanie kopii swiata znow dziala, launcher pokazuje jak dlugo trwa dany etap, ceny ksiag i 78 ulepszaczy wg nowych tabel Iwakury (plus zaokraglanie kwot do ludzkich liczb), polskie znaki w panelu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
   "server": {
     "version": "2.0.24",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.24/metin2-server-update-2.0.24.zip",

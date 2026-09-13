@@ -17,6 +17,286 @@ every version here.
 
 ---
 
+## 2.0.32 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. **Naprawa błędu z
+2.0.31, który potrafił zablokować start serwera** — jeśli masz 2.0.31,
+zaktualizuj się. Poza tym: przywracanie kopii świata znów działa, ceny ksiąg
+i ulepszaczy idą według nowych tabel Iwakury, a launcher pokazuje, czy długa
+operacja faktycznie postępuje.
+
+### Serwer odmawiał startu: „port 13001 zajmuje com.docker.backend” (sizowski)
+
+Błąd wprowadzony przeze mnie w 2.0.31 razem ze sprawdzaniem portów. Docker
+publikuje zakres portów jako **jeden** wpis — `127.0.0.1:13000-13002->13000-13002/tcp`
+— a launcher szukał w nim dosłownie `13001->`. Nie znajdował więc żadnego
+z trzech kanałów gry, uznawał własny, działający serwer gracza za obcy program
+i odmawiał startu, radząc „zamknij com.docker.backend”, czego nie da się zrobić.
+
+Launcher rozumie teraz zakresy portów tak samo jak pojedyncze wpisy i adresy
+IPv6. Dołożona jest też druga warstwa zabezpieczenia: jeśli port trzyma sam
+Docker, a launcher nie rozpozna którego kontenera to sprawa, zgłasza
+ostrzeżenie i **pozwala wystartować**, zamiast blokować. Nierozpoznany kontener
+to luka w sprawdzeniu, nigdy powód, żeby nie uruchomić serwera. Przypadek
+z zakresem portów ma teraz własny test.
+
+### Launcher mówi, czy długa operacja jeszcze idzie
+
+Podczas aktualizacji pasek postępu potrafił przez wiele minut pokazywać to samo
+(„m2zip-db: Healthy”) bez żadnej wskazówki, czy to praca, czy zastój — a stało
+za tym czekanie na bazę. Teraz obok nazwy etapu widać **jak długo ten etap
+trwa**, a po czterech minutach bez zmian dochodzi ostrzeżenie „bez zmian —
+sprawdź DIAGNOSTYKA” wraz z wpisem w logu. Launcher czyta też komunikaty
+migracji bazy i pokazuje je wprost („migracja bazy: baza nie odpowiada”),
+zamiast wyświetlać sprzed minuty nazwę ostatniego kontenera.
+
+### Polskie znaki w panelu i na czacie (seban latino)
+
+Poprawka od latino. Kolumna `hint` w `log.log` jest zadeklarowana jako big5,
+podczas gdy silnik zapisuje do niej CP1250, więc sterownik bazy zwracał krzaki
+dla wszystkiego poza ASCII („Skórzane” jako „SkĂłrzane”). Panel pobiera teraz tę
+kolumnę przez `HEX()` i dekoduje bajty samodzielnie — tą samą metodą, którą już
+stosował dla nazw przedmiotów.
+
+### Przywracanie kopii świata kończyło się błędem (NieBijOddam)
+
+„Błąd występujący podczas przywracania kopii serwera”, a w logu:
+`Cannot convert value "Singleplayer\Serwer\backups\db-backup-….zip" to type
+"System.Int32"`. To był błąd po naszej stronie i trafiał w **każdego**, kto ma
+serwer w folderze ze spacją w nazwie — czyli w domyślnej instalacji „Metin2
+Singleplayer” w praktyce we wszystkich.
+
+Launcher graficzny uruchamia część konsolową przez `Start-Process`, która skleja
+argumenty spacjami i **niczego nie cytuje**. Ścieżka do kopii rozpadała się więc
+na dwa argumenty: `C:\…\Metin2` szło do `-RestoreSource`, a ogon
+`Singleplayer\Serwer\backups\…zip` lądował pozycyjnie na następnym parametrze,
+którym jest `-BotCount` typu `int` — stąd dosłownie „nie można przekonwertować na
+System.Int32”. Teraz każda wartość przekazywana do części konsolowej jest
+cytowana; nazwy parametrów przechodzą bez zmian. Dotyczyło to tak samo importu
+bazy z innej instalacji, jeśli jej ścieżka miała spację.
+
+### Ceny ksiąg umiejętności według nowej tabeli (Iwakura)
+
+Nowa wycena wszystkich 44 ksiąg — Aura Miecza 123 500, Czarowane Ostrze 65 000,
+Berserk 58 500, Strach 52 000 i tak dalej; kolejność umiejętności w każdej
+klasie jest ta sama co w poprzedniej tabeli, więc zmieniły się wyłącznie kwoty.
+
+Zmienił się też **przelicznik od dropu yang**. Tabela Iwakury zaczyna się od
+×1,1 przy dropie 100% i rośnie proporcjonalnie (200% → ×2,2, 500% → ×5,5,
+900% → ×9,9, 1500% → ×16,5). Dotąd bot skalował ceny samym mnożnikiem serwera
+(100% → ×1,0), czyli o jedną dziesiątą za nisko względem tabeli, którą miał
+realizować. Dwa zaokrąglone wpisy z jego rozpiski (1000% → ×11,1 i
+10000% → ×111,0) leżą jakieś pół procenta nad tą prostą i potraktowałem je jako
+jego własne zaokrąglenie, bo załamanie krzywej w tych dwóch punktach kłóciłoby
+się z pięcioma pozostałymi.
+
+Losowy rozrzut (od −20% do +25% na wystawienie) i pamięć sprzedaży działają jak
+dotąd.
+
+### Ceny ulepszaczy według tabeli Iwakury
+
+Wszystkie 78 materiałów do ulepszania ma teraz cenę wpisaną ręcznie — od Futra
+Wilka za 2 000 po Białą Perłę za 1 100 000 — zamiast wyliczanej z ceny
+handlarza. Skalowanie jest liniowe od mnożnika dropu yang (100% → ×1,0,
+200% → ×2,0, i tak dalej), czyli inne niż przy księgach; taka jest jego reguła
+dla tej tabeli. Rozrzut −20%/+25% na wystawienie działa tu tak samo jak przy
+księgach, więc dwa stragany nie proszą równo za ten sam Ząb Orka.
+
+Trzy pozycje z jego listy zmieniają to, co plik zakładał do tej pory: perły idą
+w drugą stronę (Biała 1 100 000, Niebieska 820 000, Krwawa 650 000, wcześniej
+odpowiednio 2 mln, 3 mln i 6 mln rosnąco), a Małż spada ze 100 000 na 93 000.
+Dwie nazwy występują w grze pod dwoma numerami przedmiotu (Nieznany Talizman+
+i Żabie Udka) — obydwa dostają tę samą cenę, bo bot wycenia przedmiot, a nie
+nazwę.
+
+### Ceny wyglądają jak wystawione przez człowieka (Iwakura)
+
+„1 591 511” czyta się jak maszyna. Kwoty na straganach są teraz zaokrąglane w
+górę do kroku wynikającego z ich własnego rzędu wielkości: 12 555 → 12 600,
+401 501 → 402 000, 1 241 412 → 1 245 000, 11 512 125 → 11 550 000,
+121 314 515 → 121 500 000. Każdy z tych wyników mieści się w przedziale, który
+Iwakura podał dla swojego poziomu. Ceny poniżej 10 000 yang zostają nietknięte —
+materiał za 300 yang nie staje się ładniejszy przez to, że kosztuje 400.
+
+Zaokrąglanie objęło **wszystkie** wyjścia wyceny, łącznie z płaskimi cenami
++7/+8/+9 — czyli dokładnie tymi, na które gracze patrzą najczęściej.
+
+---
+
+## 2.0.31 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Misja na konia
+bojowego wreszcie się liczy, szkatułki blasku i zwoje błogosławieństwa trafiają
+na stragany, przełącznik układu świata pojawia się w `.env`, okno ulepszania
+może zostawać otwarte, a launcher sam zwalnia zajęte porty.
+
+### Misja na konia bojowego stała na 0/100 (sosen)
+
+„Boty się bugują i nie wykonują misji na konia bojowego — cały czas 0/100
+i błądzenie po mapie”. Tak było i nie mogło być inaczej: próba liczyła
+zabójstwa potworów o numerach **401–404** (Czarny Wiatr), a tych na pustyni nie
+ma ani jednego — mieszkają na drugich wioskach (mapy a3/b3/c3). Bot stał więc na
+właściwej mapie i zabijał właściwe potwory, tylko żadne z nich nie było tym,
+czego licznik szukał.
+
+Skąd ten błąd: w `regen.txt` pustyni prawie każda linia jest typu `r`, a jej
+ostatnie pole to numer **grupy grup**, nie numer potwora — i akurat te numery to
+401–404. Ktoś (my) odczytał je jako vnumy potworów i wpisał do kodu, dopisując
+przy tym nieprawdę, że potwory z oryginalnej misji „nie są nigdzie
+zespawnowane”.
+
+Po rozwinięciu grup przez globalne `group_group.txt` i `group.txt` pustynia
+niesie dokładnie to, co mówi wiki: **Skorpion Łucznik (2105, 47 lvl)** —
+998 punktów spawnu — i **Wężowy Łucznik (2107, 51 lvl)** — 760 punktów. Próba
+liczy teraz je, tak jak misja u Stajennego. Limitu 30 minut, który ma wersja dla
+graczy, nadal celowo nie ma: bot kuje aż skończy.
+
+### Szkatułki blasku i zwoje błogosławieństwa trafiają na stragany (sizowski, Iwakura)
+
+„Żaden bot nie sprzedaje szkat blasku i zwojów błogosławieństwa”. Bo każdy bot
+zużywał wszystko na siebie: szkatułka szła na stragan dopiero od stosu pięciu,
+a zwoje zostawały w plecaku, dopóki cokolwiek noszonego było poniżej +9 — czyli
+u bota, który wciąż się przezbraja, praktycznie zawsze.
+
+Zgodnie z propozycją sizowskiego („4 używają do rozwijania postaci, 1 sprzedaje
+— jak prawdziwy gracz”) **co piąty bot jest teraz handlarzem zasobów**:
+wystawia szkatułki już od stosu dwóch i zostawia sobie jeden zwój zamiast
+trzech. Rola jest stała (losowana z PID), więc nie miga między restartami, i
+jest rozdzielona od roli „skupuje złom”. Pozostałe cztery piąte populacji
+zachowuje się jak dotąd — nadal otwierają i nadal ulepszają.
+
+### Przełącznika układu świata nie było w `.env` (NerrVoVy)
+
+„Przełącznik `M2_PLAYERBOT_WORLD_LAYOUT` nie występuje po aktualizacji”.
+Zgadza się — 2.0.30 dodało go do obu plików Compose i do `m2-render-config`, ale
+nie do `.env.example`, a to jedyna droga, którą nowe ustawienie trafia do
+istniejącego `.env`. Nic się nie psuło (Compose ma własną wartość domyślną
+`split`), tylko nie dało się tego włączyć bez ręcznego dopisania linii. Teraz
+jest w `.env.example` wraz z opisem obu trybów i kosztu każdego z nich.
+
+### Okno ulepszania może zostawać otwarte (Paweł „Pabloo”)
+
+Kod przygotowany, przeniesiony na naszą wersję i przetestowany w grze przez
+Pabloo. Dwie rzeczy po stronie serwera:
+
+- **`m_iRefineAdditionalCell` nie był inicjowany** przy tworzeniu postaci, więc
+  pierwsza sesja ulepszania czytała komórkę zwoju ze śmieci. Samodzielna
+  poprawka bezpieczeństwa, niezależna od reszty.
+- **„Nie zamykaj okna”**: po próbie serwer sam otwiera okno ulepszania jeszcze
+  raz, zamiast zostawiać zamknięte. Włącza się komendą `/refine_keep_open 1`,
+  wybór przeżywa relog. Przy zwoju sprawdzane jest dodatkowo, czy w zapamiętanej
+  komórce nadal leży poprawny zwój — to naprawia przypadek zużycia ostatniego
+  Zwoju Błogosławieństwa.
+
+**Żadnego auto-refine**: każda próba nadal wymaga świadomego kliknięcia, a cała
+logika ulepszania zostaje po stronie serwera. Zabezpieczenie jednej sekundy
+zostaje — przeniesione za podstawowe walidacje, bo wcześniej przy otwartym oknie
+psuło sesję ulepszania. Sprawdzenia NPC i dystansu z 2.0.29 nietknięte, Wieża
+Demona celowo bez tej opcji.
+
+Dwa checkboxy w oknie („Nie zamykaj okna”, „Potwierdzaj Enterem”) to zmiana po
+stronie klienta i **nie ma jej w tej paczce** — wymaga osobnego wydania klienta.
+
+### Launcher: koniec z „port jest już zajęty” (Tieru)
+
+Przy każdej próbie aktualizacji launcher przerywał budowanie komunikatem
+o zajętym porcie, a wyłączanie Dockera nie pomagało. Trzy przyczyny naraz:
+
+- na jednej maszynie potrafi być kilka instalacji tego samego serwera, każda
+  jako osobny projekt Dockera, i wszystkie publikują te same porty;
+- każdy kontener ma politykę `restart: unless-stopped`, czyli Docker wskrzesza
+  starą instalację przy każdym uruchomieniu silnika — a ta polityka czeka
+  dokładnie na to, co robił operator, czyli na wyłączenie Dockera;
+- sprawdzenie przed startem patrzyło **wyłącznie na port 7788**, a kolizja była
+  na 7790 (panel zaawansowany), więc launcher meldował „porty wolne” i dopiero
+  Docker przerywał budowanie po kilkunastu minutach.
+
+Teraz launcher sprawdza **wszystkie** publikowane porty (7788, 7790, 7791,
+11000, 13000–13002, 3306), a gdy któryś jest zajęty, mówi wprost, który kontener
+go trzyma, z jakiej instalacji i **z którego folderu**. GRAJ i ZAINSTALUJ
+AKTUALIZACJE zwalniają takie porty same; w wersji konsolowej jest to opcja 21
+(„Zwolnij porty”). Zatrzymywana jest tylko obca instalacja — bez dotykania bazy,
+wolumenów i postępu botów.
+
+---
+
+## 2.0.30 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Shinsoo i Jinno mogą
+wyjść z M2, ceny na straganach różnią się między botami, liczba botów domyślnie
+1500.
+
+### Shinsoo i Jinno wychodzą z M2 — tryb jednego świata (thespartanin, sizowski)
+
+„Czerwoni i niebiescy nie mogą wyjść z M2”. Cały front (Dolina Orków, Pustynia,
+Sohan, Lochy Pająków, Hwang) hostuje wyłącznie rdzeń Chunjo (game1), a bot nie ma
+klienta, więc nie przechodzi między rdzeniami — Shinsoo (rdzeń first) i Jinno
+(rdzeń game2) nie miały dokąd pójść po M2 i kapowały na ~36 lvl. To nie był błąd
+kodu, tylko podział świata na trzy rdzenie.
+
+Nowy przełącznik **`M2_PLAYERBOT_WORLD_LAYOUT`**:
+- `split` (domyślnie) — dotychczasowy układ trzy rdzenie, pełna równoległość, bez
+  zmian dla nikogo; Shinsoo/Jinno nadal kapują ~36.
+- `unified` — mapy wszystkich trzech królestw i cały front lądują na jednym
+  rdzeniu (game1), więc **każdy** bot przechodzi 1→104 i może stanąć na ziemi
+  dowolnego królestwa. Kod bootstrapu jest generyczny (królestwo startuje tam,
+  gdzie rdzeń hostuje jego wioskę), więc żaden kod rdzenia się nie zmienia; first
+  i game2 trzymają swoje mapy gildii/eventów i nie mają botów.
+
+Sprawdzone na żywo (stos testowy, 1500 botów, `unified`): po 500 botów każdego
+królestwa wystartowało na game1, boty Shinsoo/Jinno podbite do 40 lvl ruszają na
+front tak jak Chunjo. Koszt: cały świat tyka na jednym rdzeniu — zmierzony tick
+game1 przy 1500 botach to **9,4 s z każdych 60** (pojedynczy tick maks. 48 ms),
+w pełni grywalny. To tryb dla jednej maszyny z jednym światem; przy bardzo dużej
+populacji zostaw `split`. Boty widmowe z poprzedniego układu są czyszczone przy
+starcie (rdzeń bez botów nie zostawia już nieaktualnego `playerbot_status.tsv`).
+
+### Ceny +7/+8/+9 różnią się między straganami (Iwakura)
+
+Iwakura zauważył, że itemy +7 bez bonusów wszędzie kosztowały równo 150 000 —
+brak konkurencji cenowej. Każdy bot ma teraz stały (per bot i per przedmiot)
+rozrzut do ±20% na cenach +7/+8/+9, więc rynek pokazuje widełki, jeden bot
+podbija drugiego. Rozrzut jest stały (nie miga między stoiskami) i nie psuje
+pamięci sprzedaży. Sprawdzone: ceny +7 rozjechały się na 139 500–168 000 zamiast
+jednej 150 000.
+
+### Liczba botów 1500
+
+Domyślny sufit populacji na serwerze testowym i głównym ustawiony na 1500 — tyle
+w zupełności wystarcza, a przy trybie `unified` trzyma tick w rozsądnych
+granicach.
+
+---
+
+## 2.0.29 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Zbanowany bot znika
+i nie wraca.
+
+### Zbanowany bot loguje się z powrotem (mateuszp211)
+
+„Po zbanowaniu bota i kicku bot loguje się z powrotem”. Kick usuwał postać, a
+pas dopełniania kohorty (`TopUpMissingBots`) minutę później widział brak i
+wstawiał bota z powrotem — bo nikt nie sprawdzał bana. Oczywista blokada, czyli
+`account.status='BLOCK'`, tu nie działa: **każde konto bota jest z założenia
+`BLOCK`** (żeby nikt się na nie nie zalogował), więc ta kolumna nie odróżnia
+zbanowanego bota od zwykłego. Rejestrem, który ban faktycznie zapisuje
+(`/block_player` → `account.account_block`), jest osobna tabela — pusta, dopóki
+ktoś nie zbanuje. Rdzeń czyta ją co minutę: bota z wpisem w `account_block`
+usuwa ze świata i nie wstawia z powrotem, a zdjęcie bana (usunięcie wpisu)
+pozwala mu wrócić przy najbliższym dopełnieniu. Sprawdzone na żywo: ban jednego
+bota usuwa dokładnie tego jednego, reszta kohorty stoi nietknięta.
+
+### Dla darkroom22: „segmentation fault” na 2.0.14
+
+To ta sama wywałka, którą zdiagnozował kimakatsu: linia logu odmowy Teleportera
+miała `%d` dla 64-bitowego yang przed `%s`, więc rdzeń czytał numer mapy jako
+wskaźnik i padał (ślad stosu w Twojej paczce prowadzi przez `CPlayerBotManager::Update`
+do funkcji formatującej tekst — co do joty ta sama sygnatura). Naprawione w
+2.0.27; aktualizacja rozwiązuje Twój crash.
+
+---
+
 ## 2.0.28 — 2026-09-13
 
 Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Poprawia bieganie

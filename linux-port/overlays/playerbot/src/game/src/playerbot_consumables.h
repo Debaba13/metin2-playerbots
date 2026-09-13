@@ -67,7 +67,12 @@ namespace
 		if (s_mapPlayerBotChestRefused.find(std::make_pair(ch->GetPlayerID(), item->GetVnum())) !=
 				s_mapPlayerBotChestRefused.end())
 			return true;
-		return item->GetCount() >= PLAYERBOT_CHEST_STALL_MIN_STACK;
+		// A trader puts a box up from a much smaller stack, so unopened chests
+		// reach the market without the population stopping opening them: the
+		// chest pass keeps eating the stack either way.
+		const DWORD minStack = IsPlayerBotResourceTrader(ch->GetPlayerID())
+				? PLAYERBOT_CHEST_TRADER_MIN_STACK : PLAYERBOT_CHEST_STALL_MIN_STACK;
+		return item->GetCount() >= minStack;
 	}
 
 	// Ile pol plecaka jest naprawde puste.

@@ -1205,6 +1205,7 @@ def main(root):
          '\t\tchar country_code[3] = "en";\n')
 
     apply_playerbot_offline_shops(game, db)
+    apply_refine_quality_of_life(game)
     print('playerbotify: done')
 
 
@@ -1418,6 +1419,139 @@ def apply_playerbot_offline_shops(game, db):
     edit(os.path.join(db, 'ClientManagerIkarusShop.cpp'),
          '\t\t\tikashop::ENotificationType::SELLER_SOLD_ITEM, subpack.ownerid, item->vnum, "", itemPrice);\n#endif\n\t}\n\n\telse\n\t\tsys_err("cannot find buy target item %u (owner %u , buyer %u) ", subpack.itemid, subpack.ownerid, subpack.guestid);\n\treturn true;\n}\n\nbool CClientManager::RecvIkarusShopBuyItemPacket(CPeer* peer, const char* data)\n{\n',
          '\t\t\tikashop::ENotificationType::SELLER_SOLD_ITEM, subpack.ownerid, item->vnum, "", itemPrice);\n#endif\n\t}\n\n\telse\n\t{\n\t\tSendIkarusShopBuyLockedItemPacket(peer, 0, subpack.guestid, subpack.itemid);\n\t\tsys_err("cannot find buy target item %u (owner %u , buyer %u) ", subpack.itemid, subpack.ownerid, subpack.guestid);\n\t}\n\treturn true;\n}\n\nbool CClientManager::RecvIkarusShopBuyItemPacket(CPeer* peer, const char* data)\n{\n')
+
+def apply_refine_quality_of_life(game):
+    # Refine QoL, napisane i przetestowane w grze na mt2009/2.0.29 przez
+    # Pawla "Pabloo" (Discord, 13 wrzesnia), przeniesione tutaj bez zmian w
+    # zachowaniu. Dwie rzeczy, obie po stronie serwera:
+    #
+    #   * m_iRefineAdditionalCell nie byl inicjowany w konstruktorze postaci,
+    #     wiec pierwsza sesja ulepszania czytala komorke zwoju ze smiecia.
+    #   * "nie zamykaj okna": po probie serwer sam otwiera okno ulepszania
+    #     jeszcze raz (RefineInformation), zamiast zostawiac gracza z zamknietym.
+    #
+    # Nie ma tu auto-refine: kazda proba nadal wymaga pakietu od gracza, a cala
+    # logika ulepszania zostaje po stronie serwera. Zabezpieczenie jednej
+    # sekundy zostaje - przeniesione ZA podstawowe walidacje, bo przy keep-open
+    # wczesniejsze ClearRefineMode() + return zamykalo okno i zostawialo sesje
+    # refine w zlym stanie. Nowe sprawdzenia NPC/dystansu z 2.0.29 zostaja
+    # nietkniete, a REFINE_TYPE_MONEY_ONLY (Wieza Demona) celowo nie dostaje
+    # keep-open.
+    #
+    # Przelacznik to flaga specjalna "refine.keep_open": przezywa relog, jest
+    # wysylana do klienta i wlacza sie komenda /refine_keep_open 1.
+    # UWAGA: kliencka polowa (dwa checkboxy i potwierdzanie Enterem w
+    # uirefine.py) NIE jedzie w tej paczce - linux-port/client-root nie zawiera
+    # uirefine.py ani special_flags.py, wiec to osobna zmiana klienta i osobne
+    # wydanie klienta.
+    edit(os.path.join(game, 'char.h'),
+         '\t\tDWORD\t\t\tGetRefineNPCVID() { return m_dwRefineNPCVID; }\n',
+         '\t\tDWORD\t\t\tGetRefineNPCVID() { return m_dwRefineNPCVID; }\n'
+         '\t\tint\t\t\t\tGetRefineAdditionalCell() const { return m_iRefineAdditionalCell; }\n')
+    # Bez tego pierwsza sesja ulepszania w zyciu postaci czyta niezainicjowana
+    # komorke: osobny, samodzielny fix bezpieczenstwa.
+    edit(os.path.join(game, 'char.cpp'),
+         '\tm_bUnderRefine = false;\n\n\t// REFINE_NPC\n\tm_dwRefineNPCVID = 0;\n',
+         '\tm_bUnderRefine = false;\n\tm_iRefineAdditionalCell = -1;\n\n\t// REFINE_NPC\n\tm_dwRefineNPCVID = 0;\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_setblockmode);\n',
+         'ACMD(do_setblockmode);\nACMD(do_refine_keep_open);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "setblockmode",\tdo_setblockmode,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "setblockmode",\tdo_setblockmode,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "refine_keep_open",\tdo_refine_keep_open,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n')
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         'ACMD(do_setblockmode)\n{\n\tchar arg1[256];\n\tone_argument(argument, arg1, sizeof(arg1));\n\n'
+         '\tif (*arg1)\n\t{\n\t\tBYTE flag = 0;\n\t\tstr_to_number(flag, arg1);\n\t\tch->SetBlockMode(flag);\n\t}\n}\n',
+         'ACMD(do_setblockmode)\n{\n\tchar arg1[256];\n\tone_argument(argument, arg1, sizeof(arg1));\n\n'
+         '\tif (*arg1)\n\t{\n\t\tBYTE flag = 0;\n\t\tstr_to_number(flag, arg1);\n\t\tch->SetBlockMode(flag);\n\t}\n}\n'
+         '\n'
+         '// Refine QoL: "nie zamykaj okna". skipSave=false, bo wybor ma przezyc relog.\n'
+         'ACMD(do_refine_keep_open)\n{\n\tchar arg1[256];\n\tone_argument(argument, arg1, sizeof(arg1));\n\n'
+         '\tif (*arg1)\n\t{\n\t\tBYTE flag = 0;\n\t\tstr_to_number(flag, arg1);\n'
+         '\t\tch->SetSpecialFlag("refine.keep_open", flag ? 1 : 0, false);\n\t}\n}\n')
+    edit(os.path.join(game, 'constants.cpp'),
+         '\tif (flag == "shop_unlock_slot")\n\t\treturn true;\n',
+         '\tif (flag == "refine.keep_open")\n\t\treturn true;\n\n'
+         '\tif (flag == "shop_unlock_slot")\n\t\treturn true;\n')
+    # Stan sesji zapamietany na wejsciu, bo ClearRefineMode() kasuje i NPC, i
+    # komorke zwoju, a keep-open musi znac oba. Cooldown znika stad i wraca
+    # nizej, za walidacjami.
+    edit(os.path.join(game, 'input_main.cpp'),
+         '\t// fix bug: if fast clicked with autowindow open it could somehow upgrade with jumping above refine level like from +4 to +6 without taking money or upgrade items for +5\n'
+         '\tint iPulse = thecore_pulse();\n'
+         '\tif (iPulse - ch->GetRefineTime() < PASSES_PER_SEC(1))\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("WAIT_BEFORE_NEXT_REFINE"));\n'
+         '\t\tch->ClearRefineMode();\n'
+         '\t\treturn;\n'
+         '\t}\n\n',
+         '\t// Refine QoL (Pabloo): stan sesji zapamietany zanim cokolwiek ja wyczysci.\n'
+         '\tconst bool bKeepRefineOpen = ch->GetSpecialFlag("refine.keep_open") != 0;\n'
+         '\tconst int iRefineAdditionalCell = ch->GetRefineAdditionalCell();\n'
+         '\tconst DWORD dwRefineNPCVID = ch->GetRefineNPCVID();\n\n')
+    edit(os.path.join(game, 'input_main.cpp'),
+         '\tch->SetRefineTime();\n\n\tif (p->type == REFINE_TYPE_NORMAL ||\n',
+         '\t// fix bug: if fast clicked with autowindow open it could somehow upgrade with jumping above refine level like from +4 to +6 without taking money or upgrade items for +5\n'
+         '\t// Za walidacjami, nie przed nimi: przy keep-open wczesniejszy return\n'
+         '\t// zamykal okno i zostawial sesje refine w zlym stanie.\n'
+         '\tconst int iPulse = thecore_pulse();\n'
+         '\tif (iPulse - ch->GetRefineTime() < PASSES_PER_SEC(1))\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("WAIT_BEFORE_NEXT_REFINE"));\n'
+         '\t\tch->ClearRefineMode();\n'
+         '\t\treturn;\n'
+         '\t}\n\n'
+         '\tch->SetRefineTime();\n\n\tif (p->type == REFINE_TYPE_NORMAL ||\n')
+    # Po ClearRefineMode(): okno otwarte ponownie, jesli gracz o to prosil i
+    # jesli przedmiot nadal istnieje. Przy zwoju dodatkowo sprawdzamy, czy w
+    # zapamietanej komorce nadal lezy poprawny zwoj - to naprawia przypadek
+    # zuzycia ostatniego Zwoju Blogoslawienstwa.
+    edit(os.path.join(game, 'input_main.cpp'),
+         '\t}\n\n\tch->ClearRefineMode();\n}\n\n#ifdef ENABLE_ACCE_COSTUME_SYSTEM\n',
+         '\t}\n\n\tch->ClearRefineMode();\n\n'
+         '\tif (bKeepRefineOpen)\n'
+         '\t{\n'
+         '\t\tLPITEM refreshedItem = ch->GetInventoryItem(p->pos);\n\n'
+         '\t\tif (refreshedItem)\n'
+         '\t\t{\n'
+         '\t\t\tif (p->type == REFINE_TYPE_NORMAL ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_FISHER ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_HERB_KNIFE ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_PICKAXE)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tLPCHARACTER refineCh = CHARACTER_MANAGER::instance().Find(dwRefineNPCVID);\n\n'
+         '\t\t\t\tif (refineCh)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tint distance = DISTANCE_APPROX((ch->GetX() - refineCh->GetX()), (ch->GetY() - refineCh->GetY()));\n\n'
+         '\t\t\t\t\tif (distance <= 2000)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tch->SetRefineNPC(refineCh);\n\n'
+         '\t\t\t\t\t\tif (!ch->RefineInformation(p->pos, p->type))\n'
+         '\t\t\t\t\t\t\tch->SetRefineNPC(NULL);\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t}\n'
+         '\t\t\telse if (p->type == REFINE_TYPE_SCROLL ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_NO_REDUCTION_WHEN_FAIL ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_UP_TO_3TH_LEVEL ||\n'
+         '\t\t\t\tp->type == REFINE_TYPE_BDRAGON)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tLPITEM refineScroll = NULL;\n\n'
+         '\t\t\t\tif (iRefineAdditionalCell >= 0)\n'
+         '\t\t\t\t\trefineScroll = ch->GetInventoryItem(iRefineAdditionalCell);\n\n'
+         '\t\t\t\tif (refineScroll &&\n'
+         '\t\t\t\t\trefineScroll->GetType() == ITEM_USE &&\n'
+         '\t\t\t\t\trefineScroll->GetSubType() == USE_TUNING &&\n'
+         '\t\t\t\t\trefineScroll->GetVnum() != refreshedItem->GetVnum())\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tch->RefineInformation(p->pos, p->type, iRefineAdditionalCell);\n'
+         '\t\t\t\t}\n'
+         '\t\t\t}\n'
+         '\t\t}\n'
+         '\t}\n'
+         '}\n\n#ifdef ENABLE_ACCE_COSTUME_SYSTEM\n')
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 or not os.path.isdir(os.path.join(sys.argv[1], 'game', 'src')):

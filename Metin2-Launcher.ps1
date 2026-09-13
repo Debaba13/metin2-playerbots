@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword')]
+    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword', 'FreePorts')]
     [string]$Action = 'Menu',
     [string]$Manifest = '',
     [int]$BotCount = -1,
@@ -165,6 +165,10 @@ function Assert-DockerPrerequisites {
 }
 
 function Start-Server {
+    # Before the preflight refuses the start: an old installation takes the
+    # ports back on every engine start, so a check that only names it leaves the
+    # player exactly where they were.
+    Clear-PortConflicts -Quiet | Out-Null
     Assert-DockerPrerequisites -CheckPanelPort
     Write-Phase 'Docker sprawdzony'
     # start-server.ps1 brings the stack up from the images that already exist.
@@ -208,6 +212,44 @@ function Stop-Server {
     }
     finally { $ErrorActionPreference = $previousPreference }
     if ($stopExit -ne 0) { throw "Zatrzymywanie serwera zakończyło się kodem $stopExit." }
+}
+
+# Another installation of this same server, sitting on the ports this one
+# publishes. Every container ships `restart: unless-stopped`, so Docker Desktop
+# starts the old project again on every engine start and it binds the ports
+# before this installation can - which is why quitting Docker by hand never
+# helped ("nawet jak recznie wylacze calkowicie docker"). `docker stop` is what
+# holds, because its manual-stop flag survives an engine restart. Volumes are
+# never touched: the collision is containers, and a removed volume is the world.
+function Clear-PortConflicts {
+    param([switch]$Quiet)
+
+    if (-not (Test-M2DockerRunning)) { return 0 }
+    $holders = @(Get-M2ForeignPortHolders -ServerRoot $serverRoot)
+    if ($holders.Count -eq 0) {
+        if (-not $Quiet) {
+            Write-Host 'Zadna inna instalacja nie trzyma portow tego serwera.' -ForegroundColor Green
+        }
+        return 0
+    }
+    foreach ($holder in $holders) {
+        $where = if ($holder.WorkingDir) { " (folder: $($holder.WorkingDir))" } else { '' }
+        Write-Host ("Port {0}: trzyma go kontener {1} z instalacji '{2}'{3}." -f
+            ((@($holder.Ports) | ForEach-Object { "$_" }) -join ', '), $holder.Container, $holder.Project, $where) -ForegroundColor Yellow
+    }
+    $stopped = @(Stop-M2ForeignPortHolders -ServerRoot $serverRoot)
+    foreach ($entry in $stopped) {
+        Write-Host ("Zatrzymano instalacje '{0}' ({1} kontenerow). Baza, wolumeny i postep sa nietkniete." -f
+            $entry.Project, $entry.Containers) -ForegroundColor Green
+    }
+    return $stopped.Count
+}
+
+function Clear-PortConflictsAction {
+    $freed = Clear-PortConflicts
+    if ($freed -gt 0) {
+        Write-Host 'Porty zwolnione. Mozesz kliknac GRAJ albo ponowic aktualizacje.' -ForegroundColor Green
+    }
 }
 
 function Start-Docker {
@@ -330,6 +372,13 @@ function Rebuild-Server {
                "Uruchom ponownie instalator (installer\install.ps1). Pobierze zrodla i " +
                "odtworzy kontekst budowania. Baza, postacie i ustawienia zostaja nietkniete.")
     }
+
+    # The update is where a port collision hurts most: the images build for
+    # minutes and compose then cannot bind a port another installation took back
+    # while they were building ("Bind for 127.0.0.1:7790 failed"), so the whole
+    # update is lost at its last step and the player is told to free a port they
+    # cannot find.
+    Clear-PortConflicts -Quiet | Out-Null
 
     # See Stop-Server: compose progress on stderr must not be treated as failure
     # under $ErrorActionPreference='Stop' in Windows PowerShell 5.1.
@@ -950,6 +999,7 @@ function Invoke-Action {
         'Stop' { Stop-Server }
         'StartDocker' { Start-Docker }
         'StopAll' { Stop-DockerAndServer }
+        'FreePorts' { Clear-PortConflictsAction }
         'Check' {
             $remote = Get-M2UpdateManifest -Source (Get-ManifestSource $config)
             Show-UpdateStatus -RemoteManifest $remote
@@ -1009,6 +1059,7 @@ function Show-Menu {
         Write-Host ' 18. Napraw dostęp do bazy (gdy migrate/serwer nie startuje albo Navicat odrzuca hasło)'
         Write-Host ' 19. Dane do połączenia z bazą (Navicat, HeidiSQL)'
         Write-Host ' 20. Hasło do panelu WWW (pokaż / zresetuj)'
+        Write-Host ' 21. Zwolnij porty (gdy „port jest już zajęty” blokuje start lub aktualizację)'
         Write-Host '  0. Wyjście'
         Write-Host ''
         $choice = Read-Host 'Wybierz opcję'
@@ -1024,6 +1075,7 @@ function Show-Menu {
             '18' { 'RepairDb' }
             '19' { 'DbAccess' }
             '20' { 'PanelPassword' }
+            '21' { 'FreePorts' }
             '0' { return }
             default { '' }
         }

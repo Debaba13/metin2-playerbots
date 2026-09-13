@@ -11,10 +11,6 @@
 // Three things in it could not be kept, and each is a fact about this world
 // rather than a preference:
 //
-//   * The quest counts kills of mobs 2105 and 2107. Neither is spawned anywhere
-//     in this server's maps - the desert here is stocked with the Black Wind
-//     band, 401 to 404 - so the trial counts those instead. It is the same
-//     desert the quest sends a player to and the same one bots already hunt.
 //   * The quest gives thirty minutes and fails you at the end of them. A bot
 //     hunts in a straight line for hours and has nobody to be disappointed by a
 //     failure, so there is no clock: it kills until it is done.
@@ -70,8 +66,8 @@ namespace
 
 	bool IsPlayerBotBattleHorseTrialMob(DWORD vnum)
 	{
-		return vnum >= PLAYERBOT_BATTLE_HORSE_MOB_FIRST &&
-				vnum <= PLAYERBOT_BATTLE_HORSE_MOB_LAST;
+		return vnum == PLAYERBOT_BATTLE_HORSE_MOB_SNAKE_ARCHER ||
+				vnum == PLAYERBOT_BATTLE_HORSE_MOB_SCORPION_ARCHER;
 	}
 
 	// Called wherever a bot has just swung at something. The engine has no hook

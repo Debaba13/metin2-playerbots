@@ -604,3 +604,49 @@ linux-port/docker/seban-panel/` returning empty.
   before deploying this branch.
 - Repo-wide `git grep` for leftover `<<<<<<<`/`=======`/`>>>>>>>` conflict
   markers: none.
+
+## Follow-up: fourth upstream sync, 2.0.28 -> 2.0.32 (2026-09-13)
+
+Brought in 17 upstream commits (mostly chore(release) manifest bumps between
+substantive ones). Merge commit: `merge(upstream): sync 2.0.28 -> 2.0.32`.
+Only one conflict this time - `update-manifest-mt2009.json`, same shape and
+same resolution as the last sync (kept this fork's own v2.0.24 release URL
+rather than upstream's newest TieruYT-hosted zip; the gap between the
+manifest's stated version and the code this branch actually carries keeps
+growing and is still the one open item from `UPDATE_SOURCE_2026-09-13.md`).
+`launcher/server-update-files.mt2009.txt` auto-merged cleanly this round -
+the `playerbot_*` glob from the previous sync absorbed upstream's two new
+entries (`char.h`, `constants.cpp`) with no list-editing needed, exactly the
+self-maintaining behaviour that glob was adopted for.
+
+What actually shipped in these 17 commits: a banned bot (`/block_player`)
+now gets despawned and kept off the spawn/top-up queue instead of logging
+back in a minute later; an archer-counting bug in the battle-horse trial
+(counting `group_group` ids as monster vnums - the same "group.txt vs
+group_group.txt aren't the same shape" trap CLAUDE.md already documents);
+a fifth of the bot population now trades chests/scrolls instead of every
+bot consuming its own; Iwakura's book/material price tables with
+human-friendly price rounding; a per-bot price spread on high-refine spares;
+an opt-in unified one-core world layout (`M2_PLAYERBOT_WORLD_LAYOUT`,
+default unchanged); and a `log.log` CP1250-via-HEX() read fix for
+`seban-panel/app.py`'s news feed, which needed merging with this fork's own
+existing `game_text()`/`cp1250_hex_text()` VARBINARY handling - verified the
+merge kept our Turkish output strings intact (`"eşyasını geliştirdi"`,
+`"balık tutarken Midye buldu"`) while adopting upstream's byte-level fix.
+
+Audited every non-`chore(release)` commit individually for new player-visible
+text the same way as the previous sync (`git log <merge-base>..upstream/main
+-- <path>` per touched file, then read each commit's actual diff rather than
+trusting a clean auto-merge to mean nothing needs checking) - found none.
+`playerbot_status.h`, `playerbot_chat_trade.h` and `playerbot_shop_signs.h`
+(the three files this fork keeps as thin LLM-seam stubs or literal
+translations) all had zero new upstream commits in this range, so nothing
+needed porting into their Turkish counterparts this time.
+
+Verified: `g++ -Wall -Wextra` on `tests/playerbot_world_rules_test.cpp` and
+`g++ -std=c++17` on `tests/playerbot_offline_policy_test.cpp`, both compile
+and pass; `python3 -m py_compile` on `files/admin_panel.py`,
+`linux-port/docker/seban-panel/app.py`, `linux-port-mt2009/port/playerbotify.py`;
+JSON validity on `update-manifest-mt2009.json`; no leftover conflict markers.
+Same standing gap as every prior sync: the real `-fsyntax-only` check against
+`m2src-cache`/Docker was not run - neither is present in this sandbox.

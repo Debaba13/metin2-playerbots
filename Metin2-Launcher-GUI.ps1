@@ -456,6 +456,21 @@ function Read-SharedText {
     catch { return $null }
 }
 
+function Set-ActionPhase {
+    # One place records the phase, so the clock under it always starts when the
+    # phase actually changes. Without that clock a start that had stopped
+    # looked exactly like a start that was working: the line read
+    # "m2zip-db: Healthy" for eight minutes while the migration behind it
+    # could not reach the database at all, and nothing said which it was.
+    param([Parameter(Mandatory = $true)][string]$Phase, [int]$Step = 0, [int]$Total = 0)
+    if ($script:activePhase -ne $Phase) {
+        $script:activePhase = $Phase
+        $script:activePhaseSince = Get-Date
+    }
+    $script:activePhaseStep = $Step
+    $script:activePhaseTotal = $Total
+}
+
 function Update-ActionPhase {
     # Turn BuildKit / Compose chatter into a phase name and a step count, so the
     # progress bar and the status line can show real movement during the long
@@ -463,9 +478,7 @@ function Update-ActionPhase {
     param([Parameter(Mandatory = $true)][string]$Line)
     $step = [Regex]::Match($Line, '^\s*#\d+\s+\[([^\]]+?)\s+(\d+)/(\d+)\]')
     if ($step.Success) {
-        $script:activePhase = $step.Groups[1].Value
-        $script:activePhaseStep = [int]$step.Groups[2].Value
-        $script:activePhaseTotal = [int]$step.Groups[3].Value
+        Set-ActionPhase $step.Groups[1].Value ([int]$step.Groups[2].Value) ([int]$step.Groups[3].Value)
         if (-not $script:activeBuildNoticed) {
             $script:activeBuildNoticed = $true
             Write-LocalLog 'Trwa budowanie obrazów serwera. Przy pierwszym uruchomieniu to normalnie kilkanaście–kilkadziesiąt minut — nie przerywaj.'
@@ -473,19 +486,31 @@ function Update-ActionPhase {
         return
     }
     if ($Line -match '^\[faza\]\s*(.+?)\s*(\(|$)') {
-        $script:activePhase = $Matches[1]
-        $script:activePhaseStep = 0; $script:activePhaseTotal = 0
+        Set-ActionPhase $Matches[1]
         return
     }
     if ($Line -match 'transferring context:\s*([\d.]+\s*[kKMG]?B)') {
-        $script:activePhase = "przesyłanie plików do budowy ($($Matches[1]))"
-        $script:activePhaseStep = 0; $script:activePhaseTotal = 0
+        Set-ActionPhase "przesyłanie plików do budowy ($($Matches[1]))"
+        return
+    }
+    # The database migration is where a start sits longest, and it says plainly
+    # what it is waiting for. Show that instead of the last container line from
+    # a minute ago, so "still waiting" cannot be mistaken for progress.
+    if ($Line -match 'still waiting for the database \((\d+)s\)') {
+        Set-ActionPhase ('migracja bazy czeka na bazę ({0} s)' -f $Matches[1])
+        return
+    }
+    if ($Line -match 'the database is not answering yet|Unknown server host') {
+        Set-ActionPhase 'migracja bazy: baza nie odpowiada'
+        return
+    }
+    if ($Line -match 'waiting for the complete mt2009 schema') {
+        Set-ActionPhase 'migracja bazy: czekam na schemat'
         return
     }
     $container = [Regex]::Match($Line, 'Container\s+(\S+)\s+(Creating|Created|Starting|Started|Waiting|Healthy|Recreate|Stopping|Stopped)')
     if ($container.Success) {
-        $script:activePhase = "$($container.Groups[1].Value): $($container.Groups[2].Value)"
-        $script:activePhaseStep = 0; $script:activePhaseTotal = 0
+        Set-ActionPhase "$($container.Groups[1].Value): $($container.Groups[2].Value)"
     }
 }
 
@@ -501,7 +526,18 @@ function Update-ActionStatusText {
         $script:progress.Value = $pct
     }
     elseif ($script:activePhase) {
-        $text += '   —   {0}' -f $script:activePhase
+        # How long THIS phase has lasted, not only the whole action: a build
+        # step that takes four minutes is normal, the same container line for
+        # four minutes is not, and the two used to look identical.
+        $inPhase = if ($script:activePhaseSince) { (Get-Date) - $script:activePhaseSince } else { [TimeSpan]::Zero }
+        $text += '   —   {0} ({1:mm\:ss})' -f $script:activePhase, $inPhase
+        if ($inPhase.TotalSeconds -ge $script:activeStallSeconds) {
+            $text += '  ⚠ bez zmian — sprawdź DIAGNOSTYKA'
+            if (-not $script:activeStallNoticed) {
+                $script:activeStallNoticed = $true
+                Write-LocalLog ("Od {0:N0} min nic się nie zmienia na etapie: {1}. To nie musi być awaria (duży świat wstaje wolno), ale jeśli potrwa dalej, użyj DIAGNOSTYKA i ZBIERZ LOGI." -f $inPhase.TotalMinutes, $script:activePhase)
+            }
+        }
     }
     $script:actionStatus.Text = $text
 }
@@ -909,7 +945,19 @@ function Start-LauncherAction {
     $script:activeErr = Join-Path $logDirectory ("action-$stamp.err.log")
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $cliLauncher), '-Action', $Action)
     if ($Yes) { $arguments += '-Yes' }
-    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) { $arguments += $ExtraArgs }
+    # Start-Process joins ArgumentList with spaces and quotes nothing, so a value
+    # containing a space arrives at the CLI as two arguments. The default install
+    # folder is "Metin2 Singleplayer", so restoring a backup sent
+    # "C:\...\Metin2" to -RestoreSource and the tail
+    # "Singleplayer\Serwer\backups\db-backup-....zip" to the next positional
+    # parameter - which is [int]$BotCount - and every restore died with "Cannot
+    # convert value ... to type System.Int32" (NieBijOddam, 13 September).
+    # Parameter names pass through untouched; every value is quoted.
+    foreach ($extra in @($ExtraArgs)) {
+        $text = [string]$extra
+        if ($text -match '^-[A-Za-z]') { $arguments += $text }
+        else { $arguments += ('"{0}"' -f ($text -replace '"', '\"')) }
+    }
     Write-LocalLog "Rozpoczęto akcję $Action."
     $script:activeAction = $Action
     $script:launchClientAfterAction = [bool]$LaunchClient
@@ -920,9 +968,15 @@ function Start-LauncherAction {
     $script:activeOutputAll = ''
     $script:activeStarted = Get-Date
     $script:activePhase = ''
+    $script:activePhaseSince = Get-Date
     $script:activePhaseStep = 0
     $script:activePhaseTotal = 0
     $script:activeBuildNoticed = $false
+    # After this long on one phase the status line says so. Four minutes is
+    # past every normal compose step and well inside a first build's stages,
+    # which carry their own step counter anyway.
+    $script:activeStallSeconds = 240
+    $script:activeStallNoticed = $false
     $script:actionStatus.Text = "Trwa: $Action..."
     $script:actionStatus.ForeColor = [Drawing.Color]::Gold
     $script:progress.Style = 'Marquee'

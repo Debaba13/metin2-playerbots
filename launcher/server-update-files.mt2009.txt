@@ -86,6 +86,7 @@ linux-port-mt2009/docker/game/src/server/game/src/FileMonitor_FreeBSD.cpp
 linux-port-mt2009/docker/game/src/server/game/src/FileMonitor_FreeBSD.h
 linux-port-mt2009/docker/game/src/server/game/src/Makefile
 linux-port-mt2009/docker/game/src/server/game/src/char.cpp
+linux-port-mt2009/docker/game/src/server/game/src/char.h
 linux-port-mt2009/docker/game/src/server/game/src/char_battle.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_shop.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_skill.cpp
@@ -95,6 +96,7 @@ linux-port-mt2009/docker/game/src/server/game/src/cmd_general.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd_gm.cpp
 linux-port-mt2009/docker/game/src/server/game/src/config.cpp
 linux-port-mt2009/docker/game/src/server/game/src/config.h
+linux-port-mt2009/docker/game/src/server/game/src/constants.cpp
 linux-port-mt2009/docker/game/src/server/game/src/desc.cpp
 linux-port-mt2009/docker/game/src/server/game/src/desc.h
 linux-port-mt2009/docker/game/src/server/game/src/desc_client.cpp

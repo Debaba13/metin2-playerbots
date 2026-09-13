@@ -213,8 +213,21 @@ out are to host every kingdom map and the shared world on **one** core so any
 bot can reach anything (at 323 bots a core the tick is 1.6-4.3 s of 60, so one
 core carrying all of them is around 8 s of 60 - affordable, at the cost of the
 three-way parallelism), or to accept that the two new kingdoms are village
-kingdoms that stop at thirty-six. That is a decision about the world rather than
-a bug, so it is not made here.
+kingdoms that stop at thirty-six.
+
+Since 2.0.30 the first way is an operator switch, `M2_PLAYERBOT_WORLD_LAYOUT`
+(m2-render-config, passed through the game service in both compose files):
+`unified` appends Shinsoo's `1 3 4 5` and Jinno's `41 43 44 45` to `MAPS_game1`
+and drops them from `MAPS_first`/`MAPS_game2`, so all three villages sit on game1
+and the bootstrap's `map_allow_find` loop spawns every kingdom there next to the
+shared frontier - no core code changed, because that loop was already generic.
+`first`/`game2` keep their guild/event/high maps and host no bots; a core that
+hosts none clears its `playerbot_status.tsv` on boot so the panel counts no
+phantoms. Measured at 1500 bots on one core: tick 9.4 s of 60, and a Shinsoo bot
+raised to 40 walked map 1 -> 64 (Orc Valley). Default is `split`, unchanged.
+`unified` is for a modest population on one machine; a 2500-bot server still
+wants the split (one core would be ~25 s of 60). This is now a config choice,
+not a code change.
 
 Separately, Chunjo's own core already hosts five maps this AI has never used -
 217 (60-68), 70 (66-77), 216 (79-82), 73 (87-97) and 69 (9-76) - and Shinsoo's
@@ -720,6 +733,26 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   staggered path, bounded by the original window so it restores the cohort and
   never grows it. On a healthy server eleven of eight hundred and fifty were
   missing from the first fill.
+- **Every bot account is `status='BLOCK'` by design, so that column cannot say
+  who a GM banned.** Bots spawn server-side (`SpawnBot`/`CreateBotDesc`), never
+  through auth, so their accounts are created BLOCK precisely to keep humans off
+  them - all 2500 of them. A GM ban (`/block_player` -> `BanManager::Block`)
+  writes `account.account_block` (and sets availDt/status, which for a bot is a
+  no-op), so the *ledger* is the only bot-safe signal - empty until someone bans,
+  zero risk of the predicate nuking the cohort. `RefreshBannedBots` reads it on
+  the top-up cadence, despawns a banned registered bot and keeps it off the
+  spawn queue; removing the row lets the next top-up return it. Without this a
+  banned+kicked bot was resurrected by `TopUpMissingBots` a minute later
+  (mateuszp211, 2.0.29). A ban is not a delete: the `player` row stays.
+- **A live bot's level cannot be set with a plain SQL UPDATE.** The game core
+  holds every spawned character in memory and writes its cached copy back on the
+  save cycle, so `UPDATE player.player SET level=40` on a spawned bot is undone
+  within seconds (the bot reverts to its cached low level). It is the same cache
+  that makes `item_proto` edits stick only for offline characters. To move a live
+  bot's level for a test, use the path the panel uses - a `player.web_admin_queue`
+  row `cmd='LEVEL'`, which the `web_admin` quest applies in-core with
+  `pc.set_level` - and it sticks. Verified: a direct UPDATE left six bots at
+  their old levels; the queue raised them to 40 and held.
 - **A conjunction that rejects tells nobody which clause did it.**
   `LoadRegisteredBots` accepts an identity only when six conditions hold at
   once, and printed one number. `ReportPlayerBotRegistryShortfall` runs the same
@@ -1369,6 +1402,43 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   stack and got "volume is in use" four times for one player - the launcher
   never runs `compose down`. Remove what `docker ps -a --filter
   volume=<name>` lists first; `compose up` recreates it on the next start.
+- **Every container is `restart: unless-stopped`, so an old installation takes
+  the ports back on every engine start.** A machine that has ever held a second
+  copy of this server carries a second compose project, and Docker Desktop
+  starts all of them: five here (m2dep, m2zip, m2mt, m2fresh, metin2), each from
+  its own folder, each publishing 7788, 7790, 7791, 11000, 13000-13002 and 3306.
+  So "port jest juz zajety" came back after every quit of Docker Desktop -
+  quitting is precisely what that policy waits for - and the only thing that
+  holds is `docker stop`, whose manual-stop flag survives an engine restart.
+  The preflight made it worse by asking about the panel's 7788 alone, so the
+  collision that actually stopped an update was invisible to it: 7790, the
+  advanced panel, reported by compose as "Bind for 127.0.0.1:7790 failed" only
+  after the images had built for minutes. `Get-M2StackHostPorts` reads every
+  published port out of the installation's own .env, `Get-M2DockerPortHolders`
+  names the container, its project **and the folder it was started from** (the
+  half that makes the advice actionable), and `Stop-M2ForeignPortHolders` stops
+  the whole foreign project, because its siblings hold the other ports. Start
+  and the update call it before compose runs; `start-server.ps1` imports no
+  module, so it carries its own copy of the same lookup. Never a volume: the
+  collision is containers, and a removed volume is the world. And note the
+  tokenizer trap found writing the message: PowerShell accepts the typographic
+  double quotes as string delimiters, so a pair of them inside a `"..."` string
+  ends it mid-sentence and the whole module stops parsing.
+- **A number in regen.txt is a group id, not a monster vnum.** The desert's
+  regen.txt is 1172 lines and almost every one is type `r`, whose last field is
+  a **group_group** id - and on that map those ids are 401 to 404. Read as
+  monster vnums they name the Black Wind band, which lives on the three second
+  villages (a3/b3/c3) and never sets foot in the desert, so the battle-horse
+  trial counted kills no bot on it could ever make and every one of them read
+  "Zdobywam konia bojowego na pustyni (0/100)" for ever (sosen, 13 September).
+  The same misreading also produced a written claim in the source that the
+  quest's own monsters "are not spawned anywhere here", and that sentence is
+  what stopped anybody checking for months. Resolved through the **global**
+  group_group.txt and group.txt - this map has no per-map group.txt at all -
+  the desert carries exactly what the wiki says: Skorpion Lucznik 2105 at 998
+  spawn points and Wezowy Lucznik 2107 at 760. Resolve the groups before naming
+  a monster, and never grep: `grep -c '\b40[1-4]\b' regen.txt` answered 1168 of
+  1172 lines here, because those digits are coordinates and respawn timers too.
 - **Measure before tuning a budget.** `CPlayerBotManager::Update` logs
   `PLAYERBOT_LOAD:` once a minute: tick time, plans by distance bucket with
   their cost, deferrals, target searches, snapshot, map scans, saves, watchdog

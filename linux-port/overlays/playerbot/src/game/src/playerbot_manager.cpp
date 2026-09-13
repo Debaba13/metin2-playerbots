@@ -993,6 +993,7 @@ CPlayerBotManager::CPlayerBotManager()
 	  m_dwSpawnWindowStarted(0),
 	  m_uSpawnWindowTotal(0),
 	  m_dwNextTopUpTime(0),
+	  m_dwNextBanCheckTime(0),
 	  m_bRegistryLoaded(false),
 	  m_bRegistryAvailable(false)
 {
@@ -1336,6 +1337,10 @@ void CPlayerBotManager::SpawnPendingBatch(DWORD dwNow)
 	{
 		const DWORD pid = m_dequePendingSpawns.front();
 		m_dequePendingSpawns.pop_front();
+		// A banned bot is dropped from the batch rather than spawned; it stays
+		// scheduled, so removing the ban lets a later top-up bring it back.
+		if (m_setBannedBots.find(pid) != m_setBannedBots.end())
+			continue;
 		Spawn(pid, GetRegisteredEmpire(pid));
 		++sent;
 	}
@@ -1377,7 +1382,10 @@ void CPlayerBotManager::TopUpMissingBots(DWORD dwNow)
 	{
 		if (CHARACTER_MANAGER::instance().FindByPID(*it) != NULL)
 			++live;
-		else
+		// A banned bot is missing on purpose; leaving it out of the queue keeps
+		// the top-up from asking for it every minute only for SpawnPendingBatch
+		// to drop it again.
+		else if (m_setBannedBots.find(*it) == m_setBannedBots.end())
 			missing.push_back(*it);
 	}
 	if (missing.empty())
@@ -1390,6 +1398,68 @@ void CPlayerBotManager::TopUpMissingBots(DWORD dwNow)
 			(unsigned int)m_setScheduledBots.size(), (unsigned int)live,
 			(unsigned int)missing.size());
 	SpawnPendingBatch(dwNow);
+}
+
+// Take out whoever a GM has banned, and keep them out.
+//
+// Reported as "I ban a bot, kick it, and it logs straight back in"
+// (mateuszp211): the kick removes the character, TopUpMissingBots counts it
+// missing a minute later and re-queues it, and nothing consulted the ban. The
+// obvious guard - account.status='BLOCK' - is useless here, because every bot
+// account is created BLOCK on purpose so no human can log into one; that column
+// says nothing about who a GM banned. account.account_block is the ledger the
+// ban actually writes (/block_player -> BanManager::Block), empty until then, so
+// a row for a bot's account is an unambiguous "this one is banned" that cannot
+// misfire on the 2500 normal bots. Read on the top-up cadence.
+void CPlayerBotManager::RefreshBannedBots(DWORD dwNow)
+{
+	if (m_dwNextBanCheckTime != 0 && dwNow < m_dwNextBanCheckTime)
+		return;
+	m_dwNextBanCheckTime = dwNow + PLAYERBOT_TOPUP_INTERVAL;
+	if (m_setRegisteredBots.empty())
+		return;
+
+	// Only our own registered characters, so a ban on a real player's account
+	// can never appear here. account_block holds both instant and queued bans
+	// (status 1 and 0); either one means banned. Joined to the character, since
+	// the manager keys everything by PID.
+	const char* query =
+			"SELECT p.id FROM account.account_block AS b "
+			"JOIN player.player AS p ON p.account_id=b.account_id "
+			"JOIN account.account AS a ON a.id=b.account_id "
+			"WHERE BINARY a.login LIKE BINARY 'playerbot\\_%'";
+
+	std::unique_ptr<SQLMsg> msg(AccountDB::instance().DirectQuery(query));
+	if (!msg.get() || msg->uiSQLErrno != 0 || !msg->Get() || !msg->Get()->pSQLResult)
+		return; // leave the set as it was rather than unbanning on a hiccup
+
+	std::set<DWORD> banned;
+	MYSQL_ROW row;
+	while (NULL != (row = mysql_fetch_row(msg->Get()->pSQLResult)))
+	{
+		DWORD pid = 0;
+		if (row[0])
+			str_to_number(pid, row[0]);
+		// Only PIDs this core actually owns as registered bots.
+		if (pid != 0 && m_setRegisteredBots.find(pid) != m_setRegisteredBots.end())
+			banned.insert(pid);
+	}
+	m_setBannedBots.swap(banned);
+	if (m_setBannedBots.empty())
+		return;
+
+	// Out of the world now, and off the spawn queue so the top-up cannot bring
+	// them back. Kept in m_setScheduledBots: unbanning (the row removed) lets the
+	// next top-up spawn them again, exactly as if they had just gone missing.
+	unsigned int despawned = 0;
+	for (std::set<DWORD>::const_iterator it = m_setBannedBots.begin();
+			it != m_setBannedBots.end(); ++it)
+	{
+		if (CHARACTER_MANAGER::instance().FindByPID(*it) != NULL && Despawn(*it))
+			++despawned;
+	}
+	sys_log(0, "PLAYERBOT_AUTH: banned bots=%u despawned=%u",
+			(unsigned int)m_setBannedBots.size(), despawned);
 }
 
 bool CPlayerBotManager::Despawn(DWORD dwPlayerID)
@@ -1577,7 +1647,9 @@ void CPlayerBotManager::Update()
 
 	// The next batch of the cohort, if one is due - see PLAYERBOT_SPAWN_WINDOW.
 	SpawnPendingBatch(dwNow);
-	// And a minute apart, whoever is missing from it.
+	// And a minute apart, whoever is missing from it - and, on the same clock,
+	// whoever a GM has banned is taken back out.
+	RefreshBannedBots(dwNow);
 	TopUpMissingBots(dwNow);
 
 	// Once for the whole population: the panel may have moved a weight since

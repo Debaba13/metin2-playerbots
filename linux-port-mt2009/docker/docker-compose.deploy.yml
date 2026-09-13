@@ -141,6 +141,11 @@ services:
       # registered them (the migrate service reads the same switch for the
       # seed itself).
       M2_PLAYERBOT_KINGDOMS: "${M2_PLAYERBOT_KINGDOMS:-1}"
+      # split (default): per-kingdom cores; Shinsoo/Jinno cap ~36 because the
+      # shared frontier lives only on game1. unified: all three kingdoms and the
+      # frontier on game1, so every bot reaches 1..104 (m2-render-config reads
+      # this). One core carries every bot then - keep the population modest.
+      M2_PLAYERBOT_WORLD_LAYOUT: "${M2_PLAYERBOT_WORLD_LAYOUT:-split}"
       TZ: "${M2_TZ:-UTC}"
 
     ports:

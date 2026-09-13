@@ -673,6 +673,21 @@ namespace
 		return (int)((dwPID * 2654435761U) % 100U) < s_iPlayerBotScrapPercent;
 	}
 
+	// Whether this bot trades its own resources - the unopened chests and the
+	// refine scrolls - instead of spending every one of them on itself. A
+	// fixed share by pid like the scrap keeper above, and salted apart from it
+	// so the two roles do not land on the same bots. See
+	// PLAYERBOT_RESOURCE_TRADER_PERCENT for why this is a proportion and not a
+	// switch. Not a panel slider: the number is the operator's decision only
+	// if it turns out to need tuning, and one reader is not a feature.
+	bool IsPlayerBotResourceTrader(DWORD dwPID)
+	{
+		if (PLAYERBOT_RESOURCE_TRADER_PERCENT <= 0)
+			return false;
+		return (int)(((dwPID ^ 0x5bf03635U) * 2246822519U) % 100U) <
+				PLAYERBOT_RESOURCE_TRADER_PERCENT;
+	}
+
 	int GetPlayerBotRestPercent()
 	{
 		if (!s_bPlayerBotWeightsInitialised)

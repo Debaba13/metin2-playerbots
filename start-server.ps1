@@ -987,6 +987,73 @@ if (-not $env:M2_PLAYERBOTS_VERSION) {
         if ($versionText -match '^\d+\.\d+\.\d+$') { $env:M2_PLAYERBOTS_VERSION = $versionText }
     }
 }
+# An older installation of this same server, holding a port this stack is about
+# to publish. Every container ships `restart: unless-stopped`, so Docker Desktop
+# starts that project again on every engine start and it binds 7788/7790/11000
+# before this one can - which is why quitting Docker by hand never helped, and
+# why the collision came back on every single update. This script imports
+# nothing (see the note at the top), so the lookup is local: a running container
+# whose compose project differs from ours and which publishes one of our host
+# ports. `docker stop` is what holds, because its manual-stop flag survives an
+# engine restart. Volumes are never touched - the collision is containers, and a
+# removed volume is the world.
+$previousPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $portValues = @{}
+    $portEnvPath = Join-Path $composeDirectory '.env'
+    if (Test-Path -LiteralPath $portEnvPath -PathType Leaf) {
+        foreach ($line in @([IO.File]::ReadAllLines($portEnvPath))) {
+            if ("$line" -match '^\s*([A-Za-z0-9_]+)=(.*)$') { $portValues[$Matches[1]] = $Matches[2].Trim() }
+        }
+    }
+    $wantedPorts = @()
+    foreach ($pair in @(@('M2_PANEL_PUBLIC_PORT', 7788), @('M2_SEBAN_PANEL_PORT', 7790),
+                        @('M2_ITEMSHOP_PUBLIC_PORT', 7791), @('M2_AUTH_PORT', 11000),
+                        @('M2_DB_PUBLISH_PORT', 3306))) {
+        $raw = [string]$portValues[$pair[0]]
+        if ($raw -match '^\d+$') { $wantedPorts += [int]$raw } else { $wantedPorts += [int]$pair[1] }
+    }
+    $rangeFirst = 13000
+    $rangeLast = 13002
+    $gameRange = [string]$portValues['M2_GAME_PORT_RANGE']
+    if ($gameRange -match '^(\d+)\s*-\s*(\d+)$') { $rangeFirst = [int]$Matches[1]; $rangeLast = [int]$Matches[2] }
+    elseif ($gameRange -match '^(\d+)$') { $rangeFirst = [int]$Matches[1]; $rangeLast = $rangeFirst }
+    if ($rangeLast -lt $rangeFirst -or ($rangeLast - $rangeFirst) -gt 32) { $rangeLast = $rangeFirst }
+    for ($p = $rangeFirst; $p -le $rangeLast; $p++) { $wantedPorts += [int]$p }
+    $ourProject = [string]$portValues['M2_COMPOSE_PROJECT_NAME']
+    $stoppedProjects = @()
+    # '{{json .}}' carries no double quote, so PowerShell 5.1 cannot break this
+    # argument the way it breaks an `sh -c` script handed to docker.
+    foreach ($line in @(& docker ps --format '{{json .}}' 2>$null)) {
+        if (-not "$line".Trim()) { continue }
+        try { $container = "$line" | ConvertFrom-Json } catch { continue }
+        $project = ''
+        $labels = [string]$container.Labels
+        if ($labels -match '(?:^|,)com\.docker\.compose\.project=([^,]+)') { $project = $Matches[1] }
+        if (-not $project -or $stoppedProjects -contains $project) { continue }
+        if ($ourProject -and $project.Equals($ourProject, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $publishedPorts = [string]$container.Ports
+        $collides = $false
+        foreach ($wanted in $wantedPorts) {
+            if ($publishedPorts -match ('(?:^|,\s*)(?:(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\*):)?' + $wanted + '->')) {
+                $collides = $true
+                break
+            }
+        }
+        if (-not $collides) { continue }
+        $stoppedProjects += $project
+        Write-Host ("Inna instalacja serwera ('{0}') trzyma port tego serwera - zatrzymuje ja, zeby ten serwer mogl wstac." -f $project) -ForegroundColor Yellow
+        Write-Host '   Baza, wolumeny i postep tamtej instalacji pozostaja nietkniete.' -ForegroundColor DarkGray
+        $ids = @(& docker ps -aq --filter ('label=com.docker.compose.project=' + $project) 2>$null | Where-Object { $_ })
+        if ($ids.Count -gt 0) { & docker stop $ids 1>$null 2>$null }
+    }
+}
+catch {
+    Write-Host ("Nie udalo sie sprawdzic zajetych portow: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+}
+finally { $ErrorActionPreference = $previousPreference }
+
 Push-Location $composeDirectory
 try {
     $composeArguments = @('compose', 'up', '-d')

@@ -508,7 +508,7 @@ def news_feed_events():
     # Filter in SQL before the limit.  A busy server produces thousands of
     # ordinary +0–+3 refines per minute; taking its newest 900 rows first made
     # rare achievements disappear from the feed altogether.
-    raw = rows("""SELECT l.time,l.how,l.hint,l.what,l.who,p.name,
+    raw = rows("""SELECT l.time,l.how,l.hint,HEX(l.hint) AS hint_hex,l.what,l.who,p.name,
         HEX(proto.locale_name) AS item_name_hex
       FROM log.log l JOIN player.player p ON p.id=l.who
       LEFT JOIN player.item i ON i.id=l.what
@@ -524,7 +524,16 @@ def news_feed_events():
     for row in raw:
         # `how` is VARBINARY on mt2009 and arrives as bytes; str() of that is
         # "b'GET'" and matches nothing below.
-        how, hint, name = game_text(row.get("how")), game_text(row.get("hint")), game_text(row.get("name"))
+        how, name = game_text(row.get("how")), game_text(row.get("name"))
+        # log.log's hint column is declared big5 while the engine writes CP1250
+        # into it (see CLAUDE.md), so letting the driver decode the column gives
+        # mojibake for anything past ASCII - "Skorzane" came back as
+        # "SkAtrzane". HEX(l.hint) sidesteps whatever charset MySQL believes the
+        # column has and returns the untouched bytes, which really are CP1250 -
+        # the same trick this function already uses for item_proto.locale_name
+        # below. Falls back to the driver's own decode if the hex round trip
+        # fails. Patch by seban latino, 13 September.
+        hint = cp1250_hex_text(row.get("hint_hex")) or game_text(row.get("hint"))
         key = f"{how}:{row.get('who')}:{row.get('what')}:{row.get('time')}"
         if key in seen or not name:
             continue
