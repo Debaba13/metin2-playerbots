@@ -282,3 +282,75 @@ the ItemShop PHP front end, and the mt2009 client's other Python UI files.
 `kılıç` -> `kylyc`-style corruption reported earlier) are supplied by the
 operator's own server package, not part of this repo, and can't be fixed
 from here without that file.
+
+## Follow-up: second upstream sync, 2.0.19 -> 2.0.24 (2026-09-13)
+
+Asked to pull the next batch of upstream releases in without losing any of
+our work, staying on `claude/sync-updates-client-o7hk2w`, no PR to upstream.
+Ten commits / five releases (`v2.0.20`-`v2.0.24`): prize-weapon equipping,
+the archer's stone-dagger refine floor, teleport-ring recall, a lossless bag
+sort, ItemShop Dragon Coins dropping from metins/bosses, an operator item-
+policy file (per-vnum or per-type keep/stall/merchant/drop, read like the
+weights), spares going to the safebox past a refine threshold instead of
+riding the counter forever, and - notably - the classic panel's passphrase
+requirement dropped on the single-player line.
+
+Four real conflicts, all resolved by keeping both sides rather than
+picking one:
+
+- **README.md / README_EN.md** - pure feature-list prose, nothing of ours
+  in it; took upstream's newer paragraphs whole.
+- **playerbot_types.h** - our Turkish `GetPlayerBotShopReasonName()` against
+  upstream's new `PLAYERBOT_SHOP_REASON_SPARE` case (the "sell a worse
+  duplicate" feature); kept our Turkish for the other cases and translated
+  the new one (`"gereksiz kopya"`).
+- **admin_panel.py**, twice - upstream's new `item_full_name()` (spells a
+  skill book's skill out from `SKILL_ID_NAMES`/`SKILL_ID_NAMES_PL`, flattened
+  from `PLAYER_SKILLS`/`PLAYER_SKILLS_EN`) landed right next to our
+  `HUNTING_MOB_NAMES_TR` and `PLAYER_SKILLS_TR` additions. Added a third
+  `SKILL_ID_NAMES_TR` table, flattened from our `PLAYER_SKILLS_TR`, and gave
+  `item_full_name()` a `tr` branch so a Turkish panel view gets skill-book
+  names spelled out in Turkish too, not just English. Third conflict was
+  `GEAR_HISTORY_HOWS` gaining three new upstream entries
+  (`PLAYERBOT_BONUS_ADD/_CHANGE/_MARBLE` for the reworked bonus-line system)
+  next to our `"tr"` keys on the existing ones - added Turkish to the three
+  new entries the same way.
+
+Beyond the conflicts: translated the brand new admin-panel page this sync
+brought in, the Item Policy editor (`ai_items_open/_nav/_intro/_format/
+_bad/_live` in the `T` dict - upstream itself only shipped `en`/`pl` for
+these, so `tr` was a straight addition, not a fix). The policy file's own
+keyword syntax (`keep`/`stall`/`merchant`/`drop`, which upstream already
+accepts in Polish too as `zostaw`/`stragan`/`handlarz`/`wyrzuc`) got Turkish
+synonyms added on both ends of the pipe - the engine's
+`ParsePlayerBotItemPolicyWord()` in `playerbot_config.h` and the panel's own
+`AI_ITEM_POLICY_WORDS` validator - so an operator can write `sakla`/
+`tezgah`/`satici`/`birak` in the file and have both sides agree on it.
+
+Swept every other file this sync auto-merged cleanly (no conflict, but new
+upstream content): all ten touched `playerbot_*.h` fragments plus
+`playerbot_manager.cpp`, the mt2009 tree (`playerbotify.py`,
+`m2-render-config` - the Dragon Coin plumbing), and seban-panel
+(`app.py`/`collector.py` - five new Polish `BOT_ACTIONS` labels for stall-
+keeping/fishing/browsing-stalls/luring/resting, and the panel now skips its
+setup wizard on the single-player line same as the classic panel). Nothing
+found beyond what's listed above - the rest was log-message formats
+(`PLAYERBOT_...:` prefixed, operator-facing by convention), internal state
+tags, and quoted reporter comments, none of it player-visible UI text.
+The five new seban-panel labels are genuinely untranslated (seban-panel has
+no i18n layer at all yet, in any language but Polish) - that's the next,
+separate task.
+
+**Not run**: the `g++ -fsyntax-only -m32 -std=c++23` check CLAUDE.md
+prescribes - same as the first sync, this sandbox has no `../m2src-cache`
+reference tree and no running Docker daemon this time either (`docker info`
+reaches the client but not a daemon socket). Checked instead: brace/paren
+balance on every touched C++ file (all matched), and that every new
+constant/function/enum-case upstream introduced actually resolves somewhere
+in the include chain (checked by name, file by file) - including one
+harmless loose end that's upstream's own, not ours:
+`PLAYERBOT_BONUS_MARBLE_LINES` is defined in `playerbot_types.h` but never
+read anywhere; the actual "want a 5th line" test uses
+`PLAYERBOT_BONUS_MAX_LINES` instead. Left as-is - not something this merge
+introduced or broke, and not ours to second-guess upstream's own constant.
+**Run the real syntax check by hand before deploying this branch.**
