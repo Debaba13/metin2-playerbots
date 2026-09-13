@@ -17,6 +17,537 @@ every version here.
 
 ---
 
+## 2.0.24 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty zakładają broń 30 lvl ze średnimi zamiast gorszej ulepszonej
+
+„Boty mają w dupie bronie 30 lvl ze średnimi — bot ma Ribę 48 średnie w EQ, a
+biega w Kosie Bojowej +6” (sosen94). Nieulepszona broń-nagroda ze średnią 48%
+przegrywała w ocenie z bronią +6/+9 niższego poziomu, bo mnożnik działał na jej
+niską bazę. Teraz broń z linią średnich (albo, u maga, umiejętności) na poziomie
+progu (25%) dostaje premię proporcjonalną do tej linii, więc bot ją zakłada i
+dopiero ulepsza — a przy tym gorsza, ale bardziej ulepszona broń już nie wygrywa.
+
+### Łucznicy-ninja ulepszają sztylet do metinów (co najmniej +4)
+
+„Powinni używać ulepszonych sztyletów na co najmniej +4, nie niżej, bo nic z
+tego nie będzie” (Tieru). Łucznik rozbija metiny sztyletem, ale sztylet leży w
+plecaku (gdy trzyma łuk), więc nigdy nie liczył się ani jako ulepszenie do
+założenia, ani jako lepszy zapas — i zostawał na +0, którym metina się nie
+rozbije. Teraz wybrany sztylet do metinów jest ulepszany w plecaku jak noszona
+broń, z celem +4: kroki +1..+4 to na tych plikach po 90%, więc dojście jest
+tanie i prawie bez spalenia, a zwój w plecaku dalej niesie go wyżej.
+
+### Stragany na duplikaty nie zalewają miasta
+
+„759 botów »Prowadzę stragan (zbędny duplikat)«” (AkhiGubernator) — poprawka z
+2.0.22 otwierała stragan na każdy duplikat od +4, więc niemal każdy bot z drugą
+bronią czy zbroją w plecaku wystawiał się, ignorując suwak handlu. Teraz stragan
+na zbędny duplikat otwiera się dopiero od +7 (naprawdę wartościowy, jak FMS +9 z
+pierwotnego zgłoszenia), więc miasto nie jest zalewane.
+
+### Materiały pod presją plecaka trafiają do magazynu, nie do handlarza
+
+Na prośbę Tieru: gdy w plecaku brakuje miejsca, ulepszacze (materiały) idą teraz
+do magazynu u Dozorcy (M1/M2), a nie do handlarza za grosze. Materiał, którego
+ktoś potrzebuje, dalej trafia na stragan; do magazynu idzie tylko to, czego bot
+nie sprzeda na ladzie.
+
+### Handlarz tylko dla przypartego do ściany
+
+„Jeśli wystawiają stragan bo mają extra, a nie że potrzebują yang, to mogą stać
+ile trzeba” (AkhiGubernator). Przymusowa sprzedaż niesprzedanego towaru
+handlarzowi po sześciu wystawieniach działa teraz tylko pod presją plecaka. Bot,
+który po prostu ma nadwyżkę, może wystawiać ją dowolnie długo.
+
+### Koniec drżenia konia przy podróży (wsiada/zsiada co sekundę)
+
+Bot z koniem transportowym w drodze przez zatłoczoną mapę (np. pustynię) łapał
+mijanego potwora, zsiadał do walki pieszej, a pas podróży zaraz znów go wsadzał
+na konia — i tak w kółko, po parę razy na sekundę, nie robiąc ani kroku
+(sizowski: KimJestes2 wsiadał i zsiadał co sekundę przez minuty). Teraz koń
+transportowy nie wsiada na etap podróży, dopóki bot ma żywy cel do walki
+pieszej — walkę oddaje pasowi walki, a po jej końcu jedzie dalej. Samoobrona
+działa jak dawniej.
+
+### Panel: martwy suwak i tłok w mieście
+
+Suwak „Polowanie” (HUNTING) sterował misjami polowań, które na tej linii są
+wyłączone (quest w `_unused`), więc nic nie robił — ukryty na wersji mt2009;
+leveling steruje suwak „Poziom”. Tłum botów „Oglądam stragany” w mieście to
+odpoczynek (suwak „Odpoczynek”): to celowe i sterowane suwakiem, nie błąd.
+
+## 2.0.23 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty wracają Pierścieniem Teleportacji, gdy skończą się mikstury
+
+Bot na mapie frontu (Dolina Orków, Pustynia, Góra Sohan, Loch Pająków), któremu
+skończyły się mikstury albo broń, i który ma w plecaku Pierścień Teleportacji
+(poziom 30+), wraca teraz do miasta od razu, zamiast iść pieszo do portalu przez
+całą mapę. Pierścień nie znika — działa raz na 30 minut, jak jego własny czas
+odnowienia.
+
+### Boty sortują ekwipunek
+
+Co jakiś czas bot porządkuje plecak: mikstury na pierwszych liniach, potem
+wspomagacze i mikstury szybkości, potem skrzynie i klucze. Przenoszone są tylko
+pojedyncze przedmioty i wyłącznie na puste, wcześniejsze pola — silnikowym
+`MoveItem`, który nigdy nie usuwa ani nie nadpisuje, więc nic nie może zginąć ani
+się zbugować. Ekwipunek (zbroje, bronie) zostaje na miejscu.
+
+### Kupony Smoczych Monet z metinów i bossów
+
+ItemShop używa Smoczych Monet, a w grze nie było jak ich zdobyć. Teraz z rozbicia
+Metina i z zabicia bossa jest niewielka szansa na Kupon SM (użyty dolicza monety
+na konto). Domyślnie ostrożnie: 3‰ z metina, 50‰ z bossa — do wyważenia przez
+`M2_DRAGON_COIN_STONE_PERMILLE` i `M2_DRAGON_COIN_BOSS_PERMILLE`.
+
+## 2.0.22 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty noszą zbroję — kupują u handlarza, gdy nie ma dokładnego poziomu
+
+„Czemu większość botów nie nosi zbroi?” Handlarz zbroi (9002) sprzedaje pancerz
+tylko na poziomy 0/18/26 danej klasy, a drabinka progresji celuje w poziomy 9,
+34, 42 i wyżej — więc bot między dwoma sprzedawanymi poziomami albo powyżej
+najwyższego nigdy nie mógł kupić i chodził z pustym slotem (ćwierć populacji nie
+miała zbroi na tułowiu). Teraz, gdy handlarz nie ma dokładnego poziomu, bot
+kupuje najlepszy pancerz/tarczę/hełm, jaki handlarz ma i na jaki pozwala jego
+poziom, zakłada go i ulepsza u kowala (co najmniej +6). Nie kupuje drugiej kopii
+tego, czego handlarz nie przebije, ani gorszego.
+
+### Boty sprzedają zbędny duplikat (np. drugi FMS +9)
+
+„Boty nie sprzedają FMS +9, gdy mają dwa w ekwipunku” (Ciapek). Straganiarz już
+wystawiał taki zapas, ale nic nie otwierało straganu, gdy plecak był poza tym
+pusty. Teraz zbędny duplikat broni lub zbroi (slot już zajęty lepszym lub równym,
+a duplikat jest od +4) jest powodem, by otworzyć stragan — niezależnie od losu i
+zapełnienia plecaka.
+
+### Bonusy: broń 30/75 z wysoką średnią nie jest mieszana, zmiana tylko od +5
+
+„Dałem botowi FMS z bonusami po 1000, a on zmienił bonusy” (Ciapek). Broń na
+poziom 30 lub 75, która ma linię średnich obrażeń lub średnich obrażeń
+umiejętności ≥ 25%, jest teraz „skończona” — Zmiana Bonusów jej nie rusza. Kamień
+Zmiany nie jest już używany na przedmiotach od +0 do +4; dopiero od +5.
+
+### Magazyn na księgi: pierwsza wizyta nie gubiła depozytu
+
+Strona magazynu, którą opłata dopiero co utworzyła, powstaje w rdzeniu db o jedno
+odbicie później, więc przy pierwszej płatnej wizycie skrytka ładowała się bez
+ważnego miejsca i depozyt lądował donikąd (deposited=0, 74 księgi w plecaku na
+stałe — u uxietoszefa). Teraz bot rozpoznaje „strona jeszcze niegotowa”, nie
+zgłasza fikcyjnego depozytu i wraca przy następnej wizycie (bez ponownej opłaty).
+
+### Misje polowania wyłączone na tych plikach
+
+Quest `levelup.quest` (misje „Polowanie: Lv X • Potwór: 0/N”) leży w
+`quest/_unused` — żaden hook zabójstwa nie działa, więc licznik nigdy nie schodził
+z „0/40”, a misja wysyłała niedozbrojone boty pod swojego potwora (np. na Górę
+Sohan). Wyłączona w kodzie i ukryta w panelu; boty polują teraz według doboru map
+frontu i pasm poziomów w hubach.
+
+### Nazwy ksiąg umiejętności w ekwipunku na www
+
+„W ekwipunku księgi umiejętności — nie wiadomo jakie”. Klasyczny panel pokazuje
+teraz nazwę umiejętności z gniazda księgi, np. „Księga Umiejętności: Aura Miecza”.
+
+### Historia ekwipunku: na jaki przedmiot nałożono bonus
+
+Obok zużytego kamienia historia zapisuje teraz przedmiot, na którym użyto
+Wzmocnienia, Zmiany lub Marmuru — „Zmieniono bonusy” przy danej broni czy zbroi.
+
+### Panel bez hasła administratora
+
+Projekt jest singleplayer, więc panele (klasyczny i zaawansowany) dają od razu
+pełny dostęp bez pytania o hasło. Serwer nasłuchuje tylko lokalnie; operator, który
+wystawi panel publicznie, włącza hasło (M2_PANEL_LOCAL_ONLY=0 albo tryb za nginx).
+
+## 2.0.21 — 2026-09-13
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Bot kupował wędkę za wędką
+
+„Bot nie ogarnął, że jedna wędka wystarczy” (sizowski: osiem Wędek+0 w
+osiem sekund, potem plecak z piętnastoma). Wędka zajmuje trzy pola, a
+kontrola miejsca przed zakupem pytała o jedno: plecak z pojedynczymi
+dziurami i bez wolnej kolumny przechodził test, bot płacił, silnik kładł
+wędkę na ziemi (`AutoGiveItem` nie odmawia — zrzuca), licznik wędek dalej
+mówił zero i w następnym ticku bot kupował znowu; potem zbierał je z
+ziemi. Zakup pyta o miejsce wielkości przedmiotu i sprawdza, że kupiona
+rzecz trafiła do plecaka, a nie na trawę.
+
+### Cztery bonusy przez Wzmocnienie, piąty tylko Marmurem
+
+„Boty dodają sobie do przedmiotów 5 bonusów, gdzie wzmocnienie dodaje
+maksymalnie 4”. Bot wołał `AddAttribute()` wprost, bez szansy i do pięciu
+linii. Teraz jak gracz: Wzmocnienie Przedmiotu dodaje linię tylko poniżej
+czterech, z szansą silnika (100/80/60/50%), a piątą dodaje wyłącznie Marmur
+Błogosławieństwa z plecaka, na przedmiocie z dokładnie czterema, z szansą
+30%; kamień i marmur schodzą przy każdej próbie, także nieudanej. Marmuru
+nikt nie sprzedaje, więc bot bez niego kończy na czterech.
+
+### Biolog: po dziesięciu zębach bot oddawał kolejne
+
+„Bot skończył misję, a mimo to dalej chodzi i oddaje zęby orka” (martynka19cm:
+22 zęby). Indeks stanu skompilowanego questu to hash nazwy i bywa ujemny —
+`key_item` questu Zęba Orka to −1726153001 — a kod traktował ujemny indeks
+jako „nieznany”. Po dziesiątym zaakceptowanym zębie stan nigdy nie
+przechodził do `key_item`, licznik zostawał na dziesięciu i każda wizyta z
+zębem w plecaku była kolejnym oddaniem. „Nieznany” ma teraz własną wartość,
+więc po dziesięciu zębach bot idzie po Kamień Duszy z Elitarnych Orków, a z
+nim po nagrodę. Bot, który utknął z dziesięcioma zaliczonymi, przejdzie
+dalej przy najbliższym zaakceptowanym zębie.
+
+### Boty sprzedawały handlarzowi ulepszacze, marmury i materiały
+
+„Boty sprzedają ulepszacze oraz marmury polimorfii handlarzowi” (sizowski:
+Kawałek Lodu, Stalowy Grot, Futro Yeti, Zwój Kamienia Duszy, Marmur —
+wszystko za grosze u handlarza). Trzy reguły naraz:
+
+- **Marmur Polimorfii** (typ 19) był złomem — nic go nie wyłączało z domyślnej
+  odpowiedzi „sprzedaj”. Teraz to towar na stragan; handlarz bierze go tylko
+  pod presją plecaka, gdy bot nie ma gdzie otworzyć lady.
+- **Materiał, którego nikt nie potrzebował** (ledger: popyt 0), szedł do
+  handlarza z plecaka z zapasem miejsca. Teraz każdy materiał trafia do
+  handlarza wyłącznie pod presją plecaka, a przy popycie tylko wtedy, gdy bot
+  nie może prowadzić straganu.
+- **Kup, a potem sprzedaj po tej samej cenie** (Żółć Niedźwiedzia x2 za
+  47 006): bot brakujący jednej sztuki kupował paczkę dwóch, przestawał
+  „brakować” i wystawiał obie na własnej ladzie. Lada wystawia tylko nadwyżkę
+  ponad **rezerwę** — dwukrotność największej liczby z przepisu, tę samą miarą,
+  którą liczy „brak” — a podział na paczki zostawia rezerwę w stosie bazowym.
+
+### Plik polityki przedmiotów: `playerbot_item_policy.tsv`
+
+Na prośbę „stwórz mi jakiś prosty plik, gdzie oznaczę wartość przedmiotów”.
+W spoolu (`/opt/m2spool/playerbot_item_policy.tsv`, obok wag) jedna linia na
+przedmiot: numer (vnum) albo cały typ (`type:19`), tabulator lub spacja i
+słowo: `keep`/`zostaw` (nigdy nie opuszcza plecaka), `stall`/`stragan` (towar
+na ladę, przed wszystkim innym), `merchant`/`handlarz` (do handlarza NPC przy
+najbliższej wizycie), `drop`/`wyrzuc` (wyrzucony przy wizycie u handlarza, bez
+sprzedaży). `#` zaczyna komentarz. Rdzeń czyta plik jak wagi — co pięć sekund
+sprawdza, czy się zmienił — i loguje `PLAYERBOT_CONFIG: item policy read`.
+Czego w pliku nie ma, podlega regułom botów. Panel klasyczny ma stronę
+**Zachowanie botów → Co boty mogą sprzedawać** (`/ai/items`): pole tekstowe,
+kontrola każdej linii, zapis. Przykład:
+
+```
+30048	stall	# Kawalek Lodu
+type:19	stall	# marmury polimorfii
+50703	drop	# Kwiat Kaki po zaliczonym biologu
+```
+
+### Okazy biologa nie idą na stragan
+
+„Boty wystawiają przedmioty do badań — niech ich nie wystawiają, jak mają
+quest zrobiony, to niech sprzedają u handlarza albo wyrzucają”. Kwiat
+Brzoskwini, Pokrzywa, Kwiat Kaki, Korzeń Gango, Bez i Grzyb Tue z zaliczonego
+etapu były towarem na ladę (350 punktów). Teraz to złom dla handlarza —
+sprzedawany przy najbliższej wizycie w mieście, a `drop` w pliku polityki
+każe je wyrzucić. Ząb Orka zostaje materiałem (ledger), Kamień Duszy nigdy nie
+jest nadwyżką.
+
+### Straganiarz krążący do niedostępnego stanowiska
+
+Z badania AkhiGubernatora: bot `PoMieLoNy` (map 3) przez noc powtarzał marsz na
+własne stanowisko. Losowe przesunięcie w pierścieniu targu trafiło na ziemię,
+której teren bota nie łączy; marsz do miasta przenosił cel na własny grunt,
+bot dochodził, test dojścia (liczony do stanowiska) nie przechodził i ten sam
+odcinek planował się od nowa (`goal moved onto reachable ground` 3691/min na
+mapie 41). Przed marszem stanowisko jest sprawdzane (`CanReach`), próbowane są
+cztery alternatywne przesunięcia (`PLAYERBOT_SHOP_PITCH_TRIES`), a gdy żadne
+nie łączy, stragan odkłada się na 5–10 minut z linią `PLAYERBOT_SHOP: pitch
+unreachable`. Pierścień, w którym rescue szuka własnego gruntu, mieści się
+teraz w promieniu dojścia łącznie z narożnikami (`arrivalDistance / 71`
+komórek) — wcześniej narożnik za promieniem był celem, do którego bot
+dochodził i „nie dochodził”.
+
+### Panel seban: „Możliwie zawieszony” dla każdego straganiarza
+
+Flaga liczyła się z tekstu statusu (tylko „łowi”/„ryb”), a lista akcji kończyła
+się na 12 — stragan (13), wędka (14), przegląd straganów (15), wabienie (16) i
+odpoczynek (17) wyświetlały się jako `#13`…`#17` i każdy bot za ladą był
+„zawieszony”. Flaga pyta akcji rdzenia (trener, handlarz, kowal, stragan,
+wędka, targ, odpoczynek stoją w miejscu z własnej woli), a nazwy akcji sięgają
+do 17.
+
+### Polskie znaki w nazwach NPC i na czacie: rdzeń db łączy się w cp1250
+
+Baza jest w CP1250 (2.0.20), ale rdzeń db (`Main.cpp`) domyślnie ustawia
+`LOCALE = latin2` i tak nazywa swoje połączenia SQL — nazwy NPC i przedmiotów
+przechodziły przez latin2 i traciły ł/ś/ź. `m2-render-config` wpisuje
+`LOCALE = "cp1250"` do `db/conf.txt`; w logu rdzenia db pojawia się
+`mysql_set_character_set(cp1250)`. Diagnoza: audyt Codex
+`polskie-znaki-mt2009-20260912`.
+
+### „250 niewidzialnych botów na 1 lvl z 2500 yang” (Matthaeus)
+
+To nie boty, tylko tożsamości z seedu, których rdzeń nie wystartował: paczka
+wsparcia jest z 2.0.8 (log z 11 września), `autospawn requested=117
+started=117`, rejestr 2499 użytecznych. Reszta to postacie w bazie, widoczne w
+rankingach panelu, nieobecne w świecie. Po aktualizacji i podniesieniu suwaka
+liczby botów wstają — nie ma czego naprawiać w rdzeniu.
+
+## 2.0.20 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Stragany znikały: pętla dzielenia i scalania stosów przy pełnym plecaku
+
+„Stan Chunjo M1: 2 sklepy” (sizowski, z paczką: cenzus 50 → 15 → 2 stragany
+w dwadzieścia minut, 6 066 „split for the counter” i 4 054 „merged” w
+kwadrans na jednym rdzeniu). Licznik wolnych pól plecaka patrzył na
+wskaźniki przedmiotów, a silnik trzyma wskaźnik tylko w górnej komórce i
+znaczy resztę w siatce zajętości — broń o trzech polach wyglądała jak jedno
+zajęte i dwa wolne. Straganiarz dzielił stosy na sztuki „zostawiając trzy
+wolne pola”, które były dołami mieczy, pakiet sklepu nie miał pola,
+scalanie zwalniało jedno, dzielenie brało je z powrotem — co trzy sekundy,
+bez końca, i stragan nigdy nie stawał. Wolne pole to teraz to, co mówi
+siatka silnika (`IsEmptyItemGrid`); ta sama miara stoi pod progiem pełnego
+plecaka, ciśnieniem w plecaku i rezerwą na zestaw ze skrzyni, więc wszystkie
+trzy były dotąd zawyżone o wysokość sprzętu w torbie.
+
+### Ceny wg Iwakury: księgi umiejętności i mnożniki bonusów
+
+Księga Umiejętności ma cenę bazową na umiejętność (44 pozycje z jego listy,
+od Aury Miecza 75 000 do Bezszelestnego Chodu 5 000), skalowaną mnożnikiem
+yang serwera (`mob_gold`: przy 200% ceny podwajają się), z losowym
+rozrzutem 0,8–1,25 na każde wystawienie; pamięć sprzedaży działa jak dotąd.
+Portfele botów nie podbijają już cen ksiąg. Bonusy na sprzęcie mnożą cenę
+wg jego tabeli: dla każdego slotu i bonusu jeden mnożnik za wartość
+maksymalną (odczytaną z własnej tabeli silnika `item_attr`) i jeden za każdą
+inną, rasy z podziałem na poziom 33; średnie obrażenia i obrażenia
+umiejętności na broni progami (średnie 40–45 to ×6, 60 to ×70; umiejętności
+25–29 to ×14, 30 to ×40). Mnożniki się składają, z sufitem stukrotności.
+Bonusy spoza tabeli (regeneracja staminy, czas trwania umiejętności, odbicie
+pocisku) nie zmieniają ceny. „Mnożnik bywa agresywny” — do delikatnej
+korekty, gdy ceny w praniu wyjdą nieodpowiednie.
+
+## 2.0.19 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Ulepszony przedmiot nie schodzi na straganie poniżej tego, co kosztował u kowala
+
+„Miecz+4 za 90 yang, Sejmitar+4 za 582, sztylet +5 za 117 — niech cena
+minimalna będzie tym, co poszło na ulepszenie” (djariczek). Cena wywoławcza
+skalowała cenę handlarza za przedmiot bazowy medianą portfeli, a na świeżym
+świecie jedno i drugie to grosze. Teraz podłogą jest suma opłat kowala za
+każdy krok od przedmiotu bazowego do tego plusa, odczytana z własnych tabel
+silnika (`refine_proto`), każdy krok liczony po tym, ile średnio kosztuje
+jego przejście: koszt razy 100 przez szansę — bo krok, który przy +7 nie
+wychodzi sześć razy na dziesięć, płaci się więcej niż raz, a ostatnia
+porażka zabiera przedmiot. To jest ten procent za ryzyko: 11% przy +1, 100%
+przy +6, ponad 200% przy +9. Miecz+4 nie schodzi poniżej 6 778 yang (opłaty
+400 + 800 + 1 600 + 3 300), Mnisia Zbroja Płytowa+4 poniżej 8 400. Podłoga
+trzyma pod każdym wyjściem wyceny — pod cenami stałymi +7/+8/+9, pod ceną
+złomu, pod pamięcią sprzedaży i limiterem kroku — oraz pod rabatami za
+niesprzedane stoiska i „Wyprzedaż” biednego straganiarza: rabat schodzi z
+marży, nie z opłat. Materiały do ulepszeń nie są wliczane; mają własny
+rynek. Przedmiot, który nie stoi na zwykłej drabinie plusów (wędrówka po
+`refined_vnum` nie wraca do jego numeru), podłogi nie dostaje.
+
+### Zwój w plecaku to drabina do +9
+
+„Mnóstwo zwojów na serwerze, a boty chyba ich nie używają”. Używały, ale
+rzadko: cel ulepszeń bota wyznaczała jego osobowość — sześć botów na
+dziesięć kończyło na +6 i tam stawało, choćby miało w plecaku Zwój
+Błogosławieństwa, a zwoje szły na stragan. Na stosie testowym leżało 660
+zwojów u 482 botów, a na 45 ulepszeń do +7 tylko 9 poszło pod zwojem.
+Tymczasem pod Zwojem Błogosławieństwa albo Boga Smoków silnik nigdy nie
+niszczy przedmiotu (porażka to poziom w dół albo nic), więc powód, dla
+którego bot bał się +7, znika. Teraz zwój w plecaku podnosi cel do +9 —
+u kowala i w polu, bo zwój nie potrzebuje kowala — dla noszonych
+przedmiotów i broni z 30 poziomu, od +6 w górę, Boga Smoków od +7, gdy
+bot go ma; bez zwoju wraca dawna ambicja. Stragan zostawia botowi trzy
+pierwsze zwoje, dopóki jakiś noszony przedmiot ma je do czego użyć;
+reszta jest towarem, bo inne boty też ich potrzebują. Opłata i materiały
+z tabeli obowiązują jak dotąd.
+
+### Lagi klienta co kilkanaście sekund: jedno planowanie trasy trwało pięć sekund
+
+„Klient laguje, stałe lagi co około 10–20 s” (sizowski, z paczką wsparcia).
+W paczce: rdzeń `game1` (1127 botów, mapy wspólne) spędzał w ticku botów
+20–32 s z każdych 60, a pojedynczy tick sięgał 5,1 s — na ten czas rdzeń
+nie obsługuje nikogo, więc każdy gracz na jego mapach zamiera. W środku
+siedziały pojedyncze dalekie planowania trasy w Dolinie Orków po 1–5 s
+(`PLAYERBOT_NAV: far plan map=64 … cost_ms=5066`), a nawet średnie plany
+były 16–90 razy droższe niż na naszym stosie testowym przy tej samej
+liczbie botów. Przyczyna: wyszukiwanie korytarzowe (A* z ważoną
+heurystyką) nigdy nie zamykało komórki — komórka osiągnięta później
+taniej wracała na stertę i była rozwijana ponownie, a przy karach za wodę
+w dolinie dróg prawie równych jest bez liku, więc te same komórki
+rozwijały się w kółko. Komórka zdjęta ze sterty jest teraz zamknięta na
+stałe (trasa najwyżej odrobinę dłuższa), a za tym stoi twardy limit
+60 000 rozwinięć: po nim wyszukiwanie oddaje najlepszą trasę częściową —
+do komórki najbliższej celu — a bot planuje resztę stamtąd, zamiast
+zgłaszać dotarcie. Każdy plan ponad 250 ms (i każdy daleki) zapisuje w
+logu, co kosztował: `abstract_ms`, `regions`, `fine_ms`, `expanded`,
+`partial` — następna wolna maszyna będzie do odczytania, nie do
+zgadywania.
+
+### syserr: 2 773 linii o „Miksturze Ataku +15” w dwanaście minut
+
+Z tej samej paczki: `GetRefineLevel` silnika porównuje plus z nazwy
+bazowej z plusem z nazwy polskiej i przy różnicy pisze do syserr — a
+„Mikstura Ataku +15” (71034/76018) to mikstura, której koreańska nazwa
+kończy się gołym „+”. Każde spojrzenie bota do plecaka z taką miksturą to
+była linia na dysku. Sprawdzenie dotyczy teraz tylko broni i zbroi.
+
+### Rdzeń db: brakująca tabela `log.ikarusshop_log`
+
+Każde otwarcie sklepu offline i każda sprzedaż w nim kończyły się w syserr
+rdzenia db linią „Table 'log.ikarusshop_log' doesn't exist” — żaden zrzut
+w pakiecie nie definiuje tabeli, do której rdzeń pisze. Jest w schemacie
+logów (`logschemify.py`), dokładany przy każdym starcie.
+
+### Crashe rdzeni z 2.0.11 i 2.0.12 — ślady zebrane
+
+Ta sama paczka przyniosła pierwsze pliki `crash-*.txt`: sześć segfaultów
+między 11:08 a 13:30, wszystkie na 2.0.11/2.0.12, żadnego od 2.0.13 przez
+pięć i pół godziny. Trzy ślady kończą się w
+`CHARACTER::GetMoveMotionSpeed` wołanym z `Goto` w ticku botów — to
+wygląda na wiszący wskaźnik założonej broni, co pasuje do poprawki liczby
+komórek plecaka z 2.0.13 (do 2.0.12 boty iterowały po 135 komórkach
+zamiast 90). Dwa pozostałe ślady (libc z ticku) czekają na zbudowanie
+binarki 2.0.11 do symbolizacji; jeśli plik `crash-*.txt` pojawi się na
+2.0.17 lub nowszej, proszę o paczkę wsparcia.
+
+## 2.0.18 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Suwak „Grupy (PT)” naprawdę steruje liczbą grup
+
+„Czy ustawiony na minimum, czy maksimum, grup na serwerze jest zawsze tyle
+samo” (jaksiezabic, z tabelą: 1000 botów, 37 w grupach przy 25 i przy 250).
+Waga PARTY docierała tylko do plannera — do rangi celu „wyzwanie grupowe”
+bota, który już jest w grupie — a o tym, kto w ogóle może być w grupie,
+decydowała rola „wojownik grupowy” losowana raz przy logowaniu (7% botów,
+30% łuczników) i, na mapach frontowych, poziom obozu. Suwak nie miał więc
+czego zmienić. Teraz waga wyznacza udział populacji dopuszczony do grup:
+20% przy 100 („jak w grze”), 5% przy 25, 50% przy 250; wojownicy grupowi
+zajmują pierwsze miejsca losowania, więc są ostatnimi, których suwak
+zabiera, i pierwszymi, których oddaje. Na froncie podstawą jest cała mapa,
+jak dotąd — obozy Czarnych Orków i bossowie to praca grupy — więc przy
+wadze 100 nic się tam nie zmienia. Losowanie jest stałe po pid: ten sam
+suwak jutro daje te same grupy. Bot poza kohortą opuszcza grupę przy
+najbliższym sprawdzeniu (kilkanaście sekund od przesunięcia suwaka), nowi
+dołączają w ciągu paru minut. Do logu trafia co dziesięć minut
+`PLAYERBOT_PARTY: census` (ilu dopuszczonych, ilu w grupie, ile grup, waga).
+Zmierzone na stosie testowym (2478 botów): przed poprawką 7% botów w
+grupach; przy 250 — 30% (755 botów, 247 grup) po trzynastu minutach; po
+przestawieniu na 25 — 3% (78 botów) po pięciu minutach. Tick rdzenia z
+największą mapą: 9,6 s na 60 przed, 10,2 s przy 250, 8,4 s przy 25.
+
+## 2.0.17 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Skrzynie Blasku Księżyca: boty je otwierają, a na mt2009 w ogóle wypadają
+
+„Boty mają po 600 szkat w eq i nie ruszają ich” (uxietoszef, z tabelą:
+165 663 nieotwartych Szkatułek Blasku Księżyca w plecakach botów;
+zombian: „2.0.14 dalej nie otwierają”). Pamięć odmów otwarcia była jedna
+dla całej populacji, po numerze skrzyni: bot, któremu silnik odmówił, bo w
+tej chwili nie miał miejsca na zawartość, wyłączał tę skrzynię wszystkim na
+dziesięć minut — a przy dwóch tysiącach botów zawsze jakiś ma pełny
+plecak, więc skrzynia była wyłączona bez przerwy. Pamięć jest teraz na
+bota i skrzynię, a skrzynia ponad poziom bota (Skrzynia Eksperta III od
+50, Mistrza I od 60) jest pomijana bez pytania silnika i idzie na ladę jako
+towar. Druga rzecz: na linii mt2009 konfiguracja rdzenia nie dostawała
+`MOONLIGHT_CHEST_PERMILLE`, więc Szkatułka Blasku Księżyca z naszej listy
+(zwoje bonusów, mikstury, wzmocnienia, czasem księga) nie wypadała tam
+wcale — na stosie testowym po sześciu godzinach zero sztuk. Tokeny są
+w konfiguracji obu linii (domyślnie 10‰ z potwora, 300‰ z metina;
+`M2_MOONLIGHT_CHEST_PERMILLE` i `M2_MOONLIGHT_CHEST_STONE_PERMILLE` w
+`.env`).
+
+### Wyszukiwarka: znacznik straganu bez niemieckiej reklamy
+
+„Niemiecki komunikat nad każdym sklepem po wyszukaniu zbroi” (vasils.).
+Efekt użyty w 2.0.15 jako kolumna światła to w tym kliencie promocja
+„Noch 1 Level-Up! … siehe www.metin2.de” rysowana nad postacią. Znacznikiem
+jest teraz fajerwerk, i tak też mówi komunikat w czacie.
+
+## 2.0.16 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Boty łowią ryby na mt2009
+
+„Boty nie łowią ryb, brakuje ulepszaczy” (sizowski). Na tych plikach
+łowienie wymaga poziomu 50, flagi ukończonego wprowadzenia u Rybaka,
+przynęty na wędce i **karty wędkarskiej** — przedmiotu unikalnego na dobę,
+którego nikt nie sprzedaje, bo pochodzi z questa. Bot flagę ustawiał sobie
+sam i minigrę rozgrywał po stronie serwera, ale reguła wyprawy odmawiała
+mu wędkowania bez karty, a karty nie miał skąd wziąć — więc na żadnym
+świecie mt2009 żaden bot nigdy nie łowił. Bot od 50 poziomu kupuje kartę
+tak, jak kupuje Zwój Zapomnienia: za 50 tys. yang tworzoną na miejscu i od
+razu zakładaną, a kolejną, gdy ta wygaśnie. Poniżej 50 poziomu bot nad wodę
+nie idzie, bo silnik i tak odmówi. Do tego stanowisko, przy którym silnik
+nie widzi wody (tabele brzegu mierzone są na mapie drugiego silnika, a
+mapa mt2009 różni się o komórkę tu i tam — stanowisko Joan (67175,158125)
+jest na mt2009 suche), jest porzucane na stałe i bot idzie na następne;
+dotąd stał przy nim do końca sesji jako „never_cast”.
+
+### Księga z metina tylko do piętnastu poziomów nad kamieniem
+
+„Na 46 poziomie leci drop KU z metinów 5, 10, 15” (cyfrowy_mat,
+uxietoszef). Dopisywanie jednej księgi do każdego metina (od 1.29) nie
+patrzyło na różnicę poziomów, choć własne tabele silnika wygaszają drop z
+różnicą poziomów. Księga jest dopisywana tylko, gdy zabójca ma najwyżej
+piętnaście poziomów więcej niż kamień; własny los tabeli metina zostaje.
+
+## 2.0.15 — 2026-09-12
+
+Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.
+
+### Kowal tylko dla tego, co bot założy
+
+„Pomimo że nosi lepszą broń, uparcie przepala yang u kowala na ulepszanie
+broni na 1 poziom, które są nikomu niepotrzebne, i to jednocześnie
+różnych” (elgrandebgc, z historią ekwipunku: Miecz +1 → +2 → +3, Glaive,
+Drewniane Kolczyki, Miedziany Naszyjnik, jeden spalony, pod Gilotynowym
+Ostrzem +4 i z 14 tys. yang w sakwie). Reguła złomu zostawia w plecaku
+sporo rzeczy celowo — towar zbieracza, wszystko od +4 na ladę, przedmiot z
+dobrymi liniami — a przejście kowala brało do ulepszania wszystko, czego
+reguła złomu nie oddała handlarzowi. Ulepszany z plecaka jest teraz tylko
+przedmiot, który bot założy: ulepszenie czekające na przejście ekwipunku
+albo jedyna na slot część wyższej rangi, z której kowal może zrobić
+ulepszenie. Towar idzie na ladę taki, jaki jest. Pomiar na stosie
+testowym (2482 boty, świat młody, 11–16 lvl): ulepszeń przedmiotu słabszej
+rangi niż noszony w tym slocie było 175 na pół godziny przed zmianą i 70
+po niej; ulepszeń noszonych części tyle samo co wcześniej.
+
+### Wyszukiwarka oznacza stragany botów kolumną światła
+
+„Znaleziono sklepy, ale nie są ani podświetlane, ani zaznaczone na mapie”
+(sizowski, po 2.0.13). Klient tych plików podświetla i rysuje na mapie
+tylko byty sklepów offline — trzyma ich listę z własnego pakietu systemu
+ikarus — a stragan bota to zwykły sklep prywatny na postaci, więc numer z
+listy wyników niczego mu nie wskazywał. Nad każdym znalezionym straganem
+bota pojawia się teraz kolumna światła (efekt awansu, widoczny tylko dla
+szukającego), a czat mówi, ile straganów botów znaleziono. Na mapie
+klient nadal zaznacza tylko sklepy offline — to jest po jego stronie.
+
+### Kompilacja dopasowana do pamięci, nie do rdzeni
+
+„Aktualizator zatrzymuje się na build game 2/3 67%” (.unright, laptop
+8 GB): Docker Desktop daje maszynie budującej połowę pamięci komputera,
+a `cmd_general.cpp` czy `char.cpp` z `-O2 -g` biorą ponad gigabajt na
+kompilator — cztery naraz na czterech gigabajtach mieliły dyskiem, aż
+budowa wyglądała na zawieszoną. `make -j` bierze teraz mniejszą z liczby
+rdzeni i pamięci podzielonej przez 1400 MB (na 8 GB: 2 wątki, wolniej, ale
+do końca); `M2_MAKE_JOBS` w `.env` nadal ma pierwszeństwo. Obie linie.
+
 ## 2.0.14 — 2026-09-12
 
 Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian.

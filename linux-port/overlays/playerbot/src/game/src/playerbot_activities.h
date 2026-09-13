@@ -234,6 +234,32 @@ namespace
 		DWORD dwTouched;
 	};
 	std::map<int, TPlayerBotFishingStand> s_mapPlayerBotFishingStands;
+	// Stands the engine refused as dry. The tables were measured on one
+	// engine's server_attr and the other engine's map of the same village
+	// differs by a cell here and there: Joan's stand (67175,158125) has no
+	// water beside it on mt2009, and the bot that drew it stood there session
+	// after session to "never_cast" while its neighbour caught fish. A stand
+	// found dry is given up for good on this core, and the claim search skips
+	// it.
+	std::set<int> s_setPlayerBotDryFishingStands;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	int MarkPlayerBotFishingStandDry(DWORD playerID)
+	{
+		for (std::map<int, TPlayerBotFishingStand>::iterator it =
+				s_mapPlayerBotFishingStands.begin();
+				it != s_mapPlayerBotFishingStands.end(); ++it)
+		{
+			if (it->second.dwPid == playerID)
+			{
+				const int key = it->first;
+				s_setPlayerBotDryFishingStands.insert(key);
+				s_mapPlayerBotFishingStands.erase(it);
+				return key;
+			}
+		}
+		return -1;
+	}
+#endif
 
 	void ReleasePlayerBotFishingStand(DWORD playerID)
 	{
@@ -284,6 +310,8 @@ namespace
 			for (int step = 0; step < slots && mine < 0; ++step)
 			{
 				const int slot = PlayerBotFishingClaimKey(mapIndex, (start + step) % slots);
+				if (s_setPlayerBotDryFishingStands.count(slot))
+					continue;
 				std::map<int, TPlayerBotFishingStand>::const_iterator it =
 						s_mapPlayerBotFishingStands.find(slot);
 				if (it == s_mapPlayerBotFishingStands.end() ||
@@ -760,21 +788,88 @@ namespace
 		// (playerbot_gear.h) and says so in the same words; the tackle purchase
 		// was written a day later without it. A stackable that already has a
 		// stack merges into it and needs no cell - that is the bait case.
+		// Room the size of the item, not of one cell: a rod is three cells
+		// high, and a bag with single holes and no free column passed the
+		// one-cell test, paid, and had the rod put on the ground - then paid
+		// again on the next tick, eight times in eight seconds, and picked the
+		// rods up later ("bot nie ogarnal ze 1 wedka wystarczy", sizowski,
+		// with a bag of fifteen).
 		const bool bMergesIntoStack = count > 1 && ch->CountSpecifyItem(vnum) > 0;
-		if (!bMergesIntoStack && ch->GetEmptyInventory(1) < 0)
+		const int size = std::max<int>(1, proto->bSize);
+		if (!bMergesIntoStack && ch->GetEmptyInventory(size) < 0)
 		{
 			PlayerBotLogThrottled("tackle_no_room", dwNow,
-					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d gold=%d",
-					what, ch->GetPlayerID(), ch->GetName(), vnum, count, ch->GetGold());
+					"PLAYERBOT_FISHING: no bag room for %s pid=%u name=%s vnum=%u count=%d size=%d gold=%d",
+					what, ch->GetPlayerID(), ch->GetName(), vnum, count, size, ch->GetGold());
 			return false;
 		}
-		if (!ch->AutoGiveItem(vnum, count, -1, false))
+		LPITEM bought = ch->AutoGiveItem(vnum, count, -1, false);
+		if (!bought)
 			return false;
+		// And the proof: AutoGiveItem hands back an item it dropped on the
+		// ground as readily as one it put in the bag. A purchase that did not
+		// reach the bag is not paid for and is not tried again this pass.
+		if (bought->GetWindow() != INVENTORY)
+		{
+			PlayerBotLogThrottled("tackle_on_ground", dwNow,
+					"PLAYERBOT_FISHING: %s landed outside the bag pid=%u name=%s vnum=%u window=%d",
+					what, ch->GetPlayerID(), ch->GetName(), vnum, (int)bought->GetWindow());
+			return false;
+		}
 		PlayerBotChangeGold(ch, -price);
 		sys_log(0, "PLAYERBOT_FISHING: bought %s pid=%u name=%s vnum=%u count=%d price=%lld",
 				what, ch->GetPlayerID(), ch->GetName(), vnum, count, price);
 		return true;
 	}
+
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	// CHARACTER::fishing() on this engine also insists on the fishing pass
+	// (unique item 27620, a day of real time) being worn, and nothing sells
+	// one: it comes out of the package's fishing quest, which a bot cannot
+	// talk through. Until 2.0.16 the trip rule simply refused a bot without
+	// it, so no bot on an mt2009 world ever fished ("Boty nie lowia ryb",
+	// sizowski, 12 September). A bot of fifty that is due for a trip pays for
+	// one the way it pays for the Forgetting Scroll - created on the spot and
+	// worn at once - and buys the next when this one has run out. A pass that
+	// could not be worn (EquipItem refuses within 1.5 s of an attack) waits
+	// in the bag and is worn on the next ask rather than bought again.
+	bool EnsurePlayerBotFishingPass(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (!ch)
+			return false;
+		if (ch->IsEquipUniqueItem(UNIQUE_ITEM_FISHING_PASS))
+			return true;
+		LPITEM pass = NULL;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS && !pass; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (item && item->GetVnum() == UNIQUE_ITEM_FISHING_PASS)
+				pass = item;
+		}
+		if (!pass)
+		{
+			if (ch->GetGold() < (int)(PLAYERBOT_FISHING_PASS_PRICE + GetPlayerBotReservedGold(ch)))
+				return false;
+			// AutoGiveItem drops what the bag cannot take at the bot's feet.
+			if (ch->GetEmptyInventory(1) < 0)
+				return false;
+			pass = ch->AutoGiveItem(UNIQUE_ITEM_FISHING_PASS, 1, -1, false);
+			if (!pass)
+				return false;
+			PlayerBotChangeGold(ch, -(int)PLAYERBOT_FISHING_PASS_PRICE);
+			sys_log(0, "PLAYERBOT_FISHING: fishing pass bought pid=%u name=%s price=%u gold=%d",
+					ch->GetPlayerID(), ch->GetName(), PLAYERBOT_FISHING_PASS_PRICE, ch->GetGold());
+		}
+		if (!ch->EquipItem(pass))
+		{
+			PlayerBotLogThrottled("fishing_pass_wear", dwNow,
+					"PLAYERBOT_FISHING: fishing pass in the bag but not worn yet pid=%u name=%s",
+					ch->GetPlayerID(), ch->GetName());
+			return false;
+		}
+		return true;
+	}
+#endif
 
 	bool RestockPlayerBotTackle(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
@@ -858,6 +953,20 @@ namespace
 					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
 			if (victim && !victim->IsDead())
 				return false;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+			// This engine's fishing() wants level 50 and the pass worn; a session
+			// begun without them walked to the stand and stood there two minutes
+			// to "never_cast" (measured on the test world the day the pass was
+			// added). Under fifty there is nothing to wait for; without the gold
+			// for a pass the next ask is in an hour.
+			if (ch->GetLevel() < 50)
+				return false;
+			if (!EnsurePlayerBotFishingPass(ch, dwNow))
+			{
+				state.dwNextFishingCheckTime = dwNow + 60 * 60 * 1000;
+				return false;
+			}
+#endif
 
 			state.bFishingSession = true;
 			state.bIsFishing = false;
@@ -1026,6 +1135,27 @@ namespace
 			}
 		}
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// The one gate of fishing() the bank tables cannot promise: water beside
+		// the cell the bot stands on (IsNearAttr - r40250's fishing() has no
+		// such test and its SECTREE no such method). A stand that has none on
+		// this engine's map is marked dry and the next pass walks to another
+		// (see s_setPlayerBotDryFishingStands); before this the bot stood there
+		// the whole idle timeout and the session ended as "never_cast".
+		if (!state.bIsFishing)
+		{
+			LPSECTREE dryTree = ch->GetSectree();
+			if (dryTree && !dryTree->IsNearAttr(ch->GetX(), ch->GetY(), ATTR_WATER))
+			{
+				const int dry = MarkPlayerBotFishingStandDry(ch->GetPlayerID());
+				sys_log(0, "PLAYERBOT_FISHING: dry stand pid=%u name=%s map=%ld key=%d pos=(%ld,%ld), moving to another",
+						ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), dry, ch->GetX(), ch->GetY());
+				state.dwNextFishingActionTime = dwNow + 1000;
+				return true;
+			}
+		}
+#endif
+
 		LPITEM rod = ch->GetWear(WEAR_WEAPON);
 		if (!state.bIsFishing && rod && rod->GetSocket(2) == 0 && !BaitPlayerBotRod(ch))
 		{
@@ -1105,6 +1235,23 @@ namespace
 			if (ch->GetQuestFlag("fishing_onboarding.completed") < 1)
 				ch->SetQuestFlag("fishing_onboarding.completed", 1);
 			ch->fishing();
+			if (!ch->m_pkPreFishingEvent)
+			{
+				// fishing() explains a refusal to the client only, and a bot has
+				// none: every gate it has is asked again here so the log says
+				// which one it was.
+				LPITEM rod = ch->GetWear(WEAR_WEAPON);
+				LPSECTREE tree = ch->GetSectree();
+				PlayerBotLogThrottled("fishing_refused", dwNow,
+						"PLAYERBOT_FISHING: fishing() refused pid=%u name=%s level=%d map=%ld pass=%d onboarding=%d rod=%d bait_socket=%ld water=%d blocked=%d",
+						ch->GetPlayerID(), ch->GetName(), ch->GetLevel(), ch->GetMapIndex(),
+						ch->IsEquipUniqueItem(UNIQUE_ITEM_FISHING_PASS) ? 1 : 0,
+						ch->GetQuestFlag("fishing_onboarding.completed"),
+						(rod && rod->GetType() == ITEM_ROD) ? 1 : 0,
+						rod ? rod->GetSocket(2) : -1L,
+						(tree && tree->IsNearAttr(ch->GetX(), ch->GetY(), ATTR_WATER)) ? 1 : 0,
+						(tree && tree->IsAttr(ch->GetX(), ch->GetY(), ATTR_BLOCK)) ? 1 : 0);
+			}
 			if (!ch->m_pkPreFishingEvent)
 #else
 			ch->fishing();

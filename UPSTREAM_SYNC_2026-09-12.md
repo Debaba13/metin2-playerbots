@@ -222,3 +222,234 @@ verification pass surfaced.
   with upstream, specifically hunting for new player-visible Polish strings
   that arrived through a clean auto-merge (see gap #4 above for why these are
   easy to miss).
+
+## Follow-up: admin panel translated to Turkish (same day)
+
+Asked separately to translate `files/admin_panel.py` after the in-game bot
+text pass above. First corrected a wrong assumption I'd stated out loud
+before checking: the panel's `T` dict (used via Jinja `{{t('key')}}`) already
+carried Turkish for almost everything - 404 `"tr"` entries against 422
+`"pl"` ones. The actual gap was three other places the panel does i18n that
+the `T` dict doesn't cover:
+
+1. **Standalone Python dicts keyed by language string**, each missing a
+   `"tr"` branch and falling back to English or Polish: `BOT_PERSONALITY_LABELS`,
+   `BOT_AMBITION_LABELS`, `BOT_GOAL_LABELS`, `BOT_ACTION_LABELS` (bot status
+   panel labels), `MAP_I18N` (the whole live-map page, ~60 keys), `JOB_NAMES_MAP`.
+2. **Dicts split into a `_EN`-suffixed sibling instead of a language key**
+   (`X` = Polish, `X_EN` = English, selected by a ternary): added a third
+   `_TR` sibling and widened the selector for `PLAYER_SKILLS`/`SKILL_GROUP_NAMES`
+   (the full 8-job skill tree), `HUNTING_MOB_NAMES` (55 monster names),
+   `BIOLOGIST_NAMES` (7 quest items), and the best-effort item-name
+   transliterator (`_ITEM_PL_EXACT`/`_ITEM_PL_WORDS` -> added
+   `_ITEM_TR_EXACT`/`_ITEM_TR_WORDS`; there's no stock Turkish item-name file
+   to draw from, so this stays word-substitution, not a real per-vnum table -
+   same caveat CLAUDE.md already notes for the Polish one).
+3. **JS-embedded objects and inline ternaries**: `APPLY_META` (the ~90-entry
+   bonus/stat tooltip table) got a `tr:` value added to every entry; eight
+   `lg === 'pl' ? X : Y` ternaries in the item-tooltip builder became three-way
+   (`lg === 'pl' ? X : lg === 'tr' ? Y : Z`); and one spot with no language
+   branching at all - `'ŚR: '`/`'UM: '`/`'Plecak'`/`'Broń 30 Lv'` hardcoded
+   into the weapon30 ranking card - got the same three-way treatment.
+
+Also fixed, while reading the status-label code for the above:
+**`localize_playerbot_status()` was translating from Polish substrings that
+no longer exist.** It predates this fork's switch to Turkish bot speech
+(`playerbot_llm_status.h` has spoken Turkish for a while) and was pattern-matching
+dead Polish text, so a bot's live status silently leaked raw Turkish into
+English/German/pl panel views instead of being translated either way.
+Rewrote it around the actual Turkish patterns bots emit
+(`"... kiriyorum"`, `"... ile savasiyorum"`, `"...'nin pesindeyim"`, etc.)
+with a proper `tr` passthrough and an `en` regex table translating from
+Turkish. `GEAR_HISTORY_HOWS` and the `api_bot_gear_history` language
+selector got the same `"tr"` treatment.
+
+Verified with `python3 -m py_compile files/admin_panel.py` after every batch
+of edits, and a final full re-scan of the file for Polish diacritic
+characters not paired with a `tr`/`"tr"` counterpart nearby - the ~185
+remaining hits were all confirmed false positives (multi-line dict entries
+where `tr:`/`"tr"` sits a few lines away from the flagged `pl` line, or JS's
+unquoted `tr:` object-key shorthand which the sweep's `"tr"`-with-quotes
+check didn't recognize) by reading the surrounding code directly, not just
+the grep. No compiler run, no live UI test - this is a syntax-checked
+translation pass on a Flask app with no local server to click through, so
+say so plainly: what changed is proven to parse, not observed rendering
+correctly in a browser.
+
+**Deliberately not done in this pass** (each is its own job): seban-panel,
+the ItemShop PHP front end, and the mt2009 client's other Python UI files.
+`item_names_tr.txt`/`item_names_pl.txt` (the actual root cause of the
+`kılıç` -> `kylyc`-style corruption reported earlier) are supplied by the
+operator's own server package, not part of this repo, and can't be fixed
+from here without that file.
+
+## Follow-up: second upstream sync, 2.0.19 -> 2.0.24 (2026-09-13)
+
+Asked to pull the next batch of upstream releases in without losing any of
+our work, staying on `claude/sync-updates-client-o7hk2w`, no PR to upstream.
+Ten commits / five releases (`v2.0.20`-`v2.0.24`): prize-weapon equipping,
+the archer's stone-dagger refine floor, teleport-ring recall, a lossless bag
+sort, ItemShop Dragon Coins dropping from metins/bosses, an operator item-
+policy file (per-vnum or per-type keep/stall/merchant/drop, read like the
+weights), spares going to the safebox past a refine threshold instead of
+riding the counter forever, and - notably - the classic panel's passphrase
+requirement dropped on the single-player line.
+
+Four real conflicts, all resolved by keeping both sides rather than
+picking one:
+
+- **README.md / README_EN.md** - pure feature-list prose, nothing of ours
+  in it; took upstream's newer paragraphs whole.
+- **playerbot_types.h** - our Turkish `GetPlayerBotShopReasonName()` against
+  upstream's new `PLAYERBOT_SHOP_REASON_SPARE` case (the "sell a worse
+  duplicate" feature); kept our Turkish for the other cases and translated
+  the new one (`"gereksiz kopya"`).
+- **admin_panel.py**, twice - upstream's new `item_full_name()` (spells a
+  skill book's skill out from `SKILL_ID_NAMES`/`SKILL_ID_NAMES_PL`, flattened
+  from `PLAYER_SKILLS`/`PLAYER_SKILLS_EN`) landed right next to our
+  `HUNTING_MOB_NAMES_TR` and `PLAYER_SKILLS_TR` additions. Added a third
+  `SKILL_ID_NAMES_TR` table, flattened from our `PLAYER_SKILLS_TR`, and gave
+  `item_full_name()` a `tr` branch so a Turkish panel view gets skill-book
+  names spelled out in Turkish too, not just English. Third conflict was
+  `GEAR_HISTORY_HOWS` gaining three new upstream entries
+  (`PLAYERBOT_BONUS_ADD/_CHANGE/_MARBLE` for the reworked bonus-line system)
+  next to our `"tr"` keys on the existing ones - added Turkish to the three
+  new entries the same way.
+
+Beyond the conflicts: translated the brand new admin-panel page this sync
+brought in, the Item Policy editor (`ai_items_open/_nav/_intro/_format/
+_bad/_live` in the `T` dict - upstream itself only shipped `en`/`pl` for
+these, so `tr` was a straight addition, not a fix). The policy file's own
+keyword syntax (`keep`/`stall`/`merchant`/`drop`, which upstream already
+accepts in Polish too as `zostaw`/`stragan`/`handlarz`/`wyrzuc`) got Turkish
+synonyms added on both ends of the pipe - the engine's
+`ParsePlayerBotItemPolicyWord()` in `playerbot_config.h` and the panel's own
+`AI_ITEM_POLICY_WORDS` validator - so an operator can write `sakla`/
+`tezgah`/`satici`/`birak` in the file and have both sides agree on it.
+
+Swept every other file this sync auto-merged cleanly (no conflict, but new
+upstream content): all ten touched `playerbot_*.h` fragments plus
+`playerbot_manager.cpp`, the mt2009 tree (`playerbotify.py`,
+`m2-render-config` - the Dragon Coin plumbing), and seban-panel
+(`app.py`/`collector.py` - five new Polish `BOT_ACTIONS` labels for stall-
+keeping/fishing/browsing-stalls/luring/resting, and the panel now skips its
+setup wizard on the single-player line same as the classic panel). Nothing
+found beyond what's listed above - the rest was log-message formats
+(`PLAYERBOT_...:` prefixed, operator-facing by convention), internal state
+tags, and quoted reporter comments, none of it player-visible UI text.
+The five new seban-panel labels are genuinely untranslated (seban-panel has
+no i18n layer at all yet, in any language but Polish) - that's the next,
+separate task.
+
+**Not run**: the `g++ -fsyntax-only -m32 -std=c++23` check CLAUDE.md
+prescribes - same as the first sync, this sandbox has no `../m2src-cache`
+reference tree and no running Docker daemon this time either (`docker info`
+reaches the client but not a daemon socket). Checked instead: brace/paren
+balance on every touched C++ file (all matched), and that every new
+constant/function/enum-case upstream introduced actually resolves somewhere
+in the include chain (checked by name, file by file) - including one
+harmless loose end that's upstream's own, not ours:
+`PLAYERBOT_BONUS_MARBLE_LINES` is defined in `playerbot_types.h` but never
+read anywhere; the actual "want a 5th line" test uses
+`PLAYERBOT_BONUS_MAX_LINES` instead. Left as-is - not something this merge
+introduced or broke, and not ours to second-guess upstream's own constant.
+**Run the real syntax check by hand before deploying this branch.**
+
+## Follow-up: seban-panel translated to Turkish (2026-09-13)
+
+Asked to translate seban-panel (`linux-port/docker/seban-panel/`) to Turkish,
+the same way the classic panel was done earlier - but seban-panel has no
+language-switching layer at all (unlike `files/admin_panel.py`'s `T` dict +
+`lang()`), so this is a straight swap: every Polish string in `app.py`,
+`item_grants.py`, all 19 Jinja templates, and the four `static/*.js` files
+now reads in Turkish. No bilingual toggle was built - the user asked for a
+direct swap, not a second i18n system.
+
+**Scope**: `app.py` (~2010 lines - map names, bot personality/goal/action
+labels, the `APPLY_LABELS` bonus-line table, flash messages, SQL literal
+strings shown to the operator, the crashed-table error page's inline HTML),
+`item_grants.py` (status labels, validation messages), every template
+(`manage.html` and `item_grants.html` were the two big ones, both dense
+single-line Jinja), and `heatmap.js`/`news-feed.js`/`live-widget.js`
+(`dashboard-charts.js` had nothing to translate).
+
+**A scripted edit corrupted app.py once, caught before it shipped.** A
+Python script meant to replace only the `APPLY_LABELS` dict used
+`re.search(r'APPLY_LABELS = \{(.*?)\n\}', ...)` - non-greedy but still
+DOTALL, so `.*?` matched forward to the *first* `\n}` anywhere in the file
+after the dict, not the dict's own close brace (which sits on the same line
+as its last entry, no `\n` before it). That swallowed everything in
+between and deleted it: the 71/72-swap comment, `PANEL_ENGINE`,
+`ENGINE_MT2009`, `ATTR_SKILL_DAMAGE`, `ATTR_AVG_DAMAGE`,
+`POINT_TO_APPLY` (a 30-line dict the mt2009 bonus-line lookup depends on),
+`EMPIRE_EXPR`, `JOB_NAMES` and the whole `SKILLS` table - 45 net lines
+gone, and `python3 -m py_compile` still passed because what was left was
+syntactically valid Python that just did less. Caught by line-counting the
+file after every edit (`wc -l` against the pre-edit count) rather than
+trusting compile success alone; the missing block was pulled back from
+`git show HEAD:...` and reinserted, translated, and the rest of the file
+was then done with the Edit tool's exact-string matching instead of a
+regex that could over-match. Every edit after that point was followed by
+`wc -l` and a `py_compile` check.
+
+**Two things translation touched that were not just text:**
+- `is_stationary_activity()`'s fishing-detection fallback matched Polish
+  substrings (`"łowi"`, `"ryb"`, `"czekam na branie"`) against the bot's
+  free-text status - but that status has come from the C++ core's Turkish
+  `playerbot_llm_status.h` for a while now (`"Balik tutuyorum - oltayi
+  bekliyorum"`), so the fallback had already gone dead before this session
+  touched it. Same root cause as the `localize_playerbot_status()` bug
+  found in the classic panel a day earlier - a Polish-text-matching
+  fallback outliving the switch to Turkish bot speech. Fixed to match
+  `"balik"`/`"olta"`/`"fishing"`.
+- `static/live-widget.js`'s `activityGroup()` had the identical shape:
+  `/łow|low|ryb|fishing|branie/` tested against `bot.action_label`, which
+  is `BOT_ACTIONS[...]` from `app.py` - now Turkish ("Balık Tutuyor" for
+  action id 14). Fixed to `/bal[ıi]k|tutuyor|fishing/`.
+- `character["honor"]["css"]` in the `/player/<pid>` route looked up a CSS
+  class by the honor title string (`"Rycerski"`, `"Szlachetny"`, ...) -
+  translating `honor_rank()`'s returned titles without updating this
+  lookup would have thrown a `KeyError` on every profile page. Caught
+  before it shipped by grepping for every reader of a value this session
+  translated, not just the definition.
+
+**`gm_commands.txt`** (148 lines, the in-game GM command reference shown
+verbatim in `<pre>`) was translated in full too - command syntax
+(`/purge`, `<nick>`, vnum placeholders) kept as-is, only the Polish
+explanations translated.
+
+**Deliberately left in Polish** (two spots, both querying stored engine
+data rather than displaying UI text): `app.py`'s two `'%małż%'`/`"małż"`
+matches, which search `log.log`'s `hint` column for the Polish word for
+"mussel" - that column holds whatever the game engine's own (Polish, on
+this world) item names wrote into it, not a string this panel controls,
+so changing the search pattern would just break shellfish-catch detection
+instead of translating anything. Same reasoning as the untouched `'%ryb%'`/
+`'%fish%'` OR in the weekly fish-ranking query.
+
+**Verification**: `python3 -m py_compile` on every changed `.py` file,
+`node --check` on every changed `.js` file, a full diacritic sweep of the
+whole `seban-panel/` tree (two intentional exceptions above, plus one
+inert dead-code line in `live-widget.js` that already matched nothing
+before this session - a `.textContent.includes('Podkład graficzny')`
+filter with no matching element anywhere in the current templates), and
+`{%`/`%}`/`{{`/`}}` tag-count parity against `git show HEAD:...` for
+every one of the 19 templates. All 17 simple templates were rendered
+through `render_template()` with representative context and returned
+without a Jinja error; `manage.html` and `item_grants.html` were rendered
+through the real Flask routes with the DB mocked out. Ran the existing
+`test_manage_settings.py` end to end (installed Flask/PyMySQL into this
+sandbox to do it) and fixed the assertions that pinned old Polish text
+(`SKILLS[(0,1)][3]`, four `MAP_NAMES` entries, `class_profile(6)['gender']`)
+to their Turkish replacements. One assertion
+(`playerbots_release_status()['tone']`) fails in this sandbox with no
+outbound GitHub access - confirmed pre-existing by running the identical
+test against the pre-translation file via `git stash`. A second failure,
+`TRACKED_MAP_OPTIONS` not matching its hardcoded expected list, is also
+pre-existing (reproduces identically against `git stash`) and predates
+this session - the list is stale against the Shinsoo/Jinno maps the
+2.0.19→2.0.24 sync (and earlier syncs) added to `MAP_BOUNDS`; worth a
+follow-up but out of scope for a translation pass. No live browser test -
+this is a Flask app with no running server in this sandbox, so "renders
+without a Jinja/JS error" is what was verified, not "looks right on
+screen."

@@ -104,6 +104,7 @@ linux-port-mt2009/docker/game/src/server/game/src/input.h
 linux-port-mt2009/docker/game/src/server/game/src/input_db.cpp
 linux-port-mt2009/docker/game/src/server/game/src/input_login.cpp
 linux-port-mt2009/docker/game/src/server/game/src/input_main.cpp
+linux-port-mt2009/docker/game/src/server/game/src/item.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/main.cpp

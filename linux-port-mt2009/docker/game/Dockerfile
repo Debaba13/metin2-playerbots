@@ -56,6 +56,12 @@ RUN PREFIX="${M2_EXTERN}" BUILD=/build/work TARBALLS=/build/extern-tarballs \
 # -----------------------------------------------------------------------------
 FROM deps AS libs
 
+# A job per core ran out of memory on an 8 GB laptop: Docker Desktop gives
+# the build VM half the host, and cmd_general.cpp or char.cpp with -O2 -g
+# takes over a gigabyte per compiler, so four of them on four gigabytes
+# thrashed until the build looked stuck at "game builder 2/3 67%"
+# (.unright, 12 September). MAKE_JOBS (M2_MAKE_JOBS in .env) still wins;
+# the default is the smaller of the cores and the memory divided by 1400 MB.
 ARG MAKE_JOBS=
 
 RUN apt-get update \
@@ -105,7 +111,7 @@ RUN grep -q 'fdwatch_sndbuf_left' libthecore/src/fdwatch.c \
 RUN --mount=type=cache,target=/root/.ccache set -eux; \
     find . -name '*.o' -delete; \
     find . \( -name Makefile -o -name config -o -name Depend -o -name __REVISION__ \) -exec sed -i 's/\r$//' {} +; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     make -C liblua/5.0 CC=gcc MYCFLAGS="-O2 -g -fno-strict-aliasing"; \
     for m in libsql libgame/src libpoly libthecore/src; do \
       : > "$m/Depend"; \
@@ -126,7 +132,7 @@ COPY src/server/game/src/locale.hpp game/src/locale.hpp
 RUN --mount=type=cache,target=/root/.ccache set -eux; \
     sed -i 's/\r$//' db/src/Makefile; \
     rm -rf db/src/.obj db/src/Depend; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     make -C db/src -j"$J" ${M2_MAKE}; \
     mkdir -p /out; cp "db/db_r$(cat __REVISION__)" /out/db
 
@@ -141,7 +147,7 @@ COPY src/server/game game
 RUN --mount=type=cache,target=/root/.ccache set -eux; \
     sed -i 's/\r$//' game/src/Makefile; \
     rm -rf game/src/.obj game/src/Depend; \
-    J="${MAKE_JOBS:-$(nproc)}"; \
+    J="${MAKE_JOBS:-}"; if [ -z "$J" ]; then J="$(nproc)"; M="$(awk '/MemTotal/ { print int($2 / 1024 / 1400) }' /proc/meminfo)"; [ "$M" -ge 1 ] || M=1; [ "$M" -ge "$J" ] || J="$M"; fi; echo "make -j$J (cores $(nproc), memory $(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo) MB)"; \
     make -C game/src -j"$J" ${M2_MAKE}; \
     mkdir -p /out; cp "game/game_r$(cat __REVISION__)" /out/game
 

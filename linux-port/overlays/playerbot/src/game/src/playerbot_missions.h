@@ -23,21 +23,40 @@ namespace
 		return std::string(mission.questName) + "." + flag;
 	}
 
+	// See GetPlayerBotBiologistStateIndex: a state index the quest does not have.
+	const int PLAYERBOT_QUEST_STATE_UNKNOWN = INT_MIN;
+
 	int GetPlayerBotBiologistStateIndex(size_t missionIndex, const char* stateName)
 	{
 		// Sized by the table, not by a literal: a seventh mission with a
 		// six-entry initialiser would have read a zero as a real state index.
-		static std::vector<int> s_complete(PLAYERBOT_BIOLOGIST_MISSION_COUNT, -1);
-		static std::vector<int> s_collecting(PLAYERBOT_BIOLOGIST_MISSION_COUNT, -1);
-		static std::vector<int> s_keyItem(PLAYERBOT_BIOLOGIST_MISSION_COUNT, -1);
+		// A state index is a hash of the state's name (quest/object/state/): it
+		// is as often negative as not - collect_quest_lv30's key_item is
+		// -1726153001 - so "unknown" cannot be a sign. Every caller used to test
+		// `>= 0`, which made the Orc Tooth's second half unreachable: after ten
+		// teeth the state was never set, collect_count sat at ten, and the bot
+		// went on handing teeth in - twenty-two of them (martynka19cm, 12
+		// September). The engine answers 0 for a name it does not know, which is
+		// also "start"; PLAYERBOT_QUEST_STATE_UNKNOWN is what the callers test.
+		static std::vector<int> s_complete(PLAYERBOT_BIOLOGIST_MISSION_COUNT, PLAYERBOT_QUEST_STATE_UNKNOWN);
+		static std::vector<int> s_collecting(PLAYERBOT_BIOLOGIST_MISSION_COUNT, PLAYERBOT_QUEST_STATE_UNKNOWN);
+		static std::vector<int> s_keyItem(PLAYERBOT_BIOLOGIST_MISSION_COUNT, PLAYERBOT_QUEST_STATE_UNKNOWN);
+		static std::vector<char> s_resolved(PLAYERBOT_BIOLOGIST_MISSION_COUNT * 3, 0);
 		if (missionIndex >= PLAYERBOT_BIOLOGIST_MISSION_COUNT)
-			return -1;
+			return PLAYERBOT_QUEST_STATE_UNKNOWN;
 
-		std::vector<int>& cache = strcmp(stateName, "__complete") == 0 ? s_complete
-				: (strcmp(stateName, "key_item") == 0 ? s_keyItem : s_collecting);
-		if (cache[missionIndex] < 0)
-			cache[missionIndex] = quest::CQuestManager::instance().GetQuestStateIndex(
+		const int kind = strcmp(stateName, "__complete") == 0 ? 0
+				: (strcmp(stateName, "key_item") == 0 ? 1 : 2);
+		std::vector<int>& cache = kind == 0 ? s_complete : (kind == 1 ? s_keyItem : s_collecting);
+		char& resolved = s_resolved[missionIndex * 3 + kind];
+		if (!resolved)
+		{
+			const int index = quest::CQuestManager::instance().GetQuestStateIndex(
 					PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex].questName, stateName);
+			cache[missionIndex] = (index == 0 && strcmp(stateName, "start") != 0)
+					? PLAYERBOT_QUEST_STATE_UNKNOWN : index;
+			resolved = 1;
+		}
 		return cache[missionIndex];
 	}
 
@@ -47,7 +66,7 @@ namespace
 			return false;
 		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
 		const int completeState = GetPlayerBotBiologistStateIndex(missionIndex, "__complete");
-		return completeState >= 0 &&
+		return completeState != PLAYERBOT_QUEST_STATE_UNKNOWN &&
 				ch->GetQuestFlag(GetPlayerBotBiologistFlag(mission, "__status")) == completeState;
 	}
 
@@ -72,7 +91,7 @@ namespace
 		if (!ch || missionIndex != PLAYERBOT_BIOLOGIST_ORC_TOOTH_INDEX)
 			return false;
 		const int keyState = GetPlayerBotBiologistStateIndex(missionIndex, "key_item");
-		return keyState >= 0 && ch->GetQuestFlag(GetPlayerBotBiologistFlag(
+		return keyState != PLAYERBOT_QUEST_STATE_UNKNOWN && ch->GetQuestFlag(GetPlayerBotBiologistFlag(
 				PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex], "__status")) == keyState;
 	}
 
@@ -176,7 +195,7 @@ namespace
 			return false;
 		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
 		const int collectingState = GetPlayerBotBiologistStateIndex(missionIndex, "go_to_disciple");
-		if (collectingState < 0)
+		if (collectingState == PLAYERBOT_QUEST_STATE_UNKNOWN)
 			return false;
 
 		const std::string statusFlag = GetPlayerBotBiologistFlag(mission, "__status");
@@ -201,6 +220,16 @@ namespace
 			LPCHARACTER ch, int* outLevel = NULL, int* outSelection = NULL,
 			int* outRemaining = NULL)
 	{
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// The player level-up hunt (levelup.quest) ships in quest/_unused on
+		// this line: no kill hook fires, so levelup.remain never decrements
+		// and every bot reads "0/40" for good, while the mission steered
+		// under-geared bots at its target mob. Disabled here; bots hunt by
+		// the frontier draw and the level-banded hubs instead (Tieru, 13
+		// September).
+		(void)outLevel; (void)outSelection; (void)outRemaining;
+		return NULL;
+#endif
 		if (!ch)
 			return NULL;
 		const int level = ch->GetQuestFlag("levelup.current");
@@ -345,6 +374,10 @@ namespace
 
 	void ManagePlayerBotHuntingProgress(LPCHARACTER ch)
 	{
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		(void)ch;   // the level-up hunt is disabled on this line, see above.
+		return;
+#endif
 		if (!ch || ch->GetLevel() < PLAYERBOT_HUNTING_FIRST_LEVEL)
 			return;
 

@@ -168,19 +168,51 @@ namespace
 		}
 	}
 
-	// Who may be in a party. The ten-percent cohort everywhere; on Orc Valley,
-	// anyone of camp level - the Black Orc camps are a party's work and eight
-	// of the cohort at one level on one island never turns up.
+	// How much of the population the PARTY slider admits to a party, in
+	// thousandths: PLAYERBOT_PARTY_COHORT_PER_MILLE at the neutral weight,
+	// scaled with it; on the frontier the whole map is the base.
+	int GetPlayerBotPartyCohortPerMille(bool bFrontier)
+	{
+		const long base = bFrontier
+				? PLAYERBOT_PARTY_FRONTIER_COHORT_PER_MILLE : PLAYERBOT_PARTY_COHORT_PER_MILLE;
+		const long scaled = base * GetPlayerBotWeight(PLAYERBOT_WEIGHT_PARTY) / PLAYERBOT_WEIGHT_NEUTRAL;
+		return (int)(scaled < 0 ? 0 : (scaled > 1000 ? 1000 : scaled));
+	}
+
+	// A bot's fixed place in the party draw, 0..999: a party fighter in the
+	// first hundred, everyone else spread over the other nine hundred. Stable
+	// by pid, so moving the slider moves the same bots in and out, and a
+	// world on the same setting looks the same tomorrow.
+	int GetPlayerBotPartyDraw(DWORD dwPID, const TPlayerBotAIState& state)
+	{
+		const DWORD hash = PlayerBotNavHash(dwPID ^ 0x50544452U);
+		if (state.bBotRole == BOT_ROLE_PARTY_FIGHTER)
+			return (int)(hash % 100U);
+		return 100 + (int)(hash % 900U);
+	}
+
+	// Who may be in a party: the share of the population the PARTY slider
+	// says, party fighters first. Until 2.0.18 the slider reached nothing
+	// here - off the frontier the cohort was the role alone, a tenth of the
+	// population drawn at login - and "Grupy (PT)" at 25 and at 250 gave the
+	// same thirty-seven bots in groups out of a thousand (jaksiezabic).
+	// On the frontier anyone of camp level - the Black Orc camps are a
+	// party's work and eight of a tenth at one level on one island never
+	// turns up - and every frontier map, not the valley alone: a map change
+	// dissolves a party, so one made in the valley never reached V1 or
+	// Sohan, and the Spider Queen and Nine Tails had nobody to fight them.
 	bool IsPlayerBotPartyEligible(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
-		if (state.bBotRole == BOT_ROLE_PARTY_FIGHTER)
-			return true;
-		// Every frontier map, not the valley alone: a map change dissolves a
-		// party, so one made in the valley never reached V1 or Sohan, and the
-		// Spider Queen and Nine Tails - a party's work - had nobody to fight
-		// them. Sixteen bots in V1 and not one in a party.
-		return ch && IsPlayerBotFrontierMapIndex(ch->GetMapIndex()) &&
-				ch->GetLevel() >= PLAYERBOT_ORC_VALLEY_PARTY_MIN_LEVEL;
+		if (!ch)
+			return false;
+		const bool bFrontier = IsPlayerBotFrontierMapIndex(ch->GetMapIndex());
+		// The camp level is the frontier's own floor; the role has always
+		// been above it, and still is.
+		if (bFrontier && state.bBotRole != BOT_ROLE_PARTY_FIGHTER &&
+				ch->GetLevel() < PLAYERBOT_ORC_VALLEY_PARTY_MIN_LEVEL)
+			return false;
+		return GetPlayerBotPartyDraw(ch->GetPlayerID(), state) <
+				GetPlayerBotPartyCohortPerMille(bFrontier);
 	}
 
 	int GetPlayerBotPartyDesiredMax(LPCHARACTER ch)
@@ -712,6 +744,49 @@ namespace
 	int s_aiPlayerBotM2Stay[PLAYERBOT_M2_STAY_REASON_COUNT] = { 0 };
 	DWORD s_dwPlayerBotM2CensusTime = 0;
 	bool s_bPlayerBotM2CensusPass = false;
+
+	// The party census: counted over the same once-a-minute pass, reported
+	// every ten minutes - how many the slider admits, how many are in a
+	// party, how many parties. "Suwak Grupy (PT) nic nie robi" was measured
+	// from the panel's one number; this is that number with its reasons.
+	int s_iPlayerBotPartyCensusBots = 0;
+	int s_iPlayerBotPartyCensusEligible = 0;
+	int s_iPlayerBotPartyCensusInParty = 0;
+	std::set<DWORD> s_setPlayerBotPartyCensusLeaders;
+	DWORD s_dwPlayerBotPartyCensusReported = 0;
+
+	void NotePlayerBotPartyCensus(LPCHARACTER ch, const TPlayerBotAIState& state)
+	{
+		if (!ch)
+			return;
+		++s_iPlayerBotPartyCensusBots;
+		if (IsPlayerBotPartyEligible(ch, state))
+			++s_iPlayerBotPartyCensusEligible;
+		if (LPPARTY party = ch->GetParty())
+		{
+			++s_iPlayerBotPartyCensusInParty;
+			s_setPlayerBotPartyCensusLeaders.insert(party->GetLeaderPID());
+		}
+	}
+
+	void ReportPlayerBotPartyCensus()
+	{
+		const DWORD dwNow = get_dword_time();
+		if (s_dwPlayerBotPartyCensusReported == 0 ||
+				dwNow - s_dwPlayerBotPartyCensusReported >= 600000)
+		{
+			s_dwPlayerBotPartyCensusReported = dwNow;
+			sys_log(0, "PLAYERBOT_PARTY: census bots=%d eligible=%d in_party=%d parties=%d weight=%d village_per_mille=%d frontier_per_mille=%d",
+					s_iPlayerBotPartyCensusBots, s_iPlayerBotPartyCensusEligible,
+					s_iPlayerBotPartyCensusInParty, (int)s_setPlayerBotPartyCensusLeaders.size(),
+					GetPlayerBotWeight(PLAYERBOT_WEIGHT_PARTY),
+					GetPlayerBotPartyCohortPerMille(false), GetPlayerBotPartyCohortPerMille(true));
+		}
+		s_iPlayerBotPartyCensusBots = 0;
+		s_iPlayerBotPartyCensusEligible = 0;
+		s_iPlayerBotPartyCensusInParty = 0;
+		s_setPlayerBotPartyCensusLeaders.clear();
+	}
 
 	void NotePlayerBotM2Stay(const char* reason)
 	{
@@ -1502,6 +1577,7 @@ void CPlayerBotManager::Update()
 	// Once for the whole population: the panel may have moved a weight since
 	// the last tick, and every bot planned below must see the same numbers.
 	RefreshPlayerBotWeights(dwNow);
+	RefreshPlayerBotItemPolicy(dwNow);
 	ManagePlayerBotNight(dwNow);
 	UpdatePlayerBotLLMBridge(dwNow);
 	PrunePlayerBotPendingTrades(dwNow);
@@ -1721,6 +1797,8 @@ void CPlayerBotManager::Update()
 		// bot is in now, since a portal it walked past has already moved it.
 		UpdatePlayerBotMonkeyChamber(ch, state, dwNow);
 
+		if (s_bPlayerBotM2CensusPass)
+			NotePlayerBotPartyCensus(ch, state);
 		// The census, once a minute: why each level-40 bot in Bokjung is there.
 		if (s_bPlayerBotM2CensusPass && ch->GetLevel() >= 40 &&
 				IsPlayerBotM2Map(ch->GetMapIndex()))
@@ -2337,7 +2415,10 @@ void CPlayerBotManager::Update()
 	// written here rather than at the top: one line, one minute, every bot of
 	// level forty and over standing in Bokjung counted once.
 	if (s_bPlayerBotM2CensusPass)
+	{
 		ReportPlayerBotM2Census();
+		ReportPlayerBotPartyCensus();
+	}
 
 	// Publish one compact, atomic snapshot per game core. The web panel reads
 	// these files from the shared read-only game-var volume, so it sees the real

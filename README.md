@@ -38,11 +38,20 @@ W przeciwieństwie do tradycyjnych botów-klientów, boty w tym projekcie są **
 
 - ⚔️ **Inteligentna walka**: Obsługa wszystkich klas (Wojownik, Sura BM/WP, Ninja Dagger/Archer, Szaman), płynne animacje kombosów, ataki z łuku z uwzględnieniem strzał, utrzymywanie buffów i rotacje skilli.
 - 🗺️ **Globalna nawigacja 2D NavGrid (A*)**: Własna siatka kolizji generowana z atrybutów mapy (`server_attr`) oraz algorytm A* z wygładzaniem tras (*String Pulling*). Boty sprawnie omijają góry, rzeki i mury miejskie.
-- 🚪 **Podróże między mapami**: Autonomiczne przejścia przez portale M1 ↔ M2 ↔ M3 oraz połączenia wewnątrz Łatwego Lochu Małp. Boty dobierają strefę do poziomu i jakości ekwipunku.
+- 🚪 **Podróże między mapami**: Autonomiczne przejścia M1 ↔ M2 ↔ M3, Łatwy Loch Małp, Dolina Orków, Pustynia Yongbi, Góra Sohan i Loch Pająków V1. Boty dobierają mapę do poziomu, a hub na mapie według wspólnej pamięci populacji o tym, gdzie stoi najwięcej potworów. Gdy skończą się mikstury daleko od miasta, bot z Pierścieniem Teleportacji wraca do wioski od razu, zamiast iść pieszo do portalu.
+- 🏹 **Misje Biologa i polowanie według poziomu**: U Biologa siedem misji z Zębem Orka i Kamieniem Duszy włącznie, przyjmowanych bez okna dialogowego. Zwykłe polowanie dobiera mapę frontu i hub do poziomu bota. (Na plikach 2.x quest `levelup` leży w `_unused`, więc misje „Polowanie: Lv X” są wyłączone — nie pokazywały postępu i wysyłały słabo ubrane boty pod potwora.)
+- 🎁 **Szkatułki i bossy**: Szkatułki Księżycowe i szkatułki bossów są otwierane, a ich zawartość używana (zwoje bonusów, mikstury szybkości, Zwój Błogosławieństwa przy ulepszaniu od +6). Drużyny, najpierw ze współgildianami, ruszają na Wodza Orków i Królową Pająków.
 - 💎 **Polowanie na Metiny**: Dedykowana rola łowców Metinów patrolujących całą mapę, niszczących kamienie i czyszczących fale potworów.
-- 🎒 **Loot i ekonomia miejska**: Zbieranie Yang i przedmiotów po walce, automatyczne ubieranie lepszego ekwipunku wraz z tarczami, regularne powroty do odpowiednich handlarzy, uzupełnianie mikstur i ulepszanie u **Kowala**.
+- 🎒 **Loot i ekonomia miejska**: Zbieranie Yang i przedmiotów po walce, automatyczne ubieranie lepszego ekwipunku wraz z tarczami, dokupywanie zbroi u handlarza (a gdy nie ma dokładnego poziomu — najlepszej dostępnej dla klasy) i ulepszanie jej u **Kowala** co najmniej do +6, powroty do odpowiednich handlarzy, uzupełnianie mikstur oraz sortowanie plecaka (mikstury na pierwszych liniach, dalej wspomagacze i skrzynie).
 - 🐴 **Rozwój konia**: Wyprawy po prawdziwe Medale Konne do Lochu Małp, oddawanie ich najbliższemu Stajennemu i używanie konia do długich podróży.
-- 👥 **Grupy i Party**: Dynamiczne tworzenie 2–3 osobowych drużyn, formacje bojowe i wspólne expienie w gęstych obozach potworów.
+- 👥 **Grupy i Party**: Dynamiczne drużyny 2–3 osobowe, a w Dolinie Orków do 8 osób na obozy Czarnych Orków; formacje bojowe i wspólne expienie w gęstych obozach potworów.
+- 🏪 **Stragany i rynek bot–bot**: Boty otwierają prywatne stragany w Bokjung i **kupują od siebie nawzajem** — ulepszacze, których akurat komuś brakuje, i sprzęt lepszy od noszonego. Przedmiot na +7 lub wyżej nigdy nie trafia do handlarza NPC. Zbędny duplikat lepszego przedmiotu (dwa te same +9) bot wystawia na sprzedaż.
+- 🐉 **ItemShop i Smocze Monety**: Wbudowany ItemShop działa na Smocze Monety, a Kupony SM wypadają z niewielką szansą z rozbitych Metinów i zabitych bossów.
+- 🧬 **Misje Biologa**: Zbieranie okazów i oddawanie ich Biologowi, etapami, bez okna dialogowego questa.
+- 🎣 **Łowienie ryb**: Pełna sesja z przynętą w gnieździe wędki, czekaniem na branie i wyciąganiem w oknie 6 sekund.
+- ✨ **Przerzucanie bonusów**: Boty używają Kamieni Zmiany i Dodania Bonusu na sprzęcie, którego akurat nie mają założonego.
+- 🧠 **Osobowość i cele**: Każdy bot ma własny charakter i ambicję (łowca Metinów, kolekcjoner, hodowca konia, „Dropek” od Metinów, M3, M2 lub medali), które decydują, co robi w danej godzinie.
+- 🎛️ **Panel steruje zachowaniem na żywo**: suwaki wag celów, wyłącznik napisów botów nad głową, boty złomiarze wystawiające tani złom do palenia u kowala oraz szansa na Szkatułki Księżycowe — wszystko odczytywane przez rdzeń w pięć sekund, bez restartu. Na wersji singleplayer panel daje pełny dostęp od razu, bez pytania o hasło.
 - 💾 **Trwały zapis w bazie**: Każdy bot posiada własne konto i postać w bazie MariaDB — zachowuje poziom, przedmioty, Yang i postępy po restarcie serwera.
 
 ---

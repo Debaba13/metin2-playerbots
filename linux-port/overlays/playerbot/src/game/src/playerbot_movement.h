@@ -842,6 +842,24 @@ namespace
 			if (target && CanPlayerBotFightOnHorse(ch, target))
 				return;
 		}
+		// The opposite case, and the one the desert bots fell into: a transport
+		// horse and a live combat target that must be fought on foot. Mounting for
+		// the leg here only to have the combat pass (combat_ready /
+		// dismount_for_target) climb down again next tick was the
+		// long_travel<->combat_ready thrash - KimJestes2 mounted and dismounted
+		// once a second on the desert for minutes, never landing a blow
+		// (sizowski). While a fight is pending the saddle is the combat pass's to
+		// give up, not this pass's to take; once the foe is gone the next leg
+		// mounts as before. Only for a real, live foe, so a stale VID cannot
+		// strand the bot on foot.
+		if (!fightOnHorse && !keepHorseAtDestination && !CanPlayerBotEverFightOnHorse(ch))
+		{
+			LPCHARACTER foe = ch->GetVictim();
+			if (!foe && state.dwTargetVID != 0)
+				foe = CHARACTER_MANAGER::instance().Find(state.dwTargetVID);
+			if (foe && !foe->IsDead())
+				return;
+		}
 		const int distance = DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY);
 		if (!allowHorse || distance <= PLAYERBOT_HORSE_DISMOUNT_DISTANCE)
 			SetPlayerBotRidingForTravel(ch, state, false, dwNow,
@@ -1102,6 +1120,8 @@ namespace
 						ch->GetX(), ch->GetY(), destX, destY, routeSeed, dwNow,
 						targetSnapRadius, flexibleTargetSnap, state.vecRoute,
 						state.bNavDeferredCount >= PLAYERBOT_NAV_STARVED_ATTEMPTS);
+				state.bRoutePartial = planResult == PLAYERBOT_NAV_PLAN_FOUND &&
+						navigation.LastPlanWasPartial();
 				if (planResult == PLAYERBOT_NAV_PLAN_DEFERRED)
 				{
 					if (state.bNavDeferredCount < 255)
@@ -1190,6 +1210,18 @@ namespace
 
 		if (state.uRouteIndex >= state.vecRoute.size())
 		{
+			// A partial route ran out where the cap fell, not at the goal: plan
+			// the rest from here. Reporting an arrival even once would hand a
+			// caller a destination the bot is nowhere near.
+			if (state.bRoutePartial &&
+					DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY) > PLAYERBOT_NAV_ARRIVAL_DISTANCE)
+			{
+				state.bRoutePartial = false;
+				ClearPlayerBotRoute(state, false);
+				state.dwNextNavPlanTime = 0;
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_NO_PROGRESS;
+				return false;
+			}
 			ch->Stop();
 			state.bLastNavOutcome = PLAYERBOT_NAV_OUT_ARRIVED;
 			return true;

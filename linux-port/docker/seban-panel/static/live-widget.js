@@ -6,17 +6,17 @@
   const filters = document.querySelector('.live-filters');
   const mode = document.createElement('select');
   mode.id = 'live-mode';
-  mode.innerHTML = '<option value="live">Pozycje botów na żywo</option><option value="deaths">Mapa cieplna: zgony botów</option><option value="metins">Mapa cieplna: rozbite Metiny</option><option value="bosses">Mapa cieplna: zabite bossy</option>';
+  mode.innerHTML = '<option value="live">Canlı bot konumları</option><option value="deaths">Isı haritası: bot ölümleri</option><option value="metins">Isı haritası: kırılan Metinler</option><option value="bosses">Isı haritası: öldürülen bosslar</option>';
   filters.insertBefore(mode, search);
   const autoplay = document.createElement('label');
   autoplay.className = 'map-autoplay';
-  autoplay.innerHTML = '<input id="map-autoplay" type="checkbox"> Automatycznie zmieniaj mapy po bezczynności';
+  autoplay.innerHTML = '<input id="map-autoplay" type="checkbox"> Hareketsizlikte haritaları otomatik değiştir';
   filters.insertBefore(autoplay, search);
   const restartInfo = document.createElement('small');
   restartInfo.id = 'last-restart';
   document.querySelector('.live-shell header > div').appendChild(restartInfo);
   [...document.querySelectorAll('.live-shell footer span')].filter(node => node.textContent.includes('Podkład graficzny')).forEach(node => node.remove());
-  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Łatwy Loch Małp',61:'Góra Sohan',64:'Dolina Orków',63:'Pustynia Yongbi',104:'Loch Pająków V1',108:'Loch Małp Normalny',109:'Loch Małp Trudny'};
+  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Kolay Maymun Zindanı',61:'Sohan Dağı',64:'Ork Vadisi',63:'Yongbi Çölü',104:'Örümcek Zindanı V1',108:'Orta Maymun Zindanı',109:'Zor Maymun Zindanı'};
   Object.entries(mapLabels).forEach(([id,label]) => {
     const option = select.querySelector(`option[value="${id}"]`);
     if (option) option.textContent = label;
@@ -26,34 +26,34 @@
   if (overview) {
     overviewMaps = document.createElement('section');
     overviewMaps.className = 'overview-maps';
-    overviewMaps.innerHTML = '<h4>🗺 Boty na mapach</h4><div class="muted">Ładowanie…</div>';
+    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4><div class="muted">Yükleniyor…</div>';
     overview.insertBefore(overviewMaps, overview.querySelector('.overview-restart'));
   }
   function renderOverviewMaps() {
     if (!overviewMaps) return;
     const counts = snapshot.reduce((all, bot) => { all[bot.map_index] = (all[bot.map_index] || 0) + 1; return all; }, Object.fromEntries(Object.keys(mapLabels).map(id => [id, 0])));
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-    overviewMaps.innerHTML = '<h4>🗺 Boty na mapach</h4>' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Mapa #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Brak botów online.</div>');
+    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4>' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Harita #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Çevrimiçi bot yok.</div>');
   }
   const levelOK = (level) => currentLevel === 'all' || (currentLevel === '16+' ? level >= 16 : (() => { const [a,b] = currentLevel.split('-').map(Number); return level >= a && level <= b; })());
   const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const portrait = job => { const files = ["warrior_m.bmp","assassin_w.bmp","sura_m.bmp","shaman_w.bmp","warrior_w.bmp","assassin_m.bmp","sura_w.bmp","shaman_m.bmp"]; const index = Number.isInteger(Number(job)) && Number(job) >= 0 && Number(job) < files.length ? Number(job) : 0; return `/static/class-portraits/${files[index]}`; };
   function activityGroup(bot) {
     const status = String(bot.action_label || '').toLowerCase();
-    if (/łow|low|ryb|fishing|branie/.test(status)) return 'Łowi ryby';
-    const goals = {2:'Wybiera profesję',3:'Zdobywa ekwipunek',4:'Uzupełnia zapasy',5:'Ulepsza ekwipunek',6:'Rozwija umiejętności',7:'Poluje na Metiny',8:'Gra w grupie',9:'Robi Biologa',10:'Misje polowania',11:'Rozwija konia'};
+    if (/bal[ıi]k|tutuyor|fishing/.test(status)) return 'Balık Tutuyor';
+    const goals = {2:'Meslek Seçiyor',3:'Ekipman Ediniyor',4:'Stok Tamamlıyor',5:'Ekipman Geliştiriyor',6:'Yetenek Geliştiriyor',7:'Metin Avlıyor',8:'Grupta Oynuyor',9:'Biyolog Görevi Yapıyor',10:'Avlanma Görevi',11:'At Geliştiriyor'};
     if (goals[bot.goal] !== undefined) return goals[bot.goal];
-    const actions = {2:'Expi / walczy',3:'Zbiera łup',4:'Regeneruje się',6:'Handluje',7:'Ulepsza ekwipunek',8:'Rozwija umiejętności',9:'Ulepsza ekwipunek',10:'Gra w grupie',11:'Robi Biologa',12:'Rozwija konia'};
-    return actions[bot.action] || (bot.action === 1 ? 'Przemieszcza się' : 'Expi / walczy');
+    const actions = {2:'Expliyor / Savaşıyor',3:'Ganimet Topluyor',4:'İyileşiyor',6:'Ticaret Yapıyor',7:'Ekipman Geliştiriyor',8:'Yetenek Geliştiriyor',9:'Ekipman Geliştiriyor',10:'Grupta Oynuyor',11:'Biyolog Görevi Yapıyor',12:'At Geliştiriyor'};
+    return actions[bot.action] || (bot.action === 1 ? 'Yol Alıyor' : 'Expliyor / Savaşıyor');
   }
   function renderActivities(bots) {
     const box = $('live-activity');
     if (!box) return;
     const grouped = bots.reduce((all, bot) => { const label = activityGroup(bot); all[label] = (all[label] || 0) + 1; return all; }, {});
     let entries = Object.entries(grouped).sort((a,b)=>b[1]-a[1]);
-    if (entries.length > 6) { const rest = entries.slice(5).reduce((sum, entry)=>sum+entry[1],0); entries = entries.slice(0,5); if (rest) entries.push(['Pozostałe aktywności', rest]); }
+    if (entries.length > 6) { const rest = entries.slice(5).reduce((sum, entry)=>sum+entry[1],0); entries = entries.slice(0,5); if (rest) entries.push(['Diğer etkinlikler', rest]); }
     const total = bots.length || 1;
-    box.innerHTML = entries.map(([label,count]) => `<div class="activity-line"><span title="${escape(label)}">${escape(label)}</span><b>${count}</b><i style="--share:${Math.max(4,Math.round(count/total*100))}%"></i></div>`).join('') || '<p class="muted">Brak aktywnych botów na tej mapie.</p>';
+    box.innerHTML = entries.map(([label,count]) => `<div class="activity-line"><span title="${escape(label)}">${escape(label)}</span><b>${count}</b><i style="--share:${Math.max(4,Math.round(count/total*100))}%"></i></div>`).join('') || '<p class="muted">Bu haritada aktif bot yok.</p>';
   }
   function render() {
     if (mode.value !== 'live') return;
@@ -64,15 +64,15 @@
     bots.forEach(bot => {
       const point = document.createElement('a'); point.className = `bot-point ${bot.in_party ? 'is-pt' : ''}${bot.stuck ? ' is-stuck' : ''}${bot.fighting_metin ? ' is-metin' : ''}`;
       point.href = `/player/${bot.id}`; point.style.left = `${Math.max(1,Math.min(99,bot.px))}%`; point.style.top = `${Math.max(1,Math.min(99,bot.py))}%`;
-      point.title = `${bot.name} · poziom ${bot.level}${bot.in_party ? ' · PT' : ''}${bot.stuck ? ' · możliwie zablokowany' : ''}${bot.fighting_metin ? ' · walczy z Metinem' : ''}`;
+      point.title = `${bot.name} · seviye ${bot.level}${bot.in_party ? ' · PT' : ''}${bot.stuck ? ' · muhtemelen takıldı' : ''}${bot.fighting_metin ? ' · Metin ile savaşıyor' : ''}`;
       if ($('show-names').checked) point.innerHTML = `<em>${escape(bot.name)} (${bot.level})</em>`;
       map.appendChild(point);
     });
     const average = bots.length ? (bots.reduce((sum,b)=>sum+b.level,0)/bots.length).toFixed(1) : '—';
     $('stat-visible').textContent = bots.length; $('stat-pt').textContent = bots.filter(b=>b.in_party).length; $('stat-avg').textContent = average; $('stat-max').textContent = bots.length ? Math.max(...bots.map(b=>b.level)) : '—';
-    $('live-count').textContent = `${bots.length} botów na mapie`;
+    $('live-count').textContent = `Haritada ${bots.length} bot`;
     $('map-caption').textContent = select.options[select.selectedIndex].text;
-$('live-ranking').innerHTML = bots.sort((a,b)=>b.level-a.level||a.name.localeCompare(b.name)).slice(0,10).map((b,i)=>`<a class="${b.id === globalTopId ? 'is-global-leader' : ''}" href="/player/${b.id}"><b>#${i+1}</b><img class="class-portrait class-portrait--live" src="${portrait(b.job)}" alt=""> ${escape(b.name)}${b.in_party?'<mark class="pt-mark">PT</mark>':''}${b.stuck?'<mark class="stuck-mark">⚠</mark>':''} <span>Lv ${b.level}</span></a>`).join('') || '<p class="muted">Brak botów spełniających filtr.</p>';
+$('live-ranking').innerHTML = bots.sort((a,b)=>b.level-a.level||a.name.localeCompare(b.name)).slice(0,10).map((b,i)=>`<a class="${b.id === globalTopId ? 'is-global-leader' : ''}" href="/player/${b.id}"><b>#${i+1}</b><img class="class-portrait class-portrait--live" src="${portrait(b.job)}" alt=""> ${escape(b.name)}${b.in_party?'<mark class="pt-mark">PT</mark>':''}${b.stuck?'<mark class="stuck-mark">⚠</mark>':''} <span>Lv ${b.level}</span></a>`).join('') || '<p class="muted">Filtreye uyan bot yok.</p>';
     renderActivities(bots);
   }
   async function load() {
@@ -87,7 +87,7 @@ $('live-ranking').innerHTML = bots.sort((a,b)=>b.level-a.level||a.name.localeCom
       if ($('overview-max')) $('overview-max').textContent = snapshot.length ? Math.max(...snapshot.map(bot=>bot.level)) : '0';
       renderOverviewMaps();
       if (mode.value === 'live') render();
-    } catch (_) { $('live-count').textContent = 'Brak danych live'; }
+    } catch (_) { $('live-count').textContent = 'Canlı veri yok'; }
   }
   async function loadHeat() {
     try {
@@ -97,17 +97,17 @@ $('live-ranking').innerHTML = bots.sort((a,b)=>b.level-a.level||a.name.localeCom
       const events = data.events.filter(event => event.map_index === mapId);
       map.dataset.mapIndex = String(mapId);
       map.querySelectorAll('.bot-point,.heat-point').forEach(node => node.remove());
-      events.forEach(event => { const dot=document.createElement('i'); dot.className='heat-point'; dot.style.left=`${Math.max(1,Math.min(99,(event.x-bound[0])/bound[2]*100))}%`; dot.style.top=`${Math.max(1,Math.min(99,(event.y-bound[1])/bound[3]*100))}%`; dot.title=`${event.name||'Zdarzenie'} · ${event.time}`; map.appendChild(dot); });
-    const label = ({deaths:'zgonów botów',metins:'rozbitych Metinów',bosses:'zabitych bossów'})[mode.value] || 'zdarzeń';
-      $('live-count').textContent = `${events.length} ${label} / 24 h`;
+      events.forEach(event => { const dot=document.createElement('i'); dot.className='heat-point'; dot.style.left=`${Math.max(1,Math.min(99,(event.x-bound[0])/bound[2]*100))}%`; dot.style.top=`${Math.max(1,Math.min(99,(event.y-bound[1])/bound[3]*100))}%`; dot.title=`${event.name||'Olay'} · ${event.time}`; map.appendChild(dot); });
+    const label = ({deaths:'bot ölümü',metins:'kırılan Metin',bosses:'öldürülen boss'})[mode.value] || 'olay';
+      $('live-count').textContent = `${events.length} ${label} / 24 sa`;
       $('map-caption').textContent = `${select.options[select.selectedIndex].text} · ${label}`;
-      $('stat-visible').textContent = events.length; $('stat-pt').textContent = '—'; $('stat-avg').textContent = '24 h'; $('stat-max').textContent = '●';
-      $('live-ranking').innerHTML = events.slice(0,15).map((event,i)=>`<a href="#"><b>#${i+1}</b> ${escape(event.name||'Zdarzenie')} <span>${String(event.time).slice(11,16)}</span></a>`).join('') || '<p class="muted">Brak zdarzeń na tej mapie.</p>';
-      const activity = $('live-activity'); if (activity) activity.innerHTML = '<p class="muted">W trybie mapy cieplnej aktywności nie są wyświetlane.</p>';
-    } catch (_) { $('live-count').textContent = 'Brak danych heatmapy'; }
+      $('stat-visible').textContent = events.length; $('stat-pt').textContent = '—'; $('stat-avg').textContent = '24 sa'; $('stat-max').textContent = '●';
+      $('live-ranking').innerHTML = events.slice(0,15).map((event,i)=>`<a href="#"><b>#${i+1}</b> ${escape(event.name||'Olay')} <span>${String(event.time).slice(11,16)}</span></a>`).join('') || '<p class="muted">Bu haritada olay yok.</p>';
+      const activity = $('live-activity'); if (activity) activity.innerHTML = '<p class="muted">Isı haritası modunda etkinlikler gösterilmez.</p>';
+    } catch (_) { $('live-count').textContent = 'Isı haritası verisi yok'; }
   }
   async function refreshRestartInfo() {
-    try { const data = await fetch('/api/manage-status',{cache:'no-store'}).then(r=>r.json()); const time = Number(data.last_restart_time || 0); const label=time ? new Date(time * 1000).toLocaleString('pl-PL') : 'Brak danych'; restartInfo.textContent = time ? `Ostatni restart: ${label}` : ''; if ($('overview-restart')) $('overview-restart').textContent=label; Object.entries(data.rates || {}).forEach(([name,value]) => { const node=$(`overview-rate-${name}`); if (node) node.textContent=`${value}%`; }); } catch (_) {}
+    try { const data = await fetch('/api/manage-status',{cache:'no-store'}).then(r=>r.json()); const time = Number(data.last_restart_time || 0); const label=time ? new Date(time * 1000).toLocaleString('tr-TR') : 'Veri yok'; restartInfo.textContent = time ? `Son yeniden başlatma: ${label}` : ''; if ($('overview-restart')) $('overview-restart').textContent=label; Object.entries(data.rates || {}).forEach(([name,value]) => { const node=$(`overview-rate-${name}`); if (node) node.textContent=`${value}%`; }); } catch (_) {}
   }
   let lastInteraction = Date.now();
   const markInteraction = () => { lastInteraction = Date.now(); };

@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-12T13:50:25Z",
-  "statusMessage": "Wersja 2.0.14: panel klasyczny z polskimi znakami w nazwach przedmiotów i bazowymi statystykami w dymku (wartość ataku, obrona, wymagany poziom). Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-13T08:09:17Z",
+  "statusMessage": "Wersja 2.0.24: boty zakladaja bronie 30 lvl ze srednimi, lucznicy ulepszaja sztylet do metinow (+4), koniec drzenia konia w podrozy, stragany na duplikaty dopiero od +7, a materialy pod presja plecaka ida do magazynu. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
   "server": {
-    "version": "2.0.14",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.14/metin2-server-update-2.0.14.zip",
-    "sha256": "AEA9344C8E9A66F0B3FDA41F829AD60C5C0E2AC5FA17B363C661FA2892F810BE"
+    "version": "2.0.24",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.24/metin2-server-update-2.0.24.zip",
+    "sha256": "56C435B81B759BAFDE0CF63C1DDBBBCF5A9DDAE2AA24B64E0BE1F8AABDF88FB7"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",

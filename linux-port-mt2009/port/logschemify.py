@@ -139,6 +139,28 @@ OWN = {
   `id` int(11) NOT NULL DEFAULT 0,
   `value` int(11) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;""",
+    # Written by the db core's IkarusShopLog (db/src/ClientManagerIkarusShop.cpp)
+    # for every offline-shop action - CREATE_SHOP, a sale, a withdrawal. No
+    # dump in the package defines it, so a world logged "Table
+    # 'log.ikarusshop_log' doesn't exist" for each one (sizowski, 12
+    # September: 92 in a bundle). Columns in the INSERT's own order; `cheque`
+    # is only written under ENABLE_CHEQUE_SYSTEM and harmless otherwise.
+    'ikarusshop_log': """CREATE TABLE IF NOT EXISTS `ikarusshop_log` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `who` int(10) unsigned NOT NULL DEFAULT 0,
+  `itemid` int(10) unsigned NOT NULL DEFAULT 0,
+  `what` varchar(32) NOT NULL DEFAULT '',
+  `shop_owner` int(10) unsigned NOT NULL DEFAULT 0,
+  `extra` varchar(255) NOT NULL DEFAULT '',
+  `vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  `count` int(10) unsigned NOT NULL DEFAULT 0,
+  `yang` bigint(20) NOT NULL DEFAULT 0,
+  `cheque` int(11) NOT NULL DEFAULT 0,
+  `time` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `who_idx` (`who`),
+  KEY `shop_owner_idx` (`shop_owner`)
+) ENGINE=InnoDB;""",
 }
 
 
