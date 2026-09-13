@@ -40,8 +40,8 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${M2_UPDATE_STACK_DIR:-$(cd "$HERE/../.." && pwd)}
 COMPOSE_DIR="$ROOT/linux-port/docker"
-REPO=${M2_UPDATE_REPO:-TieruYT/metin2-playerbots}
-BRANCH=${M2_UPDATE_BRANCH:-main}
+REPO=${M2_UPDATE_REPO:-debaba13/metin2-playerbots}
+BRANCH=${M2_UPDATE_BRANCH:-claude/sync-updates-client-o7hk2w}
 MANIFEST_NAME=update-manifest-mt2009.json
 SPOOL=${M2_UPDATE_SPOOL:-/opt/m2update}
 POLL=${M2_UPDATE_POLL:-5}
@@ -61,7 +61,7 @@ fetch_text() {
         python3 - "$_url" <<'EOF'
 import sys, urllib.request
 req = urllib.request.Request(sys.argv[1], headers={
-    'User-Agent': 'metin2-playerbots-update/2 (+https://github.com/TieruYT/metin2-playerbots)',
+    'User-Agent': 'metin2-playerbots-update/2 (+https://github.com/debaba13/metin2-playerbots)',
     'Accept': 'application/vnd.github.raw+json'})
 sys.stdout.write(urllib.request.urlopen(req, timeout=30).read().decode('utf-8', 'replace'))
 EOF

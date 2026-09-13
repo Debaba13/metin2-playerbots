@@ -25,9 +25,9 @@ function Get-M2DefaultLauncherConfig {
     # dropped onto the other's tree would put ENGINE, world.sql and eighty
     # engine files where they do not belong, and the launcher would then
     # refuse to start the world it had.
-    $manifest = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest.json'
+    $manifest = 'https://raw.githubusercontent.com/debaba13/metin2-playerbots/claude/sync-updates-client-o7hk2w/update-manifest.json'
     if ((Get-M2ServerEngine -ServerRoot $ServerRoot) -eq 'mt2009') {
-        $manifest = 'https://raw.githubusercontent.com/TieruYT/metin2-playerbots/main/update-manifest-mt2009.json'
+        $manifest = 'https://raw.githubusercontent.com/debaba13/metin2-playerbots/claude/sync-updates-client-o7hk2w/update-manifest-mt2009.json'
     }
     $sibling = Get-M2SiblingClientExecutable -ServerRoot $ServerRoot
     [pscustomobject]@{
