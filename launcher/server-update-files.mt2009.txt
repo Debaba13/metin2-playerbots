@@ -134,3 +134,10 @@ linux-port-mt2009/docker/game/src/server/libthecore/include/stdafx.h
 linux-port-mt2009/docker/game/src/server/libthecore/src/fdwatch.c
 linux-port-mt2009/docker/game/src/server/libthecore/src/main.c
 linux-port-mt2009/docker/game/src/server/libthecore/src/signal.c
+# The engine's Lua lexer treats every byte >= 0x80 as the lead byte of a
+# 2-byte Korean character and always eats the byte after it too. Turkish
+# (ISO-8859-9) and Polish (CP1250) accented letters are single-byte and
+# >= 0x80, so a string ending right after one lost its closing quote to
+# this and ran on to "unfinished string" (turkey locale, translate.lua,
+# 2.0.36).
+linux-port-mt2009/docker/game/src/server/liblua/5.0/src/llex.c
