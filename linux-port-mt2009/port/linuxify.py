@@ -62,6 +62,7 @@ def main(root):
     thecore = os.path.join(root, 'libthecore')
     game = os.path.join(root, 'game', 'src')
     db = os.path.join(root, 'db', 'src')
+    liblua = os.path.join(root, 'liblua', '5.0', 'src')
 
     # --- libthecore: the epoll backend, whole ---------------------------------
     for rel in ('src/fdwatch.c', 'include/fdwatch.h'):
@@ -319,6 +320,43 @@ def main(root):
     edit(os.path.join(game, 'main.cpp'),
          '\tif ((p2p_socket = socket_tcp_bind(g_szPublicIP, p2p_port)) == INVALID_SOCKET)\n',
          '\tif ((p2p_socket = socket_tcp_bind(c_szBindIP, p2p_port)) == INVALID_SOCKET)\n')
+
+    # --- liblua: the string lexer's DBCS guess breaks single-byte locales ----
+    # The package's llex.c treats every byte >= 0x80 as the lead byte of a
+    # two-byte (EUC-KR-style) character and unconditionally swallows the byte
+    # after it too. A single-byte encoding (ISO-8859-9 for Turkish, and in
+    # principle CP1250 for Polish) can end a string right on a high-bit
+    # letter - "Tec. Puan\xfd" (i) - and the lexer then swallows the closing
+    # quote as the assumed trail byte, running the string past it to
+    # "unfinished string" at whatever the parser hits next (turkey locale,
+    # quest/libs/translate/translate.lua, 2026-09-13 - crashed every game
+    # core on boot). Only skip the second byte when it is not the string's
+    # own delimiter.
+    edit(os.path.join(liblua, 'llex.c'),
+         '\t  unsigned char b_current = (unsigned char)LS->current;\n'
+         '\t  if (b_current & 0x80)\n'
+         '\t  {\n'
+         '\t\t  save_and_next(LS, l);\n'
+         '\t\t  save_and_next(LS, l);\n'
+         '\t  }\n'
+         '\t  else\n'
+         '\t  {',
+         '\t  unsigned char b_current = (unsigned char)LS->current;\n'
+         '\t  if (b_current & 0x80)\n'
+         '\t  {\n'
+         '\t\t  save_and_next(LS, l);\n'
+         '\t\t  /* Only swallow a second byte as a DBCS trail byte when it is not\n'
+         '\t\t     the string delimiter itself - a single-byte encoding (e.g.\n'
+         '\t\t     ISO-8859-9 for Turkish) can end a string right after a high-bit\n'
+         '\t\t     character, and treating the closing quote as a trail byte here\n'
+         '\t\t     ran the string past it to "unfinished string" (turkey locale,\n'
+         '\t\t     translate.lua, 2026-09-13). */\n'
+         '\t\t  if ((unsigned char)LS->current != (unsigned char)del)\n'
+         '\t\t\t  save_and_next(LS, l);\n'
+         '\t  }\n'
+         '\t  else\n'
+         '\t  {',
+         marker='DBCS trail byte when it is not')
 
     print('linuxify: done')
 

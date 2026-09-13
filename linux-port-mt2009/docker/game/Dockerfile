@@ -180,10 +180,10 @@ RUN set -eux; \
 FROM builder AS quests
 
 COPY quest/ /quest-add/
-COPY src/serverfiles/share/locale/poland/quest/quest_functions /quest-src/quest_functions
+COPY src/serverfiles/share/locale/turkey/quest/quest_functions /quest-src/quest_functions
 
 RUN set -eux; \
-    mkdir -p /out-quest/poland/quest; \
+    mkdir -p /out-quest/turkey/quest; \
     if [ ! -f /quest-add/web_admin.quest ]; then \
       echo "note: no web_admin.quest in the build context -- the panel will use"; \
       echo "      its database fallback and Teleport/Running speed will not work."; \
@@ -195,7 +195,7 @@ RUN set -eux; \
          CPPFLAGS="-g -w -std=c++20 -include cstring -include cstdio -include cstdlib"; \
     test -x game/src/quest/qc; \
     file -b game/src/quest/qc | grep -q 'ELF 32-bit'; \
-    out=/out-quest/poland/quest; \
+    out=/out-quest/turkey/quest; \
     rm -rf /tmp/qc-work; mkdir -p /tmp/qc-work/object; \
     sed 's/\r$//' /quest-src/quest_functions > /tmp/qc-work/quest_functions; \
     # Functions the engine has and the package's list forgot, which qc would
@@ -277,7 +277,7 @@ COPY src/serverfiles/share/package /opt/metin2/share/package
 #  * special_item_group.starter.txt - the starter chest chain the playerbot
 #    seed hands out and the package has no group for.
 COPY mob_drop_item.m3.append.txt special_item_group.moonlight.txt special_item_group.starter.txt /tmp/share-add/
-RUN set -eu; L=/opt/metin2/share/locale/poland \
+RUN set -eu; L=/opt/metin2/share/locale/turkey \
  && for f in /tmp/share-add/*.txt; do sed -i 's/\r$//; s/$/\r/' "$f"; done \
  && cat /tmp/share-add/mob_drop_item.m3.append.txt >> "$L/mob_drop_item.txt" \
  && f="$L/special_item_group.txt" \
