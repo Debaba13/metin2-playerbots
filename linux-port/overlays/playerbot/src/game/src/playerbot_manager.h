@@ -41,6 +41,15 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		// `limit` of them - the F9 panel's "bots ready to spawn" list.
 		void	GetAvailableBots(std::vector<DWORD>& out, size_t limit);
 
+		// The three things the F10 bot-admin window asks for. The data behind
+		// the last two lives in playerbot_admin.h, inside the anonymous
+		// namespace of playerbot_manager.cpp that no engine translation unit
+		// can see - these are the way through, exactly like the two weight
+		// functions below.
+		void	GetActivitySummary(size_t& total, size_t& inParty, size_t& stalls) const;
+		void	GetBotLines(DWORD dwPlayerID, std::vector<std::string>& out) const;
+		bool	GetAchievementWinner(int id, DWORD& dwPID, std::string& strName) const;
+
 	private:
 		typedef std::map<DWORD, LPDESC> TPlayerBotMap;
 		typedef std::map<DWORD, DWORD> THandleToPlayerMap;

@@ -1172,15 +1172,15 @@ $script:form.Controls.Add($script:logBox)
 
 $footer = [Windows.Forms.Label]::new()
 $footer.Text = (T 'footer')
-$footer.Location = [Drawing.Point]::new(28, 650)
+$footer.Location = [Drawing.Point]::new(28, 640)
 $footer.Size = [Drawing.Size]::new(700, 25)
 $footer.ForeColor = [Drawing.Color]::DarkGray
 $script:form.Controls.Add($footer)
 
 
 $script:versionLabel = [Windows.Forms.Label]::new()
-$script:versionLabel.Location = [Drawing.Point]::new(28, 674)
-$script:versionLabel.Size = [Drawing.Size]::new(470, 54)
+$script:versionLabel.Location = [Drawing.Point]::new(28, 666)
+$script:versionLabel.Size = [Drawing.Size]::new(700, 54)
 $script:versionLabel.ForeColor = [Drawing.Color]::Silver
 $script:versionLabel.Font = [Drawing.Font]::new('Segoe UI Semibold', 9)
 $script:form.Controls.Add($script:versionLabel)

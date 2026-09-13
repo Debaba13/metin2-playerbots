@@ -160,9 +160,47 @@ namespace {
         return ch && (ikashop::GetManager().GetShopByOwnerID(ch->GetPlayerID()) ||
             playerbot_offline::requests.count(ch->GetPlayerID()));
     }
+    // What sold while the owner was off hunting. The native manager records a
+    // sale as it happens (playerbot_offline::NoteSold) because it is the only
+    // side that knows: the goods belong to the shop entity, so the classic
+    // stall's "one pass over my own bag" cannot see it, and that whole branch
+    // of ManagePlayerBotShopLifetime is unreachable on this engine anyway.
+    // Drained on the owner's own tick, so both the demand memory and the gear
+    // history get what the classic stall used to give them.
+    void BotOfflineDrainSales(LPCHARACTER ch, TPlayerBotAIState& state, DWORD now) {
+        auto it = playerbot_offline::sold.find(ch->GetPlayerID());
+        if (it == playerbot_offline::sold.end()) return;
+        auto& o = state.offlineShop;
+        for (const auto& line : it->second) {
+            auto known = o.listed.find(line.item);
+            const bool haveListing = known != o.listed.end();
+            const DWORD vnum = haveListing && known->second.vnum ? known->second.vnum : line.vnum;
+            const BYTE refine = haveListing ? (BYTE)known->second.refine : (BYTE)0;
+            const DWORD skill = haveListing ? (DWORD)known->second.skill : 0U;
+            // A line that left within PLAYERBOT_MARKET_FAST_SALE_MS of going
+            // up is Iwakura's "wysoki popyt": the next counter carrying this
+            // thing asks more. A line whose listing time this core never saw -
+            // it went up before the last restart - is sold, but not timed.
+            if (haveListing && known->second.when != 0 &&
+                    now - known->second.when < PLAYERBOT_MARKET_FAST_SALE_MS) {
+                NotePlayerBotFastSale(vnum, refine, now, skill);
+                sys_log(0, "PLAYERBOT_MARKET: fast sale pid=%u name=%s vnum=%u+%u skill=%u in=%u s",
+                    ch->GetPlayerID(), ch->GetName(), vnum, (unsigned int)refine, skill,
+                    (unsigned int)((now - known->second.when) / 1000));
+            }
+            char hint[64];
+            snprintf(hint, sizeof(hint), "%u x%u za %lld", vnum,
+                (unsigned int)line.count, (long long)line.price);
+            LogManager::instance().ItemLog(ch, (int)line.item, (int)vnum,
+                "PLAYERBOT_STALL_SOLD", hint);
+            if (haveListing) o.listed.erase(known);
+        }
+        playerbot_offline::sold.erase(it);
+    }
     bool ManagePlayerBotOfflineService(LPCHARACTER ch, TPlayerBotAIState& state, DWORD now) {
         using namespace playerbot_offline;
         if (!ch) return false;
+        BotOfflineDrainSales(ch, state, now);
         auto& o = state.offlineShop;
         auto& manager = ikashop::GetManager();
         auto shop = manager.GetShopByOwnerID(ch->GetPlayerID());
@@ -232,7 +270,16 @@ namespace {
         if (box && box->GetValutes().yang > 0) manager.RecvShopSafeboxGetValutesClientPacket(ch);
         manager.RecvShopSafeboxCloseClientPacket(ch);
         if (shop->GetDuration() == 0) {
-            if (!shop->GetItems().empty() && ch->GetGold() - aOfflineShopTime[1].price >= GetPlayerBotReservedGold(ch) &&
+            // The operator moved the TRADE slider while this stand was up. An
+            // eight-hour offline stand is not worth closing early - the fee is
+            // paid and the goods are with the entity - but it is not renewed
+            // under a weight that no longer wants it. The four exceptions
+            // (Merchant, poor, full bag, dropper pressure) are not asked: the
+            // slider never applied to them.
+            const bool stillWanted = !IsPlayerBotShopReasonRolled(state.bShopOpenReason) ||
+                    ShouldPlayerBotKeepShop(ch, state);
+            if (stillWanted && !shop->GetItems().empty() &&
+                    ch->GetGold() - aOfflineShopTime[1].price >= GetPlayerBotReservedGold(ch) &&
                     Begin(ch->GetPlayerID(), Create, 0, now)) {
                 manager.RecvShopReopenClientPacket(ch, shop->GetName(), 1);
                 EndCall(ch->GetPlayerID());
@@ -240,6 +287,15 @@ namespace {
             BotOfflineFinishVisit(ch, state, now);
             return false;
         }
+        // Everything on the counter this core did not watch go up - the lines
+        // a restart inherited. Recorded without a time, so a sale is still
+        // written to the gear history and only the "how fast" is left out
+        // rather than guessed at. emplace keeps a real listing time where
+        // there is one.
+        for (const auto& [lineId, line] : shop->GetItems())
+            if (line)
+                o.listed.emplace(lineId,
+                    playerbot_offline::ListedLine{ line->GetVnum(), 0u, 0u, 0 });
         // Edit is opened for one bounded operation only, never during hunting.
         if (!manager.RecvShopRequestEditClientPacket(ch, true)) {
             BotOfflineFinishVisit(ch, state, now);
@@ -260,6 +316,15 @@ namespace {
             if (Begin(ch->GetPlayerID(), Add, id, now)) {
                 manager.RecvShopAddItemClientPacket(ch, TItemPos(INVENTORY, cell), price, pos);
                 sent = EndCall(ch->GetPlayerID());
+                // Remembered while the item is still in hand: once it sells,
+                // the only thing left is its id. The skill is socket 0 - every
+                // ordinary book is vnum 50300 and one cheap sale of a spare
+                // must not set the price of Aura Miecza.
+                if (sent)
+                    o.listed[id] = playerbot_offline::ListedLine{
+                        item->GetVnum(),
+                        item->GetType() == ITEM_SKILLBOOK ? (uint32_t)item->GetSocket(0) : 0u,
+                        now, (uint8_t)item->GetRefineLevel() };
             }
             break; // at most one item per short service visit
         }
@@ -267,7 +332,8 @@ namespace {
             // Rotate by ID, one existing offer per visit; recompute from market
             // policy, not a repeated percentage markdown tending towards zero.
             auto it = shop->GetItems().upper_bound(o.repriceItem);
-            if (it == shop->GetItems().end()) it = shop->GetItems().begin();
+            bool wrapped = (it == shop->GetItems().end());
+            if (wrapped) it = shop->GetItems().begin();
             if (it != shop->GetItems().end() && it->second) {
                 o.repriceItem = it->first;
                 auto preview = BotOfflinePreview(*it->second);
@@ -282,7 +348,15 @@ namespace {
                     }
                 }
             }
-            o.nextReprice = now + 3600000;
+            // A counter priced against an older table is walked at the pace of the
+            // service visit (10-15 min), not one line an hour; the stamp is set
+            // only once the rotation has come round, so every line was seen.
+            if (o.priceGeneration != PLAYERBOT_PRICE_TABLE_VERSION) {
+                if (wrapped) o.priceGeneration = PLAYERBOT_PRICE_TABLE_VERSION;
+                o.nextReprice = now;
+            } else {
+                o.nextReprice = now + 3600000;
+            }
         }
         BotOfflineFinishVisit(ch, state, now);
         return false;

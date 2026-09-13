@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-13T17:45:00Z",
-  "statusMessage": "2.0.33: podaz i popyt na straganach (Iwakura) - przedmiot, ktory schodzi od reki, nastepnym razem idzie drozej o 10-25%, a to co zalega tanieje o tyle samo. Znika tez \"Polowanie\" z paneli: misja polowania nie dziala na tej linii silnika, wiec wiersz \"Polowanie: Brak danych\" i zakladka w rankingach tylko myliły. Jesli przy starcie widzisz \"port 13001 zajmuje com.docker.backend\", to blad z 2.0.31 naprawiony w 2.0.32 - nie trzeba nic czyscic w Dockerze. Kliknij ZAINSTALUJ AKTUALIZACJE; klient bez zmian.",
+  "publishedAt": "2026-09-13T18:40:00Z",
+  "statusMessage": "2.0.35: konie w Shinsoo i Jinno — każde królestwo ma własny Loch Małp, a kod znał tylko mapę Chunjo, więc te dwa królestwa nie zdobywały medali w ogóle (zmierzone: 500 postaci i zero koni w każdym z nich). Do tego własne wejścia i bramy na Dolinę Orków, Pustynię i Górę Sohan — do tej pory wszystkie boty, niezależnie od królestwa, wchodziły wejściem żółtych i wracały ich bramą przez całą mapę. „Szybkość biegu” w panelu znów działa: brakowało wiązania silnika, na którym quest wywracał się w połowie i zostawiał wiersz kolejki ze swoim stemplem. Stragany offline znów zapisują sprzedaż do historii sprzętu i uczą się popytu, a rdzeń mówi teraz, która reguła pomija broń na 30 poziom. Tylko serwer — klient zostaje 2.0.5.",
   "server": {
     "version": "2.0.24",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.24/metin2-server-update-2.0.24.zip",
@@ -13,8 +13,8 @@
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.3",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.3/metin2-client-update-2.0.3.zip",
-    "sha256": "02C1492C48F409CC89F172DCD2DD34680474981B674059CB80E98C72E51C2803"
+    "version": "2.0.5",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.34/metin2-client-update-2.0.5.zip",
+    "sha256": "7EBBBBC3DD3E6337F75FB74DE4613732CB6EB9A36131BDFC3ED2AA69909B8119"
   }
 }

@@ -12442,6 +12442,17 @@ def item_qty(raw):
         return None
     return q if 1 <= q <= MAX_ITEM_COUNT else None
 
+# Every word the in-game quest is allowed to leave in a queue row's status
+# when it has finished with it, plus the two written outside it (the sweep's
+# player_offline and the panel's own cancelled). Anything else in that column
+# is the quest's claim stamp, not an answer -- see queue_and_wait. The list is
+# web_admin.quest's own whitelist; add a word there and it belongs here too.
+QUEUE_FINAL_STATUSES = frozenset((
+    "done", "bad_args", "no_skill", "has_item", "full", "failed",
+    "qty_too_big", "partial", "no_gm", "unknown_cmd",
+    "player_offline", "cancelled",
+))
+
 def queue_and_wait(name, cmd, arg1, arg2, wait=7.0):
     """Insert the command into the queue and wait for the in-game quest to process it.
        Returns (status, queue_row_id) with status: done | player_offline | timeout | gone | ...
@@ -12461,7 +12472,17 @@ def queue_and_wait(name, cmd, arg1, arg2, wait=7.0):
             row = cur.fetchone()
         if row is None:
             return "gone", qid          # something removed the row — never apply on top of that
-        if row["status"] != "pending":
+        # Only a word from the quest's own list is an answer. Anything else is
+        # its claim stamp: web_admin.quest takes a row by writing a token into
+        # status ("w" + channel + "x" + salt + "t" + tick), does the work, and
+        # only then writes the result. Reading that as the answer reported the
+        # stamp back to the operator as a failure — "Coś poszło nie tak
+        # (w1x257t780)" — and running speed hit it every time, because its
+        # handler is the slowest in the quest: it walks the affect list
+        # thirty-two times before it writes anything (Sammy Suricate,
+        # 13 September). Waiting is right: the row is ours until the quest
+        # finishes with it, and the timeout below is still the way out.
+        if row["status"] in QUEUE_FINAL_STATUSES:
             return row["status"], qid
     return "timeout", qid
 

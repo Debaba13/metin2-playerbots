@@ -32,7 +32,7 @@ will do.
 | Script | Reads | Writes |
 |---|---|---|
 | `port/linuxify.py <server>` | the staged engine | Linux fixes in place: epoll `fdwatch` from `linux-port`, the `signal.h` shadow guard, `optreset`, `<md5.h>` from libmd, the `bind_ip`/`listen_ip`/`public_ip` split, `-Wl,--start-group` links, CRLF stripped from Makefiles and `__REVISION__`. |
-| `port/playerbotify.py <server>` | `linux-port/overlays/playerbot/` | copies `playerbot_*` into `game/src`, `CFLAGS += -DPLAYERBOT_ENGINE_MT2009`, and ports patches 0001–0008, 0010–0015 as exact-string edits (0004 is already in this engine, 0009 — the F9 GM panel — is deliberately left out for now). The bot load packet carries the account id here (`TBotPlayerLoadPacket.account_id`): the db core loads special flags with `pid=%d or aid=%d`, and aid 0 matched every bot's flags at once. `CSpecialItemGroup` gets a `GetGroupType()` getter, so the chest pass can reserve room for every line of a Pct group and for the largest line of the others (audit D01). |
+| `port/playerbotify.py <server>` | `linux-port/overlays/playerbot/` | copies `playerbot_*` into `game/src`, `CFLAGS += -DPLAYERBOT_ENGINE_MT2009`, and ports patches 0001–0008, 0010–0015 as exact-string edits (0004 is already in this engine, 0009 — the F9 GM panel — is `apply_gm_panel`: the 31 `gmpanel_*` commands from `port/gm_panel_commands.cpp.txt` appended to `cmd_gm.cpp`, their declarations and `cmd_info[]` rows in `cmd.cpp`, and the deferred `SetGMFlag` in `char.cpp`. His `botadmin_*` are left out — they call manager methods of his fork). The bot load packet carries the account id here (`TBotPlayerLoadPacket.account_id`): the db core loads special flags with `pid=%d or aid=%d`, and aid 0 matched every bot's flags at once. `CSpecialItemGroup` gets a `GetGroupType()` getter, so the chest pass can reserve room for every line of a Pct group and for the largest line of the others (audit D01). |
 | `port/seedify.py` | r40250's `playerbots_seed.sql` | the seed without `is_testor`/`empire`/`name_checked`/`bank_value`, the `account.empire` update dropped. |
 | `port/migratorify.py` | r40250's `apply.sh` | the migrator probing `log.hack_log`, the hosted-map list of this stack, the `social_id` widening, mileage/jackpot, `log_schema.sql`. |
 | `port/logschemify.py` | r40250's `log.sql` dump | the 23 log tables the engine writes and the package lacks, plus `log.log.ip`. |
@@ -181,8 +181,7 @@ before `playerbot_types.h`:
 
 Known, not yet done: the `levelup` quest the hunting missions drive does not
 exist in this package (its `hunting` quest is another shape), the desert boss
-and other Phase-6 world measurements, `updater`/`client-builder`/`wsbridge`,
-the F9 GM panel (patch 0009 and its client side).
+and other Phase-6 world measurements, `updater`/`client-builder`/`wsbridge`.
 
 ## Running it
 

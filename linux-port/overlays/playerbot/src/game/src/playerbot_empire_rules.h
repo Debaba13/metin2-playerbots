@@ -502,6 +502,51 @@ namespace playerbot_empire_rules
 		}
 	}
 
+	// The same three maps from the other side: which destination a shared map
+	// is, so a caller holding a map index can ask the table above for the
+	// arrival of the kingdom it is carrying. Everything else - the two Spider
+	// Dungeons and Hwang - has one entry point for all three kingdoms and is
+	// not in here.
+	inline bool GetFrontierTeleportDestination(long mapIndex, ETeleportDestination& out)
+	{
+		switch (mapIndex)
+		{
+			case 64: out = TELEPORT_ORC_VALLEY; return true;
+			case 63: out = TELEPORT_DESERT; return true;
+			case 61: out = TELEPORT_SOHAN; return true;
+			default: return false;
+		}
+	}
+
+	// Where a kingdom leaves a shared map: its own warp NPC, a few steps from
+	// where that kingdom's characters are put down. npc.txt gives three per
+	// map and they pair with the three Town.txt entries above - the valley and
+	// Sohan number them 10007/10009/10011 for Shinsoo/Chunjo/Jinno and the
+	// desert 10008/10010/10012.
+	//
+	// This is the other half of the arrival table. Until it existed every bot
+	// of every kingdom walked to Chunjo's gate to go home, which on the far
+	// side of the valley is a seventy-kilometre crossing of hostile ground -
+	// and arrived through Chunjo's entrance in the first place ("wszystkie boty
+	// po wejsciu do doliny, nie zaleznie od krolestwa, wchodza w miejscu
+	// wejscia zoltych", SIZOWSKI, 13 September).
+	inline bool GetFrontierGate(int empire, long mapIndex, TPoint& out)
+	{
+		if (empire < EMPIRE_SHINSOO || empire > EMPIRE_JINNO)
+			return false;
+		// [map][empire - 1]
+		static const TPoint valley[3] = { { 403200, 672900 }, { 269100, 740200 }, { 320000, 809200 } };
+		static const TPoint desert[3] = { { 215700, 629000 }, { 219700, 499900 }, { 344000, 500000 } };
+		static const TPoint sohan[3]  = { { 433600, 295100 }, { 374000, 181900 }, { 497600, 168800 } };
+		switch (mapIndex)
+		{
+			case 64: out = valley[empire - 1]; return true;
+			case 63: out = desert[empire - 1]; return true;
+			case 61: out = sohan[empire - 1]; return true;
+			default: return false;
+		}
+	}
+
 	// map_warp.quest: "if pc.get_level() <= 10 then" refuses, and the fare is
 	// the same arithmetic for everybody.
 	inline int GetTeleportFee(int level)

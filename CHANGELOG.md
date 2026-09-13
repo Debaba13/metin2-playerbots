@@ -17,6 +17,181 @@ every version here.
 
 ---
 
+## 2.0.35 — 2026-09-13
+
+Serwer. Pięć zgłoszeń z Discorda z jednego wieczoru, każde z inną przyczyną —
+i dwa z nich okazały się tym samym: bot z Shinsoo albo Jinno żył w świecie
+opisanym współrzędnymi Chunjo.
+
+### Konie w Shinsoo i Jinno — każde królestwo ma własny Loch Małp
+
+„Tylko boty z chunjo levelują konia" (RetroGracz38), „bo z innych nie wchodzą do
+lochu dlatego" (NerrVoVy), „jest problem z robieniem konia w shinsoo i jinno,
+przez to jak ktoś pisał, że nie mają ustawionych kordów do lochu w swoim m2"
+(Kiciamol). Sprawdzone na naszym własnym świecie przed poprawką: **Shinsoo 500
+postaci i ani jednego konia, Jinno 500 i ani jednego**, Chunjo jedyne z koniem.
+
+Każde królestwo ma swój własny łatwy Loch Małp — to trzy osobne mapy (5, 25
+i 45), o tej samej geometrii, w trzech różnych miejscach świata. Nakładka znała
+tylko mapę Chunjo. Bot z Shinsoo przechodził własną bramą i lądował na mapie,
+której kod nie rozpoznawał jako lochu: bez komór, bez punktów polowania, bez
+medalu. Bot po 33. poziomie był z kolei wysyłany do trudnego lochu, którego jego
+rdzeń w ogóle nie hostuje, więc warp był odrzucany za każdym razem.
+
+Poziom nie wskazuje już mapy, tylko **pasmo**; mapę dobiera się do bota — jego
+królestwo i to, co ten rdzeń faktycznie hostuje. Królestwo bez dostępu do
+trudniejszych lochów pracuje we własnym, dopóki to się jeszcze opłaca (medal to
+losowanie z grupy zabójstw, a mnożnik za różnicę poziomów wygasa piętnaście
+poziomów nad potworem).
+
+### Każde królestwo wchodzi na mapy wspólne własnym wejściem
+
+„Wszystkie boty po wejściu do doliny, niezależnie od królestwa z którego są,
+wchodzą w miejscu wejścia żółtych. To samo się dzieje z pustynią" (SIZOWSKI,
+potwierdzone przez NerrVoVy).
+
+Dolina Orków, Pustynia Yongbi i Góra Sohan mają po trzy wejścia i po trzy bramy
+— po jednym na królestwo. Tabela z tymi punktami istniała w kodzie od dawna
+i była poprawna; podróż po prostu jej nie pytała i brała stałą Chunjo. Teraz
+pyta. Bramy powrotne dobrano tak samo: bot wychodzi przez NPC-a stojącego obok
+**własnego** wejścia, a nie przez bramę żółtych na drugim końcu mapy.
+
+Punkty pochodzą z plików samej mapy (`Town.txt` — ogólny punkt i po jednej parze
+na królestwo, oraz `npc.txt` dla bram) i wszystkie osiemnaście sprawdzono na
+`server_attr`: każdy stoi na gruncie, po którym da się chodzić. Wiersze Chunjo
+odtwarzają co do jednostki stałe używane do tej pory, co jest dowodem, że
+pozostałe sześć jest odczytane tak samo. Test jednostkowy tego pilnuje.
+
+### Stragany offline: wracają trzy mechanizmy (mt2009)
+
+AkhiGubernator przeczytał binarkę i pokazał, że cała klasyczna obsługa straganu
+w `ManagePlayerBotShopLifetime` jest na tej linii silnika **nieosiągalna
+z konstrukcji** (dwa wyczerpujące wczesne `return`), więc kompilator usuwa ją od
+`-O1` wzwyż. Diagnoza była w punkt. Padły przez to trzy rzeczy:
+
+- **„Wysoki popyt"** (Iwakura, 2.0.33) — pamięć szybkiej sprzedaży nigdy nie
+  dostawała ani jednego wpisu, więc narzut za popyt zawsze wynosił zero.
+- **`PLAYERBOT_STALL_SOLD`** w historii sprzętu — wpisu nie było wcale.
+- **Ponowna ocena stojącego straganu** po ruszeniu suwaka TRADE.
+
+Na tej linii towar na ladzie należy do encji sklepu, a nie do plecaka bota, więc
+„jedno przejście po własnym plecaku" nie może niczego zauważyć. Sprzedaż
+zapisuje teraz natywny menedżer w chwili, w której ona następuje — jest jedyną
+stroną, która o niej wie — a bot odbiera ten zapis na swoim własnym ticku.
+Stragan, który wygasł, nie jest już odnawiany pod wagą, która go nie chce.
+
+### Panel: „Szybkość biegu" i stempel zajęcia wiersza
+
+„Bez względu na to czy postać jest zalogowana czy nie wywala błąd przy próbie
+nadania szybkości" (Sammy Suricate) — komunikat brzmiał „Coś poszło nie tak
+(w1x257t780)".
+
+Przyczyny były **dwie**, jedna pod drugą, i obie są naprawione.
+
+`w1x257t780` to nie status, tylko **stempel**, którym quest w grze zajmuje
+wiersz kolejki, zanim zacznie pracę. Panel brał każdą wartość inną niż `pending`
+za odpowiedź końcową i meldował ten stempel operatorowi jako błąd. Czeka teraz
+na słowo z listy questa; wszystko inne znaczy „jeszcze pracuje". Dotyczy to
+wszystkich komend panelu, nie tylko tej jednej.
+
+Ale sam stempel nie zniknąłby stamtąd nigdy, i to jest druga połowa. Quest
+zdejmuje własne efekty szybkości, zanim doda nowy — po nazwie, a nie hurtem,
+żeby nie zabrać graczowi mikstur i błogosławieństw — i woła do tego
+`affect.remove_collect`. **Tego wiązania na tej linii silnika nie ma**: jest
+`remove_all_collect` i nic poza tym. Quest wywracał się więc na wywołaniu
+nieistniejącej funkcji, nigdy nie dochodził do zapisu wyniku i zostawiał wiersz
+ze swoim stemplem na zawsze. Widać to było w `syserr`:
+`LUA_ERROR: attempt to call field 'remove_collect' (a nil value)`.
+
+Brakujące wiązanie jest dopisane do silnika (tą samą drogą, którą dokładane są
+inne). Implementacja różni się od r40250 celowo: tam każde wywołanie tworzy
+własny efekt i usuwa się go po wartości, tutaj silnik **sumuje** efekty w jeden
+na typ punktu, więc dopasowanie po wartości nigdy by nie trafiło.
+
+Bez tej drugiej połowy sama poprawka panelu zamieniłaby tylko dziwny komunikat
+na uczciwe „przekroczono czas oczekiwania" — i nic więcej.
+
+### Dlaczego broń na 30 poziom nie jest ulepszana — najpierw pomiar
+
+„Na 341 broni na serwerze praktycznie wszystkie są +0 (max +2)" (Iwakura). Broń
+w plecaku może zostać pominięta przez cztery różne reguły, a z zewnątrz wyglądają
+identycznie — dlatego tego zgłoszenia nie dało się ani potwierdzić, ani wyjaśnić
+z żadnego logu. Zamiast zgadywać, rdzeń mówi teraz **która** reguła ją pominęła
+(`PLAYERBOT_AI: level-30 weapon not refined ... reason=`), raz na minutę dla całej
+populacji. Poprawka pójdzie po tym, co pokaże pierwszy log — nasz własny świat
+nie ma ani jednej takiej broni, więc nie ma tu czego odtworzyć.
+
+## 2.0.34 — 2026-09-13
+
+Serwer **i klient** — pierwsza zmiana klienta od 2.0.3. Panel GM na F9 od
+OskarPWA wchodzi na tę linię silnika, razem z osobnym oknem administracji botami
+na F10.
+
+### Panel GM (F9) — OskarPWA
+
+Trzydzieści jeden komend serwera pod jednym oknem: wyszukiwanie gracza,
+teleportacja po mapach i zapisane miejsca, tworzenie przedmiotów (także prosto
+do skrytki i do sklepu z monetami), podgląd ekwipunku i zmiana statystyk,
+umiejętności, yang i monet, spawn potworów, metinów i botów, nadawanie rang GM,
+stawki serwera oraz suwaki AI botów.
+
+Każde kliknięcie to zwykła komenda czatu, a serwer sprawdza poziom GM osobno
+przy każdej z nich (tabela `cmd_info[]`) — samo okno niczego nie odblokowuje.
+Stawki działają również na tej linii silnika: przycisk restartu zapisuje je do
+tego samego kanału, który obsługuje `m2-rates`.
+
+### Okno administracji botami (F10)
+
+Ile botów żyje, ile jest w drużynie, ile stoi na straganie; lista botów
+z poziomem, królestwem i pozycją; ostatnie akcje wybranego bota; nadanie mu
+przedmiotu; tablica osiągnięć. Trzy rzeczy, których nasz rdzeń nie potrafił,
+zostały dopisane:
+
+- **Ostatnie akcje** — nic nie zapisywało historii pojedynczego bota, bo log
+  rdzenia celowo skleja linię napisaną przez trzysta botów w jedną. Teraz
+  migawka statusu, która i tak co dwie sekundy układa jedno zdanie na bota,
+  odkłada je wtedy, gdy się **zmieni**. Bot stojący dwadzieścia minut przy
+  straganie nie zapcha sobie historii jednym powtórzonym zdaniem.
+- **Osiągnięcia** — „Pierwszy 30/60/90 poziom”. Jedyny uczciwy sposób, żeby
+  wiedzieć, kto był pierwszy, to zobaczyć, jak ktoś przekracza próg: pierwsze
+  spojrzenie na bota tylko zapisuje, gdzie on już jest, a nagroda przypada
+  dopiero temu, kogo rdzeń widział niżej, a potem wyżej. Na świecie, którego
+  boty są już po trzydziestce, tablica zostaje pusta, dopóki ktoś naprawdę nie
+  awansuje — i tak ma być. Zwycięzcy przeżywają restart serwera.
+- **Liczby na zakładce ogólnej** — liczone po żywych botach tego rdzenia. „Prowadzą stragan” pyta natywny rejestr sklepów offline o każdego bota z osobna, a nie o jego akcję: na tej linii silnika bot otwiera stoisko i **wraca na łowy**, bo stoiskiem opiekuje się encja — liczone po akcji pokazywałoby zero przy trzydziestu ośmiu stojących straganach. Rejestr trzyma też sklep gracza, więc pytanie idzie po właścicielu, nie hurtem.
+
+### Panel nie zatrzyma już wczytywania klienta
+
+Wersja autora budowała swoje okna bezwarunkowo. To dokładnie ten mechanizm,
+przez który przed 1.33.3 pięciu graczom klient stawał na 100% z pustym ekranem —
+wystarczył jeden wyjątek w oknie panelu, żeby przerwać budowę całego interfejsu.
+Wszystkie trzy okna powstają teraz w osłonie: gdy któreś się nie zbuduje, powód
+trafia do `syserr.txt`, gra wstaje bez niego, a próba otwarcia mówi o tym na
+czacie zamiast wywalać błąd.
+
+### Stragany przeceniają się po zmianie cennika (Iwakura)
+
+„Pełno w m1 sklepów, gdzie Zwoje Błogosławieństwa nadal są po 9000”. Cena w kodzie była
+już poprawna (150 000 od 2.0.32) — to wystawki były stare. Otwarty stragan przeceniał
+**jeden przedmiot na godzinę**, więc stoisko z kilkunastoma liniami schodziło do nowych
+cen kilkanaście godzin.
+
+Cennik ma teraz numer wersji. Stragan, który został wyceniony według starszego,
+przecenia się **na każdej wizycie serwisowej** (co 10–15 minut) zamiast raz na godzinę,
+aż obejdzie cały swój blat — dopiero wtedy dostaje nową pieczątkę. Tempo wraca do
+godziny, gdy nie ma czego nadrabiać. Żadnej masowej przeceny na raz: to ta sama
+ścieżka żądań, co zwykle, tylko częściej pytana.
+
+### Naprawy przy okazji
+
+- **Aktualizacja z paczki na Linuksie i VPS działa ponownie.** Skrypt portujący
+  silnik zatrzymywał się przy drugim przebiegu: jedna z edycji rozpoznawała swoją
+  pracę po własnym wstawionym tekście, a późniejsza edycja ten tekst rozbijała —
+  więc pierwsza dokładała nagłówek drugi raz, a druga traciła kotwicę i cały
+  skrypt padał. Instalacje windowsowe tego nie widziały, bo dostają gotowe pliki.
+- Dwie nasze wcześniejsze wstawki w plikach silnika miały zakończenia linii
+  niezgodne z resztą pliku, przez co ten sam skrypt ich nie rozpoznawał.
+
 ## 2.0.33 — 2026-09-13
 
 Tylko serwer (ZAINSTALUJ AKTUALIZACJE); klient bez zmian. Domknięcie systemu cen

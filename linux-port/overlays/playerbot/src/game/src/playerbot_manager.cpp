@@ -101,6 +101,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_status.h"
 #include "playerbot_targeting.h"
 #include "playerbot_lure.h"
+#include "playerbot_admin.h"
 
 namespace
 {
@@ -1471,6 +1472,8 @@ bool CPlayerBotManager::Despawn(DWORD dwPlayerID)
 	LPDESC d = it->second;
 	m_mapBots.erase(it);
 	s_mapPlayerBotAIStates.erase(dwPlayerID);
+	// Its F10 history and its remembered level go with it.
+	ForgetPlayerBotAdminState(dwPlayerID);
 	if (d)
 		m_mapHandles.erase(d->GetHandle());
 
@@ -1852,7 +1855,7 @@ void CPlayerBotManager::Update()
 					else if (IsPlayerBotMonkeyMap(currentMap))
 						GetPlayerBotMonkeyArrival(currentMap, fallbackX, fallbackY);
 					else
-						GetPlayerBotFrontierArrival(currentMap, fallbackX, fallbackY);
+						GetPlayerBotFrontierArrivalFor(ch, currentMap, fallbackX, fallbackY);
 					foundSafe = navigation.FindNearestWalkableWorld(
 							fallbackX, fallbackY, 30, safe, ch->GetPlayerID());
 				}
@@ -2541,6 +2544,12 @@ void CPlayerBotManager::Update()
 						*p = ' ';
 				}
 
+				// The F10 window's "Akcje na zywo" and "Osiagniecia" are fed from
+				// here rather than from a pass of their own: the sentence has just
+				// been composed and the level is already in hand.
+				NotePlayerBotAdminStatus(statusCh->GetPlayerID(), statusText);
+				NotePlayerBotAdminLevel(statusCh);
+
 				fprintf(snapshot, "%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%ld\t%ld\t%ld\t%d\t%d\t%s\n",
 						statusCh->GetPlayerID(), (unsigned int)statusState.bPersonality,
 						(unsigned int)statusState.bAmbition, (unsigned int)statusState.bBotRole,
@@ -2583,6 +2592,63 @@ void CPlayerBotManager::GetAvailableBots(std::vector<DWORD>& out, size_t limit)
 			it != m_setRegisteredBots.end() && out.size() < limit; ++it)
 		if (m_mapBots.find(*it) == m_mapBots.end())
 			out.push_back(*it);
+}
+
+// --- The F10 bot-admin window -----------------------------------------------
+//
+// The summary is counted here and not in playerbot_admin.h because only the
+// manager's own book says who is in the world: m_mapBots is private, and the
+// snapshot loop above walks it under exactly these two guards. The other two
+// are the way through to the anonymous namespace, like the weight functions.
+void CPlayerBotManager::GetActivitySummary(size_t& total, size_t& inParty, size_t& stalls) const
+{
+	total = 0;
+	inParty = 0;
+	stalls = 0;
+
+	for (TPlayerBotMap::const_iterator it = m_mapBots.begin();
+			it != m_mapBots.end(); ++it)
+	{
+		LPDESC d = it->second;
+		LPCHARACTER ch = d ? d->GetCharacter() : NULL;
+		if (!ch || !d->IsPhase(PHASE_GAME))
+			continue;
+
+		++total;
+		if (ch->GetParty())
+			++inParty;
+
+		// A counter of its own. On the 2.x line a bot's stall is a native
+		// offline shop: the bot opens it and goes back to hunting, so its
+		// action is never BOT_ACTION_STALL and counting that alone reported
+		// nought while thirty-eight stands were up. The ledger is asked per
+		// owner rather than counted whole, because it holds a player's own
+		// offline shop too and that is not a bot keeping a stall.
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+		auto shop = ikashop::GetManager().GetShopByOwnerID(it->first);
+		if (shop && shop->GetDuration() != 0)
+			++stalls;
+#else
+		// The classic stall: the keeper stands behind it, so the action says
+		// so. BOT_ACTION_SHOP is the NPC merchant round and BOT_ACTION_MARKET
+		// is browsing another bot's counter.
+		TPlayerBotAIStateMap::const_iterator ai =
+				s_mapPlayerBotAIStates.find(it->first);
+		if (ai != s_mapPlayerBotAIStates.end() &&
+				ai->second.bCurrentAction == BOT_ACTION_STALL)
+			++stalls;
+#endif
+	}
+}
+
+void CPlayerBotManager::GetBotLines(DWORD dwPlayerID, std::vector<std::string>& out) const
+{
+	GetPlayerBotAdminLines(dwPlayerID, out);
+}
+
+bool CPlayerBotManager::GetAchievementWinner(int id, DWORD& dwPID, std::string& strName) const
+{
+	return GetPlayerBotAdminAchievement(id, dwPID, strName);
 }
 
 void CPlayerBotManager::OnPlayerShout(LPCHARACTER ch, const char* szText)

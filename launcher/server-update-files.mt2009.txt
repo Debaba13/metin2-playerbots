@@ -120,6 +120,10 @@ linux-port-mt2009/docker/game/src/server/game/src/p2p.h
 # (playerbot_offline_policy.h, 2.0.26) failed the packager's pairing check.
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_*
 linux-port-mt2009/docker/game/src/server/game/src/questlua_item.cpp
+# affect.remove_collect: this engine binds remove_all_collect and not the one
+# web_admin.quest calls, so "Szybkosc biegu" died on a nil function at line 128
+# and the row kept the quest's claim stamp for ever (Sammy Suricate, 2.0.35).
+linux-port-mt2009/docker/game/src/server/game/src/questlua_affect.cpp
 linux-port-mt2009/docker/game/src/server/game/src/questmanager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/refine.cpp
 linux-port-mt2009/docker/game/src/server/game/src/shop.h

@@ -8,7 +8,13 @@ import chat
 import app
 import player
 import uiTaskBar
-import uiCharacter
+import ikashop
+import net
+import chr
+if app.ENABLE_CONQUEROR_UI:
+	import uicharacternew as uiCharacter
+else:
+	import uiCharacter
 import uiInventory
 import uiDragonSoul
 import uiChat
@@ -27,25 +33,59 @@ import uiToolTip
 import uiMiniMap
 import uiParty
 import uiSafebox
-import net
 import uiGuild
 import uiQuest
-import uiPrivateShopBuilder
 import uiCommon
 import uiRefine
 import uiEquipmentDialog
 import uiGameButton
 import uiTip
 import uiCube
-import chr
 import miniMap
 # ACCESSORY_REFINE_ADD_METIN_STONE
-import uiselectitem
+import uiSelectItem
 # END_OF_ACCESSORY_REFINE_ADD_METIN_STONE
 import uiScriptLocale
+import uiMaintenance
+import uiBusyAction
+import uiHorseInventory
+import uiReport
 
 import event
 import localeInfo
+import background
+import captcha
+
+if app.ENABLE_ACCE_COSTUME_SYSTEM:
+	import uiacce
+
+if app.ENABLE_MOVE_CHANNEL:
+	import uiMoveChannel
+
+if app.ENABLE_WON_EXCHANGE_WINDOW:
+	import uiWonExchange
+
+import uiPrivateShopBuilder
+import offlineShopBuilder
+import offlineShopManage
+import offlineShopGuest
+import offlineShopHistory
+import offlineShopSearch
+import uiItemShop
+
+import uiItemExchange
+import uiPlayerStat
+import flamewindPath
+
+import eventManager
+import uiFishing
+import uiCraft
+import uiAttributeList
+import uiSpecialShop
+import uiReputation
+import uiPotionRecharge
+
+import uiCaptcha
 
 # F9 GM panel (2026-09-09). Merged directly into interfacemodule.py rather
 # than living in its own uiGMPanel.py: EPack32 on this project only refreshes
@@ -161,6 +201,10 @@ GM_PANEL_AI_WEIGHT_ROWS = [
 		"je NPC - zlom do palenia u kowala, jak na serwerach hard. Domyslnie "
 		"wylaczone.",
 		"scrap", 0, 100),
+	("REST", "Odpoczynek w miescie", "Udzial botow, ktore po sprawunku w "
+		"miescie zostaja na chwile przy straganach zamiast wracac od razu na "
+		"polowanie. 100% to zywe miasto, 0% - wszyscy w terenie.",
+		"scrap", 0, 100),
 	("CHEST", "Szkatulka Ksiezycowa - z zabitego potwora", "Jak czesto "
 		"wypada szkatulka: z zabitego potwora i z rozbitego Metina. "
 		"Domyslnie w grze 1% i 30%; wiecej szkatulek to wiecej zwojow "
@@ -203,12 +247,17 @@ GM_PANEL_AI_WEIGHT_ROWS = [
 ]
 
 # Kolejnosc, w ktorej do_gmpanel_getaiweights (cmd_gm.cpp) faktycznie
-# wysyla 17 wartosci - STALA, niezalezna od kolejnosci wyswietlania
-# powyzej (ktora ma byc jak na stronie /ai, nie jak w pliku tsv).
+# wysyla wartosci - STALA, niezalezna od kolejnosci wyswietlania powyzej
+# (ktora ma byc jak na stronie /ai, nie jak w pliku tsv).
+#
+# Musi sie zgadzac z PLAYERBOT_PANEL_WEIGHT_ORDER w playerbot_config.h.
+# Serwer dopisuje nowe klucze na koncu - REST doszedl w aktualizacji i
+# przez brak go tutaj cala karta "Zachowanie botow" przestala sie
+# wypelniac (SetAIWeightsResult odrzucal odpowiedz o zlej dlugosci).
 GM_PANEL_AI_WEIGHT_SERVER_ORDER = [
 	"RESTOCK", "REFINE", "SKILL", "HORSE", "BIOLOG", "METIN", "PARTY",
 	"HUNTING", "LEVEL", "FISHING", "TRADE",
-	"CHAT", "BOOKS", "NIGHT", "SCRAP", "CHEST", "CHEST_STONE",
+	"CHAT", "BOOKS", "NIGHT", "SCRAP", "CHEST", "CHEST_STONE", "REST",
 ]
 
 # Reference-only (client never sends this to the server) - the "Lista
@@ -414,6 +463,7 @@ GM_PANEL_CATEGORY_LIST = [
 	("armor_body",	"Zbroja"),
 	("armor_ear",	"Kolczyki"),
 	("armor_wrist",	"Bransolety"),
+	("armor_neck",	"Naszyjniki"),
 	("armor_foots",	"Buty"),
 	("armor_head",	"Helm"),
 	("armor_shield","Tarcza"),
@@ -444,6 +494,15 @@ GM_PANEL_LOCATION_LIST = [
 # centre of the map instead, read out of each map's own Setting.txt
 # (BasePosition + MapSize*25600) the same way PLAYERBOT_MAP_BOUNDS is - a
 # few hundred units off the real town center at worst, still solid ground.
+# Siatka teleportu na stronie "Spawn Botow" ma trzy kolumny: dwie z
+# gotowymi celami i trzecia z wlasnymi punktami powrotu gracza. Panel ma
+# 680 px szerokosci (WINDOW_WIDTH), stad te liczby.
+GM_PANEL_TELE_BTN_W = 185
+GM_PANEL_WP_X = 392
+GM_PANEL_WP_W = 258
+GM_PANEL_WP_BTN_W = 60
+GM_PANEL_WAYPOINT_SLOTS = 5
+
 GM_PANEL_TELEPORT_LIST = [
 	("Chunjo M1",	659,	1556),
 	("Chunjo M2",	1455,	2400),
@@ -1120,19 +1179,11 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		self.__MakeText(page, 10, 62, "Panel jest w wersji BETA. Jak zauwazysz bugi")
 		self.__MakeText(page, 10, 76, "napisz na Discord do OskarPWA.")
 
-		# m2sp_logo.tga: pack\ETC\ymir work\ui\public\ - a loose folder that
-		# mirrors the ETC.epk archive (the "d:/ymir work/..." namespace
-		# every stock .tga in this client loads from), separate from the
-		# root/locale_pl script packs this session has otherwise worked in.
-		# 512x256 image: "GM Panel" + the real M2Singleplayer logo +
-		# "www.m2singleplayer.pl" composited into one graphic (baked-in
-		# text, not engine TextLine widgets - matches the reference mockup).
-		logo = ui.ImageBox()
-		logo.SetParent(page)
-		logo.LoadImage("d:/ymir work/ui/public/m2sp_logo.tga")
-		logo.SetPosition((WINDOW_WIDTH - 20 - 512) / 2, 100)
-		logo.Show()
-		self._widgets.append(logo)
+		# Logo autora (m2sp_logo.tga) lezy w jego paczce ETC, ktorej ten pakiet
+		# nie wysyla i ktorej pliku nikt tu nie ma. ImageBox wczytuje obrazek
+		# dopiero przy rysowaniu, wiec zaden try/except wokol LoadImage tego nie
+		# lapal - wyjatek wychodzil pozniej i zabieral cale okno panelu, kazdemu.
+		# Widget zostal usuniety w calosci: nie ma obrazka, nie ma czego wczytac.
 
 	def __BuildPlaceholderPage(self, page):
 		self.__MakeText(page, 10, 10, "W przygotowaniu.")
@@ -1851,10 +1902,18 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		# larger font name; two overlapped copies offset by one pixel fake a
 		# bold weight on top of that, matching how outlined titles read
 		# heavier elsewhere in this engine's own UI.
-		teleportTitle = self.__MakeText(page, 291, 134, "Teleport")
+		teleportTitle = self.__MakeText(page, 169, 134, "Teleport")
 		teleportTitle.SetOutline(True)
-		teleportTitleBold = self.__MakeText(page, 290, 134, "Teleport")
+		teleportTitleBold = self.__MakeText(page, 168, 134, "Teleport")
 		teleportTitleBold.SetOutline(True)
+
+		# Trzecia kolumna ("Zapisane miejsca") musiala sie zmiescic obok, wiec
+		# dwie kolumny teleportu zwezaja sie z 310 do GM_PANEL_TELE_BTN_W.
+		# Najdluzsza etykieta ("Normalny loch malp") nadal miesci sie z zapasem.
+		waypointTitle = self.__MakeText(page, GM_PANEL_WP_X + 79, 134, "Zapisane miejsca")
+		waypointTitle.SetOutline(True)
+		waypointTitleBold = self.__MakeText(page, GM_PANEL_WP_X + 78, 134, "Zapisane miejsca")
+		waypointTitleBold.SetOutline(True)
 
 		teleY = 160
 		teleAll = GM_PANEL_TELEPORT_LIST + GM_PANEL_TELEPORT_EXTRA_LIST + GM_PANEL_TELEPORT_DUNGEON_LIST
@@ -1863,8 +1922,23 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 			self.__MakeTeleportButton(page, 10, teleY, *left)
 			if i + 1 < len(teleAll):
 				right = teleAll[i + 1]
-				self.__MakeTeleportButton(page, 340, teleY, *right)
+				self.__MakeTeleportButton(page, 10 + GM_PANEL_TELE_BTN_W + 5, teleY, *right)
 			teleY += 26
+
+		# Wlasne punkty powrotu: [Zapisz] [nazwa] [Wczytaj] w jednym wierszu.
+		# Nazwe sklada klient z mapy, na ktorej stoi (MINIMAP_ZONE_NAME_DICT),
+		# ale zapamietywana pozycja pochodzi zawsze z serwera - patrz
+		# do_gmpanel_waypoint w cmd_gm.cpp.
+		self.waypointLabels = {}
+		wpY = 160
+		for slot in range(1, GM_PANEL_WAYPOINT_SLOTS + 1):
+			self.__MakeWaypointButton(page, GM_PANEL_WP_X, wpY, "Zapisz",
+					self.__MakeWaypointHandler(slot, "save"))
+			self.waypointLabels[slot] = self.__MakeText(page,
+					GM_PANEL_WP_X + GM_PANEL_WP_BTN_W + 8, wpY + 4, "(puste)")
+			self.__MakeWaypointButton(page, GM_PANEL_WP_X + GM_PANEL_WP_W - GM_PANEL_WP_BTN_W,
+					wpY, "Wczytaj", self.__MakeWaypointHandler(slot, "load"))
+			wpY += 26
 
 		self.teleportStatus = self.__MakeText(page, 10, teleY + 6, "")
 
@@ -1886,7 +1960,7 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		button = ui.Button()
 		button.SetParent(page)
 		button.SetPosition(x, y)
-		button.SetSize(310, 22)
+		button.SetSize(GM_PANEL_TELE_BTN_W, 22)
 		button.SetUpVisual("d:/ymir work/ui/public/middle_button_01.sub")
 		button.SetOverVisual("d:/ymir work/ui/public/middle_button_02.sub")
 		button.SetDownVisual("d:/ymir work/ui/public/middle_button_03.sub")
@@ -1898,6 +1972,68 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 
 	def __MakeTeleportHandler(self, name, xMeters, yMeters):
 		return lambda: self.__OnClickTeleport(name, xMeters, yMeters)
+
+	def __MakeWaypointButton(self, page, x, y, text, event):
+		button = ui.Button()
+		button.SetParent(page)
+		button.SetPosition(x, y)
+		button.SetSize(GM_PANEL_WP_BTN_W, 22)
+		button.SetUpVisual("d:/ymir work/ui/public/small_button_01.sub")
+		button.SetOverVisual("d:/ymir work/ui/public/small_button_02.sub")
+		button.SetDownVisual("d:/ymir work/ui/public/small_button_03.sub")
+		button.SetText(text)
+		button.SetEvent(event)
+		button.Show()
+		self._widgets.append(button)
+		return button
+
+	def __MakeWaypointHandler(self, slot, action):
+		return lambda: self.__OnClickWaypoint(slot, action)
+
+	# Nazwe miejsca sklada klient, bo tylko on zna polskie nazwy map
+	# (localeInfo.MINIMAP_ZONE_NAME_DICT). Spacje zamieniamy na '_', bo
+	# komendy czatu serwer dzieli po bialych znakach. To jedyna rzecz, jaka
+	# stad leci - zapamietywana pozycja pochodzi z postaci po stronie
+	# serwera, wiec etykieta niczego nie decyduje.
+	def __CurrentPlaceName(self):
+		try:
+			mapName = background.GetCurrentMapName()
+		except:
+			mapName = ""
+		name = localeInfo.MINIMAP_ZONE_NAME_DICT.get(mapName, "")
+		if not name:
+			name = mapName or "Nieznane"
+		try:
+			x, y, z = player.GetMainCharacterPosition()
+		except:
+			x, y = 0, 0
+		return ("%s %d,%d" % (name, int(x) / 100, int(y) / 100)).replace(" ", "_")
+
+	def __OnClickWaypoint(self, slot, action):
+		if action == "save":
+			self.teleportStatus.SetText("Zapisuje miejsce %d..." % slot)
+			net.SendChatPacket("/gmpanel_waypoint save %d %s" % (slot, self.__CurrentPlaceName()))
+		else:
+			self.teleportStatus.SetText("Wczytuje miejsce %d..." % slot)
+			net.SendChatPacket("/gmpanel_waypoint load %d" % slot)
+
+	# "GMPanelWaypoint <slot>|<etykieta>" - odpowiedz na zapis oraz po jednej
+	# na kazde zajete miejsce przy pierwszym wejsciu na strone.
+	def SetWaypoint(self, data):
+		labels = getattr(self, "waypointLabels", None)
+		if not labels:
+			return
+		parts = data.split("|")
+		if len(parts) < 2:
+			return
+		try:
+			slot = int(parts[0])
+		except:
+			return
+		if slot not in labels:
+			return
+		label = parts[1].replace("_", " ").strip()
+		labels[slot].SetText(label or "(puste)")
 
 	# /warp is the vanilla GM command (cmd_gm.cpp, do_warp) - it already
 	# answers on its own with "You warp to ( x, y )" in the normal info
@@ -1994,6 +2130,10 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 			self._createItemListsLoaded = True
 			self.__FetchItemList(GM_PANEL_CATEGORY_LIST[0][0], "vnum")
 			self.__FetchItemList("stone", "stone")
+
+		if pageName == "page_spawnbots" and not self._waypointsLoaded:
+			self._waypointsLoaded = True
+			net.SendChatPacket("/gmpanel_waypoint list")
 
 		if pageName == "page_serverctrl" and not self._serverctrlRatesLoaded:
 			self._serverctrlRatesLoaded = True
@@ -2328,6 +2468,7 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 		self._serverctrlEdits = {}
 		self._serverctrlStatus = {}
 		self._serverctrlRatesLoaded = False
+		self._waypointsLoaded = False
 		self._serverctrlLastSaved = None
 		# >0 while a gmpanel_getrates/getaiweights reply is outstanding -
 		# OnUpdate below times this out instead of leaving "Wczytuje..." on
@@ -2674,8 +2815,11 @@ class GMPanelWindow(ui.BoardWithTitleBar):
 	def SetAIWeightsResult(self, data):
 		self._aiWeightsFetchFrames = 0
 		parts = data.split("|")
-		if len(parts) != len(GM_PANEL_AI_WEIGHT_SERVER_ORDER):
+		if not parts or not parts[0]:
 			return
+		# Klucze serwer dopisuje na koncu listy, wiec nadmiarowe pola po prostu
+		# pomijamy zamiast odrzucac cala odpowiedz. Wczesniej wymagana byla
+		# rowna dlugosc i jeden dopisany klucz (REST) uciszyl cala karte.
 		for key, part in zip(GM_PANEL_AI_WEIGHT_SERVER_ORDER, parts):
 			i = self._aiKeyToIndex.get(key)
 			if i is None:
@@ -3419,6 +3563,114 @@ class BotOverheadTail(ui.ThinBoard):
 		self.Hide()
 
 
+TOP1_BADGE_HEAD_HEIGHT = 220
+# Server resends every 5s (top1_badge_event, playerbot_manager.cpp) - stay
+# hidden-after well past that so a single dropped packet doesn't blink it.
+TOP1_BADGE_TIMEOUT_TICKS = 450
+
+class Top1Badge(ui.ThinBoard):
+	"""Maly, zawsze widoczny (nie GM-only) szyld 'Top1' nad glowa postaci z
+	najwyzszym poziomem na serwerze w tej chwili - ten sam mechanizm co
+	BotOverheadTail powyzej i PrivateShopAdvertisementBoard
+	(uiprivateshopbuilder.py): pozycjonowanie co klatke przez
+	chr.GetProjectPosition. Serwer przelicza mistrza co 5 sekund i rozsyla
+	zwykly chat-command "Top1Badge <vid>" do wszystkich w poblizu - kazdy
+	klient go odbiera, nie tylko GM.
+
+	Byla tu proba prawdziwego efektu czastkowego (TOP1.mse przez
+	chrmgr.RegisterEffect/SetAffect, ten sam mechanizm co znak GM) - jedyne
+	uzycie chrmgr.SetAffect w calym kliencie (konsola deweloperska) zawsze
+	woa -1 (wlasna postac), zaden kod nigdzie nie uzywa go na cudzym vid.
+	Prawdopodobnie celowo ograniczone do wlasnej postaci (zabezpieczenie
+	przed fal­szowaniem stanu innych graczy lokalnie) - efekty widoczne na
+	INNYCH graczach normalnie pochodza z synchronizacji przez serwer, nie z
+	lokalnego wywolania. Zrobienie tego "na prawdziwych zasadach" wymagaloby
+	zmian w protokole sieciowym serwera.
+
+	__init__ wraca tu do sprawdzonego tekstu (biegnie bezwarunkowo dla kazdego
+	gracza - nic ryzykownego tu nie ma prawa byc). Ikona (TOP1.tga) jest
+	proba numer trzy, ale doczepiona leniwie w Refresh() - pierwszy raz, gdy
+	odezwie sie serwer, nie przy starcie gry - i owinieta w try/except, zeby
+	nieudane wczytanie nie ubilo calego OnTop1Badge (a co za tym idzie -
+	obsluge kolejnych komend). To NIE chroni przed crashem silnika (poza
+	Pythonem), tylko przed bledem Pythona - jesli obrazek znow padnie, moze
+	wywalic tylko tego klienta, ktory akurat dostal odswiezenie, a nie kazdego
+	przy logowaniu jak poprzednio."""
+
+	def __init__(self):
+		ui.ThinBoard.__init__(self, "UI_BOTTOM")
+		self.vid = None
+		self.aliveTicks = 0
+		self.icon = None
+		self._iconLoadAttempted = False
+		self.textLine = ui.TextLine()
+		self.textLine.SetParent(self)
+		self.textLine.SetWindowHorizontalAlignCenter()
+		self.textLine.SetWindowVerticalAlignCenter()
+		self.textLine.SetHorizontalAlignCenter()
+		self.textLine.SetVerticalAlignCenter()
+		self.textLine.SetText("Top1")
+		self.textLine.SetOutline(True)
+		self.textLine.SetFontColor(1.0, 0.84, 0.0)
+		self.textLine.Show()
+		self.SetSize(60, 20)
+
+	def __del__(self):
+		ui.ThinBoard.__del__(self)
+
+	def __TryLoadIcon(self):
+		self._iconLoadAttempted = True
+		# ImageBox.LoadImage does not resolve locale/... paths (only
+		# chrmgr.RegisterEffect does, for .mse) - confirmed live, w=0 h=0,
+		# no exception. Every working ImageBox.LoadImage call in this client
+		# uses a "d:/ymir work/..." path instead (e.g. the m2sp_logo.tga
+		# above, physically under pack/ETC/ymir work/ui/public/) - TOP1.tga
+		# needs to live there too, not under locale_pl.
+		path = "d:/ymir work/ui/public/TOP1.tga"
+		try:
+			icon = ui.ImageBox()
+			icon.SetParent(self)
+			icon.LoadImage(path)
+			icon.SetPosition(0, 0)
+			width = icon.GetWidth()
+			height = icon.GetHeight()
+			if width <= 0 or height <= 0:
+				return
+			icon.Show()
+			self.icon = icon
+			self.textLine.Hide()
+			self.SetSize(width, height)
+		except Exception, e:
+			self.icon = None
+
+	def Refresh(self, vid):
+		self.vid = vid
+		self.aliveTicks = 0
+		if not self._iconLoadAttempted:
+			self.__TryLoadIcon()
+		self.Show()
+
+	def OnUpdate(self):
+		if self.vid is None:
+			return
+		self.aliveTicks += 1
+		if self.aliveTicks > TOP1_BADGE_TIMEOUT_TICKS:
+			self.vid = None
+			self.Hide()
+			return
+		try:
+			x, y = chr.GetProjectPosition(int(self.vid), TOP1_BADGE_HEAD_HEIGHT)
+		except:
+			self.vid = None
+			self.Hide()
+			return
+		self.SetPosition(int(x - self.GetWidth() / 2), int(y - self.GetHeight()))
+
+	def Destroy(self):
+		self.vid = None
+		self.Hide()
+
+
 class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 
 	def __init__(self):
@@ -3531,7 +3783,9 @@ class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 
 		tabDefs = (
 			("general",       15,  110, "Ogolne"),
-			("globalchat",    130, 125, "Czat ogolny"),
+			# "Czat ogolny" wycieta: jej jedyna trescia byla strona /botchat z panelu
+			# autora, ktorej ten panel nie serwuje - zakladka mogla pokazac wylacznie
+			# pustke, a wbudowana przegladarka zamykala klientowi gre.
 			("live",          260, 125, "Akcje botow"),
 			("manage",        390, 125, "Zarzadzanie"),
 			("achievements",  520, 110, "Osiagniecia"),
@@ -3542,7 +3796,6 @@ class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 			button.SetEvent(ui.__mem_func__(self.OnClickTab), tabName)
 			tabButtons[tabName] = button
 		self.tabGeneral = tabButtons["general"]
-		self.tabGlobalChat = tabButtons["globalchat"]
 		self.tabLive = tabButtons["live"]
 		self.tabManage = tabButtons["manage"]
 		self.tabAchievements = tabButtons["achievements"]
@@ -3641,7 +3894,10 @@ class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 			newPos = self.GetGlobalPosition()
 			if newPos != self.globalChatWebLastPos:
 				self.globalChatWebLastPos = newPos
-				app.MoveWebPage(self.__PBAGlobalChatRect())
+				try:
+					app.MoveWebPage(self.__PBAGlobalChatRect())
+				except:
+					self.globalChatWebOpen = False
 
 	######################################################################
 	## Dymki nad glowami botow - BotOverheadTail (na gorze pliku), pozycja
@@ -3768,14 +4024,27 @@ class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 
 	def __PBAOpenGlobalChatWeb(self):
 		self.globalChatWebLastPos = self.GetGlobalPosition()
-		app.ShowWebPage(PBA_BOTCHAT_URL, self.__PBAGlobalChatRect())
-		self.globalChatWebOpen = True
+		# The flag drives MoveWebPage every frame from OnUpdate, so it may
+		# only go up once the browser really started: the embedded control
+		# refuses on some machines (CREATE_WEBBROWSER_ERROR 1407) and moving
+		# a page that was never created is the same crash by another door.
+		try:
+			app.ShowWebPage(PBA_BOTCHAT_URL, self.__PBAGlobalChatRect())
+			self.globalChatWebOpen = True
+		except:
+			self.globalChatWebOpen = False
 
 	def __PBACloseGlobalChatWeb(self):
 		if not self.globalChatWebOpen:
 			return
 		self.globalChatWebOpen = False
-		app.HideWebPage()
+		try:
+			app.HideWebPage()
+		except:
+			# The embedded browser can refuse to start (CREATE_WEBBROWSER_ERROR
+			# 1407 on every machine that reported this), and it took the whole
+			# client down with it. A tab that cannot draw must not close the game.
+			pass
 
 	######################################################################
 	## Lista botow (wspolna: Akcje na zywo + Zarzadzanie)
@@ -3981,11 +4250,12 @@ class PlayerbotAdminWindow(ui.BoardWithTitleBar):
 
 			yPos += PBA_ROW_HEIGHT
 
+
 IsQBHide = 0
 class Interface(object):
 	CHARACTER_STATUS_TAB = 1
 	CHARACTER_SKILL_TAB = 2
-	
+
 	def __init__(self):
 		systemSetting.SetInterfaceHandler(self)
 		self.windowOpenPosition = 0
@@ -3993,6 +4263,7 @@ class Interface(object):
 		self.inputDialog = None
 		self.tipBoard = None
 		self.bigBoard = None
+		self.fancyBoard = None
 
 		# ITEM_MALL
 		self.mallPageDlg = None
@@ -4003,7 +4274,9 @@ class Interface(object):
 		self.wndCharacter = None
 		self.wndInventory = None
 		self.wndGMPanel = None
+		self.wndTop1Badge = None
 		self.wndPlayerbotAdmin = None
+		self.wndItemShop = None
 		self.wndExpandedTaskBar = None
 		self.wndDragonSoul = None
 		self.wndDragonSoulRefine = None
@@ -4013,25 +4286,40 @@ class Interface(object):
 		self.wndGuild = None
 		self.wndGuildBuilding = None
 
+		self.wndPopupDialog = None
+
 		self.listGMName = {}
 		self.wndQuestWindow = {}
 		self.wndQuestWindowNewKey = 0
-		self.privateShopAdvertisementBoardDict = {}
+		self.privateShopAdvertisementBoardDict = {"player":{}, "offline":{}}
+		self.reputationBarDict = {}
 		self.guildScoreBoardDict = {}
 		self.equipmentDialogDict = {}
-		# GM-only "EQ" on the target menu (uitarget.py) - feeds the SAME
-		# EquipmentDialog above, just from a safe text response
-		# (do_gmpanel_view_equip, "GMEquipChunk") instead of the native
-		# /view_equip binary packet, which crashes this client build
-		# (confirmed via server syslog: DISCONNECT immediately follows it,
-		# 3/3 times - almost certainly a WEAR_MAX_NUM/struct-size mismatch
-		# in TPacketViewEquip). vid -> accumulated chunk buffer.
+		# Panel GM: "EQ" na menu celu karmi to samo EquipmentDialog, ale z
+		# tekstowej odpowiedzi serwera (GMEquipChunk), vid -> bufor kawalkow.
 		self._gmEquipBuffers = {}
+		if app.ENABLE_MOVE_CHANNEL:
+			self.wndMoveChannel = None
+		if app.ENABLE_WON_EXCHANGE_WINDOW:
+			self.wndWonExchange = None
 		event.SetInterfaceWindow(self)
+
+		self.interfaceWindowList = {}
+
+		self.RegisterEvents()
+		self.popupManager = uiCommon.PopupManager()
 
 	def __del__(self):
 		systemSetting.DestroyInterfaceHandler()
 		event.SetInterfaceWindow(None)
+
+	def RegisterEvents(self):
+		eventMgr = eventManager.EventManager()
+		eventMgr.add_observer(eventManager.OPEN_WHISPER_EVENT, self.OpenWhisperDialog)
+		eventMgr.add_observer(eventManager.EVENT_MARK_SHOP_VIEWED, self.MarkPrivateShopAsViewed)
+		eventMgr.add_observer(eventManager.EVENT_MARK_SHOP_CURRENT, self.MarkPrivateShopAsCurrent)
+		eventMgr.add_observer(uiShop.EVENT_CLICK_PRIVATE_SHOP, self.ClickPrivateShop)
+		eventMgr.add_observer(uiMessenger.EVENT_UPDATE_BLOCK_STATE, self.__UpdateUserBlockState)
 
 	################################
 	## Make Windows & Dialogs
@@ -4053,9 +4341,9 @@ class Interface(object):
 		self.wndGuild = uiGuild.GuildWindow()
 
 	def __MakeChatWindow(self):
-		
+
 		wndChat = uiChat.ChatWindow()
-		
+
 		wndChat.SetSize(wndChat.CHAT_WINDOW_WIDTH, 0)
 		wndChat.SetPosition(wndMgr.GetScreenWidth()/2 - wndChat.CHAT_WINDOW_WIDTH/2, wndMgr.GetScreenHeight() - wndChat.EDIT_LINE_HEIGHT - 37)
 		wndChat.SetHeight(200)
@@ -4075,21 +4363,21 @@ class Interface(object):
 		self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_INVENTORY, ui.__mem_func__(self.ToggleInventoryWindow))
 		self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_MESSENGER, ui.__mem_func__(self.ToggleMessenger))
 		self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_SYSTEM, ui.__mem_func__(self.ToggleSystemDialog))
-		if uiTaskBar.TaskBar.IS_EXPANDED:
-			self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_EXPAND, ui.__mem_func__(self.ToggleExpandedButton))
-			self.wndExpandedTaskBar = uiTaskBar.ExpandedTaskBar()
-			self.wndExpandedTaskBar.LoadWindow()
-			self.wndExpandedTaskBar.SetToggleButtonEvent(uiTaskBar.ExpandedTaskBar.BUTTON_DRAGON_SOUL, ui.__mem_func__(self.ToggleDragonSoulWindow))
+		# if uiTaskBar.TaskBar.IS_EXPANDED:
+		# 	self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_EXPAND, ui.__mem_func__(self.ToggleExpandedButton))
+		# 	self.wndExpandedTaskBar = uiTaskBar.ExpandedTaskBar()
+		# 	self.wndExpandedTaskBar.LoadWindow()
+		# 	self.wndExpandedTaskBar.SetToggleButtonEvent(uiTaskBar.ExpandedTaskBar.BUTTON_DRAGON_SOUL, ui.__mem_func__(self.ToggleDragonSoulWindow))
+		#
+		# else:
+		# 	self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_CHAT, ui.__mem_func__(self.ToggleChat))
 
-		else:
-			self.wndTaskBar.SetToggleButtonEvent(uiTaskBar.TaskBar.BUTTON_CHAT, ui.__mem_func__(self.ToggleChat))
-		
 		self.wndEnergyBar = None
 		import app
 		if app.ENABLE_ENERGY_SYSTEM:
 			wndEnergyBar = uiTaskBar.EnergyBar()
 			wndEnergyBar.LoadWindow()
-			self.wndEnergyBar = wndEnergyBar	
+			self.wndEnergyBar = wndEnergyBar
 
 	def __MakeParty(self):
 		wndParty = uiParty.PartyWindow()
@@ -4110,21 +4398,21 @@ class Interface(object):
 
 	def __IsChatOpen(self):
 		return True
-		
+
 	def __MakeWindows(self):
 		wndCharacter = uiCharacter.CharacterWindow()
 		wndInventory = uiInventory.InventoryWindow()
 		wndInventory.BindInterfaceClass(self)
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
-			wndDragonSoul = uiDragonSoul.DragonSoulWindow()	
+			wndDragonSoul = uiDragonSoul.DragonSoulWindow()
 			wndDragonSoulRefine = uiDragonSoul.DragonSoulRefineWindow()
 		else:
 			wndDragonSoul = None
 			wndDragonSoulRefine = None
- 
+
 		wndMiniMap = uiMiniMap.MiniMap()
 		wndSafebox = uiSafebox.SafeboxWindow()
-		
+
 		# ITEM_MALL
 		wndMall = uiSafebox.MallWindow()
 		self.wndMall = wndMall
@@ -4133,23 +4421,42 @@ class Interface(object):
 		wndChatLog = uiChat.ChatLogWindow()
 		wndChatLog.BindInterface(self)
 
-		# The GM panel is optional and must never be the reason the game does
-		# not load. Its window is built here, inside MakeInterface, so any
-		# exception in it - a widget this client's binary does not have, a
-		# locale key missing from this client's locale pack - aborted the
-		# whole interface and the loading bar stopped at 100% for good
-		# (Dixdros, jaroszv2, .unright, ligivanastrea, 10-11 September). The
-		# stock root loaded on the same machines. So: build it, and if it
-		# cannot be built, say so in syserr.txt and carry on without it -
-		# every caller below treats wndGMPanel as possibly absent.
+		# Panel GM jest dodatkiem i nie moze byc powodem, dla ktorego gra sie
+		# nie wczytuje. Okno powstaje w srodku budowy interfejsu, wiec kazdy
+		# wyjatek - widget, ktorego ten klient nie ma, brakujacy klucz locale -
+		# przerywal cala budowe i pasek ladowania stawal na 100% z pustym
+		# ekranem (Dixdros, jaroszv2, .unright, ligivanastrea, 10-11 wrzesnia;
+		# stockowy root wstawal na tych samych maszynach). Wiec: zbuduj, a gdy
+		# sie nie da - napisz do syserr.txt i graj dalej bez niego. Kazdy
+		# wolajacy nizej traktuje wndGMPanel jako mogace nie istniec.
 		self.wndGMPanel = None
 		try:
 			wndGMPanel = GMPanelWindow()
 			wndGMPanel.Hide()
 			self.wndGMPanel = wndGMPanel
 		except:
-			import dbg
+			# The reason, not just the fact: a fail-safe that hides why it fired
+			# turns every player report into one nobody can act on.
+			import dbg, traceback
 			dbg.TraceError("GM panel (F9) could not be built - the game loads without it")
+			for line in traceback.format_exc().splitlines():
+				dbg.TraceError("    " + line)
+
+		# To samo dla plakietki Top1: jej rejestracja w game.py siedzi juz w
+		# try/except, ale samo okno powstawalo tutaj bez oslony, a pliku
+		# top1.mse nie ma w tym kliencie w ogole.
+		self.wndTop1Badge = None
+		try:
+			wndTop1Badge = Top1Badge()
+			wndTop1Badge.Hide()
+			self.wndTop1Badge = wndTop1Badge
+		except:
+			# The reason, not just the fact: a fail-safe that hides why it fired
+			# turns every player report into one nobody can act on.
+			import dbg, traceback
+			dbg.TraceError("Top1Badge could not be built - the game loads without it")
+			for line in traceback.format_exc().splitlines():
+				dbg.TraceError("    " + line)
 
 		self.wndCharacter = wndCharacter
 		self.wndInventory = wndInventory
@@ -4158,13 +4465,48 @@ class Interface(object):
 		self.wndMiniMap = wndMiniMap
 		self.wndSafebox = wndSafebox
 		self.wndChatLog = wndChatLog
-		
+
+		self.wndItemShop = uiItemShop.ItemShopWindow()
+		self.wndItemShop.Hide()
+
+		self.wndCrafting = uiCraft.CraftingWindow()
+		self.wndCrafting.Hide()
+
+		self.wndHorseInventory = uiHorseInventory.HorseInventoryWindow()
+		self.wndHorseInventory.Hide()
+		self.wndInventory.SetHorseInventory(self.wndHorseInventory)
+
+		self.wndAttributeList = uiAttributeList.AttributeListWindow()
+		self.wndAttributeList.Hide()
+
+		self.wndSpecialShop = uiSpecialShop.SpecialShopWindow()
+		self.wndSpecialShop.Hide()
+
+		self.wndPlayerStat = uiPlayerStat.PlayerStatsWindow()
+		self.wndPlayerStat.Hide()
+
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			self.wndDragonSoul.SetDragonSoulRefineWindow(self.wndDragonSoulRefine)
 			self.wndDragonSoulRefine.SetInventoryWindows(self.wndInventory, self.wndDragonSoul)
 			self.wndInventory.SetDragonSoulRefineWindow(self.wndDragonSoulRefine)
 
+		if app.ENABLE_MOVE_CHANNEL:
+			self.wndMoveChannel = uiMoveChannel.MoveChannelWindow()
+
+		if app.ENABLE_WON_EXCHANGE_WINDOW:
+			self.wndWonExchange = uiWonExchange.WonExchangeWindow()
+			self.wndWonExchange.BindInterface(self)
+
 	def __MakeDialogs(self):
+		self.tooltip = uiToolTip.ToolTip()
+		self.tooltip.Hide()
+
+		self.tooltipItem = uiToolTip.ItemToolTip()
+		self.tooltipItem.Hide()
+
+		self.tooltipSkill = uiToolTip.SkillToolTip()
+		self.tooltipSkill.Hide()
+
 		self.dlgExchange = uiExchange.ExchangeDialog()
 		self.dlgExchange.LoadDialog()
 		self.dlgExchange.SetCenterPosition()
@@ -4184,27 +4526,60 @@ class Interface(object):
 
 		self.dlgSystem = uiSystem.SystemDialog()
 		self.dlgSystem.LoadDialog()
+		self.dlgSystem.SetToolTip(self.tooltip)
 		self.dlgSystem.SetOpenHelpWindowEvent(ui.__mem_func__(self.OpenHelpWindow))
-
+		self.dlgSystem.BindInterface(self)
 		self.dlgSystem.Hide()
 
 		self.dlgPassword = uiSafebox.PasswordDialog()
 		self.dlgPassword.Hide()
 
+		self.itemExchangeDialog = uiItemExchange.ExchangeItemDialog()
+		self.itemExchangeDialog.SetItemToolTip(self.tooltipItem)
+		self.itemExchangeDialog.Hide()
+
+		self.offlineShopBuilder = offlineShopBuilder.OfflineShopBuilder()
+		self.offlineShopBuilder.Hide()
+
+		self.offlineShopManage = offlineShopManage.OfflineShopManage()
+		self.offlineShopManage.Hide()
+
+		self.offlineShopGuest = offlineShopGuest.OfflineShopGuest()
+		self.offlineShopGuest.Hide()
+
+		self.offlineShopHistory = offlineShopHistory.OfflineShopHistory()
+		self.offlineShopHistory.Hide()
+
+		self.offlineShopSearch = offlineShopSearch.ShopSearchWindow()
+		self.offlineShopSearch.SetToolTip(self.tooltipItem)
+		self.offlineShopSearch.Hide()
+
 		self.hyperlinkItemTooltip = uiToolTip.HyperlinkItemToolTip()
 		self.hyperlinkItemTooltip.Hide()
 
-		self.tooltipItem = uiToolTip.ItemToolTip()
-		self.tooltipItem.Hide()
-
-		self.tooltipSkill = uiToolTip.SkillToolTip()
-		self.tooltipSkill.Hide()
-
-		self.privateShopBuilder = uiPrivateShopBuilder.PrivateShopBuilder()
-		self.privateShopBuilder.Hide()
-
 		self.dlgRefineNew = uiRefine.RefineDialogNew()
 		self.dlgRefineNew.Hide()
+
+		self.fishingGameDialog = uiFishing.FishingGameDialog()
+		self.fishingGameDialog.Hide()
+
+		self.potionRechargeDialog = uiPotionRecharge.PotionRechargeDialog()
+		self.potionRechargeDialog.SetItemToolTip(self.tooltipItem)
+		self.potionRechargeDialog.Hide()
+
+		self.busyActionDialog = uiBusyAction.BusyActionDialog()
+		self.busyActionDialog.Hide()
+
+		self.maintenanceDialog = uiMaintenance.MaintenanceDialog()
+		self.maintenanceDialog.Hide()
+
+		self.reportPlayerDialog = uiReport.ReportPlayerDialog()
+		self.reportPlayerDialog.Hide()
+
+		self.captchaDialog = uiCaptcha.CaptchaDialog()
+		self.captchaDialog.Hide()
+
+		self.gameMasterTargetDialog = None
 
 	def __MakeHelpWindow(self):
 		self.wndHelp = uiHelp.HelpWindow()
@@ -4218,6 +4593,9 @@ class Interface(object):
 
 		self.bigBoard = uiTip.BigBoard()
 		self.bigBoard.Hide()
+
+		self.fancyBoard = uiTip.FancyBoard()
+		self.fancyBoard.Hide()
 
 	def __MakeWebWindow(self):
 		if constInfo.IN_GAME_SHOP_ENABLE:
@@ -4236,17 +4614,42 @@ class Interface(object):
 		self.wndCubeResult.LoadWindow()
 		self.wndCubeResult.Hide()
 
+	if app.ENABLE_ACCE_COSTUME_SYSTEM:
+		def __MakeAcceWindow(self):
+			self.wndAcceCombine = uiacce.CombineWindow()
+			self.wndAcceCombine.LoadWindow()
+			self.wndAcceCombine.Hide()
+
+			self.wndAcceAbsorption = uiacce.AbsorbWindow()
+			self.wndAcceAbsorption.LoadWindow()
+			self.wndAcceAbsorption.Hide()
+
+			if self.wndInventory:
+				self.wndInventory.SetAcceWindow(self.wndAcceCombine, self.wndAcceAbsorption)
+
 	# ACCESSORY_REFINE_ADD_METIN_STONE
 	def __MakeItemSelectWindow(self):
-		self.wndItemSelect = uiselectitem.SelectItemWindow()
+		self.wndItemSelect = uiSelectItem.SelectItemWindow()
 		self.wndItemSelect.Hide()
 	# END_OF_ACCESSORY_REFINE_ADD_METIN_STONE
 
 	def __MakePlayerbotAdminWindow(self):
-		self.wndPlayerbotAdmin = PlayerbotAdminWindow()
-		self.wndPlayerbotAdmin.LoadWindow()
-		self.wndPlayerbotAdmin.Hide()
-				
+		# Ta sama zasada co przy panelu GM: okno admina botow nie moze
+		# przerwac budowy calego interfejsu.
+		self.wndPlayerbotAdmin = None
+		try:
+			wndPlayerbotAdmin = PlayerbotAdminWindow()
+			wndPlayerbotAdmin.LoadWindow()
+			wndPlayerbotAdmin.Hide()
+			self.wndPlayerbotAdmin = wndPlayerbotAdmin
+		except:
+			# The reason, not just the fact: a fail-safe that hides why it fired
+			# turns every player report into one nobody can act on.
+			import dbg, traceback
+			dbg.TraceError("Playerbot admin window (F10) could not be built - the game loads without it")
+			for line in traceback.format_exc().splitlines():
+				dbg.TraceError("    " + line)
+
 	def MakeInterface(self):
 		self.__MakeMessengerWindow()
 		self.__MakeGuildWindow()
@@ -4263,26 +4666,40 @@ class Interface(object):
 		self.__MakeWebWindow()
 		self.__MakeCubeWindow()
 		self.__MakeCubeResultWindow()
-		
-		
+		if app.ENABLE_ACCE_COSTUME_SYSTEM:
+			self.__MakeAcceWindow()
+
 		# ACCESSORY_REFINE_ADD_METIN_STONE
 		self.__MakeItemSelectWindow()
 		# END_OF_ACCESSORY_REFINE_ADD_METIN_STONE
 
 		self.__MakePlayerbotAdminWindow()
 
+		#gamemater
+		self.gameMaster_CaptchaDialogs = {}
+
 		self.questButtonList = []
 		self.whisperButtonList = []
 		self.whisperDialogDict = {}
-		self.privateShopAdvertisementBoardDict = {}
+		self.privateShopAdvertisementBoardDict = {"player":{}, "offline":{}}
+		self.reputationBarDict = {}
 
 		self.wndInventory.SetItemToolTip(self.tooltipItem)
+		self.wndItemShop.SetItemToolTip(self.tooltipItem)
+		self.wndItemShop.SetToolTip(self.tooltip)
+
+		self.dlgRefineNew.SetItemToolTip(self.tooltipItem)
+
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			self.wndDragonSoul.SetItemToolTip(self.tooltipItem)
 			self.wndDragonSoulRefine.SetItemToolTip(self.tooltipItem)
 		self.wndSafebox.SetItemToolTip(self.tooltipItem)
 		self.wndCube.SetItemToolTip(self.tooltipItem)
 		self.wndCubeResult.SetItemToolTip(self.tooltipItem)
+
+		if app.ENABLE_ACCE_COSTUME_SYSTEM:
+			self.wndAcceCombine.SetItemToolTip(self.tooltipItem)
+			self.wndAcceAbsorption.SetItemToolTip(self.tooltipItem)
 
 		# ITEM_MALL
 		self.wndMall.SetItemToolTip(self.tooltipItem)
@@ -4299,10 +4716,27 @@ class Interface(object):
 
 		self.dlgShop.SetItemToolTip(self.tooltipItem)
 		self.dlgExchange.SetItemToolTip(self.tooltipItem)
-		self.privateShopBuilder.SetItemToolTip(self.tooltipItem)
+		self.offlineShopBuilder.SetToolTip(self.tooltip, self.tooltipItem)
+		self.offlineShopManage.SetToolTip(self.tooltip, self.tooltipItem)
+		self.offlineShopGuest.SetToolTip(self.tooltip, self.tooltipItem)
+		self.wndHorseInventory.SetToolTip(self.tooltip)
+		self.wndCrafting.SetItemToolTip(self.tooltipItem)
 
 		self.__InitWhisper()
-		self.DRAGON_SOUL_IS_QUALIFIED = False
+		self.DRAGON_SOUL_IS_QUALIFIED = True if app.ENABLE_NO_DSS_QUALIFICATION else False
+
+		self.__InitializeWindows()
+
+	def __InitializeWindows(self):
+		pass
+
+	def _AppendInterfaceWindow(self, name, window):
+		self.interfaceWindowList[name] = window
+
+	def _GetInterfaceWindow(self, name):
+		return self.interfaceWindowList.get(name, None)
+
+	GetInterfaceWindow = _GetInterfaceWindow
 
 	def MakeHyperlinkTooltip(self, hyperlink):
 		tokens = hyperlink.split(":")
@@ -4310,17 +4744,34 @@ class Interface(object):
 			type = tokens[0]
 			if "item" == type:
 				self.hyperlinkItemTooltip.SetHyperlinkItem(tokens)
+			elif "msg" == type:
+				data = tokens[1].split(",")
+				name = data[0]
+				empire = int(data[1])
+				self.OpenWhisperDialog(name, empire)
 
 	## Make Windows & Dialogs
 	################################
 
 	def Close(self):
+		if self.popupManager:
+			self.popupManager.Destroy()
+			del self.popupManager
+
 		if self.dlgWhisperWithoutTarget:
 			self.dlgWhisperWithoutTarget.Destroy()
-			del self.dlgWhisperWithoutTarget
+			self.dlgWhisperWithoutTarget = None
+
+		player_name = player.GetMainCharacterName()
+		if constInfo.WHISPER_DICT.has_key(player_name):
+			for target_name, whisper_data in constInfo.WHISPER_DICT[player_name].items():
+				if whisper_data["dialog"]:
+					whisper_data["dialog"].Destroy()
+					whisper_data["dialog"] = None
 
 		if uiQuest.QuestDialog.__dict__.has_key("QuestCurtain"):
 			uiQuest.QuestDialog.QuestCurtain.Close()
+			del uiQuest.QuestDialog.QuestCurtain #@fixme016 it's recreated only if it's deleted from scope
 
 		if self.wndQuestWindow:
 			for key, eachQuestWindow in self.wndQuestWindow.items():
@@ -4329,15 +4780,17 @@ class Interface(object):
 				eachQuestWindow = None
 		self.wndQuestWindow = {}
 
+		chat.DestroyWhisperMap()
+
 		if self.wndChat:
 			self.wndChat.Destroy()
 
 		if self.wndTaskBar:
 			self.wndTaskBar.Destroy()
-		
+
 		if self.wndExpandedTaskBar:
 			self.wndExpandedTaskBar.Destroy()
-			
+
 		if self.wndEnergyBar:
 			self.wndEnergyBar.Destroy()
 
@@ -4346,7 +4799,25 @@ class Interface(object):
 
 		if self.wndInventory:
 			self.wndInventory.Destroy()
-			
+
+		if self.wndItemShop:
+			self.wndItemShop.Destroy()
+
+		if self.wndCrafting:
+			self.wndCrafting.Destroy()
+
+		if self.wndHorseInventory:
+			self.wndHorseInventory.Destroy()
+
+		if self.wndSpecialShop:
+			self.wndSpecialShop.Destroy()
+
+		if self.wndAttributeList:
+			self.wndAttributeList.Destroy()
+
+		if self.wndPlayerStat:
+			self.wndPlayerStat.Destroy()
+
 		if self.wndDragonSoul:
 			self.wndDragonSoul.Destroy()
 
@@ -4392,7 +4863,21 @@ class Interface(object):
 
 		if self.wndCube:
 			self.wndCube.Destroy()
-			
+
+		if app.ENABLE_ACCE_COSTUME_SYSTEM and self.wndAcceCombine:
+			self.wndAcceCombine.Destroy()
+
+		if app.ENABLE_ACCE_COSTUME_SYSTEM and self.wndAcceAbsorption:
+			self.wndAcceAbsorption.Destroy()
+
+		if app.ENABLE_MOVE_CHANNEL and self.wndMoveChannel:
+			self.wndMoveChannel.Destroy()
+			self.wndMoveChannel = None
+
+		if app.ENABLE_WON_EXCHANGE_WINDOW:
+			self.wndWonExchange.Destroy()
+			self.wndWonExchange = None
+
 		if self.wndCubeResult:
 			self.wndCubeResult.Destroy()
 
@@ -4405,8 +4890,20 @@ class Interface(object):
 		if self.wndGuild:
 			self.wndGuild.Destroy()
 
-		if self.privateShopBuilder:
-			self.privateShopBuilder.Destroy()
+		if self.offlineShopBuilder:
+			self.offlineShopBuilder.Destroy()
+
+		if self.offlineShopManage:
+			self.offlineShopManage.Destroy()
+
+		if self.offlineShopGuest:
+			self.offlineShopGuest.Destroy()
+
+		if self.offlineShopHistory:
+			self.offlineShopHistory.Destroy()
+
+		if self.offlineShopSearch:
+			self.offlineShopSearch.Destroy()
 
 		if self.dlgRefineNew:
 			self.dlgRefineNew.Destroy()
@@ -4416,6 +4913,44 @@ class Interface(object):
 
 		if self.wndGameButton:
 			self.wndGameButton.Destroy()
+
+		if self.fishingGameDialog:
+			self.fishingGameDialog.Destroy()
+			self.fishingGameDialog.Hide()
+
+		if self.potionRechargeDialog:
+			self.potionRechargeDialog.Destroy()
+			self.potionRechargeDialog.Hide()
+
+		if self.busyActionDialog:
+			self.busyActionDialog.Destroy()
+			self.busyActionDialog.Hide()
+
+		if self.maintenanceDialog:
+			self.maintenanceDialog.Destroy()
+			self.maintenanceDialog.Hide()
+
+		if self.reportPlayerDialog:
+			self.reportPlayerDialog.Destroy()
+			self.reportPlayerDialog.Hide()
+
+		if self.itemExchangeDialog:
+			self.itemExchangeDialog.Destroy()
+			self.itemExchangeDialog.Hide()
+
+		if self.captchaDialog:
+			self.captchaDialog.Destroy()
+			self.captchaDialog.Hide()
+
+		if self.gameMasterTargetDialog:
+			self.gameMasterTargetDialog.Destroy()
+			self.gameMasterTargetDialog.Hide()
+
+		if self.gameMaster_CaptchaDialogs:
+			for dialog in self.gameMaster_CaptchaDialogs.values():
+				if dialog:
+					dialog.Destroy()
+					dialog.Hide()
 
 		# ITEM_MALL
 		if self.mallPageDlg:
@@ -4453,6 +4988,12 @@ class Interface(object):
 		del self.wndEnergyBar
 		del self.wndCharacter
 		del self.wndInventory
+		del self.wndItemShop
+		del self.wndCrafting
+		del self.wndHorseInventory
+		del self.wndSpecialShop
+		del self.wndAttributeList
+		del self.wndPlayerStat
 		if self.wndDragonSoul:
 			del self.wndDragonSoul
 		if self.wndDragonSoulRefine:
@@ -4474,7 +5015,11 @@ class Interface(object):
 		del self.wndCube
 		del self.wndCubeResult
 		del self.wndPlayerbotAdmin
-		del self.privateShopBuilder
+		del self.offlineShopBuilder
+		del self.offlineShopManage
+		del self.offlineShopGuest
+		del self.offlineShopHistory
+		del self.offlineShopSearch
 		del self.inputDialog
 		del self.wndChatLog
 		del self.dlgRefineNew
@@ -4482,15 +5027,34 @@ class Interface(object):
 		del self.wndGameButton
 		del self.tipBoard
 		del self.bigBoard
+		del self.fancyBoard
 		del self.wndItemSelect
+		del self.fishingGameDialog
+		del self.potionRechargeDialog
+		del self.busyActionDialog
+		del self.maintenanceDialog
+		del self.reportPlayerDialog
+		del self.itemExchangeDialog
+		del self.captchaDialog
+		del self.gameMasterTargetDialog
+
+		if app.ENABLE_ACCE_COSTUME_SYSTEM:
+			del self.wndAcceCombine
+			del self.wndAcceAbsorption
 
 		self.questButtonList = []
 		self.whisperButtonList = []
 		self.whisperDialogDict = {}
-		self.privateShopAdvertisementBoardDict = {}
+		self.privateShopAdvertisementBoardDict ={"player":{}, "offline":{}}
+		self.reputationBarDict = {}
 		self.guildScoreBoardDict = {}
 		self.equipmentDialogDict = {}
+		self.gameMaster_CaptchaDialogs = {}
 
+		map(lambda wnd : wnd[1].Destroy(), self.interfaceWindowList.iteritems())
+		self.interfaceWindowList = {}
+
+		captcha.ClearAllCaptchaImage()
 		uiChat.DestroyChatInputSetWindow()
 
 	## Skill
@@ -4520,7 +5084,8 @@ class Interface(object):
 	def RefreshStatus(self):
 		self.wndTaskBar.RefreshStatus()
 		self.wndCharacter.RefreshStatus()
-		self.wndInventory.RefreshStatus()
+		self.wndInventory.RefreshGold()
+		self.wndAttributeList.RefreshStatus()
 		if self.wndEnergyBar:
 			self.wndEnergyBar.RefreshStatus()
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
@@ -4535,11 +5100,13 @@ class Interface(object):
 
 	def RefreshInventory(self):
 		self.wndTaskBar.RefreshQuickSlot()
-		self.wndInventory.RefreshItemSlot()
+		if self.wndInventory:
+			self.wndInventory.RefreshItemSlot()
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
-			self.wndDragonSoul.RefreshItemSlot()
+			if self.wndDragonSoul and self.wndDragonSoul.IsShow():
+				self.wndDragonSoul.RefreshItemSlot()
 
-	def RefreshCharacter(self): ## Character �������� ��, Inventory �������� ���� �׸� ���� Refresh
+	def RefreshCharacter(self):
 		self.wndCharacter.RefreshCharacter()
 		self.wndTaskBar.RefreshQuickSlot()
 
@@ -4585,12 +5152,6 @@ class Interface(object):
 		self.wndMessenger.ClearGuildMember()
 		self.wndGuild.DeleteGuild()
 
-	def RefreshMobile(self):
-		self.dlgSystem.RefreshMobile()
-
-	def OnMobileAuthority(self):
-		self.dlgSystem.OnMobileAuthority()
-
 	def OnBlockMode(self, mode):
 		self.dlgSystem.OnBlockMode(mode)
 
@@ -4610,11 +5171,15 @@ class Interface(object):
 		self.dlgShop.Open(vid)
 		self.dlgShop.SetTop()
 
+		eventManager.EventManager().send_event(eventManager.EVENT_MARK_SHOP_CURRENT, vid, False)
+
 	def CloseShopDialog(self):
 		self.dlgShop.Close()
+		self.offlineShopGuest.CloseNormal()
 
 	def RefreshShopDialog(self):
 		self.dlgShop.Refresh()
+		self.offlineShopGuest.RefreshNormal()
 
 	## Quest
 	def OpenCharacterWindowQuestPage(self):
@@ -4626,6 +5191,7 @@ class Interface(object):
 		wnds = ()
 
 		q = uiQuest.QuestDialog(skin, idx)
+		q.SetToolTip(self.tooltipItem)
 		q.SetWindowName("QuestWindow" + str(idx))
 		q.Show()
 		if skin:
@@ -4644,7 +5210,7 @@ class Interface(object):
 		self.wndQuestWindowNewKey = self.wndQuestWindowNewKey + 1
 
 		# END_OF_UNKNOWN_UPDATE
-		
+
 	def RemoveQuestDialog(self, key):
 		del self.wndQuestWindow[key]
 
@@ -4671,7 +5237,6 @@ class Interface(object):
 	def RemovePartyMember(self, pid):
 		self.wndParty.RemovePartyMember(pid)
 
-		##!! 20061026.levites.����Ʈ_��ġ_����
 		self.__ArrangeQuestButton()
 
 	def LinkPartyMember(self, pid, vid):
@@ -4686,7 +5251,6 @@ class Interface(object):
 	def ExitParty(self):
 		self.wndParty.ExitParty()
 
-		##!! 20061026.levites.����Ʈ_��ġ_����
 		self.__ArrangeQuestButton()
 
 	def PartyHealReady(self):
@@ -4809,7 +5373,7 @@ class Interface(object):
 	def HideAllWindows(self):
 		if self.wndTaskBar:
 			self.wndTaskBar.Hide()
-		
+
 		if self.wndEnergyBar:
 			self.wndEnergyBar.Hide()
 
@@ -4818,7 +5382,22 @@ class Interface(object):
 
 		if self.wndInventory:
 			self.wndInventory.Hide()
-			
+
+		if self.wndItemShop:
+			self.wndItemShop.Hide()
+
+		if self.wndCrafting:
+			self.wndCrafting.Hide()
+
+		if self.wndSpecialShop:
+			self.wndSpecialShop.Hide()
+
+		if self.wndAttributeList:
+			self.wndAttributeList.Hide()
+
+		if self.wndPlayerStat:
+			self.wndPlayerStat.Hide()
+
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			self.wndDragonSoul.Hide()
 			self.wndDragonSoulRefine.Hide()
@@ -4834,10 +5413,17 @@ class Interface(object):
 
 		if self.wndGuild:
 			self.wndGuild.Hide()
-			
+
 		if self.wndExpandedTaskBar:
 			self.wndExpandedTaskBar.Hide()
- 
+
+		if app.ENABLE_MOVE_CHANNEL and self.wndMoveChannel:
+			self.wndMoveChannel.Hide()
+
+		if app.ENABLE_WON_EXCHANGE_WINDOW:
+			self.wndWonExchange.Hide()
+
+		map(lambda wnd : wnd[1].Close(), self.interfaceWindowList.iteritems())
 
 	def ShowMouseImage(self):
 		self.wndTaskBar.ShowMouseImage()
@@ -4849,7 +5435,6 @@ class Interface(object):
 		if True == self.wndChat.IsEditMode():
 			self.wndChat.CloseChat()
 		else:
-			# ���������� ���������� ä�� �Է��� �ȵ�
 			if self.wndWeb and self.wndWeb.IsShow():
 				pass
 			else:
@@ -4885,6 +5470,24 @@ class Interface(object):
 		else:
 			self.wndMessenger.SetTop()
 			self.wndMessenger.Show()
+
+	def ToggleTaskbarVisibility(self):
+		if self.wndTaskBar.IsShow():
+			self.wndTaskBar.Hide()
+		else:
+			self.wndTaskBar.Show()
+
+	def ToggleMinimapVisibility(self):
+		if self.wndMiniMap.IsShow():
+			self.wndMiniMap.Hide()
+		else:
+			self.wndMiniMap.Show()
+
+	def ToggleGameButtonVisibility(self):
+		if self.wndGameButton.IsShow():
+			self.wndGameButton.Hide()
+		else:
+			self.wndGameButton.Show()
 
 	def ToggleMiniMap(self):
 		if app.IsPressed(app.DIK_LSHIFT) or app.IsPressed(app.DIK_RSHIFT):
@@ -4942,13 +5545,11 @@ class Interface(object):
 				self.wndInventory.OverOutItem()
 				self.wndInventory.Close()
 
+	# ---- Panel GM (F9) / admin botow (F10) --------------------------------
 	def ToggleGMPanelWindow(self):
-		# Wolane WYLACZNIE po odpowiedzi serwera na /gmpanel_open (patrz
-		# game.py __GMPanel_Open) - dokladnie ten sam wzorzec co F10/
-		# PlayerbotAdminWindow. Serwer sprawdza gm_level (cmd.cpp) na nowo
-		# przy kazdym nacisnieciu F9, wiec nie ma tu juz zadnej bramki
-		# client-side do sprawdzenia - ta linia w ogole nie wykona sie dla
-		# zwyklego gracza, bo "OpenGMPanelWindow" nigdy do niego nie dotrze.
+		# Wolane WYLACZNIE po odpowiedzi serwera na /gmpanel_open (game.py
+		# __GMPanel_Open) - serwer sprawdza gm_level przy kazdym nacisnieciu,
+		# wiec nie ma tu zadnej bramki client-side.
 		if not self.wndGMPanel:
 			import chat
 			chat.AppendChat(chat.CHAT_TYPE_INFO, "Panel GM nie zaladowal sie w tym kliencie - szczegoly w syserr.txt")
@@ -4960,10 +5561,14 @@ class Interface(object):
 			self.wndGMPanel.Hide()
 
 	def OpenPlayerbotAdminWindow(self):
+		if not self.wndPlayerbotAdmin:
+			import chat
+			chat.AppendChat(chat.CHAT_TYPE_INFO, "Okno admina botow nie zaladowalo sie w tym kliencie - szczegoly w syserr.txt")
+			return
 		self.wndPlayerbotAdmin.Open()
 
-	# Called from game.py, wired to uitarget.TargetBoard's "Sprawdz" button
-	# (GM-only, next to Zapr. Grupy - see uitarget.py RefreshButton).
+	# uitarget.TargetBoard "Sprawdz" (GM-only) - zakladka "Sprawdz Gracza"
+	# z tym celem juz wpisanym.
 	def OpenGMLookupFor(self, name):
 		if not self.wndGMPanel:
 			return
@@ -4971,25 +5576,19 @@ class Interface(object):
 		self.wndGMPanel.SetTop()
 		self.wndGMPanel.OpenLookupFor(name)
 
-	# Called from game.py, wired to uitarget.TargetBoard's "EQ" button.
-	# Opens the SAME native-look EquipmentDialog the vanilla /view_equip
-	# would (OpenEquipmentDialog, already existing/working code below) but
-	# fills it from do_gmpanel_view_equip's safe text response instead of
-	# that crashing native packet - see the comment on _gmEquipBuffers.
+	# uitarget.TargetBoard "EQ" (GM-only): to samo natywne EquipmentDialog co
+	# /view_equip, ale wypelnione z tekstowej odpowiedzi do_gmpanel_view_equip
+	# (GMEquipChunk) zamiast z binarnego pakietu.
 	def OpenGMEquipFor(self, vid, name):
 		vid = int(vid)
 		self.OpenEquipmentDialog(vid)
 		self._gmEquipBuffers[vid] = ""
 		net.SendChatPacket("/gmpanel_view_equip %d" % vid)
 
-	# Called from game.py's server-command dispatcher with each
-	# "GMEquipChunk <vid> <isLast> <data>" payload from do_gmpanel_view_equip
-	# (cmd_gm.cpp) - entries are
+	# "GMEquipChunk <vid> <isLast> <data>" - wpisy
 	# "<slot>:<vnum>:<count>:<s0>:<s1>:<s2>:<t0>:<v0>:...:<t6>:<v6>;"
-	# (3 sockets, 7 attribute type/value pairs - ITEM_SOCKET_MAX_NUM /
-	# ITEM_ATTRIBUTE_MAX_NUM server-side). SetEquipmentDialogItem must run
-	# BEFORE the socket/attr calls for the same slot - it resets
-	# itemDataDict[slotIndex] to empty sockets/attrs as a side effect.
+	# (3 gniazda, 7 par typ/wartosc bonusu). SetEquipmentDialogItem musi byc
+	# PRZED gniazdami/bonusami tego slotu - resetuje itemDataDict[slot].
 	def SetGMEquipChunk(self, vid, isLast, data):
 		vid = int(vid)
 		if vid not in self._gmEquipBuffers:
@@ -5030,8 +5629,7 @@ class Interface(object):
 				self.wndExpandedTaskBar.SetTop()
 			else:
 				self.wndExpandedTaskBar.Close()
-	
-	# ��ȥ��
+
 	def DragonSoulActivate(self, deck):
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			self.wndDragonSoul.ActivateDragonSoulByExtern(deck)
@@ -5039,15 +5637,20 @@ class Interface(object):
 	def DragonSoulDeactivate(self):
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			self.wndDragonSoul.DeactivateDragonSoul()
-		
+
 	def Highligt_Item(self, inven_type, inven_pos):
 		if player.DRAGON_SOUL_INVENTORY == inven_type:
 			if app.ENABLE_DRAGON_SOUL_SYSTEM:
 				self.wndDragonSoul.HighlightSlot(inven_pos)
-			
+
+		elif app.ENABLE_HIGHLIGHT_NEW_ITEM and player.SLOT_TYPE_INVENTORY == inven_type:
+			self.wndInventory.HighlightSlot(inven_pos)
+
+
 	def DragonSoulGiveQuilification(self):
 		self.DRAGON_SOUL_IS_QUALIFIED = True
-		self.wndExpandedTaskBar.SetToolTipText(uiTaskBar.ExpandedTaskBar.BUTTON_DRAGON_SOUL, uiScriptLocale.TASKBAR_DRAGON_SOUL)
+		if self.wndExpandedTaskBar:
+			self.wndExpandedTaskBar.SetToolTipText(uiTaskBar.ExpandedTaskBar.BUTTON_DRAGON_SOUL, uiScriptLocale.TASKBAR_DRAGON_SOUL)
 
 	def ToggleDragonSoulWindow(self):
 		if False == player.IsObserverMode():
@@ -5065,7 +5668,7 @@ class Interface(object):
 							self.wndPopupDialog.Open()
 				else:
 					self.wndDragonSoul.Close()
-		
+
 	def ToggleDragonSoulWindowWithNoInfo(self):
 		if False == player.IsObserverMode():
 			if app.ENABLE_DRAGON_SOUL_SYSTEM:
@@ -5074,19 +5677,19 @@ class Interface(object):
 						self.wndDragonSoul.Show()
 				else:
 					self.wndDragonSoul.Close()
-				
+
 	def FailDragonSoulRefine(self, reason, inven_type, inven_pos):
 		if False == player.IsObserverMode():
 			if app.ENABLE_DRAGON_SOUL_SYSTEM:
 				if True == self.wndDragonSoulRefine.IsShow():
 					self.wndDragonSoulRefine.RefineFail(reason, inven_type, inven_pos)
- 
+
 	def SucceedDragonSoulRefine(self, inven_type, inven_pos):
 		if False == player.IsObserverMode():
 			if app.ENABLE_DRAGON_SOUL_SYSTEM:
 				if True == self.wndDragonSoulRefine.IsShow():
 					self.wndDragonSoulRefine.RefineSucceed(inven_type, inven_pos)
- 
+
 	def OpenDragonSoulRefineWindow(self):
 		if False == player.IsObserverMode():
 			if app.ENABLE_DRAGON_SOUL_SYSTEM:
@@ -5102,8 +5705,7 @@ class Interface(object):
 				if True == self.wndDragonSoulRefine.IsShow():
 					self.wndDragonSoulRefine.Close()
 
-	# ��ȥ�� ��
-	
+
 	def ToggleGuildWindow(self):
 		if not self.wndGuild.IsShow():
 			if self.wndGuild.CanOpen():
@@ -5152,20 +5754,19 @@ class Interface(object):
 	def OpenWebWindow(self, url):
 		self.wndWeb.Open(url)
 
-		# ���������� ���� ä���� �ݴ´�
 		self.wndChat.CloseChat()
 
 	# show GIFT
 	def ShowGift(self):
 		self.wndTaskBar.ShowGift()
-	    	
+
 	def CloseWbWindow(self):
 		self.wndWeb.Close()
 
 	def OpenCubeWindow(self):
 		self.wndCube.Open()
 
-		if FALSE == self.wndInventory.IsShow():
+		if False == self.wndInventory.IsShow():
 			self.wndInventory.Show()
 
 	def UpdateCubeInfo(self, gold, itemVnum, count):
@@ -5179,14 +5780,58 @@ class Interface(object):
 
 	def SucceedCubeWork(self, itemVnum, count):
 		self.wndCube.Clear()
-		
-		print "ť�� ���� ����! [%d:%d]" % (itemVnum, count)
 
-		if 0: # ��� �޽��� ����� ���� �Ѵ�
+		if 0:
 			self.wndCubeResult.SetPosition(*self.wndCube.GetGlobalPosition())
 			self.wndCubeResult.SetCubeResultItem(itemVnum, count)
 			self.wndCubeResult.Open()
 			self.wndCubeResult.SetTop()
+
+	if app.ENABLE_MOVE_CHANNEL:
+		def ToggleMoveChannelWindow(self):
+			if not player.IsObserverMode():
+				if not self.wndMoveChannel.IsShow():
+					self.wndMoveChannel.Open()
+				else:
+					self.wndMoveChannel.Hide()
+
+	if app.ENABLE_WON_EXCHANGE_WINDOW:
+		def ToggleWonExchangeWindow(self):
+			if player.IsObserverMode():
+				return
+
+			if not self.wndWonExchange.IsShow():
+				self.wndWonExchange.Open()
+				self.wndWonExchange.SetTop()
+			else:
+				self.wndWonExchange.Close()
+
+	if app.ENABLE_ACCE_COSTUME_SYSTEM:
+		def ActAcce(self, iAct, bWindow):
+			board = (self.wndAcceAbsorption,self.wndAcceCombine)[int(bWindow)]
+			if iAct == 1:
+				self.ActAcceOpen(board)
+			elif iAct == 2:
+				self.ActAcceClose(board)
+			elif iAct == 3 or iAct == 4:
+				self.ActAcceRefresh(board, iAct)
+
+		def ActAcceOpen(self,board):
+			if not board.IsOpened():
+				board.Open()
+			if not self.wndInventory.IsShow():
+				self.wndInventory.Show()
+			self.wndInventory.RefreshBagSlotWindow()
+
+		def ActAcceClose(self,board):
+			if board.IsOpened():
+				board.Close()
+			self.wndInventory.RefreshBagSlotWindow()
+
+		def ActAcceRefresh(self,board,iAct):
+			if board.IsOpened():
+				board.Refresh(iAct)
+			self.wndInventory.RefreshBagSlotWindow()
 
 	def __HideWindows(self):
 		hideWindows = self.wndTaskBar,\
@@ -5197,21 +5842,27 @@ class Interface(object):
 						self.wndMessenger,\
 						self.wndChat,\
 						self.wndParty,\
-						self.wndGameButton,
+						self.wndGameButton, \
+					  	self.wndItemShop
 
 		if self.wndEnergyBar:
 			hideWindows += self.wndEnergyBar,
- 			
+
 		if self.wndExpandedTaskBar:
 			hideWindows += self.wndExpandedTaskBar,
- 			
+
 		if app.ENABLE_DRAGON_SOUL_SYSTEM:
 			hideWindows += self.wndDragonSoul,\
 						self.wndDragonSoulRefine,
 
-		hideWindows = filter(lambda x:x.IsShow(), hideWindows)
-		map(lambda x:x.Hide(), hideWindows)
-		import sys
+		if app.ENABLE_MOVE_CHANNEL and self.wndMoveChannel:
+			hideWindows += self.wndMoveChannel,
+		
+		for window in self.interfaceWindowList.values():
+			hideWindows += window,
+
+		hideWindows = filter(lambda x: x != None and x.IsShow(), hideWindows)
+		map(lambda x: x.Hide(), hideWindows)
 
 		self.HideAllQuestButton()
 		self.HideAllWhisperButton()
@@ -5222,7 +5873,6 @@ class Interface(object):
 		return hideWindows
 
 	def __ShowWindows(self, wnds):
-		import sys
 		map(lambda x:x.Show(), wnds)
 		global IsQBHide
 		if not IsQBHide:
@@ -5243,6 +5893,18 @@ class Interface(object):
 	def BINARY_OpenSelectItemWindow(self):
 		self.wndItemSelect.Open()
 	# END_OF_ACCESSORY_REFINE_ADD_METIN_STONE
+
+	def AppearReputationBar(self, vid, fraction):
+		if self.reputationBarDict.has_key(vid):
+			self.reputationBarDict[vid].Open(vid, fraction)
+			return
+
+		self.reputationBarDict[vid] = uiReputation.ReputationBar()
+		self.reputationBarDict[vid].Open(vid, fraction)
+
+	def DisappearReputationBar(self, vid):
+		if self.reputationBarDict.has_key(vid):
+			self.reputationBarDict[vid].Hide()
 
 	#####################################################################################
 	### Private Shop ###
@@ -5272,24 +5934,57 @@ class Interface(object):
 		if not len(self.inputDialog.GetText()):
 			return True
 
-		self.privateShopBuilder.Open(self.inputDialog.GetText())
-		self.ClosePrivateShopInputNameDialog()
+		self.offlineShopBuilder.Open(self.inputDialog.GetText())
 		return True
 
-	def AppearPrivateShop(self, vid, text):
+	def OpenPrivateShopManage(self):
+		self.offlineShopManage.Toggle()
+		return True
+
+	def ClickPrivateShop(self, vid, is_offline):
+		if self.offlineShopGuest.IsShowNormal():
+			self.offlineShopGuest.Close()
+			eventManager.EventManager().send_delayed_event(uiShop.EVENT_CLICK_PRIVATE_SHOP, 0.15, vid, is_offline)
+			return
+		elif self.offlineShopGuest.IsShow():
+			self.offlineShopGuest.Close()
+
+		if is_offline:
+			ikashop.SendOnClickPacket(vid)
+		else:
+			net.SendOnClickPacket(vid)
+
+	def MarkPrivateShopAsViewed(self, vid, is_offline=False):
+		shop_type = "offline" if is_offline else "player"
+		if self.privateShopAdvertisementBoardDict[shop_type].has_key(vid):
+			self.privateShopAdvertisementBoardDict[shop_type][vid].MarkAsViewed()
+
+	def MarkPrivateShopAsCurrent(self, vid, is_offline=False):
+		shop_type = "offline" if is_offline else "player"
+		if self.privateShopAdvertisementBoardDict[shop_type].has_key(vid):
+			self.privateShopAdvertisementBoardDict[shop_type][vid].MarkAsCurrent()
+
+	def AppearPrivateShop(self, vid, text, is_offline_shop=False):
 
 		board = uiPrivateShopBuilder.PrivateShopAdvertisementBoard()
-		board.Open(vid, text)
+		board.Open(vid, text, is_offline_shop)
 
-		self.privateShopAdvertisementBoardDict[vid] = board
+		shop_type = "offline" if is_offline_shop else "player"
+		self.privateShopAdvertisementBoardDict[shop_type][vid] = board
 
-	def DisappearPrivateShop(self, vid):
+	def DisappearPrivateShop(self, vid, is_offline_shop=False):
+		shop_type = "offline" if is_offline_shop else "player"
+		if not self.privateShopAdvertisementBoardDict[shop_type].has_key(vid):
+			return
+		del self.privateShopAdvertisementBoardDict[shop_type][vid]
 
-		if not self.privateShopAdvertisementBoardDict.has_key(vid):
+		uiPrivateShopBuilder.DeleteADBoard(vid, is_offline_shop)
+
+	def ToggleOfflineShopVisibility(self, vid, state):
+		if not self.privateShopAdvertisementBoardDict["offline"].has_key(vid):
 			return
 
-		del self.privateShopAdvertisementBoardDict[vid]
-		uiPrivateShopBuilder.DeleteADBoard(vid)
+		self.privateShopAdvertisementBoardDict["offline"][vid].SetVisible(state)
 
 	#####################################################################################
 	### Equipment ###
@@ -5325,12 +6020,12 @@ class Interface(object):
 	#####################################################################################
 
 	#####################################################################################
-	### Quest ###	
+	### Quest ###
 	def BINARY_ClearQuest(self, index):
 		btn = self.__FindQuestButton(index)
 		if 0 != btn:
-			self.__DestroyQuestButton(btn)		
-	
+			self.__DestroyQuestButton(btn)
+
 	def RecvQuest(self, index, name):
 		# QUEST_LETTER_IMAGE
 		self.BINARY_RecvQuest(index, name, "file", localeInfo.GetLetterImageName())
@@ -5345,7 +6040,6 @@ class Interface(object):
 		btn = uiWhisper.WhisperButton()
 
 		# QUEST_LETTER_IMAGE
-		##!! 20061026.levites.����Ʈ_�̹���_��ü
 		import item
 		if "item"==iconType:
 			item.SelectItem(int(iconName))
@@ -5353,29 +6047,36 @@ class Interface(object):
 		else:
 			buttonImageFileName=iconName
 
-		if localeInfo.IsEUROPE():
-			if "highlight" == iconType:
-				btn.SetUpVisual("locale/ymir_ui/highlighted_quest.tga")
-				btn.SetOverVisual("locale/ymir_ui/highlighted_quest_r.tga")
-				btn.SetDownVisual("locale/ymir_ui/highlighted_quest_r.tga")
-			else:
-				btn.SetUpVisual(localeInfo.GetLetterCloseImageName())
-				btn.SetOverVisual(localeInfo.GetLetterOpenImageName())
-				btn.SetDownVisual(localeInfo.GetLetterOpenImageName())				
+		if iconName and (iconType not in ("item", "file")):  # type "ex" implied
+			btn.SetUpVisual("d:/ymir work/ui/game/quest/questicon/%s.tga" % (iconName.replace("open", "close")))
+			btn.SetOverVisual("d:/ymir work/ui/game/quest/questicon/%s.tga" % (iconName))
+			btn.SetDownVisual("d:/ymir work/ui/game/quest/questicon/%s.tga" % (iconName))
 		else:
-			btn.SetUpVisual(buttonImageFileName)
-			btn.SetOverVisual(buttonImageFileName)
-			btn.SetDownVisual(buttonImageFileName)
-			btn.Flash()
+			btn.SetUpVisual("d:/ymir work/ui/game/quest/questicon/scroll_close.tga")
+			btn.SetDownVisual("d:/ymir work/ui/game/quest/questicon/scroll_open.tga")
+			btn.SetOverVisual("d:/ymir work/ui/game/quest/questicon/scroll_open.tga")
 		# END_OF_QUEST_LETTER_IMAGE
 
-		if localeInfo.IsARABIC():
-			btn.SetToolTipText(name, 0, 35)
-			btn.ToolTipText.SetHorizontalAlignCenter()
-		else:
-			btn.SetToolTipText(name, -20, 35)
-			btn.ToolTipText.SetHorizontalAlignLeft()
-			
+		btn.SetToolTipText(name, -20, 35)
+		btn.ToolTipText.SetHorizontalAlignLeft()
+
+		listOfTypes = iconType.split(",")
+		if "blink" in listOfTypes:
+			btn.Flash()
+
+		listOfColors = {
+			"golden":	0xFFffa200,
+			"green":	0xFF00e600,
+			"blue":		0xFF0099ff,
+			"purple":	0xFFcc33ff,
+
+			"fucsia":	0xFFcc0099,
+			"aqua":		0xFF00ffff,
+		}
+		for k,v in listOfColors.iteritems():
+			if k in listOfTypes:
+				btn.ToolTipText.SetPackedFontColor(v)
+
 		btn.SetEvent(ui.__mem_func__(self.__StartQuest), btn)
 		btn.Show()
 
@@ -5385,14 +6086,11 @@ class Interface(object):
 		self.questButtonList.insert(0, btn)
 		self.__ArrangeQuestButton()
 
-		#chat.AppendChat(chat.CHAT_TYPE_NOTICE, localeInfo.QUEST_APPEND)
-
 	def __ArrangeQuestButton(self):
 
 		screenWidth = wndMgr.GetScreenWidth()
 		screenHeight = wndMgr.GetScreenHeight()
 
-		##!! 20061026.levites.����Ʈ_��ġ_����
 		if self.wndParty.IsShow():
 			xPos = 100 + 30
 		else:
@@ -5443,11 +6141,27 @@ class Interface(object):
 	#####################################################################################
 	### Whisper ###
 
-	def __InitWhisper(self):
-		chat.InitWhisper(self)
+	def __UpdateUserBlockState(self, name, isBlock):
+		whisper = self.__GetWhisper(name)
+		if not whisper or not whisper["dialog"]:
+			return
 
-	## ä��â�� "�޽��� ������"�� �������� �̸� ���� ��ȭâ�� ���� �Լ�
-	## �̸��� ���� ������ ������ WhisperDialogDict �� ������ �����ȴ�.
+		whisper["dialog"].RefreshIgnoreButton(isBlock)
+
+	def __InitWhisper(self):
+		#chat.InitWhisper(self)
+
+		player_name = player.GetMainCharacterName()
+		if constInfo.WHISPER_DICT.has_key(player_name):
+			for target_name, whisper_data in constInfo.WHISPER_DICT[player_name].items():
+				if self.__FindWhisperButton(target_name) == 0:
+					self.__MakeWhisperButton(target_name, whisper_data["mode"])
+
+					for msg_data in whisper_data["history"]:
+						mode = msg_data[0]
+						msg = msg_data[1]
+						chat.AppendWhisper(mode, target_name, msg)
+
 	def OpenWhisperDialogWithoutTarget(self):
 		if not self.dlgWhisperWithoutTarget:
 			dlgWhisper = uiWhisper.WhisperDialog(self.MinimizeWhisperDialog, self.CloseWhisperDialog)
@@ -5464,7 +6178,6 @@ class Interface(object):
 			self.dlgWhisperWithoutTarget.SetTop()
 			self.dlgWhisperWithoutTarget.OpenWithoutTarget(self.RegisterTemporaryWhisperDialog)
 
-	## �̸� ���� ��ȭâ���� �̸��� ���������� WhisperDialogDict�� â�� �־��ִ� �Լ�
 	def RegisterTemporaryWhisperDialog(self, name):
 		if not self.dlgWhisperWithoutTarget:
 			return
@@ -5473,21 +6186,17 @@ class Interface(object):
 		if 0 != btn:
 			self.__DestroyWhisperButton(btn)
 
-		elif self.whisperDialogDict.has_key(name):
-			oldDialog = self.whisperDialogDict[name]
-			oldDialog.Destroy()
-			del self.whisperDialogDict[name]
-
-		self.whisperDialogDict[name] = self.dlgWhisperWithoutTarget
+		self.__DestroyWhisper(name)
+		self.__AddNewWhisper(name, self.dlgWhisperWithoutTarget)
 		self.dlgWhisperWithoutTarget.OpenWithTarget(name)
 		self.dlgWhisperWithoutTarget = None
 		self.__CheckGameMaster(name)
 
-	## ĳ���� �޴��� 1:1 ��ȭ �ϱ⸦ �������� �̸��� ������ �ٷ� â�� ���� �Լ�
-	def OpenWhisperDialog(self, name):
-		if not self.whisperDialogDict.has_key(name):
+	def OpenWhisperDialog(self, name, targetEmpire=0):
+		whisper = self.__GetWhisper(name)
+		if not whisper or not whisper["dialog"]:
 			dlg = self.__MakeWhisperDialog(name)
-			dlg.OpenWithTarget(name)
+			dlg.OpenWithTarget(name, targetEmpire)
 			dlg.chatLine.SetFocus()
 			dlg.Show()
 
@@ -5496,30 +6205,39 @@ class Interface(object):
 			if 0 != btn:
 				self.__DestroyWhisperButton(btn)
 
-	## �ٸ� ĳ���ͷκ��� �޼����� �޾����� �ϴ� ��ư�� ��� �δ� �Լ�
-	def RecvWhisper(self, name):
-		if not self.whisperDialogDict.has_key(name):
+	def PushWhisperMessageStack(self, name, mode, text):
+		if len(text) <= 0:
+			return
+
+		data = self.__GetWhisper(name)
+		if not data:
+			return
+
+		sentence_stack = data["history"]
+
+		LAST_SENTENCE_STACK_SIZE = 12
+		if len(sentence_stack) > LAST_SENTENCE_STACK_SIZE:
+			sentence_stack.pop(0)
+
+		sentence_stack.append([mode, text])
+		constInfo.WHISPER_DICT[player.GetMainCharacterName()][name] = data
+
+	def RecvWhisper(self, name, mode=chat.WHISPER_TYPE_NORMAL):
+		whisper = self.__GetWhisper(name)
+		if whisper and whisper["dialog"]:
+			if self.IsGameMasterName(name):
+				whisper["dialog"].SetGameMasterLook()
+		else:
 			btn = self.__FindWhisperButton(name)
 			if 0 == btn:
-				btn = self.__MakeWhisperButton(name)
-				btn.Flash()
-
+				btn = self.__MakeWhisperButton(name, mode)
 				chat.AppendChat(chat.CHAT_TYPE_NOTICE, localeInfo.RECEIVE_MESSAGE % (name))
 
-			else:
-				btn.Flash()
-		elif self.IsGameMasterName(name):
-			dlg = self.whisperDialogDict[name]
-			dlg.SetGameMasterLook()
+			btn.Flash()
 
-	def MakeWhisperButton(self, name):
-		self.__MakeWhisperButton(name)
-
-	## ��ư�� �������� â�� ���� �Լ�
 	def ShowWhisperDialog(self, btn):
 		try:
-			self.__MakeWhisperDialog(btn.name)
-			dlgWhisper = self.whisperDialogDict[btn.name]
+			dlgWhisper = self.__MakeWhisperDialog(btn.name)
 			dlgWhisper.OpenWithTarget(btn.name)
 			dlgWhisper.Show()
 			self.__CheckGameMaster(btn.name)
@@ -5527,39 +6245,34 @@ class Interface(object):
 			import dbg
 			dbg.TraceError("interface.ShowWhisperDialog - Failed to find key")
 
-		## ��ư �ʱ�ȭ
 		self.__DestroyWhisperButton(btn)
 
-	## WhisperDialog â���� �ּ�ȭ ������ ���������� ȣ��Ǵ� �Լ�
-	## â�� �ּ�ȭ �մϴ�.
 	def MinimizeWhisperDialog(self, name):
-
 		if 0 != name:
-			self.__MakeWhisperButton(name)
+			whisper = self.__GetWhisper(name)
+			mode = chat.WHISPER_TYPE_NORMAL
+			if whisper:
+				mode = whisper["mode"]
+			self.__MakeWhisperButton(name, mode)
 
-		self.CloseWhisperDialog(name)
+		return self.CloseWhisperDialog(name, False)
 
-	## WhisperDialog â���� �ݱ� ������ ���������� ȣ��Ǵ� �Լ�
-	## â�� ����ϴ�.
-	def CloseWhisperDialog(self, name):
-
+	def CloseWhisperDialog(self, name, destroy_data=True):
 		if 0 == name:
-
 			if self.dlgWhisperWithoutTarget:
 				self.dlgWhisperWithoutTarget.Destroy()
 				self.dlgWhisperWithoutTarget = None
-
-			return
+			return True
 
 		try:
-			dlgWhisper = self.whisperDialogDict[name]
-			dlgWhisper.Destroy()
-			del self.whisperDialogDict[name]
+			self.__DestroyWhisper(name, destroy_data)
+			return True
 		except:
 			import dbg
 			dbg.TraceError("interface.CloseWhisperDialog - Failed to find key")
 
-	## ��ư�� ������ �ٲ������ ��ư�� ������ �ϴ� �Լ�
+		return False
+
 	def __ArrangeWhisperButton(self):
 
 		screenWidth = wndMgr.GetScreenWidth()
@@ -5576,9 +6289,6 @@ class Interface(object):
 			button.SetPosition(xPos + (int(count/yCount) * -50), yPos + (count%yCount * 63))
 			count += 1
 
-	## �̸����� Whisper ��ư�� ã�� ������ �ִ� �Լ�
-	## ��ư�� ��ųʸ��� ���� �ʴ� ���� ���� �Ǿ� ���� ������ ���� ���� ������
-	## �̷� ���� ToolTip���� �ٸ� ��ư�鿡 ���� �������� �����̴�.
 	def __FindWhisperButton(self, name):
 		for button in self.whisperButtonList:
 			if button.name == name:
@@ -5586,28 +6296,75 @@ class Interface(object):
 
 		return 0
 
-	## â�� ����ϴ�.
+	def __GetWhisper(self, target_name):
+		player_name = player.GetMainCharacterName()
+		if not constInfo.WHISPER_DICT.has_key(player_name):
+			return None
+
+		if not constInfo.WHISPER_DICT[player_name].has_key(target_name):
+			return None
+
+		return constInfo.WHISPER_DICT[player_name][target_name]
+
+	def __DestroyWhisper(self, target_name, destroy_data=True):
+		whisper = self.__GetWhisper(target_name)
+		if whisper and whisper["dialog"]:
+			player_name = player.GetMainCharacterName()
+			constInfo.WHISPER_DICT[player_name][target_name]["dialog"].Destroy()
+			if destroy_data:
+				constInfo.WHISPER_DICT[player_name].pop(target_name)
+
+	def __AddNewWhisper(self, target_name, dialog, mode=0):
+		player_name = player.GetMainCharacterName()
+		if not constInfo.WHISPER_DICT.has_key(player_name):
+			constInfo.WHISPER_DICT[player_name] = {}
+
+		data = constInfo.WHISPER_DICT[player_name]
+		if not data.has_key(target_name):
+			data[target_name] = {
+				"dialog": dialog,
+				"message_stack": [],
+				"history": [],
+				"mode": mode,
+			}
+		else:
+			data[target_name]["dialog"] = dialog
+
+		constInfo.WHISPER_DICT[player_name] = data
+
 	def __MakeWhisperDialog(self, name):
 		dlgWhisper = uiWhisper.WhisperDialog(self.MinimizeWhisperDialog, self.CloseWhisperDialog)
 		dlgWhisper.BindInterface(self)
 		dlgWhisper.LoadDialog()
-		dlgWhisper.SetPosition(self.windowOpenPosition*30,self.windowOpenPosition*30)
-		self.whisperDialogDict[name] = dlgWhisper
+		dlgWhisper.SetPosition(self.windowOpenPosition * 30, self.windowOpenPosition * 30)
+		self.__AddNewWhisper(name, dlgWhisper)
 
-		self.windowOpenPosition = (self.windowOpenPosition+1) % 5
+		self.windowOpenPosition = (self.windowOpenPosition + 1) % 5
 
 		return dlgWhisper
 
-	## ��ư�� ����ϴ�.
-	def __MakeWhisperButton(self, name):
+	def __MakeWhisperButton(self, name, mode=chat.WHISPER_TYPE_NORMAL):
 		whisperButton = uiWhisper.WhisperButton()
-		whisperButton.SetUpVisual("d:/ymir work/ui/game/windows/btn_mail_up.sub")
-		whisperButton.SetOverVisual("d:/ymir work/ui/game/windows/btn_mail_up.sub")
-		whisperButton.SetDownVisual("d:/ymir work/ui/game/windows/btn_mail_up.sub")
-		if self.IsGameMasterName(name):
-			whisperButton.SetToolTipTextWithColor(name, 0xffffa200)
+
+		img_by_type_dict = {
+			chat.WHISPER_TYPE_NORMAL: (None, "d:/ymir work/ui/game/windows/btn_mail_up.sub"),
+			chat.WHISPER_TYPE_GM: (0xffffa200, flamewindPath.GetPublic("whisper_gm")),
+			chat.WHISPER_TYPE_MYSHOP: (0xffffc2d2, flamewindPath.GetPublic("whisper_shop")),
+		}
+
+		if not img_by_type_dict.has_key(mode):
+			mode = chat.WHISPER_TYPE_NORMAL
+		(color, imgPath) = img_by_type_dict[mode]
+		whisperButton.SetUpVisual(imgPath)
+		whisperButton.SetOverVisual(imgPath)
+		whisperButton.SetDownVisual(imgPath)
+		if color:
+			whisperButton.SetToolTipTextWithColor(name, color)
 		else:
 			whisperButton.SetToolTipText(name)
+
+		self.__AddNewWhisper(name, None, mode)
+
 		whisperButton.ToolTipText.SetHorizontalAlignCenter()
 		whisperButton.SetEvent(ui.__mem_func__(self.ShowWhisperDialog), whisperButton)
 		whisperButton.Show()
@@ -5634,13 +6391,15 @@ class Interface(object):
 	def __CheckGameMaster(self, name):
 		if not self.listGMName.has_key(name):
 			return
-		if self.whisperDialogDict.has_key(name):
-			dlg = self.whisperDialogDict[name]
-			dlg.SetGameMasterLook()
+		whisper = self.__GetWhisper(name)
+		if whisper:
+			whisper["dialog"].SetGameMasterLook()
 
 	def RegisterGameMasterName(self, name):
 		if self.listGMName.has_key(name):
 			return
+
+		print "RegisterGameMasterName", name
 		self.listGMName[name] = "GM"
 
 	def IsGameMasterName(self, name):
@@ -5728,50 +6487,20 @@ class Interface(object):
 	def EmptyFunction(self):
 		pass
 
-if __name__ == "__main__":
+	## GAME MASTER CAPTCHA ##
+	def GetGameMasterCaptchaDialog(self, pid):
+		if self.gameMaster_CaptchaDialogs.has_key(pid):
+			return self.gameMaster_CaptchaDialogs[pid]
+		return None
 
-	import app
-	import wndMgr
-	import systemSetting
-	import mouseModule
-	import grp
-	import ui
-	import localeInfo
+	def CreateGameMasterCaptchaDialog(self, pid):
+		if self.gameMaster_CaptchaDialogs.has_key(pid):
+			oldDlg = self.gameMaster_CaptchaDialogs[pid]
+			if oldDlg:
+				oldDlg.Destroy()
+				oldDlg.Hide()
 
-	app.SetMouseHandler(mouseModule.mouseController)
-	app.SetHairColorEnable(True)
-	wndMgr.SetMouseHandler(mouseModule.mouseController)
-	wndMgr.SetScreenSize(systemSetting.GetWidth(), systemSetting.GetHeight())
-	app.Create(localeInfo.APP_TITLE, systemSetting.GetWidth(), systemSetting.GetHeight(), 1)
-	mouseModule.mouseController.Create()
+		dlg = uiCaptcha.GameMasterCaptchaDialog()
+		self.gameMaster_CaptchaDialogs[pid] = dlg
+		return dlg
 
-	class TestGame(ui.Window):
-		def __init__(self):
-			ui.Window.__init__(self)
-
-			localeInfo.LoadLocaleData()
-			player.SetItemData(0, 27001, 10)
-			player.SetItemData(1, 27004, 10)
-
-			self.interface = Interface()
-			self.interface.MakeInterface()
-			self.interface.ShowDefaultWindows()
-			self.interface.RefreshInventory()
-			#self.interface.OpenCubeWindow()
-
-		def __del__(self):
-			ui.Window.__del__(self)
-
-		def OnUpdate(self):
-			app.UpdateGame()
-
-		def OnRender(self):
-			app.RenderGame()
-			grp.PopState()
-			grp.SetInterfaceRenderState()
-
-	game = TestGame()
-	game.SetSize(systemSetting.GetWidth(), systemSetting.GetHeight())
-	game.Show()
-
-	app.Loop()

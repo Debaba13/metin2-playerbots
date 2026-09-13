@@ -1694,19 +1694,18 @@ namespace
 			}
 			return;
 		}
-		switch (mapIndex)
+		// Every dungeon, not the three that were named here: Shinsoo's and
+		// Jinno's fell through to the frontier branch, which knows nothing
+		// about them, so a bot stranded in one was sent to a point on another
+		// map entirely.
+		if (IsPlayerBotMonkeyMap(mapIndex))
 		{
-			case PLAYERBOT_MAP_MONKEY_EASY:
-			case PLAYERBOT_MAP_MONKEY_MEDIUM:
-			case PLAYERBOT_MAP_MONKEY_HARD:
-				if (GetPlayerBotMonkeyArrival(mapIndex, outX, outY))
-					outMap = mapIndex;
-				break;
-			default:
-				if (GetPlayerBotFrontierArrival(mapIndex, outX, outY))
-					outMap = mapIndex;
-				break;
+			if (GetPlayerBotMonkeyArrival(mapIndex, outX, outY))
+				outMap = mapIndex;
+			return;
 		}
+		if (GetPlayerBotFrontierArrivalFor(ch, mapIndex, outX, outY))
+			outMap = mapIndex;
 	}
 
 	// A character with no sector, or one standing on a map this core does not

@@ -1396,7 +1396,17 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `PLAYERBOT_OFFLINE` lines while its own census counted 284 offline shops;
   `Metin2Launcher.psm1` names every tag it keeps. A new `PLAYERBOT_<AREA>:`
   tag has to be added there or no bundle will ever show it (OFFLINE, MARKET
-  and BAG were added in 2.0.28).
+  and BAG were added in 2.0.28). It sprang again on 13 September, and worse:
+  **`PLAYERBOT_AI` was never on the list at all**, and that is the tag the
+  refine pass logs under - every attempt writes `refine SUCCESS`,
+  `FAILED_BURNED`, `FAILED_DOWNGRADED` or `SKIPPED` (playerbot_economy.h). So
+  a bundle carrying 1165 `blacksmith visit` lines and not one refine line read
+  as "the bots never upgrade anything", which is exactly what Iwakura reported
+  from the rankings - and the log could neither confirm nor deny it. Skills,
+  death, parties, loot and combat all log under the same tag, so the whole
+  core of a bot's behaviour was invisible to every support bundle ever made.
+  Before concluding that a subsystem does nothing, check that its tag is in
+  that grep list.
 - **`compose stop` leaves the containers, and a stopped container holds its
   volume.** `Reset-M2WorldToFreshInstall` ran `docker volume rm` on a stopped
   stack and got "volume is in use" four times for one player - the launcher
@@ -2857,6 +2867,61 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   engine answers 0 there, which is also "start" - and every caller tests
   that. This is what kept the Orc Tooth in go_to_disciple with
   collect_count at ten and the bot handing in twenty-two teeth.
+
+- **A level band is not a map, and answering with one names Chunjo's.**
+  `GetPlayerBotMonkeyMapForLevel` returned map 25 for "the easy dungeon",
+  which is true only for Chunjo: every kingdom has its own
+  (`metin2_map_monkey_dungeon_11/_12/_13` = 5/25/45, same geometry, bases
+  76800 apart, all with Town.txt cell 72,125). A Shinsoo bot walked in
+  through its own gate - `GetKingdomGates` had the leg right all along -
+  and stood on a map `IsPlayerBotMonkeyMap` said was not a dungeon: no
+  chambers, no hubs, no medal; past 33 it was sent at 108, which its core
+  does not host, and the warp was refused every time. Measured before the
+  fix: Shinsoo 500 characters and 0 horses, Jinno 500 and 0, Chunjo the
+  only kingdom levelling one. The band is `GetPlayerBotMonkeyBandForLevel`
+  (pure, in types.h) and the map is `GetPlayerBotMonkeyMapFor(ch)` in
+  travel.h, because turning one into the other needs the bot's kingdom and
+  `IsPlayerBotMapHostedHere`. A kingdom with no harder dungeon on its core
+  keeps its own rooms until `PLAYERBOT_MONKEY_EASY_FALLBACK_MAX_LEVEL`.
+- **A per-kingdom table nobody asks is a table that does not exist.**
+  `playerbot_empire_rules::GetTeleportArrival` has held the three entry
+  points of Orc Valley, the desert and Sohan - one per kingdom, read from
+  each map's Town.txt - since the three-kingdom travel was written, and it
+  is correct to the unit. Only the M3 branch ever called it: the frontier
+  branches asked `GetPlayerBotFrontierArrival(map)`, which is one point per
+  map and that point is Chunjo's. So every bot of every kingdom arrived
+  through Chunjo's entrance and walked back to Chunjo's gate ("wszystkie
+  boty ... wchodza w miejscu wejscia zoltych", SIZOWSKI). Before adding a
+  per-kingdom table, grep for who will call it; after adding one, grep for
+  who still does not. `GetFrontierGate` is the other half (the warp NPC
+  beside each entrance, from npc.txt: 10007/10009/10011 on the valley and
+  Sohan, 10008/10010/10012 on the desert).
+- **A claim stamp is not an answer.** `web_admin.quest` takes a queue row by
+  writing a token into its `status` column ("w" + channel + "x" + salt +
+  "t" + tick), does the work, and only then writes the result;
+  `queue_and_wait` returned on the first status that was not `pending` and
+  handed that token to the operator as a failure - "Coś poszło nie tak
+  (w1x257t780)". SPEED hit it every time because its handler is the slowest
+  in the quest (32 `affect.remove_collect` calls before it writes
+  anything), and the others only sometimes. The panel waits for a word from
+  `QUEUE_FINAL_STATUSES`, which is the quest's own whitelist plus
+  `player_offline` and `cancelled` - add a word to one and it belongs in
+  the other.
+- **Code that cannot be reached is code that was deleted, and the binary
+  says so.** On mt2009 `ManagePlayerBotShopLifetime` begins with an offline
+  migration that returns and then `if (!ch || !ch->GetMyShop()) return`,
+  and the two are exhaustive - so lines 1992-2105 are unreachable and GCC
+  drops them from `-O1` up. Three features went with them and nothing said
+  so: the fast-sale memory ("wysoki popyt"), the `PLAYERBOT_STALL_SOLD`
+  history row, and re-judging a standing stall after the TRADE slider
+  moved. Found by AkhiGubernator with `strings` on the shipped binary -
+  three literals from `playerbot_town.h` were missing while their
+  neighbours were present, and the one `PLAYERBOT_SHOP: refused` of three
+  that was gone settled it. On this line the goods on a counter belong to
+  the shop entity, so a sale is noticed in `ikarus_shop_manager.cpp`
+  (`playerbot_offline::NoteSold`, an exact-string edit) and drained on the
+  owner's tick. When a feature is reported dead, check the binary for its
+  literals before checking its logic.
 
 ## Engine facts worth not re-deriving
 

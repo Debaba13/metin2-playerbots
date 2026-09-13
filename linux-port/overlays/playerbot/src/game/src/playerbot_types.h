@@ -969,7 +969,12 @@ namespace
 	}
 	const long PLAYERBOT_MAP_CHUNJO_M2 = 23;
 	const long PLAYERBOT_MAP_CHUNJO_M3 = 24;
+	// Chunjo's. The other two kingdoms' easy dungeons are 5 and 45; nothing may
+	// name one of them where it means "the easy dungeon" - ask
+	// playerbot_empire_rules::GetMonkeyEasyMap(empire) for a bot's own.
 	const long PLAYERBOT_MAP_MONKEY_EASY = 25;
+	const long PLAYERBOT_MAP_MONKEY_SHINSOO = 5;
+	const long PLAYERBOT_MAP_MONKEY_JINNO = 45;
 
 	// Chunjo's four maps keep their names because a thousand lines were written
 	// against them, but they are one kingdom of three now and nothing may test
@@ -1141,6 +1146,14 @@ namespace
 	const DWORD PLAYERBOT_BOOK_RATE_DENOMINATOR = 1000;
 	const int PLAYERBOT_BOOK_PRICE_JITTER_MIN = 80;
 	const int PLAYERBOT_BOOK_PRICE_JITTER_MAX = 125;
+
+	// Bumped by hand whenever a price table in this file changes. An open
+	// stall keeps the price it was listed at, and the offline service visit
+	// repriced one line an hour - so a scroll listed at 9 000 before 2.0.32
+	// was still asking it a day later ("pelno w m1 sklepow gdzie Zwoje sa po
+	// 9000", Iwakura). A shop whose stamp is behind this number reprices on
+	// every service visit instead, until its whole counter has been walked.
+	const DWORD PLAYERBOT_PRICE_TABLE_VERSION = 1;
 	// Iwakura's upgrade-material prices (13 September, "CENY ULEPSZACZY"): the
 	// 78 materials a blacksmith asks for, priced by hand. Unlike the books
 	// these scale with the bare yang rate (100% is x1.0), which is his own
@@ -2576,6 +2589,14 @@ namespace
 	const BYTE PLAYERBOT_MONKEY_MIN_LEVEL = 18;
 	const BYTE PLAYERBOT_MONKEY_MEDIUM_MIN_LEVEL = 33;
 	const BYTE PLAYERBOT_MONKEY_HARD_MIN_LEVEL = 46;
+	// The harder two dungeons are shared maps and live on the core that carries
+	// Chunjo, so under the default split layout a Shinsoo or Jinno bot can
+	// never reach either: for them the band above is a band with no map in it.
+	// Such a bot keeps working its own kingdom's easy rooms instead, but only
+	// while that is still worth a trip - the medal is a kill-group roll and
+	// aiPercentByDeltaLev has bottomed out by fifteen levels over the monster,
+	// and the easy dungeon's monkeys stop at thirty. Past this, no dungeon.
+	const BYTE PLAYERBOT_MONKEY_EASY_FALLBACK_MAX_LEVEL = 40;
 	const DWORD PLAYERBOT_M3_MAX_VISIT_TIME = 1200000;
 	const DWORD PLAYERBOT_MONKEY_REVERSE_PORTAL_BLOCK_TIME = 10000;
 	// The third hand. Worn in a unique slot it makes CHARACTER::RewardGold hand
@@ -2602,9 +2623,22 @@ namespace
 	// to the next. Four minutes is two respawns of a room's dozen monsters; the
 	// thirty-minute visit therefore covers six or seven of the eleven chambers.
 	const DWORD PLAYERBOT_MONKEY_CHAMBER_DWELL = 240000;
-	const long PLAYERBOT_MONKEY_EASY_BASE_X = 844800;
-	const long PLAYERBOT_MONKEY_EASY_BASE_Y = 435200;
-	// The three dungeons are one maze: metin2_map_monkey_dungeon2 and _3 carry
+	// Every kingdom has an easy dungeon of its own and they are three separate
+	// maps: metin2_map_monkey_dungeon_11 (5), _12 (25) and _13 (45), at three
+	// base positions 76800 apart. Only Chunjo's was ever listed here, so a
+	// Shinsoo or Jinno bot walked in through its own gate and then stood in a
+	// map this file did not recognise: no chambers, no hubs, no medal. Measured
+	// on our own world before the fix - Shinsoo 500 characters and 0 horses,
+	// Jinno 500 and 0, Chunjo the only kingdom levelling one at all.
+	// All three carry the same Town.txt cell (72,125), which is what the local
+	// arrival offset below already encodes.
+	const long PLAYERBOT_MONKEY_SHINSOO_BASE_X = 768000;
+	const long PLAYERBOT_MONKEY_SHINSOO_BASE_Y = 435200;
+	const long PLAYERBOT_MONKEY_CHUNJO_BASE_X = 844800;
+	const long PLAYERBOT_MONKEY_CHUNJO_BASE_Y = 435200;
+	const long PLAYERBOT_MONKEY_JINNO_BASE_X = 921600;
+	const long PLAYERBOT_MONKEY_JINNO_BASE_Y = 435200;
+	// The dungeons are one maze: metin2_map_monkey_dungeon2 and _3 carry
 	// the same server_attr, the same regen cells and the same GOTO portals as
 	// _12, at another base position. Everything placed in the easy dungeon is
 	// therefore a local offset, and a dungeon is its base.
@@ -2620,9 +2654,12 @@ namespace
 	const long PLAYERBOT_MONKEY_RETURN_LOCAL_X = 7200;
 	const long PLAYERBOT_MONKEY_RETURN_LOCAL_Y = 11900;
 
+	// All five: the three kingdoms' easy dungeons and the shared harder pair.
+	// Asking the kingdom table rather than naming 25 is what stops this file
+	// answering "not a dungeon" about two thirds of the world's easy ones.
 	bool IsPlayerBotMonkeyMap(long mapIndex)
 	{
-		return mapIndex == PLAYERBOT_MAP_MONKEY_EASY ||
+		return playerbot_empire_rules::IsMonkeyEasyMap(mapIndex) ||
 				mapIndex == PLAYERBOT_MAP_MONKEY_MEDIUM ||
 				mapIndex == PLAYERBOT_MAP_MONKEY_HARD;
 	}
@@ -2631,7 +2668,9 @@ namespace
 	{
 		switch (mapIndex)
 		{
-			case PLAYERBOT_MAP_MONKEY_EASY: outX = PLAYERBOT_MONKEY_EASY_BASE_X; outY = PLAYERBOT_MONKEY_EASY_BASE_Y; return true;
+			case PLAYERBOT_MAP_MONKEY_SHINSOO: outX = PLAYERBOT_MONKEY_SHINSOO_BASE_X; outY = PLAYERBOT_MONKEY_SHINSOO_BASE_Y; return true;
+			case PLAYERBOT_MAP_MONKEY_EASY: outX = PLAYERBOT_MONKEY_CHUNJO_BASE_X; outY = PLAYERBOT_MONKEY_CHUNJO_BASE_Y; return true;
+			case PLAYERBOT_MAP_MONKEY_JINNO: outX = PLAYERBOT_MONKEY_JINNO_BASE_X; outY = PLAYERBOT_MONKEY_JINNO_BASE_Y; return true;
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: outX = PLAYERBOT_MONKEY_MEDIUM_BASE_X; outY = PLAYERBOT_MONKEY_MEDIUM_BASE_Y; return true;
 			case PLAYERBOT_MAP_MONKEY_HARD: outX = PLAYERBOT_MONKEY_HARD_BASE_X; outY = PLAYERBOT_MONKEY_HARD_BASE_Y; return true;
 			default: return false;
@@ -2658,23 +2697,37 @@ namespace
 		return true;
 	}
 
-	// The dungeon a bot of this level earns medals in, or 0 below the band.
-	long GetPlayerBotMonkeyMapForLevel(BYTE level)
+	// Which of the three rooms a bot of this level belongs in - the band alone,
+	// with no map index in it. Naming a map here is what made every kingdom's
+	// medal errand point at Chunjo's dungeon: the band is the same everywhere,
+	// the map it means is not. GetPlayerBotMonkeyMapFor (playerbot_travel.h)
+	// turns a band into this bot's own dungeon, because that needs the bot's
+	// kingdom and whether this core hosts the shared pair at all.
+	enum EPlayerBotMonkeyBand
+	{
+		PLAYERBOT_MONKEY_BAND_NONE = 0,
+		PLAYERBOT_MONKEY_BAND_EASY,
+		PLAYERBOT_MONKEY_BAND_MEDIUM,
+		PLAYERBOT_MONKEY_BAND_HARD
+	};
+
+	EPlayerBotMonkeyBand GetPlayerBotMonkeyBandForLevel(BYTE level)
 	{
 		if (level < PLAYERBOT_MONKEY_MIN_LEVEL)
-			return 0;
+			return PLAYERBOT_MONKEY_BAND_NONE;
 		if (level < PLAYERBOT_MONKEY_MEDIUM_MIN_LEVEL)
-			return PLAYERBOT_MAP_MONKEY_EASY;
+			return PLAYERBOT_MONKEY_BAND_EASY;
 		if (level < PLAYERBOT_MONKEY_HARD_MIN_LEVEL)
-			return PLAYERBOT_MAP_MONKEY_MEDIUM;
-		return PLAYERBOT_MAP_MONKEY_HARD;
+			return PLAYERBOT_MONKEY_BAND_MEDIUM;
+		return PLAYERBOT_MONKEY_BAND_HARD;
 	}
 
 	const char* GetPlayerBotMonkeyName(long mapIndex)
 	{
+		if (playerbot_empire_rules::IsMonkeyEasyMap(mapIndex))
+			return "easy";
 		switch (mapIndex)
 		{
-			case PLAYERBOT_MAP_MONKEY_EASY: return "easy";
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: return "medium";
 			case PLAYERBOT_MAP_MONKEY_HARD: return "hard";
 			default: return "monkey";

@@ -1155,12 +1155,37 @@ namespace
 			// is worth raising; the rest is scrap and stays at what it is.
 			// The planner asks the same function, above.
 			LPITEM item = ch->GetInventoryItem(cell);
+			// "Na 341 broni na serwerze praktycznie wszystkie sa +0 (max +2),
+			// boty ich wcale nie ulepszaja" (Iwakura, 13 September). Four
+			// different rules can pass a bag piece over here and from outside
+			// they look identical - which is why that report could be neither
+			// confirmed nor explained from any log. A level-30 weapon is the
+			// one the market watches, so when one is passed over it says which
+			// rule did it, once a minute for the whole population.
 			if (!IsPlayerBotRefineBagCandidate(ch, item))
+			{
+				if (IsPlayerBotSpecialLevel30Weapon(item))
+					PlayerBotLogThrottled("refine_l30_skipped", dwNow,
+							"PLAYERBOT_AI: level-30 weapon not refined pid=%u name=%s vnum=%u plus=%u level=%u reason=not_a_candidate junk=%d spare=%d upgrade=%d",
+							ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
+							(unsigned int)item->GetRefineLevel(), (unsigned int)ch->GetLevel(),
+							IsPlayerBotJunkItem(ch, item) ? 1 : 0,
+							IsPlayerBotHigherTierSpare(ch, item) ? 1 : 0,
+							IsPlayerBotWearableUpgrade(ch, item, item->GetCell()) ? 1 : 0);
 				continue;
+			}
 
 			const BYTE plusLevel = item->GetRefineLevel();
 			if (plusLevel >= GetPlayerBotRefineTarget(ch, item))
+			{
+				if (IsPlayerBotSpecialLevel30Weapon(item))
+					PlayerBotLogThrottled("refine_l30_target", dwNow,
+							"PLAYERBOT_AI: level-30 weapon not refined pid=%u name=%s vnum=%u plus=%u level=%u reason=target_reached target=%u",
+							ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
+							(unsigned int)plusLevel, (unsigned int)ch->GetLevel(),
+							(unsigned int)GetPlayerBotRefineTarget(ch, item));
 				continue;
+			}
 
 			TRefineCandidate cand;
 			cand.wearCell = 255;

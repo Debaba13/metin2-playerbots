@@ -286,5 +286,77 @@ int main()
 		}
 	}
 
+	// The frontier: three entrances and three gates per shared map, and no two
+	// kingdoms sharing one. Read out of the maps' own files - Town.txt carries
+	// a general spawn point followed by one pair per empire, and npc.txt puts
+	// that kingdom's warp NPC beside each. Chunjo's rows reproduce the
+	// constants the AI walked to before this table existed, to the unit, which
+	// is what says the other six can be trusted.
+	{
+		TPoint fp;
+		assert(GetTeleportArrival(EMPIRE_CHUNJO, TELEPORT_ORC_VALLEY, fp) &&
+				fp.x == 270400 && fp.y == 739900);
+		assert(GetTeleportArrival(EMPIRE_CHUNJO, TELEPORT_DESERT, fp) &&
+				fp.x == 221900 && fp.y == 502700);
+		assert(GetFrontierGate(EMPIRE_CHUNJO, 64, fp) && fp.x == 269100 && fp.y == 740200);
+		assert(GetFrontierGate(EMPIRE_CHUNJO, 63, fp) && fp.x == 219700 && fp.y == 499900);
+
+		const long frontiers[3] = { 64, 63, 61 };
+		for (int i = 0; i < 3; ++i)
+		{
+			ETeleportDestination where;
+			assert(GetFrontierTeleportDestination(frontiers[i], where));
+			TPoint seen[3];
+			for (int e = EMPIRE_SHINSOO; e <= EMPIRE_JINNO; ++e)
+			{
+				TPoint arrival, gate;
+				assert(GetTeleportArrival(e, where, arrival));
+				assert(GetFrontierGate(e, frontiers[i], gate));
+				seen[e - 1] = arrival;
+				// A kingdom leaves by the NPC standing beside its own
+				// entrance. Until this table existed every bot of every
+				// kingdom walked to Chunjo's, which from the far side of the
+				// valley is a crossing of the whole map. Twenty thousand is
+				// loose on purpose: Jinno's Sohan gate is the furthest of the
+				// nine at 10600, and the nearest row of another kingdom on any
+				// of these maps is over a hundred thousand away - which is the
+				// mistake this is here to catch.
+				const long dx = gate.x > arrival.x ? gate.x - arrival.x : arrival.x - gate.x;
+				const long dy = gate.y > arrival.y ? gate.y - arrival.y : arrival.y - gate.y;
+				assert(dx + dy < 20000);
+			}
+			// Three kingdoms, three different entrances - a row copied from
+			// the wrong one is caught here.
+			for (int a = 0; a < 3; ++a)
+				for (int b = a + 1; b < 3; ++b)
+					assert(seen[a].x != seen[b].x || seen[a].y != seen[b].y);
+		}
+		// A map with one entrance for everybody is not in the table, and an
+		// unknown kingdom answers no rather than reading past it.
+		ETeleportDestination unused;
+		assert(!GetFrontierTeleportDestination(104, unused));
+		assert(!GetFrontierTeleportDestination(71, unused));
+		assert(!GetFrontierTeleportDestination(65, unused));
+		assert(!GetFrontierGate(EMPIRE_CHUNJO, 104, fp));
+		assert(!GetFrontierGate(EMPIRE_NONE, 64, fp));
+
+		// Every kingdom has an easy Monkey Dungeon of its own, and they are
+		// three different maps: naming Chunjo's for all three is what left
+		// Shinsoo and Jinno without a single horse.
+		assert(GetMonkeyEasyMap(EMPIRE_SHINSOO) == 5);
+		assert(GetMonkeyEasyMap(EMPIRE_CHUNJO) == 25);
+		assert(GetMonkeyEasyMap(EMPIRE_JINNO) == 45);
+		assert(IsMonkeyEasyMap(5) && IsMonkeyEasyMap(25) && IsMonkeyEasyMap(45));
+		assert(!IsMonkeyEasyMap(108) && !IsMonkeyEasyMap(109));
+		// And each is entered by its own kingdom's gate out of its own M2.
+		TKingdomGate leg;
+		assert(FindKingdomGate(EMPIRE_SHINSOO, 3, 5, leg) &&
+				leg.arrival.x == 775200 && leg.arrival.y == 447700);
+		assert(FindKingdomGate(EMPIRE_CHUNJO, 23, 25, leg) &&
+				leg.arrival.x == 852000 && leg.arrival.y == 447700);
+		assert(FindKingdomGate(EMPIRE_JINNO, 43, 45, leg) &&
+				leg.arrival.x == 928800 && leg.arrival.y == 447700);
+	}
+
 	return 0;
 }

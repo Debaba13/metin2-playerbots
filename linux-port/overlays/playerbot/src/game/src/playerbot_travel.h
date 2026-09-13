@@ -317,6 +317,87 @@ namespace
 		return mapIndex != 0 && SECTREE_MANAGER::instance().GetMap(mapIndex) != NULL;
 	}
 
+	// Where this bot's kingdom enters a shared map, and where it leaves it.
+	//
+	// Every frontier has three entry points and three gates, one per kingdom:
+	// the Town.txt pairs the engine itself spawns characters on, and the warp
+	// NPC standing beside each. playerbot_empire_rules has held the entries
+	// since the three-kingdom travel was written - the frontier tables in
+	// playerbot_types.h hold one point per map, Chunjo's, and these two call
+	// sites never asked the kingdom table at all. Every bot of every kingdom
+	// therefore arrived through Chunjo's entrance and walked back to Chunjo's
+	// gate, which from the far side of the valley is a crossing of the whole
+	// map ("wszystkie boty po wejsciu do doliny, nie zaleznie od krolestwa z
+	// ktorego sa, wchodza w miejscu wejscia zoltych. To samo sie dzieje z
+	// pustynia", SIZOWSKI, 13 September).
+	//
+	// The shared point stays the answer where a map really has one entrance -
+	// both Spider Dungeons and Hwang - and for a caller with no character.
+	bool GetPlayerBotFrontierArrivalFor(LPCHARACTER ch, long mapIndex, long& outX, long& outY)
+	{
+		playerbot_empire_rules::ETeleportDestination where;
+		playerbot_empire_rules::TPoint point;
+		if (ch && playerbot_empire_rules::GetFrontierTeleportDestination(mapIndex, where) &&
+				playerbot_empire_rules::GetTeleportArrival(
+					GetPlayerBotRoadsEmpire(ch), where, point))
+		{
+			outX = point.x;
+			outY = point.y;
+			return true;
+		}
+		return GetPlayerBotFrontierArrival(mapIndex, outX, outY);
+	}
+
+	bool GetPlayerBotFrontierExitFor(LPCHARACTER ch, long mapIndex, long& outX, long& outY)
+	{
+		playerbot_empire_rules::TPoint gate;
+		if (ch && playerbot_empire_rules::GetFrontierGate(
+				GetPlayerBotRoadsEmpire(ch), mapIndex, gate))
+		{
+			outX = gate.x;
+			outY = gate.y;
+			return true;
+		}
+		return GetPlayerBotFrontierExit(mapIndex, outX, outY);
+	}
+
+	// The dungeon this bot earns medals in: its own kingdom's easy one, or the
+	// shared harder pair once its level has outgrown the easy rooms. Zero when
+	// there is none it can both reach and profit from.
+	//
+	// The level band alone cannot answer this, and answering it with a map was
+	// the whole bug. The band named Chunjo's dungeon for everybody, so a
+	// Shinsoo bot of eighteen walked through its own gate into map 5 - which
+	// nothing in the overlay recognised as a dungeon - and one of thirty-three
+	// was sent at 108, a map its core does not host, so the warp was refused
+	// every time it was asked for. Measured on our own world before the fix:
+	// Shinsoo 500 characters and not one horse, Jinno 500 and not one, Chunjo
+	// the only kingdom levelling any ("tylko boty z chunjo leveluja konia",
+	// RetroGracz38; "bo z innych nie wchodza do lochu dlatego", NerrVoVy).
+	long GetPlayerBotMonkeyMapFor(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		const EPlayerBotMonkeyBand band = GetPlayerBotMonkeyBandForLevel(ch->GetLevel());
+		if (band == PLAYERBOT_MONKEY_BAND_NONE)
+			return 0;
+		const long own = playerbot_empire_rules::GetMonkeyEasyMap(GetPlayerBotRoadsEmpire(ch));
+		if (band == PLAYERBOT_MONKEY_BAND_EASY)
+			return IsPlayerBotMapHostedHere(own) ? own : 0;
+		const long shared = band == PLAYERBOT_MONKEY_BAND_MEDIUM
+				? PLAYERBOT_MAP_MONKEY_MEDIUM : PLAYERBOT_MAP_MONKEY_HARD;
+		if (IsPlayerBotMapHostedHere(shared))
+			return shared;
+		// The harder two are on the core that carries Chunjo, so under the
+		// default split layout the other two kingdoms have only their own
+		// rooms - see PLAYERBOT_MONKEY_EASY_FALLBACK_MAX_LEVEL for how long
+		// those are still worth the trip.
+		if (ch->GetLevel() <= PLAYERBOT_MONKEY_EASY_FALLBACK_MAX_LEVEL &&
+				IsPlayerBotMapHostedHere(own))
+			return own;
+		return 0;
+	}
+
 	long GetPlayerBotFrontierMapForLevelRaw(LPCHARACTER ch)
 	{
 		if (!ch)
@@ -566,17 +647,19 @@ namespace
 		// The medal dropper goes for the medals themselves, whatever its own horse
 		// needs, in whichever dungeon its level earns them.
 		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_MEDAL_DROPPER)
-			return GetPlayerBotMonkeyMapForLevel(ch->GetLevel()) != 0;
+			return GetPlayerBotMonkeyMapFor(ch) != 0;
 		if (!CanPlayerBotAdvanceHorse(ch))
 			return false;
 
 		// There is a dungeon for every level from eighteen up - see
-		// GetPlayerBotMonkeyMapForLevel for why the easy one alone gave a bot of
+		// GetPlayerBotMonkeyMapFor for why the easy one alone gave a bot of
 		// forty nothing - so the band no longer ends the errand: 439 bots past
 		// forty stood on no horse at all, and 435 more on one below ten. This
 		// gate also empties a dungeon: a bot inside re-evaluates the same call
-		// every tick and walks out as soon as it is no longer chosen.
-		if (GetPlayerBotMonkeyMapForLevel(ch->GetLevel()) == 0)
+		// every tick and walks out as soon as it is no longer chosen. It is
+		// also what refuses the errand to a kingdom with no dungeon it can
+		// reach, instead of sending it at one and having the warp refused.
+		if (GetPlayerBotMonkeyMapFor(ch) == 0)
 			return false;
 
 		// A combat horse matters most to Warriors and weapon Suras, but it must be
@@ -690,8 +773,10 @@ namespace
 			state.lDesertCrossingX = targetX;
 			state.lDesertCrossingY = targetY;
 			state.dwNextCrossingStoneCheck = 0;
+			long desertX = 0, desertY = 0;
+			GetPlayerBotFrontierArrivalFor(ch, PLAYERBOT_MAP_DESERT, desertX, desertY);
 			return TransitionPlayerBotMap(ch, state, PLAYERBOT_MAP_DESERT,
-					PLAYERBOT_DESERT_ARRIVAL_X, PLAYERBOT_DESERT_ARRIVAL_Y, dwNow, "desert_crossing_to_v1");
+					desertX, desertY, dwNow, "desert_crossing_to_v1");
 		}
 		if (IsPlayerBotSpiderMap(ch->GetMapIndex()) && targetMap != PLAYERBOT_MAP_DESERT &&
 				!IsPlayerBotSpiderMap(targetMap))
@@ -1231,7 +1316,7 @@ namespace
 			const bool bMedalDropper = state.bPersonality == BOT_PERSONALITY_MEDAL_DROPPER;
 			context.canAdvanceHorse = pursuesHorseExpedition &&
 					(bMedalDropper || CanPlayerBotAdvanceHorse(ch)) &&
-					GetPlayerBotMonkeyMapForLevel(ch->GetLevel()) == mapIndex;
+					GetPlayerBotMonkeyMapFor(ch) == mapIndex;
 			const playerbot_world_rules::EMonkeyExitDecision exitDecision =
 					playerbot_world_rules::DecideMonkeyExit(context);
 			if (exitDecision != playerbot_world_rules::MONKEY_STAY)
@@ -1331,9 +1416,11 @@ namespace
 			// took - twelve thousand of twenty thousand goal lines, and a
 			// status that read "to town for supplies" and "to the Spider
 			// Dungeon" by turns. The planner decides; the walk walks.
+			long desertExitX = 0, desertExitY = 0;
+			GetPlayerBotFrontierExitFor(ch, PLAYERBOT_MAP_DESERT, desertExitX, desertExitY);
 			return MovePlayerBotToWorldPortal(ch, state,
-					toV1 ? PLAYERBOT_DESERT_V1_GATE_X : PLAYERBOT_DESERT_EXIT_X,
-					toV1 ? PLAYERBOT_DESERT_V1_GATE_Y : PLAYERBOT_DESERT_EXIT_Y,
+					toV1 ? PLAYERBOT_DESERT_V1_GATE_X : desertExitX,
+					toV1 ? PLAYERBOT_DESERT_V1_GATE_Y : desertExitY,
 					state.lDesertCrossingTo, state.lDesertCrossingX, state.lDesertCrossingY,
 					dwNow, toV1 ? "desert_gate_to_v1" : "desert_gate_to_bokjung");
 		}
@@ -1399,7 +1486,7 @@ namespace
 				if (directMap != 0)
 				{
 					long arriveX = 0, arriveY = 0;
-					GetPlayerBotFrontierArrival(directMap, arriveX, arriveY);
+					GetPlayerBotFrontierArrivalFor(ch, directMap, arriveX, arriveY);
 					long teleX = 0, teleY = 0;
 					if (!GetPlayerBotLocalTeleporter(ch, teleX, teleY))
 						return false;
@@ -1495,7 +1582,9 @@ namespace
 				if (playerbot_world_rules::IsTravelCooldownActive(
 						dwNow, state.dwNextWorldTravelTime))
 					return false;
-				const long monkeyMap = GetPlayerBotMonkeyMapForLevel(ch->GetLevel());
+				const long monkeyMap = GetPlayerBotMonkeyMapFor(ch);
+				if (monkeyMap == 0)
+					return false;
 				long monkeyX = 0, monkeyY = 0;
 				GetPlayerBotMonkeyArrival(monkeyMap, monkeyX, monkeyY);
 				char reason[48];
@@ -1508,8 +1597,7 @@ namespace
 				// The easy dungeon is entered by that kingdom's own gate, and
 				// each kingdom has one of its own; the harder two are shared and
 				// are reached from inside the maze, so their arrival stands.
-				const bool toEasy = GetPlayerBotMonkeyMapForLevel(ch->GetLevel()) ==
-						PLAYERBOT_MAP_MONKEY_EASY;
+				const bool toEasy = monkeyMap == easyMap;
 				return MovePlayerBotToWorldPortal(ch, state, gateX, gateY,
 						toEasy ? easyMap : monkeyMap,
 						toEasy ? easyX : monkeyX,
@@ -1564,7 +1652,7 @@ namespace
 						ch->GetGold() < GetPlayerBotTeleporterFee(ch))
 					return false;
 				long arriveX = 0, arriveY = 0;
-				GetPlayerBotFrontierArrival(frontierMap, arriveX, arriveY);
+				GetPlayerBotFrontierArrivalFor(ch, frontierMap, arriveX, arriveY);
 				long teleX = 0, teleY = 0;
 				if (!GetPlayerBotLocalTeleporter(ch, teleX, teleY))
 					return false;
@@ -1691,7 +1779,7 @@ namespace
 			else if (wantsWeapon)
 				reason = "frontier_weapon_to_m2";
 			long exitX = 0, exitY = 0;
-			GetPlayerBotFrontierExit(mapIndex, exitX, exitY);
+			GetPlayerBotFrontierExitFor(ch, mapIndex, exitX, exitY);
 			long destMap = 0, destX = 0, destY = 0;
 			if (!GetPlayerBotVillageReturn(ch, joanHome ? playerbot_empire_rules::MAP_ROLE_M1
 						: playerbot_empire_rules::MAP_ROLE_M2, destMap, destX, destY))

@@ -2,6 +2,7 @@
 #define PLAYERBOT_OFFLINE_POLICY_H
 #include <cstdint>
 #include <map>
+#include <vector>
 
 // Process-local request journal; no character/item pointers. Only the AI arms
 // requests. Native DB handlers mark transmission and completion. Never retry a
@@ -16,6 +17,34 @@ struct Request {
     uint8_t refine = 0;
 };
 inline std::map<uint32_t, Request> requests;
+// A line that sold while its owner was off hunting. On this engine the goods
+// on a counter belong to the shop entity, not to the bag, so the classic
+// stall's way of noticing a sale - one pass over the owner's own inventory -
+// cannot work here; and that whole branch of ManagePlayerBotShopLifetime is
+// unreachable on 2.x anyway, which is why the fast-sale memory and the
+// PLAYERBOT_STALL_SOLD history row have been dead since the offline shops
+// arrived (diagnosed from the binary by AkhiGubernator, 13 September). The
+// native manager is the one place that knows a line has gone, so it records
+// the sale here and the owner's own tick drains it.
+struct SoldLine {
+    uint32_t item = 0, vnum = 0, count = 0;
+    long long price = 0;
+};
+inline std::map<uint32_t, std::vector<SoldLine> > sold;
+inline void NoteSold(uint32_t ownerid, uint32_t item, uint32_t vnum, uint32_t count, long long price) {
+    if (!ownerid) return;
+    auto& lines = sold[ownerid];
+    // An owner nobody drains - a real player, or a bot that has left the
+    // world - must not grow this without bound.
+    if (lines.size() >= 32) lines.erase(lines.begin());
+    lines.push_back(SoldLine{item, vnum, count, price});
+}
+// What the bot put on the counter and when, so the drain can say what sold
+// and how fast. Keyed by item id, kept in that bot's own state.
+struct ListedLine {
+    uint32_t vnum = 0, skill = 0, when = 0;
+    uint8_t refine = 0;
+};
 inline bool Due(uint32_t now, uint32_t at) {
     return at == 0 || int32_t(now - at) >= 0;
 }
@@ -48,6 +77,9 @@ struct State {
     uint32_t nextReprice = 0, repriceItem = 0;
     uint32_t nextBrowse = 0, buyOwner = 0, buyItem = 0, buyUntil = 0;
     uint32_t observedShop = 0;
+    // Which compiled price table this shop was last priced against.
+    uint32_t priceGeneration = 0;
+    std::map<uint32_t, ListedLine> listed;
     bool visiting = false;
 };
 inline bool Fits(int cell, int height, int width, int cells) {

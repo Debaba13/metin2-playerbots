@@ -741,12 +741,18 @@ def main(root):
     # only the offline (ikarus) shops; a stall is a classic private shop.
     # ======================================================================
     p = os.path.join(game, 'ikarus_shop_manager.cpp')
+    # Znacznikiem jest sam dolaczany naglowek, nie caly wstawiony tekst:
+    # pozniejsza edycja (hooki sklepow offline) wsuwa miedzy te linie
+    # playerbot_offline_policy.h, wiec wstawiony tekst przestaje sie zgadzac -
+    # i drugi przebieg dokladal shop.h po raz drugi, a tamta edycja tracila
+    # kotwice i zatrzymywala skrypt. Dokladnie pulapka opisana w README.
     edit(p,
          '#include "ikarus_shop.h"\n'
          '#include "ikarus_shop_manager.h"\n',
          '#include "ikarus_shop.h"\n'
          '#include "ikarus_shop_manager.h"\n'
-         '#include "shop.h"\n')
+         '#include "shop.h"\n',
+         marker='#include "shop.h"\n')
 
     edit(p,
          '\tbool CShopManager::SearchItemsByCategory(DWORD category, ikashop::CShopManager::SHOP_HANDLE shop)\n'
@@ -1206,6 +1212,8 @@ def main(root):
 
     apply_playerbot_offline_shops(game, db)
     apply_refine_quality_of_life(game)
+    apply_affect_remove_collect(game)
+    apply_gm_panel(game)
     print('playerbotify: done')
 
 
@@ -1376,7 +1384,12 @@ def apply_playerbot_offline_shops(game, db):
          '\n#ifdef ENABLE_IKASHOP_RENEWAL\n\n#include "ikarus_shop.h"\n#include "ikarus_shop_manager.h"\n#include "playerbot_offline_policy.h"\n#include "shop.h"\n\ntemplate<class DerivedType, class BaseType>\nDerivedType DerivedFromBase(const BaseType& base) {\n\tstatic_assert(std::is_base_of<BaseType, DerivedType>::value); // DerivedType must be inherited by BaseType\n')
     edit(os.path.join(game, 'ikarus_shop_manager.cpp'),
          '\t\tif (ownerCh)\n\t\t{\n\t\t\tNotifyOwnerItemSold(ownerCh, shopItem->GetVnum(), shopItem->GetInfo().count, shopItem->GetPrice().GetTotalYangAmount());\n\t\t}\n\n\t\treturn true;\n\t}\n\n\tvoid CShopManager::SendShopEditItemDBPacket(DWORD ownerid, DWORD itemid, const TPriceInfo& price)\n\t{\n\t\tTPacketGDNewIkarusShop pack{};\n\t\tpack.bSubHeader\t= SUBHEADER_GD_EDIT_ITEM;\n\n\t\tTSubPacketGDEditItem subpack{};\n\t\tsubpack.ownerid = ownerid;\n',
-         '\t\tif (ownerCh)\n\t\t{\n\t\t\tNotifyOwnerItemSold(ownerCh, shopItem->GetVnum(), shopItem->GetInfo().count, shopItem->GetPrice().GetTotalYangAmount());\n\t\t}\n\n\t\tplayerbot_offline::Complete(buyerid, playerbot_offline::Buy, itemid);\n\t\treturn true;\n\t}\n\n\tvoid CShopManager::SendShopEditItemDBPacket(DWORD ownerid, DWORD itemid, const TPriceInfo& price)\n\t{\n\t\tplayerbot_offline::Sent(ownerid, playerbot_offline::Edit, itemid);\n\t\tTPacketGDNewIkarusShop pack{};\n\t\tpack.bSubHeader\t= SUBHEADER_GD_EDIT_ITEM;\n\n\t\tTSubPacketGDEditItem subpack{};\n\t\tsubpack.ownerid = ownerid;\n')
+         '\t\tif (ownerCh)\n\t\t{\n\t\t\tNotifyOwnerItemSold(ownerCh, shopItem->GetVnum(), shopItem->GetInfo().count, shopItem->GetPrice().GetTotalYangAmount());\n\t\t}\n\n\t\t// The one place that knows a line has gone. A playerbot keeper is off\n\t\t// hunting while its counter sells, and the goods belong to the shop\n\t\t// entity rather than to its bag, so nothing on the AI side can notice\n\t\t// this by looking at the owner. Recorded here, drained on the owner\'s\n\t\t// own tick (playerbot_offline_shop.h).\n\t\tplayerbot_offline::NoteSold(ownerid, itemid, shopItem->GetVnum(), shopItem->GetInfo().count, shopItem->GetPrice().GetTotalYangAmount());\n\t\tplayerbot_offline::Complete(buyerid, playerbot_offline::Buy, itemid);\n\t\treturn true;\n\t}\n\n\tvoid CShopManager::SendShopEditItemDBPacket(DWORD ownerid, DWORD itemid, const TPriceInfo& price)\n\t{\n\t\tplayerbot_offline::Sent(ownerid, playerbot_offline::Edit, itemid);\n\t\tTPacketGDNewIkarusShop pack{};\n\t\tpack.bSubHeader\t= SUBHEADER_GD_EDIT_ITEM;\n\n\t\tTSubPacketGDEditItem subpack{};\n\t\tsubpack.ownerid = ownerid;\n',
+         # Named rather than left to default to the whole replacement: this
+         # block has been extended once already, and a marker that changes
+         # with the text makes a re-run over an already-ported tree hunt for
+         # an anchor that is no longer there.
+         marker='playerbot_offline::NoteSold(')
     edit(os.path.join(game, 'ikarus_shop_manager.cpp'),
          '\t\treturn true;\n\t}\n\n\tvoid CShopManager::SendShopRemoveItemDBPacket(DWORD ownerid, DWORD itemid)\n\t{\n\t\tTPacketGDNewIkarusShop pack{};\n\t\tpack.bSubHeader\t= SUBHEADER_GD_REMOVE_ITEM;\n\n\t\tTSubPacketGDRemoveItem subpack{};\n\t\tsubpack.ownerid = ownerid;\n',
          '\t\treturn true;\n\t}\n\n\tvoid CShopManager::SendShopRemoveItemDBPacket(DWORD ownerid, DWORD itemid)\n\t{\n\t\tplayerbot_offline::Sent(ownerid, playerbot_offline::Remove, itemid);\n\t\tTPacketGDNewIkarusShop pack{};\n\t\tpack.bSubHeader\t= SUBHEADER_GD_REMOVE_ITEM;\n\n\t\tTSubPacketGDRemoveItem subpack{};\n\t\tsubpack.ownerid = ownerid;\n')
@@ -1551,6 +1564,199 @@ def apply_refine_quality_of_life(game):
          '\t\t}\n'
          '\t}\n'
          '}\n\n#ifdef ENABLE_ACCE_COSTUME_SYSTEM\n')
+
+
+def apply_affect_remove_collect(game):
+    # web_admin.quest takes its own speed effects off before adding a new one,
+    # and it does it by name rather than with remove_all_collect - that would
+    # also strip the potions, buffs and blessings a player earned. It calls
+    # affect.remove_collect; this engine binds remove_all_collect and nothing
+    # else, so that call was a nil value. The quest died on it, never reached
+    # the line that writes its result, and left the panel's queue row holding
+    # the quest's own claim stamp for ever - which the panel then showed as
+    # "Cos poszlo nie tak (w1x257t780)" (Sammy Suricate, 13 September). Bind
+    # the function it actually calls.
+    edit(os.path.join(game, 'questlua_affect.cpp'),
+         '\tALUA(affect_remove_all_collect)\n',
+         '\t// playerbot/panel: affect.remove_collect (playerbotify.py).\n'
+         '\t//\n'
+         '\t// This engine binds remove_all_collect and not this one, so web_admin.quest\n'
+         '\t// - which takes its own speed effects off by name before adding a new one,\n'
+         '\t// rather than stripping everything the player earned - died on a nil\n'
+         '\t// function, never wrote its result, and left the queue row holding the\n'
+         "\t// quest's claim stamp for ever.\n"
+         '\t//\n'
+         '\t// affect_add_collect above sums into one affect per point type\n'
+         '\t// (FindAffect(AFFECT_COLLECT, point_type)), so there is exactly one to take\n'
+         '\t// off. r40250 matches on the value because there every call makes its own\n'
+         '\t// affect; here that would never match an accumulated one, so the value is\n'
+         '\t// accepted and ignored.\n'
+         '\tALUA(affect_remove_collect)\n'
+         '\t{\n'
+         '\t\tif (!lua_isnumber(L, 1))\n'
+         '\t\t{\n'
+         '\t\t\tsys_err("invalid argument");\n'
+         '\t\t\treturn 0;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tLPCHARACTER ch = CQuestManager::instance().GetCurrentCharacterPtr();\n'
+         '\n'
+         '\t\tif (ch == NULL)\n'
+         '\t\t\treturn 0;\n'
+         '\n'
+         '\t\tBYTE point_type = (BYTE) lua_tonumber(L, 1);\n'
+         '\n'
+         '\t\tif (point_type >= POINT_MAX_NUM || point_type < 1)\n'
+         '\t\t\treturn 0;\n'
+         '\n'
+         '\t\tCAffect* pkAff = ch->FindAffect(AFFECT_COLLECT, point_type);\n'
+         '\n'
+         '\t\tif (pkAff)\n'
+         '\t\t\tch->RemoveAffect(pkAff);\n'
+         '\n'
+         '\t\treturn 0;\n'
+         '\t}\n'
+         '\n'
+         '\tALUA(affect_remove_all_collect)\n',
+         marker='ALUA(affect_remove_collect)')
+    edit(os.path.join(game, 'questlua_affect.cpp'),
+         '\t\t\t{ "remove_all_collect",\taffect_remove_all_collect\t},\n',
+         '\t\t\t{ "remove_collect",\t\taffect_remove_collect\t\t},\n'
+         '\t\t\t{ "remove_all_collect",\taffect_remove_all_collect\t},\n',
+         marker='{ "remove_collect",')
+
+
+def apply_gm_panel(game):
+    # Panel GM (F9) i "Zapisane miejsca" od OskarPWA. Na linii r40250 to jest
+    # patch 0009; tutaj ta sama rzecz jako edycje na tekscie, bo jego cmd_gm.cpp
+    # i cmd.cpp to nasze pliki przepuszczone przez edytor (koreanskie komentarze
+    # nie wracaja z tej podrozy), wiec nie daja sie ani zdiffowac, ani skopiowac
+    # w calosci.
+    #
+    # Komendy botadmin_* - okno F10 jego klienta - sa pominiete: wolaja
+    # GetBotLines, GetAchievementWinner i GetActivitySummary z managera jego
+    # forka, ktorych nasz CPlayerBotManager nie ma. Panel F9 nie dotyka zadnej
+    # z nich.
+    #
+    # Sam kod komend lezy obok, w port/gm_panel_commands.cpp.txt: cztery tysiace
+    # linii C++ w literale pythonowym nie dawalyby sie ani czytac, ani diffowac.
+    # Plik trzymany jest z CRLF, a edit() sam zamienia kazde \n na koncowki
+    # pliku docelowego - stad normalizacja do LF tutaj, inaczej wyszlyby
+    # podwojne CR.
+    fragment = read(os.path.join(HERE, 'gm_panel_commands.cpp.txt'))
+    fragment = fragment.replace(b'\r\n', b'\n').decode('latin-1')
+
+    # Deklaracje biora sie z samych definicji, zeby komenda dopisana kiedys do
+    # fragmentu nie mogla zostac bez deklaracji - to jedyna para w tej zmianie,
+    # ktora moze sie rozjechac po cichu.
+    names = [line[5:-1] for line in fragment.split('\n')
+             if (line.startswith('ACMD(do_gmpanel_') or line.startswith('ACMD(do_botadmin'))
+             and line.endswith(')')]
+    if len(names) != 37:
+        raise SystemExit('playerbotify: %d komend panelu we fragmencie, '
+                         'oczekiwano 37 (31 gmpanel_* + 6 botadmin*)' % len(names))
+
+    # Poziom GM jest wyborem Oskara i zostaje: wszystko dla HIGH_WIZARD poza
+    # nadawaniem rang (IMPLEMENTOR) oraz mapa i zapisanymi miejscami, ktore sa
+    # sama nawigacja (LOW_WIZARD). Tabela cmd_info[] jest jedynym miejscem, w
+    # ktorym te progi zyja - kazda komenda sprawdza sie o nia przed wykonaniem.
+    # Okno F10 chodzi po calej populacji botow i potrafi dac im przedmiot,
+    # wiec caly blok botadmin* siedzi na IMPLEMENTORZE - tak, jak zapowiada
+    # komentarz Oskara nad tymi komendami.
+    levels = {'do_gmpanel_addgm': 'GM_IMPLEMENTOR',
+              'do_gmpanel_warp_map': 'GM_LOW_WIZARD',
+              'do_gmpanel_waypoint': 'GM_LOW_WIZARD'}
+    for name in names:
+        if name.startswith('do_botadmin'):
+            levels[name] = 'GM_IMPLEMENTOR'
+    decls = ''.join('ACMD(%s);\n' % name for name in names)
+    rows = ''.join('\t{ "%s",\t%s,\t0,\t\t\tPOS_DEAD,\t%s\t},\n'
+                   % (name[3:], name, levels.get(name, 'GM_HIGH_WIZARD'))
+                   for name in names)
+
+    # Panel tworzy przedmioty prosto do skrytki i do sklepu z monetami, czyli
+    # wola CSafebox::IsValidPosition, IsEmpty i Add. cmd_gm.cpp widzi stad samo
+    # "class CSafebox;" z char.h, wiec bez tego naglowka piec wywolan w
+    # do_gmpanel_createitem to "invalid use of incomplete type". Kotwica jest
+    # naglowkiem silnika, nie naszym - taka przezyje kazda pozniejsza edycje.
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         '#include "BanManager.h"\n',
+         '#include "BanManager.h"\n'
+         '#include "safebox.h"\n',
+         marker='#include "safebox.h"\n')
+
+    # Fragment idzie na koniec kodu, przed linia z podpisem pakietu - ona jest
+    # znacznikiem konca pliku, nie kodem.
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         fragment + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_gmpanel_lookup)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_check_mob);\n',
+         'ACMD(do_check_mob);\n' + decls,
+         marker='ACMD(do_gmpanel_lookup);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "check_mob", do_check_mob, \t0, POS_DEAD,\t\tGM_IMPLEMENTOR },\n',
+         '\t{ "check_mob", do_check_mob, \t0, POS_DEAD,\t\tGM_IMPLEMENTOR },\n\n'
+         + rows,
+         marker='{ "gmpanel_lookup",')
+
+    # Klient dowiaduje sie, ze siedzi na postaci GM-a, z jednej komendy czatu.
+    # Wyslana od razu w SetPlayerProto psuje uscisk dloni Select->Game (na tym
+    # etapie PlayerLoad deskryptor nie jest jeszcze zwiazany z postacia ani
+    # przelaczony w PHASE_GAME), wiec idzie zwyklym zdarzeniem kilka sekund
+    # pozniej. Nasz SetPlayerProto ma tu samo SetGMLevel() bez klamer - jego
+    # wersja ma klamry, wiec kotwica jest nasza, nie jego.
+    edit(os.path.join(game, 'char.cpp'),
+         '#define ENABLE_GM_FLAG_FOR_LOW_WIZARD\n'
+         'void CHARACTER::SetPlayerProto(const TPlayerTable * t)\n'
+         '{\n'
+         '\tif (!GetDesc() || !*GetDesc()->GetHostName())\n'
+         '\t\tsys_err("cannot get desc or hostname");\n'
+         '\telse\n'
+         '\t\tSetGMLevel();\n',
+         '#define ENABLE_GM_FLAG_FOR_LOW_WIZARD\n'
+         '\n'
+         'EVENTFUNC(gmpanel_flag_event)\n'
+         '{\n'
+         '\tchar_event_info* info = dynamic_cast<char_event_info*>( event->info );\n'
+         '\tif (info == NULL)\n'
+         '\t{\n'
+         '\t\tsys_err("gmpanel_flag_event> <Factor> Null pointer");\n'
+         '\t\treturn 0;\n'
+         '\t}\n'
+         '\n'
+         '\tLPCHARACTER ch = info->ch;\n'
+         '\n'
+         '\tif (ch == NULL)\n'
+         '\t\treturn 0;\n'
+         '\n'
+         '\t// Says only "you are a GM", nothing about the level or about which\n'
+         '\t// commands that unlocks: the F9 panel is gated on this client-side,\n'
+         '\t// and every action it sends is still checked against the real\n'
+         '\t// gm_level in cmd_info[] before the server does anything.\n'
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "SetGMFlag");\n'
+         '\treturn 0;\n'
+         '}\n'
+         '\n'
+         'void CHARACTER::SetPlayerProto(const TPlayerTable * t)\n'
+         '{\n'
+         '\tif (!GetDesc() || !*GetDesc()->GetHostName())\n'
+         '\t\tsys_err("cannot get desc or hostname");\n'
+         '\telse\n'
+         '\t{\n'
+         '\t\tSetGMLevel();\n'
+         '\t\t// Sending this here directly breaks the client\'s Select->Game\n'
+         '\t\t// phase handshake - defer it past the login with the engine\'s own\n'
+         '\t\t// one-shot event mechanism instead.\n'
+         '\t\tif (GetGMLevel() > GM_PLAYER)\n'
+         '\t\t{\n'
+         '\t\t\tchar_event_info* info = AllocEventInfo<char_event_info>();\n'
+         '\t\t\tinfo->ch = this;\n'
+         '\t\t\tevent_create(gmpanel_flag_event, info, PASSES_PER_SEC(3));\n'
+         '\t\t}\n'
+         '\t}\n',
+         marker='EVENTFUNC(gmpanel_flag_event)\n')
 
 
 if __name__ == '__main__':
