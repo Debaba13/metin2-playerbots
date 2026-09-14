@@ -65,10 +65,10 @@
 <div id="container">
 	<?php include("pages/etc.php") ?>
 	<div id="wideMainContent">
-		<h1>Koło Losu</h1>
+		<h1>Şans Çarkı</h1>
 		<div class="dynContent wheel" style="position:relative; margin:0 auto;">
-			<h1>Poziom 1</h1>
-			<div id="info">Zakrec Kolem Losu za jedyne <b>10 SM</b>!</div>
+			<h1>Seviye 1</h1>
+			<div id="info">Şans Çarkını sadece <b>10 ES</b> karşılığında çevir!</div>
 			<div class="main">
 				<div id="spinnerBlank"></div>
 				<div id="spinner" style="background-position:0 0;"></div>
@@ -81,25 +81,25 @@
 					</div>
 					<?php } ?>
 				</div>
-				<a id="spinButton" href="javascript:void(0)" onclick="wheelSpin()">Zakr&#281;&#263;!</a>
+				<a id="spinButton" href="javascript:void(0)" onclick="wheelSpin()">Çevir!</a>
 			</div>
 			<?php if (!$isPreview) { ?>
 			<div class="stageInfo">
-				<p>Masz <b><span id="wheelBalance"><?php echo $balance; ?></span></b> SM.</p>
+				<p><b><span id="wheelBalance"><?php echo $balance; ?></span></b> ES'niz var.</p>
 			</div>
 			<?php } ?>
-			<p class="back"><a href="?s=home">&laquo; Wroc do sklepu</a></p>
+			<p class="back"><a href="?s=home">&laquo; Mağazaya Dön</a></p>
 		</div>
 
 		<div id="wheelRewardOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999;">
 			<div id="reward" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:220px;">
-				<h1>Gratulacje!</h1>
-				<h2>Fortuna wybra&#322;a dla Ciebie nast&#281;puj&#261;c&#261; nagrod&#281;:</h2>
+				<h1>Tebrikler!</h1>
+				<h2>Şans senin için şu ödülü seçti:</h2>
 				<img id="rewardIcon" src="" />
 				<p id="rewardName"></p>
 				<p id="rewardDesc"></p>
-				<div onclick="document.getElementById('wheelRewardOverlay').style.display='none'; wheelReroll();">Dalej</div>
-				<a href="javascript:void(0)" onclick="document.getElementById('wheelRewardOverlay').style.display='none'; wheelReroll(); return false;">W ten spos&#243;b otrzymasz swoj&#261; nagrod&#281;.</a>
+				<div onclick="document.getElementById('wheelRewardOverlay').style.display='none'; wheelReroll();">İleri</div>
+				<a href="javascript:void(0)" onclick="document.getElementById('wheelRewardOverlay').style.display='none'; wheelReroll(); return false;">Ödülünü bu şekilde alacaksın.</a>
 			</div>
 		</div>
 
@@ -113,15 +113,15 @@
 					<span id="jackpotBadge" style="display:none"></span>
 				</div>
 				<div id="jackpotText">
-					<h1>Poca&#322;owa&#322;a Ci&#281; Fortuna!</h1>
-					<p class="jackpotLead">Ta niesamowita g&#322;&oacute;wna nagroda nale&#380;y teraz do Ciebie:</p>
+					<h1>Şans Seni Öptü!</h1>
+					<p class="jackpotLead">Bu inanılmaz büyük ödül artık senin:</p>
 					<h2 id="jackpotName"></h2>
 					<p id="jackpotDesc"></p>
 					<div class="jackpotFooter">
-						<span class="jackpotNote">&#9432; W ten spos&#243;b otrzymasz swoj&#261; nagrod&#281;.</span>
-						<a href="javascript:void(0)" id="jackpotPlay" onclick="document.getElementById('wheelJackpotOverlay').style.display='none'; wheelReroll();">Graj dalej</a>
+						<span class="jackpotNote">&#9432; Ödülünü bu şekilde alacaksın.</span>
+						<a href="javascript:void(0)" id="jackpotPlay" onclick="document.getElementById('wheelJackpotOverlay').style.display='none'; wheelReroll();">Oynamaya Devam Et</a>
 					</div>
-					<a href="javascript:void(0)" class="jackpotAgain" onclick="document.getElementById('wheelJackpotOverlay').style.display='none'; wheelReroll(); return false;">&#10022; Poka&#380; ponownie ko&#322;o</a>
+					<a href="javascript:void(0)" class="jackpotAgain" onclick="document.getElementById('wheelJackpotOverlay').style.display='none'; wheelReroll(); return false;">&#10022; Çarkı Tekrar Göster</a>
 				</div>
 			</div>
 		</div>
@@ -284,7 +284,7 @@ function wheelSpin() {
 
 	xhrPost(WHEEL_SPIN_ENDPOINT, function(data){
 		if (!data.ok) {
-			alert(data.error || 'Nie udalo sie zakrecic kolem.');
+			alert(data.error || 'Çark çevrilemedi.');
 			wheelUnlock();
 			return;
 		}
@@ -318,7 +318,7 @@ function wheelSpin() {
 			});
 		});
 	}, function(){
-		alert('Blad polaczenia. Sprobuj ponownie.');
+		alert('Bağlantı hatası. Tekrar dene.');
 		wheelUnlock();
 	});
 }

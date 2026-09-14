@@ -1,6 +1,6 @@
 <?php
 	if (!isset($_GET['id'])) {
-		die("Musisz wybrac przedmiot.");
+		die("Bir eşya seçmelisin.");
 	}
 	$id = intval($_GET['id']);
 	$isPreview = isset($_GET['preview']);
@@ -21,10 +21,10 @@
 	<div style="width:540px;height:500px;overflow: hidden;position:relative;">
 		<?php
 			$currency = ($item['currency'] === 'mileage') ? 'mileage' : 'cash';
-			$currencyLabel = ($currency === 'mileage') ? 'Smocze Znaki' : 'Smocze Monety';
+			$currencyLabel = ($currency === 'mileage') ? 'Ejder Nişanı' : 'Ejder Sikkesi';
 			$balance = (int)$info[$currency];
 		?>
-		<h1>Zakup <?echo $items; ?></h1>
+		<h1>Satın Al <?echo $items; ?></h1>
 		<?php
 			// Tryb podgladu: pokaz DOKLADNIE ten sam ekran sukcesu co przy prawdziwym
 			// zakupie w grze, ale bez zadnego zapisu do bazy - zaden przedmiot ani
@@ -65,13 +65,13 @@
 						<img width="63px" height="63px" src="img/7227be80292ec244a17496ca9b2528.png"></img>
 					</div>
 					<p>
-						<span class="confirmTitle">Zakup zakonczony sukcesem</span>
+						<span class="confirmTitle">Satın Alma Başarılı</span>
 						<?php if ($isPreview) { ?>
-						<br />(Podglad - nic nie zostalo przydzielone.)</br>
+						<br />(Önizleme - hiçbir şey verilmedi.)</br>
 						<?php } else { ?>
-						<br />Przedmiot zostal dodany do Twojej skrzynki (item_award)!</br>
+						<br />Eşya kasana eklendi (item_award)!</br>
 						<?php } ?>
-						</br><b>Strona odswiezy sie za 5 sekund.
+						</br><b>Sayfa 5 saniye içinde yenilenecek.
 						<!--</b><meta http-equiv="refresh" content="10;">-->
 						<script>
 							setTimeout(function(){
@@ -93,9 +93,9 @@
 						<img width="63px" height="63px" src="img/error.png"></img>
 					</div>
 					<p>
-						<span class="confirmTitle"><font color="red">Zakup nieudany</font></span>
-						<br />Nie masz wystarczajaco waluty: <?php echo $currencyLabel; ?>!
-						<br />Masz <?php echo $balance; ?>, przedmiot kosztuje <?php echo $item['price'];?> (<?php echo $currencyLabel; ?>).</br>
+						<span class="confirmTitle"><font color="red">Satın Alma Başarısız</font></span>
+						<br />Yeterli paran yok: <?php echo $currencyLabel; ?>!
+						<br /><?php echo $balance; ?> paran var, eşya <?php echo $item['price'];?> (<?php echo $currencyLabel; ?>) tutuyor.</br>
 					</p>
 					<br class="clearfloat"></br>
 				</div>
@@ -110,8 +110,8 @@
 		<div class="hint">
 			<div class="itemDesc messageDesc">
 				<p>
-					<span class="hintTitle">Uwaga</span><br />
-					</br>Przedmiot otrzymasz w grze poprzez system item_award (magazyn) - wejdz na serwer aby go odebrac.
+					<span class="hintTitle">Dikkat</span><br />
+					</br>Eşyayı oyun içinde item_award sistemi (depo) üzerinden alacaksın - almak için sunucuya gir.
 				</p>
 				<br class="clearfloat"></br>
 			</div>

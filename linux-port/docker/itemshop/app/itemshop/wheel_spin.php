@@ -14,7 +14,7 @@
 	const WHEEL_SPIN_COST = 10;
 
 	if (!isset($_SESSION['id']) || !isset($_SESSION['acc_id'])) {
-		echo json_encode(array('ok' => false, 'error' => 'Musisz byc zalogowany.'));
+		echo json_encode(array('ok' => false, 'error' => 'Giriş yapmış olman gerekiyor.'));
 		exit;
 	}
 
@@ -22,7 +22,7 @@
 	$info = mysqli_fetch_assoc($coninfo);
 	$balance = (int)$info['cash'];
 	if ($balance < WHEEL_SPIN_COST) {
-		echo json_encode(array('ok' => false, 'error' => 'Za malo Smoczych Monet (SM). Masz '.$balance.', potrzeba '.WHEEL_SPIN_COST.'.'));
+		echo json_encode(array('ok' => false, 'error' => 'Yetersiz Ejder Sikkesi (ES). '.$balance.' paran var, '.WHEEL_SPIN_COST.' gerekiyor.'));
 		exit;
 	}
 
@@ -31,7 +31,7 @@
 	// gracz widzi teraz na ekranie, nie cala 30-elementowa pula.
 	$activeIds = isset($_SESSION['wheel_active_ids']) ? $_SESSION['wheel_active_ids'] : array();
 	if (empty($activeIds)) {
-		echo json_encode(array('ok' => false, 'error' => 'Odswiez strone Kola Losu i sprobuj ponownie.'));
+		echo json_encode(array('ok' => false, 'error' => 'Şans Çarkı sayfasını yenile ve tekrar dene.'));
 		exit;
 	}
 	$idList = implode(',', array_map('intval', $activeIds));
@@ -46,7 +46,7 @@
 		$totalWeight += (int)$p['weight'];
 	}
 	if (empty($prizes) || $totalWeight <= 0) {
-		echo json_encode(array('ok' => false, 'error' => 'Kolo Losu jest chwilowo niedostepne.'));
+		echo json_encode(array('ok' => false, 'error' => 'Şans Çarkı şu anda kullanılamıyor.'));
 		exit;
 	}
 	$roll = random_int(1, $totalWeight);

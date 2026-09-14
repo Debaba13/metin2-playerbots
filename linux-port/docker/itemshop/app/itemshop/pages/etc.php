@@ -10,26 +10,26 @@
 <div id="header">
 	<?php if (!$isPreview) { ?>
 	<div class="boxSigns">
-		<span class="heading">Smocze Znaki (SZ):</span>
+		<span class="heading">Ejder Nişanları (EN):</span>
 		<span class="marksValue"><?php echo (int)$info['mileage'];?></span>
 	</div>
 	<div class="boxCoins">
-		<span class="heading">Smocze Monety (SM):</span>
+		<span class="heading">Ejder Sikkeleri (ES):</span>
 		<span class="coinsValue" id="headerCashValue"><?php echo (int)$info['cash'];?></span>
 	</div>
 	<?php } ?>
 </div>
 <?php if (!$isPreview) { ?>
 <div class="userdataDiv">
-	<a title="Historia zakupow" href="?s=userdata" class="tip userdataIcon"></a>
+	<a title="Satın Alma Geçmişi" href="?s=userdata" class="tip userdataIcon"></a>
 </div>
 <?php } ?>
 
 <ul id="breadcrumb">
-	<li><a href="?s=home<?php echo $pv; ?>">Strona glowna</a></li>
+	<li><a href="?s=home<?php echo $pv; ?>">Ana Sayfa</a></li>
 	<?php if (!$isPreview) { ?>
 	<li><a>-</a></li>
-	<li><a href="?s=logout">Wyloguj</a></li>
+	<li><a href="?s=logout">Çıkış Yap</a></li>
 	<?php } ?>
 </ul>
 <div id="sidebar1">
@@ -39,7 +39,7 @@
 		</form>
 	</div>-->
 	<ul id="mainMenu">
-		<li class="wheelMenuItem"><a class="wheelMenuLink" href="?s=wheel<?php echo $pv; ?>" title="Koło Losu">Koło Losu</a></li>
+		<li class="wheelMenuItem"><a class="wheelMenuLink" href="?s=wheel<?php echo $pv; ?>" title="Şans Çarkı">Şans Çarkı</a></li>
 		<?php
 		$get_category = mysqli_query($sqlServ, "SELECT * FROM itemshop.ishop_category ORDER BY id");
 		while($category = mysqli_fetch_object($get_category)) {
@@ -48,7 +48,7 @@
 		?>
 	</ul>
 	<?php if (!$isPreview) { ?>
-	<?php echo'<br /><font color="#996600;"> Uzytkownik:<br /> '.htmlspecialchars($_SESSION['id']).'</font>';?>
+	<?php echo'<br /><font color="#996600;"> Kullanıcı:<br /> '.htmlspecialchars($_SESSION['id']).'</font>';?>
 	<?php } ?>
 </div>
 <?php

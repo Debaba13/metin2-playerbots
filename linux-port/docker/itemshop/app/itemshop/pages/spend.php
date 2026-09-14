@@ -7,12 +7,12 @@
 <div id="container">
 	<?php include("pages/etc.php") ?>
 	<div id="mainContent">
-		<h1>Doladowanie Smoczych Monet</h1>
+		<h1>Ejder Sikkesi Yükleme</h1>
 		<div class="dynContent" style="position:relative">
 				<font color="#996600;" size="3">
-				<br /><p>Smocze Monety (SM) zdobywasz grajac na serwerze (questy, wydarzenia).
-				Smocze Znaki (SZ) dostajesz automatycznie za kazdy zakup w tym sklepie.<br />
-				Skontaktuj sie z administracja, jesli chcesz dowiedziec sie wiecej.
+				<br /><p>Ejder Sikkelerini (ES) sunucuda oynayarak kazanırsın (görevler, etkinlikler).
+				Ejder Nişanlarını (EN) bu mağazadaki her alışverişte otomatik olarak kazanırsın.<br />
+				Daha fazla bilgi almak istersen yönetimle iletişime geç.
 				</p><br />
 				</font>
 		</div>

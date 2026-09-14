@@ -21,7 +21,7 @@
 	while ($r = mysqli_fetch_assoc($regRes)) { $regIds[] = (int)$r['id']; }
 
 	if (count($mainIds) < 2 || count($regIds) < 14) {
-		echo json_encode(array('ok' => false, 'error' => 'Kolo Losu jest chwilowo niedostepne.'));
+		echo json_encode(array('ok' => false, 'error' => 'Şans Çarkı şu anda kullanılamıyor.'));
 		exit;
 	}
 
