@@ -5156,7 +5156,13 @@ MAP_I18N = {
 
 def map_i18n(language=None):
     language = language or (lang() if has_request_context() else "en")
-    return MAP_I18N.get(language, MAP_I18N["en"])
+    messages = dict(MAP_I18N.get(language, MAP_I18N["en"]))
+    # The item tooltip's inline JS reads I18N.language to pick pl/tr/en
+    # wording (showItemTooltip, formatApply); without it `lg` fell back to
+    # its "pl" default for every viewer regardless of their chosen language,
+    # so armour and weapon stats always showed up in Polish ("Obrona: ...").
+    messages["language"] = language
+    return messages
 
 JOB_NAMES_MAP = {
  "pl": {0:"Wojownik (M)",4:"Wojowniczka (K)",1:"Ninja (M)",5:"Ninja (K)",
@@ -5176,6 +5182,7 @@ BIOLOGIST_NAMES_TR = {
  "make_herb_lv4":"Şeftali Çiçeği","make_herb_lv7":"Çançiçeği",
  "make_herb_lv10":"Kaki Çiçeği","make_herb_lv15":"Gango Kökü",
  "make_herb_lv20":"Leylak","make_herb_lv25":"Tue Mantarı","collect_quest_lv30":"Ork Dişi",
+ "collect_quest_lv40":"Lanet Kitabı","collect_quest_lv50":"Şeytan Hatırası",
 }
 
 def localized_job_name(job, language=None):
