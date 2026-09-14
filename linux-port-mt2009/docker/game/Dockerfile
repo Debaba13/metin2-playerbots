@@ -207,9 +207,13 @@ RUN set -eux; \
     # pony_levelup is the package's own stable-keeper quest with the 18-hour
     # wait between two medals taken out (2.0.12); compiled here under its own
     # name, its object files land over the stock ones in the runtime copy.
+    # horse_levelup carries the same medal over the grade-2 stretch (levels
+    # 11-19), where a 21-hour wait had been left in place; horse_upgrade2's
+    # pony_buy is the medal's very first use, buying the horse itself, which
+    # still had its own ~12h wait -- both get the same treatment here.
     # gm_profile brings the admin account's game masters to one profile
     # through the engine (2.0.13).
-    for q in web_admin speed_boost starter_chest pony_levelup gm_profile; do \
+    for q in web_admin speed_boost starter_chest pony_levelup horse_levelup pony_buy gm_profile; do \
       [ -f "/quest-add/$q.quest" ] || continue; \
       sed 's/\r$//' "/quest-add/$q.quest" > "/tmp/qc-work/$q.quest"; \
       ( cd /tmp/qc-work && /src/Server/game/src/quest/qc "$q.quest" ); \

@@ -17,6 +17,29 @@ every version here.
 
 ---
 
+## 2.0.41 — 2026-09-14
+
+Serwer. Stajenny nadal kazał czekać w dwóch miejscach, które ominęła poprzednia
+poprawka czekania na medal konia (2.0.13). Klient bez zmian (zostaje 2.0.5).
+
+### Stajenny wciąż czekał — dwa pominięte miejsca
+
+„atımı ilk alacağım, görevi bitirdim, 24 saat bekletiyor" — gracz kończył misję
+zdobycia pierwszego konia i słyszał „Yarın tekrar gel", mimo że 2.0.13 miała
+zdjąć czekanie z medalu konia. Ta poprawka dotknęła tylko `pony_levelup.quest`
+(grade 1, poziomy 1-10); dwa sąsiednie pliki zostały nietknięte:
+
+- `horse_levelup.quest` (grade 2, poziomy 11-19) — bramka `next_time` na 21
+  godzin wciąż aktywna.
+- `pony_buy.quest` — samo zdobycie konia po raz pierwszy ma własną, osobną
+  12-godzinną bramkę `make_time`, nigdy nie objętą zmianą z 2.0.13.
+
+Obie bramki wyłączone tą samą metodą co w `pony_levelup.quest`: `next_time`
+zamienione na martwą gałąź (`elseif false`), a `make_time` ustawiane od razu na
+bieżący czas, z pominięciem stanu oczekiwania zamiast samego jego skrócenia.
+Oba pliki dodane do listy questów kompilowanych przy budowie obrazu obok
+`pony_levelup`.
+
 ## 2.0.40 — 2026-09-14
 
 Serwer. Boty biją się wreszcie w pojedynkach, na które się zgodziły, nie marnują
