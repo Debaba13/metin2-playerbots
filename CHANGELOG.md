@@ -17,6 +17,138 @@ every version here.
 
 ---
 
+## 2.0.46 — 2026-09-14
+
+Serwer (AI i launcher). Boty nie stoją już nad łupem, który nie mieści się
+w torbie, i nie szukają Kapitana Bestii z cudzej wioski. Godzina w panelu
+i w logach to teraz godzina Twojego komputera. Klient bez zmian (zostaje 2.0.5).
+
+### Łup, który nie mieści się w torbie
+
+Bot szedł po każdy przedmiot na ziemi, jeśli miał w torbie choć jedno wolne
+pole. Miecz albo zbroja zajmują jednak dwa lub trzy pola w jednej kolumnie,
+więc silnik odmawiał podniesienia, a bot co kilka sekund wracał do tego samego
+przedmiotu i stał nad nim, dopóki serwer go nie zresetował. Na naszym świecie
+było to około 56 odmów na minutę. Teraz bot przed wyjściem sprawdza, czy
+przedmiot się zmieści, i odmów jest zero.
+
+### Potwór, do którego nie da się dojść
+
+Gdy bot trzy razy nie znalazł drogi do potwora, odkładał go na pół minuty.
+Część AI, która sprawdza, kto go w tej chwili atakuje, od razu mu go jednak
+oddawała. Jeden z naszych botów stał tak 13 minut w Lochu Małp pod małpą
+strzelającą z półki skalnej. Teraz obie części pamiętają ten sam znacznik.
+
+### Wieża Demonów
+
+Od 2.0.44 boty nie celują w kamień Wieży i nie trafiają go zamachem. Kamień
+mogła jeszcze trafić umiejętność obszarowa rzucona w potwora obok. Na mapie
+Wieży bot nie używa już takiej umiejętności, jeśli w jej zasięgu stoi kamień.
+Nie rozbije go więc przypadkiem i nie przeniesie wszystkich z mapy do nowej
+Wieży.
+
+### Kapitan Bestii z innej wioski
+
+Boty od 35 poziomu w drugiej wiosce (Jayang, Bokjung, Bakra) idą na Kapitana
+Bestii, kiedy ten się pojawi. Gdy wszystkie królestwa działają na jednym
+rdzeniu (`M2_PLAYERBOT_WORLD_LAYOUT=unified`), serwer pamiętał tylko, że
+Kapitan stoi, ale nie w której wiosce. Boty z Bokjung próbowały więc dojść
+do Kapitana z Jayang albo z Bakry. Takiego punktu nie ma na ich mapie, więc
+nie mogły wyznaczyć drogi i zamiast polować stały w miejscu, dopóki Kapitan
+w innej wiosce nie padł. Teraz każda wioska ma własną odpowiedź. Bot nie idzie też do żadnego punktu spoza swojej mapy, a serwer
+zapisuje taki przypadek w logu błędów.
+
+### Godzina w panelu i w logach
+
+Kontenery serwera liczyły czas w UTC, bo tak było w przykładowym pliku
+ustawień. Dlatego panel i logi były o dwie godziny za zegarem komputera.
+Launcher na Windows ustawia teraz raz w `.env` strefę czasową komputera
+(`M2_TZ`), a kontenery przejmują ją przy starcie. Na Linuksie robi to
+`update.sh` uruchomiony na samej maszynie. Jeśli aktualizujesz serwer na
+Linuksie lub VPS przyciskiem w panelu, aktualizator nie widzi strefy maszyny.
+Wpisz ją wtedy sam, na przykład `M2_TZ=Europe/Warsaw`, i uruchom serwer
+ponownie.
+
+Strefy wpisanej wcześniej ręcznie nic nie nadpisuje. Kto chce zostać przy UTC,
+może po aktualizacji wpisać `M2_TZ=UTC`, a launcher nie zmieni tego drugi raz.
+Od tej chwili godziny w logach i w paczce ZBIERZ LOGI to czas lokalny.
+
+## 2.0.45 — 2026-09-14
+
+Serwer (AI i launcher). Bot w grupie gracza idzie za nim przez teleport, a
+szaman z grupy buffuje gracza. Klient bez zmian (zostaje 2.0.5).
+
+### Bot idzie za graczem przez teleport
+
+Bot zaproszony do grupy szedł za graczem tylko po tej samej mapie. Gdy gracz
+przechodził przez portal, korzystał z Teleportera albo z pierścienia, bot
+zostawał tam, gdzie był. Teraz, kiedy gracz stanie na nowej mapie, bot z jego
+grupy przenosi się w to samo miejsce. Nie wejdzie za graczem do lochu z
+osobną instancją, takiego jak Wieża Demonów, ani na mapę, na której boty tego
+serwera nie mogą stanąć. Do Lochu Pająków dochodzi jak zawsze, przez pustynię.
+
+### Szaman buffuje gracza
+
+Szaman w grupie gracza rzuca swoje wzmocnienia najpierw na gracza, a dopiero
+potem na siebie, i leczy gracza, który ma mniej niż 60% życia. Jeśli stoi za
+daleko, podchodzi bliżej, a ze zwykłego konia zsiada, bo z niego nie da się
+rzucać umiejętności. Wzmocnień bojowych używa w walce, a szybkości i leczenia
+także poza nią.
+
+### Paczka logów
+
+ZBIERZ LOGI zbiera teraz także przyjęcia zaproszeń do grupy, więc z paczki
+widać, kiedy bot do niej wszedł.
+
+Na naszym świecie nie da się tego sprawdzić bez drugiego gracza — jeśli bot
+nie pójdzie za Tobą albo szaman Cię nie buffuje, wciśnij ZBIERZ LOGI i napisz,
+o której to było.
+
+## 2.0.44 — 2026-09-14
+
+Serwer (AI). Automatyczne mikstury bez pętli, która obciążała serwer, boty,
+które nie przenoszą już graczy do Wieży Demonów, i boty, które zostają w
+grupie gracza, dopóki gracz jej nie rozwiąże. Klient bez zmian (zostaje
+2.0.5).
+
+### Koniec pętli Eliksiru Księżyca
+
+Boty brały Eliksir Słońca i Eliksir Księżyca — automatyczne mikstury HP i
+PE — za eliksir doświadczenia i próbowały go użyć przy każdym przebiegu.
+Prawie każdy bot nosi pusty Eliksir Księżyca ze skrzyni ucznia, więc silnik
+raz za razem odpowiadał, że mikstura jest pusta: na naszym świecie około
+580 tysięcy wpisów w logu na godzinę i praca rdzenia na nic. Teraz bot
+włącza pełną automatyczną miksturę raz i zostawia ją włączoną, a pustą
+sprzedaje u handlarza. Sprawdzone: log rdzenia gry zmalał o 60%, a pustych
+eliksirów w torbach botów ubyło w kwadrans z 992 do 457.
+
+### Boty nie przenoszą już graczy do Wieży Demonów
+
+Zniszczenie Metinu Twardości w Wieży Demonów uruchamia quest, który po
+sześciu sekundach przenosi do nowej Wieży wszystkie postacie z mapy, na
+której stoi wtedy ten, kto kamień zniszczył. Boty rozbijały ten kamień jak
+każdy inny Metin, a gdy bot zdążył w tych sześciu sekundach zmienić mapę,
+do Wieży trafiali wszyscy z mapy, na którą przeszedł. Tak sizowski, stojący
+pod Lochem Małp w Bokjung, znalazł się nagle na piętrze Wieży. Boty nie
+atakują już kamieni questowych Wieży (8015–8019) i nie ranią ich
+uderzeniem obszarowym. Na naszym świecie jedno zabicie tego kamienia
+przeniosło naraz 10 postaci; od poprawki nie było ani jednego takiego
+przeniesienia.
+
+### Bot zostaje w grupie gracza
+
+Bot zaproszony przez gracza wypadał z grupy po chwili, a wyrzucały go z niej
+trzy rzeczy. Reset po półtorej minuty stania — a bot przy stojącym graczu
+stoi właśnie dlatego, że idzie za nim. Każde przeniesienie bota na inną
+mapę, także powrót na nogi po przeniesieniu do Wieży Demonów, stąd gracz
+zostawał sam w swojej grupie. I kilka sekund teleportu samego gracza, w
+których grupa nie widzi jego postaci, a bot brał ją wtedy za grupę botów:
+w logach sizowskiego bot jest w jego grupie o 15:42:40, o 15:42:54 postać
+gracza wchodzi do gry na nowo (tak wygląda każdy teleport), a o 15:42:56
+bota w grupie już nie ma. Teraz o końcu grupy decyduje tylko gracz. Na naszym świecie nie da się tego sprawdzić bez
+drugiego gracza — jeśli bot nadal wyjdzie z Twojej grupy, wciśnij ZBIERZ
+LOGI i napisz, o której to było.
+
 ## 2.0.43 — 2026-09-14
 
 Serwer (AI, panel i launcher). Suwak zwojów w panelu, pojedynki kończące

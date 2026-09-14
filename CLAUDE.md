@@ -1662,9 +1662,9 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   engine's timed stat buff: value1 the apply, value2 the amount, value3 the
   seconds) or USE_ABILITY_UP; `FindPlayerBotBonusStoneCellLike` matches
   type+subtype of the vnum it is given; the junk rule exempts ITEM_USE of
-  those kinds plus the exp elixirs (`PLAYERBOT_EXP_ELIXIR_VNUMS`, USE_SPECIAL
-  whose special group is experience - `ManagePlayerBotExpElixir` drinks them
-  on sight) and the Metin detector (counter goods). USE_AFFECT value0 512/513
+  those kinds plus an auto potion with something left in it (see "Eliksir
+  Slonca and Eliksir Ksiezyca are auto potions" below) and the Metin
+  detector (counter goods). USE_AFFECT value0 512/513
   are not buffs (Rada Pustelnika, Zwój Egzorcyzmu removes affects) - the 510
   test is what keeps a bot from drinking an exorcism scroll.
 - **A bot's stall on the 2.x line is a real ikashop offline shop (2.0.26).**
@@ -3070,6 +3070,153 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   last 40 000 matching lines and some tags would crowd out everything else -
   `PLAYERBOT_PARTY: assist` alone writes about a hundred lines a minute at a
   thousand bots. Adding a tag is a decision about that budget, not a formality.
+  The one party line a player's report needs, `PLAYERBOT_PARTY: accepted an
+  invitation`, goes in as the pattern `PLAYERBOT_PARTY:.accepted` - a dot for
+  the space, because no quote may reach docker from PowerShell.
+- **Eliksir Slonca and Eliksir Ksiezyca are auto potions, and a use is a
+  switch.** 72723-72726, 76021, 76022 and 79012 (HP) and 72727-72730, 76004,
+  76005 and 79013 (SP) are `ITEM_AUTO_*_RECOVERY_*` on both engines. The
+  USE_SPECIAL case in `char_item.cpp` adds `AFFECT_AUTO_HP_RECOVERY` or
+  `_SP_` (534/535, `dwFlag` the item id) when none is running, takes it off
+  when this item's is, and for an empty one (socket 1 equal to socket 2)
+  says `AUTOPOTION_IS_EMPTY` and `break`s - so `UseItem` returns true for a
+  use that did nothing. `PLAYERBOT_EXP_ELIXIR_VNUMS` filed the SP half under
+  experience and `ManagePlayerBotExpElixir` used every one in the bag on
+  every booster pass; 991 of the 992 in bot bags on the test world were
+  empty, so the pass went on for ever: some 580 000 `exp elixir` lines an
+  hour on game1, a hundred and sixty a second, and not a point of experience
+  - while the one with anything left in it was switched on and off by turns.
+  `ManagePlayerBotAutoPotions` switches a potion on only when its affect is
+  absent and the potion is not empty, once a minute per bot, and logs only
+  when the affect appears; the junk rule keeps one with something left and
+  lets an empty one go. 39037-39042 share the names and no use path in
+  either engine handles them. Before writing "drink it" for a vnum, read the
+  case in `char_item.cpp` that handles it.
+- **A Demon Tower stone is a warp for every character on its killer's map.**
+  `deviltower_zone` answers a kill of 8015 (Metin Twardosci, level 50,
+  167 850 hp, the only one of 8015-8019 in `metin2_map_deviltower1/regen.txt`)
+  on map 66 with a six-second player timer and `d.new_jump_all(66, ...)`: a
+  new instance, and `CDungeon::JumpAll` `WarpSet`s every PC on the map the
+  killer stands on when the timer fires, with no bot test anywhere on the
+  way. On the test world a warrior of fifty-seven took it as an ordinary
+  Metin (`IsPlayerBotMetinWorthFighting` admits ten levels under to nine
+  over), and on 14 September at 14:17:11 ten characters on map 66 went into
+  instance 660000 and straight back out through the sectree rescue. A killer
+  that changed map inside the six seconds takes that map instead, and that is
+  "stalem afk pod lochem malp w m2, gdy nagle przeteleportowalo mnie do DT"
+  (sizowski, the same day): his bundle has him leaving the game at 12:27:18
+  and six bots on map 23 rescued for want of a sectree within the minute
+  after (`sectree_rescue from=23 to=23`) - JumpAll run on Bokjung. Its bot
+  syslog began five seconds too late to name the killer.
+  `IsPlayerBotDungeonTriggerStone` keeps 8015-8019 out of the Metin registry,
+  out of `IsPlayerBotMetinWorthFighting` (the collector, the party focus and
+  the crossing's stone finder all ask it) and out of the melee sweep, which
+  hits any stone within `PLAYERBOT_MELEE_SPLASH_RANGE` of its target. The
+  engine's skill splash is still open (`FuncSplashDamage` asks only
+  `battle_is_attackable`), so a bot fighting beside the stone can still land
+  the last blow; at that health it is slow, not impossible. Any stone whose
+  kill runs `d.new_jump_all` or `d.jump_all` belongs on that list.
+- **A player's party is the player's, and three passes had to be told.**
+  2.0.38 taught the party pass (`ManagePlayerBotParty`) that a party whose
+  leader has no bot descriptor (`IsPlayerBotHumanLedParty`) is outside the
+  cohort, rotation and straggler rules, and gave it
+  `ManagePlayerBotFollowHumanLeader`. Two other paths went on quitting any
+  party: the inactivity watchdog's reset, written for bot parties stuck in
+  PARTY_ASSEMBLE, and `TransitionPlayerBotMap`, because a bot party is one
+  camp and ends with the map. A bot standing beside an idle player - which
+  is exactly where the follow pass leaves it, inside
+  `PLAYERBOT_PARTY_FOLLOW_DISTANCE` - tripped the watchdog after ninety
+  seconds and was out ("dodaje boty do PT, a po chwili z niego wychodza",
+  sizowski, 14 September), and the sectree rescue after a Demon Tower warp,
+  a same-map transition, took every bot out of the party he had just made.
+  And the test itself asked for the leader's character, which a player has
+  not got for the seconds of a warp - a logout and a login - so the party
+  pass took his party for a bot party then and put the cohort rule to it:
+  the engine's `PARTY P2PSetMemberLevel` lines (the bundle's login files)
+  have bot 970 in his party at 13:42:40 and gone at 13:42:56, two seconds
+  after his character logged in again. A leader with no character on this
+  core is judged by pid now (`CPlayerBotManager::IsRegisteredBotPID`).
+  `IsPlayerBotBesideHumanLeader` is legitimate stillness to the watchdog
+  now, and neither the reset nor a map change quits a player's party. Grep
+  every `->Quit(` before writing a rule about who stays in a party. A player
+  who warps is followed: `ManagePlayerBotFollowHumanLeader` makes the move a
+  bot cannot make with a client - `TransitionPlayerBotMap` onto the leader's
+  spot, once the leader stands on a map this core hosts - and refuses a
+  dungeon instance (an index from `PLAYERBOT_INSTANCE_MAP_INDEX_MIN`) and a
+  spider map whose desert crossing is already under way, which the
+  transition would otherwise restart from the desert's doorstep on every
+  retry. And a Shaman buffs the player before itself
+  (`ManagePlayerBotBuffHumanLeader`): `CHARACTER::UseSkill` hands a buff that
+  is not SELFONLY to `ComputeSkill` on its victim and the affect carries the
+  skill's own vnum, so `IsPlayerBotBuffAffectOn` - the affect half of
+  `IsPlayerBotBuffActive` - reads a player as well as a bot. Neither has been
+  watched with a person in the party yet: the test world has none.
+- **A drop is loot only if the engine's pickup would take it.**
+  `CCollectPlayerBotLoot` skipped a drop only when the bag had no free cell
+  at all, and a bag with single holes and no free column cannot take a sword
+  or a breastplate: `PickupItem` wrote "No empty inventory pid ... size 2"
+  7736 times in two hours from 320 bots on the test world, the pass marked
+  the drop failed for five seconds, came back to it, and the bot stood over
+  it until the inactivity watchdog moved it - three of the four "arrived and
+  stood" resets after one restart were `action=3`. `PlayerBotBagTakesDrop`
+  asks the engine's own question after the stack merge and yang:
+  `GetEmptyInventoryEx(item)` on mt2009, the item's size on r40250.
+- **A mark nobody reads is no mark.** The attack pass gives up on a monster
+  it cannot reach after three refused plans and puts the VID in
+  `mapFailedTargets` for thirty seconds; `FindPlayerBotEngagedTarget` - what
+  the tick, the pull and the Monkey Dungeon's spread ask for "what is
+  fighting me" - never looked at that map and handed the same monster
+  straight back. Pokonany stood under a ranged monkey on a ledge for thirteen
+  minutes: 373 unreachable plans to one point seven hundred units away and
+  eight watchdog resets. The finder takes the state now and every caller
+  passes it.
+- **A splash lands on stones too.** `FuncSplashDamage` asks
+  `battle_is_attackable` and nothing else, so the last open road to a bot
+  breaking a Demon Tower stone was an area skill cast at a monster beside
+  it. `IsPlayerBotSplashNearTriggerStone` looks round the caster and the
+  target on map 66 (the skill's `iSplashRange` plus
+  `PLAYERBOT_SPLASH_STONE_MARGIN`) and the rotation skips the splash skill
+  there; the scan is paid on that map alone.
+- **The containers' clock is the operator's, set once.** Every service in
+  compose takes `TZ` from `M2_TZ`, and `.env.example` said UTC, so a Polish
+  panel showed times two hours behind its own machine and the logs were
+  named by UTC hours ("czas jest cofniety o dwie godziny", hunmar, 14
+  September). All four images carry zoneinfo. `Assert-TimezoneDefault` in
+  `start-server.ps1` turns the example's UTC into the Windows zone exactly
+  once (`Get-M2HostTimeZoneName`: a table of Windows ids, else a fixed
+  `Etc/GMT-N`) and sets `M2_TZ_DEFAULTED`; `migrate_timezone` in
+  `linux-port-mt2009/tools/update.sh` does the same from `timedatectl`,
+  `/etc/timezone` or the `/etc/localtime` link when run on a host, and
+  nothing inside the updater container, which cannot see the host's zone.
+  Once a world has migrated, its syslog, syserr, crash stamps and support
+  bundles are in local time: the UTC times in older notes here are UTC.
+- **A walk to another map's coordinates is refused before the clamp.**
+  `MovePlayerBot` hands its goal to `CPlayerBotNavigation::ClampWorld`, which
+  pulls any point onto the map's last cell; in Bokjung that is
+  (204750,307150), and bots on the town square planned it 1615 times in a
+  day, each a far plan answered "unreachable". The obvious sources all check
+  the map - the frontier hub tables, the 222 village ground points, the
+  known-Metin registry, the walk back after a death - so the guard refuses a
+  point more than `PLAYERBOT_NAV_OFF_MAP_MARGIN` outside the map and writes
+  `PLAYERBOT_NAV: destination off the map` with the point as asked, the
+  bot's errands and `caller=` (the return address, one line a minute per
+  caller) to syserr. The shipped game binary is a stripped 32-bit PIE, and
+  the address still names the call: subtract the core's load base (the
+  first line of `/proc/<pid>/maps` for the `game` whose cwd is that core,
+  read as the metin2 user) and disassemble the image's own binary there
+  with `objdump -d --start-address`; the constants pushed round the call
+  give it away. The first one found was the Bestial Captain's detour in the
+  M2 wander branch (`0x43415054`, "CAPT", two instructions above it):
+  `IsPlayerBotBossAlive` kept its answer by race alone, the Captain (591)
+  stands in all three second villages, and a bot in Bokjung was sent to
+  Jayang's Captain for the thirty seconds the answer was trusted - close to
+  four thousand refused walks a minute while he stood. The answer is kept
+  by map and race now; the raid roster and the guild call are still by
+  race, which holds while every boss hub is the boss of one map.
+- **`ManagePlayerBotCombatBuffs` has had a party branch all along**, and it
+  runs only when the bot's own cast of that buff has just failed - which is
+  why no player was ever buffed by it and why the Shaman's pass for the
+  player (`ManagePlayerBotBuffHumanLeader`, above) is a pass of its own.
 
 ## Engine facts worth not re-deriving
 

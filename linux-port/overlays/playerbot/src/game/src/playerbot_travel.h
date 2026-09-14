@@ -792,6 +792,9 @@ namespace
 		return byPosition > 0 && byPosition != (int)ch->GetMapIndex();
 	}
 
+	// Defined beside the party pass in playerbot_manager.cpp.
+	bool IsPlayerBotHumanLedParty(LPPARTY party);
+
 	bool TransitionPlayerBotMap(LPCHARACTER ch, TPlayerBotAIState& state,
 			long targetMap, long targetX, long targetY, DWORD dwNow, const char* reason)
 	{
@@ -840,7 +843,11 @@ namespace
 
 		const long oldMap = ch->GetMapIndex();
 		const bool wasRiding = ch->IsRiding();
-		if (ch->GetParty())
+		// A bot party is one camp and ends with the map. A player's party is the
+		// player's: a bot off to town, or put back on its feet by the sectree
+		// rescue, is still in it - the rescue after a Demon Tower warp left a
+		// player alone in his own party (sizowski, 14 September).
+		if (ch->GetParty() && !IsPlayerBotHumanLedParty(ch->GetParty()))
 			ch->GetParty()->Quit(ch->GetPlayerID());
 		state.dwTargetVID = 0;
 		ch->SetVictim(NULL);

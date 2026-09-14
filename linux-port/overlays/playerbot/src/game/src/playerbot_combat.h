@@ -414,6 +414,57 @@ namespace
 				(unsigned int)ch->GetLevel(), foe ? (unsigned int)foe->GetLevel() : 0U, pairRemoved ? 1 : 0);
 	}
 
+	// A splash skill lands on every attackable thing in its radius, stones
+	// included - FuncSplashDamage asks battle_is_attackable and nothing else -
+	// so a bot fighting beside a Demon Tower stone could still break it with a
+	// last blow meant for a monster, and the kill is the bot's: see
+	// PLAYERBOT_DEVIL_TOWER_STONE_FIRST. The stone stands on map 66 alone (the
+	// other four only inside instances no bot enters), so the look round is
+	// paid there and nowhere else.
+	class FPlayerBotTriggerStoneNear
+	{
+		public:
+			FPlayerBotTriggerStoneNear(long x, long y, int range) :
+				m_x(x), m_y(y), m_range(range), m_found(false) {}
+
+			void operator () (LPENTITY entity)
+			{
+				if (m_found || !entity || !entity->IsType(ENTITY_CHARACTER))
+					return;
+				LPCHARACTER stone = static_cast<LPCHARACTER>(entity);
+				if (stone->IsStone() && !stone->IsDead() &&
+						IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()) &&
+						DISTANCE_APPROX(stone->GetX() - m_x, stone->GetY() - m_y) <= m_range)
+					m_found = true;
+			}
+
+			bool Found() const { return m_found; }
+
+		private:
+			long m_x;
+			long m_y;
+			int m_range;
+			bool m_found;
+	};
+
+	bool IsPlayerBotSplashNearTriggerStone(LPCHARACTER ch, LPCHARACTER target, DWORD skillVnum)
+	{
+		if (!ch || !target || ch->GetMapIndex() != PLAYERBOT_MAP_DEMON_TOWER || !ch->GetSectree())
+			return false;
+		CSkillProto* proto = CSkillManager::instance().Get(skillVnum);
+		const int reach = (proto && proto->iSplashRange > 0
+				? proto->iSplashRange : PLAYERBOT_SPLASH_STONE_DEFAULT_RANGE) + PLAYERBOT_SPLASH_STONE_MARGIN;
+		// Round the caster and round the target: a splash is centred on one or
+		// the other.
+		FPlayerBotTriggerStoneNear nearCaster(ch->GetX(), ch->GetY(), reach);
+		ch->GetSectree()->ForEachAround(nearCaster);
+		if (nearCaster.Found())
+			return true;
+		FPlayerBotTriggerStoneNear nearTarget(target->GetX(), target->GetY(), reach);
+		ch->GetSectree()->ForEachAround(nearTarget);
+		return nearTarget.Found();
+	}
+
 	bool ExecutePlayerBotAttackSkill(LPCHARACTER ch, LPCHARACTER target, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		// Under a polymorph marble the engine refuses every skill - five
@@ -453,6 +504,8 @@ namespace
 			if (skillVnum == 0 || ch->GetSkillLevel(skillVnum) == 0)
 				continue;
 			if (target->IsStone() && IsPlayerBotSplashSkill(skillVnum))
+				continue;
+			if (IsPlayerBotSplashSkill(skillVnum) && IsPlayerBotSplashNearTriggerStone(ch, target, skillVnum))
 				continue;
 
 			if (ch->UseSkill(skillVnum, target))

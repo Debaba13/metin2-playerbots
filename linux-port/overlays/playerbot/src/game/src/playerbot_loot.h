@@ -127,6 +127,23 @@ namespace
 		return false;
 	}
 
+	// Whether the engine's pickup would find this drop a place: a stack of the
+	// same thing to pour it into, or room of its own size - GetEmptyInventoryEx
+	// on mt2009, which also knows the pages a material or a book goes to, and
+	// the item's height on r40250. Yang never needs a cell.
+	bool PlayerBotBagTakesDrop(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item)
+			return false;
+		if (IsPlayerBotMoneyDrop(item) || PlayerBotLootMergesIntoStack(ch, item))
+			return true;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		return ch->GetEmptyInventoryEx(item) != -1;
+#else
+		return ch->GetEmptyInventory(item->GetSize()) != -1;
+#endif
+	}
+
 	// A bot past the age of pennies leaves the pennies on the ground.
 	//
 	// Every drop in reach was loot, so a bot of sixty with millions in its
@@ -224,8 +241,15 @@ namespace
 				// A drop the bag cannot take is not loot: walking up to it,
 				// announcing the pickup and being refused by the engine every
 				// five seconds is what "mowi ze podnosi lup ale nie robi nic"
-				// was. Counted, so the pass can say so once a minute.
-				if (m_bagFull && !PlayerBotLootMergesIntoStack(m_owner, item))
+				// was. Counted, so the pass can say so once a minute. And
+				// "cannot take" is the engine's own test for this drop, not a bag
+				// with no cell at all: a bag with single holes and no free column
+				// is refused a sword or a breastplate ("No empty inventory ...
+				// size 2", 7736 times in two hours from 320 bots on the test
+				// world), and the bot stood at the drop asking every five seconds
+				// until the watchdog moved it.
+				if (m_bagFull ? !PlayerBotLootMergesIntoStack(m_owner, item)
+						: !PlayerBotBagTakesDrop(m_owner, item))
 				{
 					++m_skippedNoRoom;
 					return true;

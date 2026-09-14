@@ -206,12 +206,22 @@ namespace
 				item->GetValue(0) == PLAYERBOT_USE_AFFECT_TIMED_BUFF;
 	}
 
-	bool IsPlayerBotExpElixir(DWORD vnum)
+	// The recovery affect an auto potion keeps up, or zero for anything else.
+	DWORD GetPlayerBotAutoPotionAffect(DWORD vnum)
 	{
-		for (size_t i = 0; i < sizeof(PLAYERBOT_EXP_ELIXIR_VNUMS) / sizeof(PLAYERBOT_EXP_ELIXIR_VNUMS[0]); ++i)
-			if (PLAYERBOT_EXP_ELIXIR_VNUMS[i] == vnum)
-				return true;
-		return false;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_AUTO_HP_POTION_VNUMS) / sizeof(PLAYERBOT_AUTO_HP_POTION_VNUMS[0]); ++i)
+			if (PLAYERBOT_AUTO_HP_POTION_VNUMS[i] == vnum)
+				return AFFECT_AUTO_HP_RECOVERY;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_AUTO_SP_POTION_VNUMS) / sizeof(PLAYERBOT_AUTO_SP_POTION_VNUMS[0]); ++i)
+			if (PLAYERBOT_AUTO_SP_POTION_VNUMS[i] == vnum)
+				return AFFECT_AUTO_SP_RECOVERY;
+		return 0;
+	}
+
+	// The engine's own test in the use path: nothing left to give.
+	bool IsPlayerBotAutoPotionEmpty(LPITEM item)
+	{
+		return item && item->GetSocket(1) == item->GetSocket(2);
 	}
 
 	bool IsPlayerBotMetinDetector(DWORD vnum)
@@ -222,34 +232,46 @@ namespace
 		return false;
 	}
 
-	// Eliksir Ksiezyca is experience in a bottle: drunk the moment it is held,
-	// in or out of a fight, one per pass. The engine hands the experience out
-	// through the item special group.
-	bool ManagePlayerBotExpElixir(LPCHARACTER ch, DWORD dwNow)
+	// An auto potion is switched on once and left alone: a use with its affect
+	// already running would switch it off again, and a use of an empty one does
+	// nothing but report success - see PLAYERBOT_AUTO_HP_POTION_VNUMS for what
+	// treating these as elixirs to drink on every tick cost. The engine admits
+	// one auto-potion use a second, so an SP potion found in the same pass as an
+	// HP one simply waits for the next minute.
+	bool ManagePlayerBotAutoPotions(LPCHARACTER ch, DWORD dwNow)
 	{
+		static std::map<DWORD, DWORD> s_mapPlayerBotAutoPotionNext;
 		if (!ch || !ch->IsItemLoaded() || ch->IsDead() || ch->GetShop() || ch->GetExchange())
 			return false;
+		DWORD& next = s_mapPlayerBotAutoPotionNext[ch->GetPlayerID()];
+		if (dwNow < next)
+			return false;
+		next = dwNow + PLAYERBOT_AUTO_POTION_INTERVAL;
+		bool used = false;
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
-			if (!item || !IsPlayerBotExpElixir(item->GetVnum()))
+			if (!item)
+				continue;
+			const DWORD affect = GetPlayerBotAutoPotionAffect(item->GetVnum());
+			if (affect == 0 || ch->FindAffect(affect) || IsPlayerBotAutoPotionEmpty(item))
 				continue;
 			const DWORD vnum = item->GetVnum();
-			if (ch->UseItem(TItemPos(INVENTORY, cell)))
+			if (ch->UseItem(TItemPos(INVENTORY, cell)) && ch->FindAffect(affect))
 			{
-				sys_log(0, "PLAYERBOT_CHEST: exp elixir pid=%u name=%s vnum=%u level=%u",
-						ch->GetPlayerID(), ch->GetName(), vnum, (unsigned int)ch->GetLevel());
-				return true;
+				sys_log(0, "PLAYERBOT_CHEST: auto potion on pid=%u name=%s vnum=%u affect=%u",
+						ch->GetPlayerID(), ch->GetName(), vnum, (unsigned int)affect);
+				used = true;
 			}
 		}
-		return false;
+		return used;
 	}
 
 	bool UsePlayerBotBoosters(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || dwNow < state.dwNextBoosterTime)
 			return false;
-		ManagePlayerBotExpElixir(ch, dwNow);
+		ManagePlayerBotAutoPotions(ch, dwNow);
 		if (state.bCurrentAction != BOT_ACTION_FIGHT || state.bVisitingShop ||
 				state.bRecoveringAfterDeath || state.bTacticalRetreat)
 			return false;

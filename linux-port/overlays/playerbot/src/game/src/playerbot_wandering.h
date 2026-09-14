@@ -53,8 +53,19 @@ namespace
 			long* pBossX, long* pBossY, char* pName = NULL, size_t nameSize = 0)
 	{
 		struct TBossAnswer { DWORD dwStamp; bool bAlive; long lX; long lY; char szName[32]; };
-		static std::map<WORD, TBossAnswer> s_mapAnswers;
-		std::map<WORD, TBossAnswer>::iterator it = s_mapAnswers.find(wRace);
+		// By map as well as race. The Bestial Captain (591) stands in all three
+		// second villages, and an answer kept by race alone gave a bot in
+		// Bokjung the Captain of Jayang for the thirty seconds it was trusted:
+		// a walk to another map's coordinates, which the planner clamped onto
+		// Bokjung's far corner (204750,307150) and called unreachable - 1615
+		// far plans a day on the test world, and close to four thousand
+		// refusals a minute once MovePlayerBot refused such a point. The raid
+		// roster and the guild call below are still kept by race, which holds
+		// while every boss hub is the boss of one map.
+		typedef std::pair<long, WORD> TBossKey;
+		static std::map<TBossKey, TBossAnswer> s_mapAnswers;
+		const TBossKey key(mapIndex, wRace);
+		std::map<TBossKey, TBossAnswer>::iterator it = s_mapAnswers.find(key);
 		if (it != s_mapAnswers.end() && dwNow - it->second.dwStamp < PLAYERBOT_RAID_BOSS_CHECK_INTERVAL)
 		{
 			if (pBossX) *pBossX = it->second.lX;
@@ -71,7 +82,7 @@ namespace
 			pMap->for_each(finder);
 			boss = finder.m_found;
 		}
-		TBossAnswer& answer = s_mapAnswers[wRace];
+		TBossAnswer& answer = s_mapAnswers[key];
 		const bool bAlive = boss != NULL;
 		if (it == s_mapAnswers.end() || answer.bAlive != bAlive)
 			sys_log(0, "PLAYERBOT_RAID: boss race=%u map=%ld %s pos=(%ld,%ld)", (unsigned int)wRace, mapIndex,

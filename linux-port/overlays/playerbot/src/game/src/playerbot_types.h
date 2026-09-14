@@ -830,6 +830,17 @@ namespace
 	// a bot that is always a screen behind.
 	const int PLAYERBOT_PARTY_FOLLOW_DISTANCE = 1500;
 	const DWORD PLAYERBOT_PARTY_FOLLOW_INTERVAL = 2000;
+	// A bot that could not follow its player onto another map tries again this
+	// much later; TransitionPlayerBotMap already says why, once a minute.
+	const DWORD PLAYERBOT_PARTY_WARP_FOLLOW_RETRY = 10000;
+	// Map indexes from here up are dungeon instances - the map's own index
+	// times ten thousand plus a serial, a copy made for one party - with no
+	// navigation grid a bot could plan on and no way out the AI knows.
+	const long PLAYERBOT_INSTANCE_MAP_INDEX_MIN = 10000;
+	// How often a Shaman in a player's party looks at the player's buffs, and
+	// the health under which it heals the player instead.
+	const DWORD PLAYERBOT_PARTY_LEADER_BUFF_INTERVAL = 3000;
+	const int PLAYERBOT_PARTY_LEADER_CURE_HP_PERCENT = 60;
 	// A duel: three seconds between the challenge and the first blow, because
 	// that is what the operator asked for and because agreeing on the same tick
 	// reads like a script rather than an opponent.
@@ -2189,12 +2200,49 @@ namespace
 	// Ataku +10 from the panel vendored it ("Bot zamiast uzyc i dodac bony to
 	// posprzedawal handlarzowi", Pasywny, 13 September).
 	const int PLAYERBOT_USE_AFFECT_TIMED_BUFF = 510;
-	// Eliksir Ksiezyca (M/S/D/S): USE_SPECIAL whose special group is experience.
-	// The Moon elixirs were here and the Sun ones were not, which is the whole
-	// of the difference between them: same ITEM_USE/USE_SPECIAL shape, same
-	// experience-in-a-bottle, ten times the value (1M/3M/7M against
-	// 100k/300k/700k). A bot handed a Sun elixir treated it as ordinary loot.
-	const DWORD PLAYERBOT_EXP_ELIXIR_VNUMS[] = { 39037, 39038, 39039, 39040, 39041, 39042, 72727, 72728, 72729, 72730, 76004, 76005 };
+	// Eliksir Slonca and Eliksir Ksiezyca are the engine's auto potions, not
+	// experience: ITEM_AUTO_HP_RECOVERY_* and ITEM_AUTO_SP_RECOVERY_* with their
+	// reward-box and Brazil copies (unique_item.h, the same on both engines).
+	// A use switches a standing recovery affect on - or off, when that affect is
+	// already running - and an empty one (socket 1 equal to socket 2) only says
+	// AUTOPOTION_IS_EMPTY and still counts as a successful use. This list used
+	// to call them experience elixirs, drunk "on sight" on every tick outside a
+	// fight, and every bot carried one empty 76004 from the apprentice chest: the
+	// whole population used it about once a second, 580 000 log lines an hour on
+	// one core, and nothing gained. 39037-39042 share the names and no engine
+	// handles them, so they are not here.
+	const DWORD PLAYERBOT_AUTO_HP_POTION_VNUMS[] = { 72723, 72724, 72725, 72726, 76021, 76022, 79012 };
+	const DWORD PLAYERBOT_AUTO_SP_POTION_VNUMS[] = { 72727, 72728, 72729, 72730, 76004, 76005, 79013 };
+	// Once a minute per bot is plenty for something that, once on, stays on.
+	const DWORD PLAYERBOT_AUTO_POTION_INTERVAL = 60000;
+	// The Demon Tower's own stones, 8015-8019 (Metin Twardosci to Metin
+	// Morderstwa), are quest triggers rather than loot. deviltower_zone answers
+	// the entry stone's kill with a six-second timer and d.new_jump_all(66), and
+	// CDungeon::JumpAll carries that out on the map the killer stands on when the
+	// timer fires: every PC there is warped into a new tower. A bot that broke it
+	// took the tower's other bots along (nine WarpSets to 660000 at 14:17:11 on
+	// the test world, all back out through the sectree rescue), and a bot that
+	// left for its village inside those six seconds takes the village instead -
+	// which is the shape of "stalem afk pod lochem malp w m2, gdy nagle
+	// przeteleportowalo mnie do DT" (sizowski, 14 September). The other four
+	// stand only inside the instance. None of them is a bot's to break.
+	const DWORD PLAYERBOT_DEVIL_TOWER_STONE_FIRST = 8015;
+	const DWORD PLAYERBOT_DEVIL_TOWER_STONE_LAST = 8019;
+	bool IsPlayerBotDungeonTriggerStone(DWORD race)
+	{
+		return race >= PLAYERBOT_DEVIL_TOWER_STONE_FIRST && race <= PLAYERBOT_DEVIL_TOWER_STONE_LAST;
+	}
+	// How far round a splash skill's caster and its target a Demon Tower stone
+	// is looked for before the skill is cast: the skill's own splash range when
+	// it has one, this when it does not, plus a margin for a stone at the edge
+	// of the blow.
+	const int PLAYERBOT_SPLASH_STONE_DEFAULT_RANGE = 1000;
+	const int PLAYERBOT_SPLASH_STONE_MARGIN = 500;
+	// How far outside its own map a walk may still be asked for before it is
+	// taken for another map's coordinates and refused: a random step or a
+	// snapped goal a little past the edge still reaches ClampWorld, a point in
+	// Orc Valley asked for in Bokjung does not.
+	const long PLAYERBOT_NAV_OFF_MAP_MARGIN = 6400;
 	// Wykrywacz Kamieni Metin: useless to a bot (it draws on a client), wanted
 	// by players - counter goods, never merchant scrap.
 	const DWORD PLAYERBOT_METIN_DETECTOR_VNUMS[] = { 27989, 76006 };

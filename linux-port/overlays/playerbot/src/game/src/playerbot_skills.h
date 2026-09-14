@@ -379,7 +379,10 @@ namespace
 		return build;
 	}
 
-	bool IsPlayerBotBuffActive(LPCHARACTER ch, DWORD buffVnum, DWORD dwNow, const TPlayerBotAIState& state)
+	// Whether a buff skill's affect is up on a character: the bot itself, or the
+	// player a Shaman keeps buffed (ManagePlayerBotBuffHumanLeader). The bot's
+	// own fallback clock is IsPlayerBotBuffActive's business.
+	bool IsPlayerBotBuffAffectOn(LPCHARACTER ch, DWORD buffVnum)
 	{
 		if (!ch) return true;
 
@@ -417,7 +420,12 @@ namespace
 		}
 
 		// 2. Generic FindAffect check
-		if (ch->FindAffect(buffVnum) != NULL)
+		return ch->FindAffect(buffVnum) != NULL;
+	}
+
+	bool IsPlayerBotBuffActive(LPCHARACTER ch, DWORD buffVnum, DWORD dwNow, const TPlayerBotAIState& state)
+	{
+		if (IsPlayerBotBuffAffectOn(ch, buffVnum))
 			return true;
 
 		// 3. Fallback timestamp map

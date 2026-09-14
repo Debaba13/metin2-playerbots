@@ -429,6 +429,72 @@ function Assert-KingdomsDefault {
     return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_KINGDOMS_DEFAULTED' -Value '1')
 }
 
+function Get-M2HostTimeZoneName {
+    # The tz database name of this Windows' own zone, for the containers' TZ.
+    # Windows keeps ids of its own ("Central European Standard Time") and the
+    # .NET under Windows PowerShell 5.1 has no converter to the tz database, so
+    # the zones players here are likely to have are named below. Anything else
+    # becomes a fixed offset, Etc/GMT-N - the right hour today, without the
+    # summer change - and a zone off the whole hour is left alone.
+    $zones = @{
+        'Central European Standard Time' = 'Europe/Warsaw'
+        'Central Europe Standard Time'   = 'Europe/Budapest'
+        'W. Europe Standard Time'        = 'Europe/Berlin'
+        'Romance Standard Time'          = 'Europe/Paris'
+        'GMT Standard Time'              = 'Europe/London'
+        'Greenwich Standard Time'        = 'Atlantic/Reykjavik'
+        'GTB Standard Time'              = 'Europe/Bucharest'
+        'FLE Standard Time'              = 'Europe/Kiev'
+        'E. Europe Standard Time'        = 'Europe/Chisinau'
+        'Belarus Standard Time'          = 'Europe/Minsk'
+        'Russian Standard Time'          = 'Europe/Moscow'
+        'Turkey Standard Time'           = 'Europe/Istanbul'
+        'Eastern Standard Time'          = 'America/New_York'
+        'Central Standard Time'          = 'America/Chicago'
+        'Mountain Standard Time'         = 'America/Denver'
+        'Pacific Standard Time'          = 'America/Los_Angeles'
+        'UTC'                            = 'UTC'
+    }
+    $local = [TimeZoneInfo]::Local
+    if ($zones.ContainsKey($local.Id)) { return $zones[$local.Id] }
+    $offset = $local.BaseUtcOffset
+    if ($offset.Minutes -ne 0) { return '' }
+    $hours = [int]$offset.TotalHours
+    if ($hours -eq 0) { return 'UTC' }
+    # The Etc/GMT names carry the sign the other way round: UTC+1 is Etc/GMT-1.
+    if ($hours -gt 0) { return ('Etc/GMT-' + $hours) }
+    return ('Etc/GMT+' + (-$hours))
+}
+
+function Assert-TimezoneDefault {
+    # Every container takes its clock's zone from M2_TZ, and .env.example has
+    # always said UTC - so a Polish player's panel showed every time two hours
+    # behind the machine it runs on ("czas jest cofniety o dwie godziny",
+    # hunmar, 14 September), and the logs were named by an hour nobody lives
+    # in. The example's UTC is replaced by this machine's own zone exactly
+    # once, and M2_TZ_DEFAULTED records that it was: an operator who sets UTC,
+    # or anything else, afterwards keeps it. A zone other than UTC already in
+    # the file is the operator's and is only marked.
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content
+    )
+    if ([Regex]::IsMatch($Content, '(?m)^M2_TZ_DEFAULTED=')) { return $Content }
+    $current = [Regex]::Match($Content, '(?m)^M2_TZ=(.*)$')
+    $value = ''
+    if ($current.Success) { $value = $current.Groups[1].Value.Trim() }
+    if ($value -and $value -ne 'UTC') {
+        return (Set-DotEnvValue -Content $Content -Name 'M2_TZ_DEFAULTED' -Value '1')
+    }
+    $zone = ''
+    try { $zone = Get-M2HostTimeZoneName } catch { $zone = '' }
+    if (-not $zone) { return $Content }
+    if ($zone -ne 'UTC') {
+        Write-Host ('Strefa czasowa serwera: ' + $zone + ' (jak w Windows) - panel i logi pokaza godzine z Twojego zegara.') -ForegroundColor Cyan
+    }
+    $Content = Set-DotEnvValue -Content $Content -Name 'M2_TZ' -Value $zone
+    return (Set-DotEnvValue -Content $Content -Name 'M2_TZ_DEFAULTED' -Value '1')
+}
+
 function Assert-PanelPassphrase {
     # The one password an operator actually types, and the one way it can go
     # missing.
@@ -527,6 +593,9 @@ function Initialize-InstallationIdentity {
     # Before the example's keys are added, because the marker it sets is one
     # of them: an older .env is switched to all three kingdoms exactly once.
     $content = Assert-KingdomsDefault -Content $content -EnvPath $envPath
+    # The same shape for the clock's zone: the example's UTC becomes this
+    # machine's own, once.
+    $content = Assert-TimezoneDefault -Content $content
     # Last, so anything the identity decides above wins over the example.
     $content = Add-MissingDotEnvKeys -Content $content -ExamplePath (
         Join-Path (Split-Path -Parent $envPath) '.env.example')

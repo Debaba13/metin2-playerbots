@@ -185,8 +185,8 @@ namespace
 	class CFindPlayerBotEngagedTarget
 	{
 		public:
-			CFindPlayerBotEngagedTarget(LPCHARACTER owner) :
-				m_owner(owner), m_target(NULL), m_bestPriority(INT_MIN) {}
+			CFindPlayerBotEngagedTarget(LPCHARACTER owner, const std::map<DWORD, DWORD>* failed, DWORD dwNow) :
+				m_owner(owner), m_target(NULL), m_bestPriority(INT_MIN), m_failed(failed), m_dwNow(dwNow) {}
 
 			bool operator () (LPENTITY entity)
 			{
@@ -197,6 +197,19 @@ namespace
 						candidate->IsDead() || candidate->GetMapIndex() != m_owner->GetMapIndex() ||
 						IsPlayerBotSafeZone(candidate->GetMapIndex(), candidate->GetX(), candidate->GetY()))
 					return true;
+				// A monster the attack pass has just given up on for want of a
+				// way to it is not engaged, whatever it is doing. Without this
+				// the mark lasted no time at all: the pass dropped a monkey on a
+				// ledge, this finder handed the same monkey straight back, and
+				// Pokonany stood under it for thirteen minutes - 373 unreachable
+				// plans to one spot seven hundred units away, eight watchdog
+				// resets (14 September).
+				if (m_failed)
+				{
+					std::map<DWORD, DWORD>::const_iterator failed = m_failed->find(candidate->GetVID());
+					if (failed != m_failed->end() && m_dwNow < failed->second)
+						return true;
+				}
 
 				LPCHARACTER victim = candidate->GetVictim();
 				const bool attacksOwner = victim == m_owner;
@@ -224,14 +237,16 @@ namespace
 			LPCHARACTER m_owner;
 			LPCHARACTER m_target;
 			int m_bestPriority;
+			const std::map<DWORD, DWORD>* m_failed;
+			DWORD m_dwNow;
 	};
 
-	LPCHARACTER FindPlayerBotEngagedTarget(LPCHARACTER ch)
+	LPCHARACTER FindPlayerBotEngagedTarget(LPCHARACTER ch, const TPlayerBotAIState* state = NULL, DWORD dwNow = 0)
 	{
 		if (!ch || !ch->GetSectree() ||
 				IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()))
 			return NULL;
-		CFindPlayerBotEngagedTarget finder(ch);
+		CFindPlayerBotEngagedTarget finder(ch, state ? &state->mapFailedTargets : NULL, dwNow);
 		ch->GetSectree()->ForEachAround(finder);
 		return finder.GetTarget();
 	}
@@ -1428,8 +1443,11 @@ namespace
 					return false;
 
 				LPCHARACTER candidate = static_cast<LPCHARACTER>(entity);
+				// A sweep that grazes a Demon Tower stone can break it, and the
+				// kill is the bot's: see PLAYERBOT_DEVIL_TOWER_STONE_FIRST.
 				if (candidate == m_owner || candidate->GetVID() == m_primaryVID ||
-						(!candidate->IsMonster() && !candidate->IsStone()) || candidate->IsDead())
+						(!candidate->IsMonster() && !candidate->IsStone()) || candidate->IsDead() ||
+						(candidate->IsStone() && IsPlayerBotDungeonTriggerStone(candidate->GetRaceNum())))
 					return false;
 
 				if (candidate->GetMapIndex() != m_owner->GetMapIndex() ||
@@ -1845,7 +1863,7 @@ namespace
 		state.dwNextMultiPullTime = dwNow + number(
 				PLAYERBOT_MULTI_PULL_MIN_COOLDOWN, PLAYERBOT_MULTI_PULL_MAX_COOLDOWN);
 
-		LPCHARACTER engaged = FindPlayerBotEngagedTarget(ch);
+		LPCHARACTER engaged = FindPlayerBotEngagedTarget(ch, &state, dwNow);
 		state.dwTargetVID = engaged ? engaged->GetVID() : 0;
 		if (engaged)
 			ch->SetVictim(engaged);
@@ -1895,7 +1913,7 @@ namespace
 			LPCHARACTER current = state.dwTargetVID != 0
 					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
 			if (dwNow < state.dwNextMultiPullTime || hpPercent < PLAYERBOT_MULTI_PULL_START_HP_PERCENT ||
-					(current && !current->IsDead()) || FindPlayerBotEngagedTarget(ch))
+					(current && !current->IsDead()) || FindPlayerBotEngagedTarget(ch, &state, dwNow))
 				return false;
 
 			LPCHARACTER first = FindPlayerBotPullTarget(ch, state.vecMultiPullCenters);

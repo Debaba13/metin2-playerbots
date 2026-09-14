@@ -543,7 +543,10 @@ namespace
 
 	void RememberPlayerBotMetin(LPCHARACTER stone, DWORD dwNow)
 	{
-		if (!stone || !stone->IsStone() || stone->IsDead())
+		// The Demon Tower's quest stones are nobody's hunting ground: see
+		// PLAYERBOT_DEVIL_TOWER_STONE_FIRST.
+		if (!stone || !stone->IsStone() || stone->IsDead() ||
+				IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return;
 		const bool bNewDiscovery = s_mapKnownPlayerBotMetins.find(stone->GetVID()) ==
 				s_mapKnownPlayerBotMetins.end();
@@ -580,6 +583,9 @@ namespace
 	bool IsPlayerBotMetinWorthFighting(LPCHARACTER ch, LPCHARACTER stone)
 	{
 		if (!ch || !stone || !stone->IsStone() || stone->IsDead())
+			return false;
+		// Breaking one warps every PC on the killer's map into a new tower.
+		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return false;
 		// The server drop multiplier still has useful value at a ten-level
 		// advantage. Below that it collapses sharply (15% at -11 and 1% at -15),
@@ -1015,6 +1021,46 @@ namespace
 		}
 
 		const long mapIndex = ch->GetMapIndex();
+		// A point on another map's coordinates is not a walk. ClampWorld below
+		// pulls any goal onto this map's last cell, the planner calls that
+		// corner unreachable, and the caller asks again: bots on Bokjung's town
+		// square planned (204750,307150) - that map's far corner - 1615 times in
+		// a day on the test world, every one a far plan for nothing. The hub
+		// tables, all 222 village ground points, the known-Metin registry and
+		// the walk back after a death each check the map, so the source is
+		// somewhere else; refused here with the point as it was asked for, the
+		// bot's errands and the caller's address, one line a minute per caller,
+		// so the log names it. A step a little past the edge still goes through.
+		if (LPSECTREE_MAP offMap = SECTREE_MANAGER::instance().GetMap(mapIndex))
+		{
+			const TMapSetting& setting = offMap->m_setting;
+			if (destX < setting.iBaseX - PLAYERBOT_NAV_OFF_MAP_MARGIN ||
+					destY < setting.iBaseY - PLAYERBOT_NAV_OFF_MAP_MARGIN ||
+					destX >= setting.iBaseX + setting.iWidth + PLAYERBOT_NAV_OFF_MAP_MARGIN ||
+					destY >= setting.iBaseY + setting.iHeight + PLAYERBOT_NAV_OFF_MAP_MARGIN)
+			{
+				const void* caller = __builtin_return_address(0);
+				char szOffMapTag[48];
+				snprintf(szOffMapTag, sizeof(szOffMapTag), "nav_off_map:%p", caller);
+				PlayerBotErrThrottled(szOffMapTag, dwNow,
+						"PLAYERBOT_NAV: destination off the map pid=%u name=%s map=%ld pos=(%ld,%ld) dest=(%ld,%ld) "
+						"action=%u goal=%u shop=%d phase=%u market=%d bio=%d stable=%d fishing=%d crossing=%ld "
+						"departure=%ld hub=%u metin_hunt=%d caller=%p",
+						ch->GetPlayerID(), ch->GetName(), mapIndex, ch->GetX(), ch->GetY(), destX, destY,
+						(unsigned int)state.bCurrentAction, (unsigned int)state.bLongTermGoal,
+						state.bVisitingShop ? 1 : 0, (unsigned int)state.bTownVisitPhase,
+						state.bMarketTrip ? 1 : 0, state.bVisitingBiologist ? 1 : 0,
+						state.bVisitingStable ? 1 : 0, state.bFishingSession ? 1 : 0,
+						state.lDesertCrossingTo, state.lDepartureMap, (unsigned int)state.wHuntingHub,
+						IsPlayerBotMetinHunting(state, dwNow) ? 1 : 0, caller);
+				if (ch->IsStateMove())
+					ch->Stop();
+				if (state.bStuckCounter < 255)
+					++state.bStuckCounter;
+				state.bLastNavOutcome = PLAYERBOT_NAV_OUT_UNREACHABLE;
+				return false;
+			}
+		}
 		CPlayerBotNavigation& navigation = CPlayerBotNavigation::instance(mapIndex);
 		if (!navigation.Init(mapIndex))
 			return false;
