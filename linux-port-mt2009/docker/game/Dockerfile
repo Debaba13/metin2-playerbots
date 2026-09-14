@@ -257,7 +257,7 @@ RUN groupadd -r -g 2050 m2spool && usermod -a -G m2spool metin2
 #      share/bin      the two binaries this build produced
 #      share/CMD      the command permission table (a file, not a directory)
 #      share/data     mob spawns, dungeons, pc tables
-#      share/locale   quest objects, maps, translations (locale/poland)
+#      share/locale   quest objects, maps, translations (locale/turkey)
 #      share/package  (empty, kept because every core symlinks it)
 #  There is no share/conf: the protos live in the database (PROTO_FROM_DB).
 COPY --from=builder /out/game /opt/metin2/share/bin/game
@@ -267,7 +267,7 @@ COPY src/serverfiles/share/data    /opt/metin2/share/data
 COPY src/serverfiles/share/locale  /opt/metin2/share/locale
 COPY src/serverfiles/share/package /opt/metin2/share/package
 
-# What the r40250 image adds to its share, for the poland locale here
+# What the r40250 image adds to its share, for the turkey locale here
 # (port/shareify.py renders the three files and this step):
 #  * mob_drop_item.m3.append.txt - the level-30 weapon ladder's kill groups on
 #    the guild map's cursed wolves;
