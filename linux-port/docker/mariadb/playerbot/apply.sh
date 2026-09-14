@@ -243,6 +243,33 @@ if [ -n "$stranded" ] && [ "$stranded" -gt 0 ] 2>/dev/null; then
     echo "[playerbot-migrate] moved $stranded bot(s) back to their own kingdom"
 fi
 
+# A negative alignment on a bot is a bug's footprint, not a history: a bot has
+# no quarrel with its own kingdom. From 2.0.39 a duellist's blow went through
+# CHARACTER::Damage without asking whether the engine would allow it, so a
+# challenger struck before the other side had agreed and a winner went on
+# striking the respawned loser. The engine counted each such kill as a murder -
+# minus twenty thousand, shared over the killer's party - and bots of level
+# nine walked about as "Zlosliwy" (98 on our own world, the lowest at -151002).
+# Cleared here, before any core holds the bots in memory: a running core writes
+# its cached alignment back over an UPDATE.
+negative=$(db -e "
+    SELECT COUNT(*)
+      FROM player.player p
+      JOIN account.account a ON a.id = p.account_id
+     WHERE LEFT(a.login, 10) = 'playerbot_'
+       AND p.alignment < 0;
+")
+if [ -n "$negative" ] && [ "$negative" -gt 0 ] 2>/dev/null; then
+    db -e "
+        UPDATE player.player p
+          JOIN account.account a ON a.id = p.account_id
+           SET p.alignment = 0
+         WHERE LEFT(a.login, 10) = 'playerbot_'
+           AND p.alignment < 0;
+    "
+    echo "[playerbot-migrate] cleared the negative alignment of $negative bot(s)"
+fi
+
 # There used to be a step here that pulled every bot outside Orc Valley's
 # central island back onto it, from the days when the navigation refused
 # water and the island was all a bot could reach. The bridges are crossings

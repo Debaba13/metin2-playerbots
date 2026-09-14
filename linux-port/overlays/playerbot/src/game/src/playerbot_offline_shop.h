@@ -210,7 +210,16 @@ namespace {
             if (o.visiting) BotOfflineFinishVisit(ch, state, now);
             return false;
         }
-        if (o.nextService == 0) o.nextService = now + 30000 + ch->GetPlayerID() % 60000;
+        // The first visit after a spawn is spread over a whole service interval.
+        // "pid % 60000" was meant to spread it over a minute, but every
+        // registered pid is below 2504, so every keeper went thirty to thirty-
+        // two seconds after a restart: 451 map changes in the first two minutes
+        // of 14 September, each keeper pulled out of the dungeon or frontier it
+        // had just been spawned on, and the same wave again ten to fifteen
+        // minutes later because the whole population's clocks started together.
+        // The thirty seconds stay: the shop list has to arrive from the DB first.
+        if (o.nextService == 0)
+            o.nextService = now + 30000 + PlayerBotNavHash(ch->GetPlayerID() ^ 0x4f534856U) % 600000;
         if (BotOfflineBusy(ch, state) || !db_clientdesc || !db_clientdesc->IsPhase(PHASE_DBCLIENT)) {
             if (o.visiting) BotOfflineFinishVisit(ch, state, now);
             return false;

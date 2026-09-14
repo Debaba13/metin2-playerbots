@@ -17,28 +17,237 @@ every version here.
 
 ---
 
+## 2.0.43 — 2026-09-14
+
+Serwer (AI, panel i launcher). Suwak zwojów w panelu, pojedynki kończące
+się tam, gdzie się rozstrzygnęły, grupy botów w obrębie królestwa, porządek
+w magazynach i boty, które nie rzucają się już na każdą miksturę. Klient bez
+zmian (zostaje 2.0.5).
+
+### Od jakiego plusa boty używają zwojów
+
+W klasycznym panelu, w zachowaniu botów, jest nowy suwak „Zwoje
+Błogosławieństwa i Boga Smoków” od +1 do +9. Ustawia najniższe ulepszenie,
+na które bot użyje takiego zwoju. Przy +7 zwój idzie tylko na ulepszenia na
++7, +8 i +9, a każde niższe bot robi u kowala bez zwoju, jak gracz, który
+zwojów nie ma — więc przedmiot może spłonąć. Przy +1 (domyślnie) nic się nie
+zmienia. Działa w pięć sekund, bez restartu, a panel zaawansowany zachowuje
+to ustawienie przy zapisie swoich suwaków.
+
+Sprawdzone na naszym świecie z progiem +8: przez 23 minuty 24 ulepszenia pod
+zwojem na +8, 3 na +9 i ani jednego na +7 lub niżej. Przy okazji Zwój Boga
+Smoków od +7 działa teraz także przy ulepszaniu poza kowalem, tak jak u
+kowala.
+
+### Pojedynek kończy się tam, gdzie się rozstrzygnął
+
+Bot, który padł w pojedynku, kończy go w tej samej chwili. Wcześniej wstawał
+i jeszcze kilkanaście sekund „walczył”, a przed 2.0.41 potrafił wtedy bić
+zwycięzcę, który nie mógł mu oddać (Drip). Pojedynek znika też z silnika:
+dotąd po wygranej z botem gracz przez dziesięć minut nie mógł go ani
+uderzyć, ani wyzwać ponownie. Bot na zwykłym koniu zsiada do pojedynku —
+silnik nie pozwala bić z takiego konia, więc taki bot w ogóle nie walczył.
+
+Sprawdzone: 30 pojedynków, każdy zakończony razem z parą w silniku, każda
+przegrana w sekundzie śmierci bota, 5 zejść z konia i zero kar rangi.
+
+### Grupy tylko w obrębie królestwa
+
+Boty zakładały grupy z botami innych królestw, czego gracz zrobić nie może
+(l0st3k). Teraz dobierają się tylko we własnym królestwie, tak jak wymaga
+silnik. Sprawdzone: 385 nowych grup, żadna mieszana.
+
+### Magazyn bez rozsypanych stosów
+
+Magazyn w tym silniku nie łączy stosów, a bot odkładał każdy stos na nowe
+pole, więc magazyny zapełniały się osobnymi paczkami tych samych
+materiałów (jaksiezabic). Teraz bot dokłada do stosu, który już leży w
+magazynie, a przy każdej wizycie scala stosy rozsypane wcześniej. Na naszym
+świecie w 16 minut rozsypanych stosów ubyło z 357 do 234.
+
+### Tanie łupy zostają na ziemi
+
+Bot od 40 poziomu, który ma co najmniej 500 tys. yang, nie biegnie już po
+mikstury, sprzęt co najmniej 10 poziomów poniżej swojego (do +3, bez cennych
+bonusów) ani zioła, jeśli są warte u handlarza mniej niż 40 tys. yang
+(sizowski, próg od Tieru). Materiały do ulepszeń, księgi, zwoje, szkatułki,
+kamienie, sprzęt, który mógłby założyć, i yang zbiera jak dotąd, a młode i
+biedne boty zbierają wszystko.
+
+### Paczka diagnostyczna
+
+ZBIERZ LOGI zbiera teraz także linie pojedynków, łupów i teleportów z panelu
+GM (F9), a panel zapisuje w logu każde użycie „Teleportuj mnie” — żeby
+zgłoszenie „nagle mnie przeniosło” dało się sprawdzić w logach.
+
+### Fork: stajenny wciąż czekał w dwóch pominiętych miejscach, itemshop i tooltip po turecku
+
+Trzy zmiany dodane w tym fork'u obok syncu z upstream:
+
+- „atımı ilk alacağım, görevi bitirdim, 24 saat bekletiyor" — gracz kończył
+  misję zdobycia pierwszego konia i słyszał „Yarın tekrar gel", mimo że
+  2.0.13 miała zdjąć czekanie z medalu konia. Ta poprawka dotknęła tylko
+  `pony_levelup.quest` (grade 1, poziomy 1-10); dwa sąsiednie pliki zostały
+  nietknięte: `horse_levelup.quest` (grade 2, poziomy 11-19, bramka
+  `next_time` na 21 godzin) i `pony_buy.quest` (własna, osobna 12-godzinna
+  bramka `make_time`). Obie bramki wyłączone tą samą metodą co w
+  `pony_levelup.quest`: `next_time` zamienione na martwą gałąź
+  (`elseif false`), a `make_time` ustawiane od razu na bieżący czas.
+- Pozostały polski tekst w itemshopie (`linux-port/docker/itemshop/`)
+  przetłumaczony na turecki.
+- Podpowiedź (tooltip) przedmiotu na mapie na żywo w klasycznym panelu
+  wracała do polskiego dla każdego widza zamiast tureckiego — poprawione.
+
+## 2.0.42 — 2026-09-14
+
+Serwer (panel). Klasyczny panel pokazuje wreszcie Las, Czerwony Las i Wieżę
+Demonów na mapie na żywo. Klient bez zmian (zostaje 2.0.5).
+
+### Trzy mapy, na których boty polują, a panel ich nie pokazywał
+
+Od 2.0.39 boty expią w Lesie i w Czerwonym Lesie i polują w Wieży Demonów,
+a klasyczny panel znał tylko nazwy i granice tych map. Nie było ich w
+filtrze „Mapa” i nie miały tła, więc nie dało się ich wybrać ani zobaczyć
+botów, które tam są (Mkls na Discordzie, o lesie).
+
+Teraz wszystkie trzy są w filtrze na stronie mapy, a tło każdej jest
+narysowane z tych samych plików terenu, po których chodzą boty. Wieża
+Demonów wygląda jak dziewięć okrągłych pięter, bo tak jest zbudowana.
+Sprawdzone na naszym świecie: 9 botów w Wieży Demonów i 1 w Lesie, każdy na
+swoim miejscu na tle.
+
+Panel zaawansowany (Sebana) zostaje bez zmian: tam mapy dodaje autor tego
+panelu.
+
 ## 2.0.41 — 2026-09-14
 
-Serwer. Stajenny nadal kazał czekać w dwóch miejscach, które ominęła poprzednia
-poprawka czekania na medal konia (2.0.13). Klient bez zmian (zostaje 2.0.5).
+Serwer. Pojedynki botów przestały się liczyć jako morderstwa, więc ranga
+wraca do zera i już nie spada. Boty wchodzą w głąb lochów małp zamiast stać
+w pierwszym korytarzu, zwój błogosławieństwa chroni przedmiot, który bot ma
+na sobie, a zioła i Dłonie przestają zapychać plecaki. Po starcie serwera
+właściciele sklepów offline nie wychodzą już wszyscy naraz z lochów i z
+frontu. Klient bez zmian (zostaje 2.0.5).
 
-### Stajenny wciąż czekał — dwa pominięte miejsca
+### Pojedynki: cios pada tylko tam, gdzie silnik na niego pozwala
 
-„atımı ilk alacağım, görevi bitirdim, 24 saat bekletiyor" — gracz kończył misję
-zdobycia pierwszego konia i słyszał „Yarın tekrar gel", mimo że 2.0.13 miała
-zdjąć czekanie z medalu konia. Ta poprawka dotknęła tylko `pony_levelup.quest`
-(grade 1, poziomy 1-10); dwa sąsiednie pliki zostały nietknięte:
+Boty z siódmego czy dziewiątego poziomu chodziły jako „Agresywny” i
+„Złośliwy”, a pojedynki poniżej piętnastego poziomu i w mieście trwały bez
+końca, z samymi animacjami umiejętności (nerrvous_s, djariczek). Przyczyna
+była jedna i siedziała w naszym kodzie.
 
-- `horse_levelup.quest` (grade 2, poziomy 11-19) — bramka `next_time` na 21
-  godzin wciąż aktywna.
-- `pony_buy.quest` — samo zdobycie konia po raz pierwszy ma własną, osobną
-  12-godzinną bramkę `make_time`, nigdy nie objętą zmianą z 2.0.13.
+Zwykły cios bota zadawał obrażenia wprost, a silnik przy takim wywołaniu nie
+pyta o nic: ani o zgodę na pojedynek, ani o ochronę poniżej piętnastego
+poziomu, ani o strefę bezpieczną. Wyzywający uderzał więc, zanim drugi bot
+się zgodził, a zwycięzca bił dalej przeciwnika po jego odrodzeniu, choć
+silnik uznał już pojedynek za zakończony. Dla silnika każde takie zabójstwo
+było morderstwem we własnym królestwie: **minus dwadzieścia tysięcy rangi**,
+rozdzielone między członków drużyny zabijającego. Stąd ujemna ranga u botów,
+które same nikogo nie zabiły. Na naszym świecie takich botów było **105,
+najniższa ranga −149 547**, a do południa silnik rozdzielił na drużyny 47
+takich kar. Umiejętności szły drogą, która o zgodę pyta, dlatego tam, gdzie
+cios nie mógł paść, zostawały same animacje.
 
-Obie bramki wyłączone tą samą metodą co w `pony_levelup.quest`: `next_time`
-zamienione na martwą gałąź (`elseif false`), a `make_time` ustawiane od razu na
-bieżący czas, z pominięciem stanu oczekiwania zamiast samego jego skrócenia.
-Oba pliki dodane do listy questów kompilowanych przy budowie obrazu obok
-`pony_levelup`.
+Teraz każdy cios i każda umiejętność w postać przechodzi przez tę samą
+kontrolę silnika. Pojedynek, w którym silnik odmawia ciosu przez piętnaście
+sekund, bot uznaje za skończony. Wcześniej żaden pojedynek się nie kończył,
+tylko wygasał po trzech minutach. Bot nie wyzywa i nie przyjmuje pojedynku
+poniżej piętnastego poziomu ani w strefie bezpiecznej, a gracz dostaje na
+czacie informację, dlaczego.
+
+Ranga zepsuta przez ten błąd jest zerowana przy starcie serwera, zanim
+rdzeń wczyta boty. U nas: **105 botów, po migracji 0**.
+
+W pierwszych dziesięciu minutach po wdrożeniu: 9 wyzwań, 5 zgód, 4 odmowy w
+strefie bezpiecznej i 8 pojedynków zakończonych (6, bo silnik nie pozwalał
+już zadać ciosu, 2 w strefie bezpiecznej). **Ani jednej kary rangi**, a w
+bazie nadal zero botów z ujemną rangą.
+
+### Lochy małp: boty idą w głąb
+
+„Boty biegają w jednym miejscu, a nie po całym lochu” (bierzyn, uxietoszef).
+Loch to jedenaście komór połączonych drzwiami, które przenoszą każdego, kto
+podejdzie na trzysta jednostek. Były tu dwa błędy i jeden brak.
+
+Pierwszy: bot, który przeszedł przez drzwi, lądował obok drzwi prowadzących z
+powrotem i wracał nimi, bo stanął tam do walki albo trasa do starego celu
+prowadziła przez te same drzwi. Z 87 szybkich powrotów do komory wejściowej
+52 zrobił silnik, a 35 nasza nawigacja. Teraz drzwi nie przenoszą bota
+przez 45 sekund od ostatniego przejścia, a nawigacja w tym czasie nie
+planuje trasy przez drzwi i zapomina cel z poprzedniej komory.
+
+Brak: komora wejściowa ma 6–7% miejsc odrodzenia potworów, a gościła prawie
+wszystkich odwiedzających. Teraz bot przy wejściu losuje, zależnie od
+liczby potworów w komorach, czy zostaje, czy idzie do jednych z drzwi. Po
+drodze broni się przed tym, co go atakuje.
+
+Drugi błąd wyszedł w pierwszym pomiarze: marsz miał czterdzieści sekund
+liczonych razem z walką, a korytarz wejściowy ma do drzwi 18–21 tysięcy
+jednostek i jest pełen agresywnych małp. Doszły dwa marsze z sześciu.
+Teraz liczy się sam marsz, do minuty, z górnym limitem trzech minut.
+Zmierzone po poprawce: **9 z 9 dokończonych marszów przeszło do innej
+komory, żaden się nie poddał**, a stary limit zawróciłby 7 z tych 9.
+
+Uczciwie: na mapie 108 boty często znajdują medal i wychodzą z lochu, zanim
+dojdą do drzwi. Idą wtedy korytarzem, a nie stoją przy wejściu, ale do
+innej komory nie docierają.
+
+### Zwój błogosławieństwa chroni założony przedmiot
+
+„Boty biegają do kowala, palą swój główny przedmiot, kupują nowy i robią to
+samo, zamiast ulepszać zwojem” (uxietoszef). Zwój w plecaku podnosił cel
+ulepszania do +9, ale sam zwój był używany dopiero od +6. Kroki z +4 i z +5,
+czyli 80 i 60 procent szansy, szły do zwykłego kowala, który przy porażce
+niszczy przedmiot. Teraz przedmiot, który bot ma na sobie, idzie pod zwój
+przy każdym kroku o szansie 80% lub mniejszej, jeśli bot ma zwój. Zapasowe
+przedmioty z plecaka zostają przy starej zasadzie od +6, żeby nie
+przepalać zwojów, których na rynku brakuje.
+
+Uczciwie: na naszym świecie zwojów jest mało (98 sztuk w 20 plecakach),
+więc w dziesięć minut widać tu ledwie pojedyncze kroki poniżej +6 pod
+zwojem. Efekt pokażą światy, na których zwojów jest dużo.
+
+### Zioła i Dłonie nie zapychają plecaków
+
+Zioła (Pokrzywa, Kwiat Brzoskwini, Korzeń Gango, Kwiat Kaki i reszta do
+Jaskiniowego Grzyba) oraz dwa wywary służą w tym świecie wyłącznie do
+ulepszania Nożyka Zielarza. Żaden przepis na broń ani zbroję ich nie
+potrzebuje. Boty trzymały je jako materiały, na naszym świecie w **850
+plecakach i 400 magazynach**. Teraz sprzedają je handlarzowi, a te leżące w
+magazynie wyjmują przy wizycie u magazyniera: **413 wyjęć w pierwszych
+dziesięciu minutach**. Lista nie jest wpisana na sztywno: bot odczytuje ją z
+tabel przedmiotów i przepisów, więc świat z innymi przepisami dostanie
+własną odpowiedź. Rudy do Kilofa i ryby do Wędki, które też nie idą na broń
+ani zbroję, zostają przy swoich zasadach z górnictwa i wędkowania.
+
+Dłoni Krytyka i Przebicia nie da się ani sprzedać, ani wystawić na straganie,
+a przy wysokich szansach na szkatułki zajmowały po trzy pełne stosy (uxietoszef).
+Bot zatrzymuje teraz sto sztuk każdej, a resztę wyrzuca przy wizycie u
+handlarza.
+
+### Po starcie serwera sklepy nie wyciągają wszystkich naraz
+
+Pierwsza wizyta właściciela w sklepie offline miała być rozłożona na minutę,
+ale wszystkie numery postaci są na tyle małe, że rozrzut wynosił dwie i pół
+sekundy. Po restarcie **560 botów poszło do sklepów w medianie 33 sekund**,
+451 zmian mapy w dwie minuty. Każdy właściciel sklepu, który wystartował w
+lochu albo na froncie, był z niego wyciągany po pół minucie, a fala wracała
+co 10–15 minut. Teraz pierwsza wizyta wypada między pół minuty a dziesięć
+i pół minuty: zmierzone **od 90 do 585 sekund (10.–90. percentyl),
+najwyżej 67 wizyt na minutę zamiast 230**.
+
+### Już działało, zgłoszone ponownie
+
+- Omdlenie działa na boty od 2.0.39. Zgłoszenie (cyfrowy_mat) przyszło
+  kilka godzin przed tym wydaniem.
+- Boty wyjmują rzeczy z magazynu od 2.0.39 (akhigubernator): książki, do
+  których dorosły, i materiały, na które jest popyt.
+
+### Drobne
+
+Log `used attack skill` podawał dla każdego bota ten sam `target_vid`
+(4294758416), bo w miejsce numeru trafiał adres. Teraz podaje prawdziwy
+numer celu. Marsz w lochu zapisuje odległość do drzwi, czas marszu i czas
+od przydziału.
 
 ## 2.0.40 — 2026-09-14
 

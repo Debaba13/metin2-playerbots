@@ -413,9 +413,12 @@ namespace
 	// this waits the agreed three seconds and then agrees, which is what makes
 	// the fight start.
 	//
-	// A bot never refuses. What it will not do is agree from the floor: a
-	// challenge taken at a sliver of health is a free kill, not a duel, and the
-	// engine has no rule against it.
+	// A bot refuses only a fight that cannot happen: under PK_PROTECT_LEVEL on
+	// either side, or in a safe zone, the engine refuses every blow, so an
+	// agreement there was a duel nobody could fight or end ("bot przyjmuje pvp
+	// ponizej 15 lvl", "nieskonczone pvp", djariczek). What it will not do
+	// either is agree from the floor: a challenge taken at a sliver of health
+	// is a free kill, not a duel, and the engine has no rule against it.
 	void AcceptPlayerBotPvpChallenge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch)
@@ -435,6 +438,28 @@ namespace
 		if (!challenger || challenger->IsDead() ||
 				challenger->GetMapIndex() != ch->GetMapIndex())
 			return;
+		const char* refusal = NULL;
+		if (ch->GetLevel() < PK_PROTECT_LEVEL || challenger->GetLevel() < PK_PROTECT_LEVEL)
+			refusal = "level";
+		else if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()) ||
+				IsPlayerBotSafeZone(challenger->GetMapIndex(), challenger->GetX(), challenger->GetY()))
+			refusal = "safe_zone";
+		if (refusal)
+		{
+			sys_log(0, "PLAYERBOT_PVP: declined a duel pid=%u name=%s challenger_pid=%u challenger=%s reason=%s level=%u challenger_level=%u",
+					ch->GetPlayerID(), ch->GetName(), challengerPid, challenger->GetName(), refusal,
+					(unsigned int)ch->GetLevel(), (unsigned int)challenger->GetLevel());
+			// A person is told why; a bot has nobody to read it.
+			if (challenger->GetDesc() && !challenger->GetDesc()->IsBot())
+			{
+				if (refusal[0] == 'l')
+					challenger->ChatPacket(CHAT_TYPE_INFO, "%s nie przyjmie pojedynku ponizej %d poziomu.",
+							ch->GetName(), (int)PK_PROTECT_LEVEL);
+				else
+					challenger->ChatPacket(CHAT_TYPE_INFO, "%s nie walczy w strefie bezpiecznej.", ch->GetName());
+			}
+			return;
+		}
 		CPVPManager::instance().Insert(ch, challenger);
 		playerbot_pvp::NoteDuelStarted(ch->GetPlayerID(), challengerPid,
 				dwNow + PLAYERBOT_PVP_DUEL_ASSUMED);
@@ -460,14 +485,61 @@ namespace
 	bool ManagePlayerBotDuelCombat(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		static std::map<DWORD, DWORD> s_mapPlayerBotDuelLogged;
+		// When the engine first refused this bot a blow at its foe.
+		static std::map<DWORD, DWORD> s_mapPlayerBotDuelRefusedSince;
 		if (!ch || ch->IsDead())
 			return false;
+		const DWORD pid = ch->GetPlayerID();
+		if (playerbot_pvp::GetDuelOpponent(pid, dwNow) == 0)
+		{
+			s_mapPlayerBotDuelRefusedSince.erase(pid);
+			s_mapPlayerBotDuelLogged.erase(pid);
+			return false;
+		}
 		LPCHARACTER foe = FindPlayerBotDuelOpponent(ch, dwNow);
 		if (!foe)
+		{
+			// Fallen, gone, or on another map: the fight the engine agreed to is
+			// over either way, and a duel still remembered is only a potion ban
+			// with nobody to fight. Nothing ended one before this - EndDuel had
+			// no caller, so every duel ran its whole bound.
+			LPCHARACTER fallen = CHARACTER_MANAGER::instance().FindByPID(
+					(DWORD)playerbot_pvp::GetDuelOpponent(pid, dwNow));
+			EndPlayerBotDuel(ch, state, dwNow, fallen && fallen->IsDead() ? "foe_fell" : "foe_gone");
+			s_mapPlayerBotDuelRefusedSince.erase(pid);
+			s_mapPlayerBotDuelLogged.erase(pid);
 			return false;
-		if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()) ||
-				IsPlayerBotSafeZone(foe->GetMapIndex(), foe->GetX(), foe->GetY()))
+		}
+		// The duel ends where the engine says it cannot be fought, not where
+		// PLAYERBOT_PVP_DUEL_ASSUMED runs out. A refusal is normal for the
+		// seconds before the other side agrees; past PLAYERBOT_PVP_REFUSED_GIVE_UP
+		// it is a fight already won (CPVP::Win takes the loser's agreement
+		// back), one under PK_PROTECT_LEVEL, or one standing in a safe zone.
+		// A duel is not fought from a transport saddle. CPVPManager::CanAttack
+		// refuses every blow from a horse under grade two, and the tick's own
+		// dismount waits for a target - which a refused duel never sets - so a
+		// bot that agreed in the saddle stayed there, was refused, and gave the
+		// duel up to PLAYERBOT_PVP_REFUSED_GIVE_UP without a blow. Before 2.0.41
+		// the same blows landed from the saddle anyway ("bocik nawalal hitami z
+		// konia ... a ma zwyklego konia", Drip).
+		if (ch->IsRiding() && !CanPlayerBotEverFightOnHorse(ch))
+			SetPlayerBotRidingForTravel(ch, state, false, dwNow, "duel");
+		const bool bSafe = IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()) ||
+				IsPlayerBotSafeZone(foe->GetMapIndex(), foe->GetX(), foe->GetY());
+		if (bSafe || !CanPlayerBotStrikeCharacter(ch, foe))
+		{
+			std::map<DWORD, DWORD>::iterator refused = s_mapPlayerBotDuelRefusedSince.find(pid);
+			if (refused == s_mapPlayerBotDuelRefusedSince.end())
+				s_mapPlayerBotDuelRefusedSince[pid] = dwNow;
+			else if (dwNow - refused->second >= PLAYERBOT_PVP_REFUSED_GIVE_UP)
+			{
+				EndPlayerBotDuel(ch, state, dwNow, bSafe ? "safe_zone" : "engine_refuses");
+				s_mapPlayerBotDuelRefusedSince.erase(refused);
+				s_mapPlayerBotDuelLogged.erase(pid);
+			}
 			return false;
+		}
+		s_mapPlayerBotDuelRefusedSince.erase(pid);
 		const int distance = DISTANCE_APPROX(ch->GetX() - foe->GetX(),
 				ch->GetY() - foe->GetY());
 		// Further than the bot can see is no longer the fight that was agreed.
@@ -505,6 +577,164 @@ namespace
 		return true;
 	}
 
+	// Spreading the visitors of a Monkey Dungeon over its rooms on the way in.
+	//
+	// The entrance chamber holds 6-7% of a dungeon's spawns - 16 of 234 on map
+	// 108, 16 of 256 on 109, 16 of 231 on 25 - and nearly every visiting bot,
+	// because a visit is spent there: a bot leaves the moment its medal drops,
+	// a median of 41 s, and the wander pass that chooses a door only runs on a
+	// tick with nothing to hit. Every monkey of a dungeon carries the medal's
+	// kill group, so the odds do not depend on the room. What the pile cost was
+	// monsters - roughly fifteen times fewer per bot than the dungeon holds -
+	// and the "whole dungeon in one line" players reported.
+	//
+	// So a bot in its first room of a visit rolls, by pid and weighted by how
+	// many spawns each room holds, whether to stay or which door to take, and
+	// walks there before it hunts. It yields to anything actually hitting it -
+	// the walk is no reason to be killed - and to its own retreat, and resumes
+	// when that is over. One door only: a second would meet the engine's door
+	// block and the AI's own dwell, which are what keep a bot from being bounced
+	// back, and past the first room the ordinary rotation carries it on. A bot
+	// the engine has just moved through a door is not sent to another: it would
+	// only stand there.
+	//
+	// The walk has a budget, and the budget is the walking. The entrance room is
+	// a long corridor of aggressive monkeys: the first version gave the walk
+	// forty seconds of wall time, and of the first six walks two crossed - both
+	// at thirty-eight seconds - while the four that gave up had been going the
+	// right way and stopping for whatever caught them, one of them fighting for
+	// all forty. The time a fight holds the walk up does not count against it,
+	// and a wall-clock bound far above that ends an intent the fights never let
+	// go of.
+	struct TPlayerBotMonkeySpread
+	{
+		long lMap;
+		int iDoor;
+		BYTE bFromChamber;
+		DWORD dwAssigned;
+		// Held-up time already closed, and when the hold now running began.
+		DWORD dwHeld;
+		DWORD dwHeldSince;
+	};
+
+	bool ManagePlayerBotMonkeySpread(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		static std::map<DWORD, TPlayerBotMonkeySpread> s_mapSpread;
+		if (!ch)
+			return false;
+		const DWORD pid = ch->GetPlayerID();
+		const long mapIndex = ch->GetMapIndex();
+		if (!IsPlayerBotMonkeyMap(mapIndex) || ch->IsDead())
+		{
+			s_mapSpread.erase(pid);
+			return false;
+		}
+		if (state.bMonkeyChamber == 255 ||
+				(int)state.bMonkeyChamber >= PLAYERBOT_MONKEY_CHAMBER_COUNT)
+			return false;
+
+		std::map<DWORD, TPlayerBotMonkeySpread>::iterator it = s_mapSpread.find(pid);
+		if (it != s_mapSpread.end() && it->second.lMap != mapIndex)
+		{
+			s_mapSpread.erase(it);
+			it = s_mapSpread.end();
+		}
+
+		if (it == s_mapSpread.end())
+		{
+			// Only in the first room of a visit: a bot that has crossed once has
+			// its way already, chosen here or by the rotation.
+			if (state.bMonkeyPrevChamber != 255)
+				return false;
+			const int chamber = (int)state.bMonkeyChamber;
+			TPlayerBotMonkeySpread spread;
+			spread.lMap = mapIndex;
+			spread.iDoor = -1;
+			spread.bFromChamber = state.bMonkeyChamber;
+			spread.dwAssigned = dwNow;
+			spread.dwHeld = 0;
+			spread.dwHeldSince = 0;
+			int exitChambers[8];
+			int exitDoors[8];
+			const int exits = playerbot_monkey::IsGotoCrossingBlocked(pid, dwNow)
+					? 0 : GetPlayerBotMonkeyChamberExits(mapIndex, chamber, exitChambers, exitDoors, 8);
+			const int stayWeight = (int)PLAYERBOT_MONKEY_CHAMBERS[chamber].bSpotCount;
+			int total = stayWeight;
+			for (int i = 0; i < exits; ++i)
+				total += (int)PLAYERBOT_MONKEY_CHAMBERS[exitChambers[i]].bSpotCount;
+			int roll = total > 0
+					? (int)(PlayerBotNavHash(pid ^ 0x53505244U ^ (DWORD)mapIndex) % (DWORD)total)
+					: 0;
+			int toChamber = chamber;
+			roll -= stayWeight;
+			for (int i = 0; i < exits && roll >= 0; ++i)
+			{
+				const int weight = (int)PLAYERBOT_MONKEY_CHAMBERS[exitChambers[i]].bSpotCount;
+				if (roll < weight)
+				{
+					spread.iDoor = exitDoors[i];
+					toChamber = exitChambers[i];
+				}
+				roll -= weight;
+			}
+			long doorX = 0, doorY = 0;
+			const int distance = spread.iDoor >= 0 &&
+					GetPlayerBotMonkeyDoorPosition(mapIndex, spread.iDoor, doorX, doorY)
+					? DISTANCE_APPROX(ch->GetX() - doorX, ch->GetY() - doorY) : -1;
+			it = s_mapSpread.insert(std::make_pair(pid, spread)).first;
+			sys_log(0, "PLAYERBOT_MONKEY: spread pid=%u name=%s map=%ld from=%d to=%d door=%d exits=%d dist=%d",
+					pid, ch->GetName(), mapIndex, chamber, toChamber, spread.iDoor, exits, distance);
+		}
+
+		TPlayerBotMonkeySpread& spread = it->second;
+		if (spread.iDoor < 0)
+			return false;
+		const DWORD elapsed = dwNow - spread.dwAssigned;
+		const DWORD held = spread.dwHeld +
+				(spread.dwHeldSince != 0 ? dwNow - spread.dwHeldSince : 0);
+		const DWORD walked = elapsed > held ? elapsed - held : 0;
+		if (state.bMonkeyChamber != spread.bFromChamber)
+		{
+			sys_log(0, "PLAYERBOT_MONKEY: spread crossed pid=%u name=%s map=%ld from=%d to=%d walked=%u elapsed=%u",
+					pid, ch->GetName(), mapIndex, (int)spread.bFromChamber, (int)state.bMonkeyChamber,
+					(unsigned int)walked, (unsigned int)elapsed);
+			spread.iDoor = -1;
+			return false;
+		}
+		if (walked >= PLAYERBOT_MONKEY_SPREAD_WALK_MS || elapsed >= PLAYERBOT_MONKEY_SPREAD_MAX_MS)
+		{
+			sys_log(0, "PLAYERBOT_MONKEY: spread gave up pid=%u name=%s map=%ld door=%d walked=%u elapsed=%u nav_out=%u",
+					pid, ch->GetName(), mapIndex, spread.iDoor,
+					(unsigned int)walked, (unsigned int)elapsed, (unsigned int)state.bLastNavOutcome);
+			spread.iDoor = -1;
+			return false;
+		}
+		// A fight or a retreat holds the walk up, and stops its clock.
+		if (state.bTacticalRetreat || FindPlayerBotEngagedTarget(ch))
+		{
+			if (spread.dwHeldSince == 0)
+				spread.dwHeldSince = dwNow;
+			return false;
+		}
+		if (spread.dwHeldSince != 0)
+		{
+			spread.dwHeld += dwNow - spread.dwHeldSince;
+			spread.dwHeldSince = 0;
+		}
+
+		long doorX = 0, doorY = 0;
+		if (!GetPlayerBotMonkeyDoorPosition(mapIndex, spread.iDoor, doorX, doorY))
+		{
+			spread.iDoor = -1;
+			return false;
+		}
+		state.dwTargetVID = 0;
+		ch->SetVictim(NULL);
+		SetPlayerBotAction(state, BOT_ACTION_TRAVEL, dwNow);
+		MovePlayerBot(ch, doorX, doorY, dwNow, 32, true, true);
+		return true;
+	}
+
 	// Bots challenging one another.
 	//
 	// Rare on purpose: a duel is something that happens in a world, not the
@@ -521,6 +751,10 @@ namespace
 		if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()))
 			return;
 		if (playerbot_pvp::IsInDuel(ch->GetPlayerID(), dwNow))
+			return;
+		// Under PK_PROTECT_LEVEL the engine refuses every blow on the kingdom's own
+		// maps: a challenge from there is a duel nobody can fight or end.
+		if (ch->GetLevel() < PK_PROTECT_LEVEL)
 			return;
 		// Anything the bot is actually doing outranks picking a fight.
 		if (state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
@@ -560,6 +794,9 @@ namespace
 					return false;
 				if (abs((int)candidate->GetLevel() - (int)m_me->GetLevel()) >
 						PLAYERBOT_PVP_CHALLENGE_LEVEL_DELTA)
+					return false;
+				if (candidate->GetLevel() < PK_PROTECT_LEVEL ||
+						IsPlayerBotSafeZone(candidate->GetMapIndex(), candidate->GetX(), candidate->GetY()))
 					return false;
 				if (candidate->GetMaxHP() <= 0 ||
 						(candidate->GetHP() * 100) / candidate->GetMaxHP() <
@@ -622,6 +859,10 @@ namespace
 			return;
 		if (playerbot_pvp::IsInDuel(ch->GetPlayerID(), dwNow))
 			return;
+		// The protection under PK_PROTECT_LEVEL holds across kingdoms too
+		// (CPVPManager::CanAttack), so the same duel would never land a blow.
+		if (ch->GetLevel() < PK_PROTECT_LEVEL)
+			return;
 		// Who is aggressive is decided by pid, not rolled: a kingdom then has a
 		// character rather than a mood, the same bots pick the fights after
 		// every restart, and the rest are left alone to hunt - which is what
@@ -668,6 +909,9 @@ namespace
 					return false;
 				if (abs((int)candidate->GetLevel() - (int)m_me->GetLevel()) >
 						PLAYERBOT_KINGDOM_PVP_LEVEL_DELTA)
+					return false;
+				if (candidate->GetLevel() < PK_PROTECT_LEVEL ||
+						IsPlayerBotSafeZone(candidate->GetMapIndex(), candidate->GetX(), candidate->GetY()))
 					return false;
 				// A bot on its knees is not a fight. This is also what keeps the
 				// loser out of a second quarrel while it walks away from the
@@ -860,6 +1104,16 @@ namespace
 							!IsPlayerBotPartyEligible(candidate, stateIt->second))
 						return true;
 
+					// The engine's first rule of a party, and the one a bot's own
+					// Join never asked: CHARACTER::IsPartyJoinableCondition refuses
+					// another kingdom before anything else, so a player cannot group
+					// across kingdoms and a bot must not either. On the shared maps
+					// the bots of all three stand side by side, and they grouped
+					// there as if they were one ("boty z roznych krolestw expia w
+					// jednym PT", l0st3k).
+					if (candidate->GetEmpire() != m_me->GetEmpire())
+						return true;
+
 					if (abs((int)candidate->GetLevel() - (int)m_me->GetLevel()) > 3)
 						return true;
 
@@ -874,7 +1128,8 @@ namespace
 					if (cp && cp->GetMemberCount() < (DWORD)GetPlayerBotPartyDesiredMax(m_me))
 					{
 						LPCHARACTER leader = cp->GetLeaderCharacter();
-						if (leader && leader->GetMapIndex() == m_me->GetMapIndex())
+						if (leader && leader->GetMapIndex() == m_me->GetMapIndex() &&
+								leader->GetEmpire() == m_me->GetEmpire())
 						{
 							int ld = DISTANCE_APPROX(m_me->GetX() - leader->GetX(), m_me->GetY() - leader->GetY());
 							if (ld <= 1800 &&
@@ -947,8 +1202,10 @@ namespace
 			finder.m_pTargetParty->Link(ch);
 			finder.m_pTargetParty->SetParameter(PARTY_EXP_DISTRIBUTION_PARITY);
 			state.dwPartyExpireTime = dwNow + number(300000, 900000); // 5 to 15 mins
-			sys_log(0, "PLAYERBOT_AI: joined party pid=%u name=%s members=%d",
-					ch->GetPlayerID(), ch->GetName(), finder.m_pTargetParty->GetMemberCount());
+			LPCHARACTER joinedLeader = finder.m_pTargetParty->GetLeaderCharacter();
+			sys_log(0, "PLAYERBOT_AI: joined party pid=%u name=%s members=%d empire=%u leader_empire=%u",
+					ch->GetPlayerID(), ch->GetName(), finder.m_pTargetParty->GetMemberCount(),
+					(unsigned int)ch->GetEmpire(), joinedLeader ? (unsigned int)joinedLeader->GetEmpire() : 0U);
 		}
 		else if (finder.m_pSoloCandidate)
 		{
@@ -962,10 +1219,11 @@ namespace
 				state.dwPartyExpireTime = dwNow + number(300000, 900000); // 5 to 15 mins
 				RememberPlayerBotEncounter(ch, finder.m_pSoloCandidate,
 						PLAYERBOT_FRIEND_PARTY_POINTS, dwNow);
-				sys_log(0, "PLAYERBOT_AI: created party pid=%u name=%s partner_pid=%u affinity=%d",
+				sys_log(0, "PLAYERBOT_AI: created party pid=%u name=%s partner_pid=%u affinity=%d empire=%u partner_empire=%u",
 						ch->GetPlayerID(), ch->GetName(),
 						finder.m_pSoloCandidate->GetPlayerID(),
-						GetPlayerBotAffinity(state, finder.m_pSoloCandidate->GetPlayerID()));
+						GetPlayerBotAffinity(state, finder.m_pSoloCandidate->GetPlayerID()),
+						(unsigned int)ch->GetEmpire(), (unsigned int)finder.m_pSoloCandidate->GetEmpire());
 			}
 		}
 	}
@@ -2420,6 +2678,10 @@ void CPlayerBotManager::Update()
 		// Before anything may claim the tick: which Monkey Dungeon chamber this
 		// bot is in now, since a portal it walked past has already moved it.
 		UpdatePlayerBotMonkeyChamber(ch, state, dwNow);
+		// And, on the way into a dungeon, which room to hunt in - before the
+		// target section can pin the bot to the entrance's handful of monkeys.
+		if (ManagePlayerBotMonkeySpread(ch, state, dwNow))
+			continue;
 
 		if (s_bPlayerBotM2CensusPass)
 			NotePlayerBotPartyCensus(ch, state);
@@ -2896,6 +3158,11 @@ void CPlayerBotManager::Update()
 		// one of the two falls. Without this the bot agreed and then went back
 		// to its monsters, which is what a player sees as being ignored.
 		LPCHARACTER duelFoe = FindPlayerBotDuelOpponent(ch, dwNow);
+		// Only a foe the engine will let this bot strike - see
+		// CanPlayerBotStrikeCharacter and the refusal clock in
+		// ManagePlayerBotDuelCombat.
+		if (duelFoe && !CanPlayerBotStrikeCharacter(ch, duelFoe))
+			duelFoe = NULL;
 		if (duelFoe && duelFoe != target &&
 				!IsPlayerBotSafeZone(ch->GetMapIndex(), duelFoe->GetX(), duelFoe->GetY()))
 		{

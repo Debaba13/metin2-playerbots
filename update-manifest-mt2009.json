@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-14T07:35:00Z",
-  "statusMessage": "2.0.40: **pojedynki, w których wreszcie padają ciosy.** Bot przyjmował wyzwanie i wracał do swoich potworów — przyczyny były dwie i obie nasze. Wybór przeciwnika siedział pod kilkunastoma przebiegami, które wcześniej kończą turę bota (zakupy, kowal, miasto), więc bot w środku sprawunku nigdy do niego nie docierał: zmierzone sześć sekund po zgodzie, siedemdziesiąt jednostek od siebie, obaj na pełnym życiu. A funkcja zamieniająca zamach w obrażenia odrzucała wszystko, co nie jest potworem ani metinem — boty schodziły się na dwadzieścia trzy jednostki, odgrywały całe kombo i nie zadawały sobie nic. Po poprawce: **4440 punktów życia wymienionych między pięcioma z dwudziestu trzech walczących**, wobec zera zawsze wcześniej. Do tego bot nie rzuca umiejętności pod **marmurem polimorfii** (silnik i tak je odrzucał, więc przepalał całą rotację), a **wabienie zaczyna się przy trzech osobach** w drużynie zamiast pięciu — pięcioosobowe nie powstawały praktycznie nigdy. Czego nadal nie ma: bot **nie dołącza** do drużyny gracza, ale to wydanie zapisze wreszcie w logu powód odmowy. I sprawa dla wszystkich, którzy nie mogli zainstalować 2.0.38: to wydanie nie dotarło do nikogo, bo manifest nigdy nie został przestawiony — launcher uczciwie mówił „masz najnowszą wersję\". Od teraz osobna bramka odmawia publikacji, gdy manifest wskazuje poprzednią wersję. Tylko serwer — klient zostaje 2.0.5.",
+  "publishedAt": "2026-09-14T13:19:59Z",
+  "statusMessage": "2.0.43: **suwak w panelu ustawia, od jakiego plusa boty używają Zwojów Błogosławieństwa i Boga Smoków.** Pojedynek kończy się w chwili śmierci bota i znika z silnika, a bot zsiada ze zwykłego konia do walki. Boty zakładają grupy tylko we własnym królestwie, łączą stosy w magazynie, a zamożne boty nie biegną już po tanie mikstury i stary sprzęt. Tylko serwer — klient zostaje 2.0.5.",
   "server": {
     "version": "2.0.38",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.38/metin2-server-update-2.0.38.zip",

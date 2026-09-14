@@ -57,6 +57,13 @@ namespace
 	const DWORD PLAYERBOT_LOOT_THREAT_SCAN_INTERVAL_MIN = 900;
 	const DWORD PLAYERBOT_LOOT_THREAT_SCAN_INTERVAL_MAX = 1300;
 	const DWORD PLAYERBOT_LOOT_CLEANUP_INTERVAL = 10000;
+	// Who leaves merchant fodder on the ground, and what fodder is worth - see
+	// IsPlayerBotLootBeneathBot. Yang is long long on the 2.x line, so the
+	// purse bound is too.
+	const int PLAYERBOT_LOOT_CHOOSY_MIN_LEVEL = 40;
+	const long long PLAYERBOT_LOOT_CHOOSY_MIN_GOLD = 500000LL;
+	const long long PLAYERBOT_LOOT_CHOOSY_MAX_VALUE = 40000LL;
+	const int PLAYERBOT_LOOT_OUTGROWN_GEAR_LEVELS = 10;
 	const DWORD PLAYERBOT_INVENTORY_MAINTENANCE_MIN = 30000;
 	const DWORD PLAYERBOT_INVENTORY_MAINTENANCE_MAX = 60000;
 	const int PLAYERBOT_POTION_HP_PERCENT = 65;
@@ -245,6 +252,8 @@ namespace
 	// would only be deposited again on the next trip, so the door opens a
 	// crack rather than all the way.
 	const int PLAYERBOT_SAFEBOX_WITHDRAW_MAX = 6;
+	// Split stacks in the box poured together per visit (MergePlayerBotSafeboxStacks).
+	const int PLAYERBOT_SAFEBOX_STACK_MERGES_PER_VISIT = 16;
 	// Two stacks of one thing in two cells is what a partial purchase, a
 	// partial sale and a pick-up into a full stack all leave behind, and the
 	// engine only merges when a hand drags one onto the other - which a bot
@@ -308,6 +317,11 @@ namespace
 	// weapon stuck at exactly +4, and another 230 at +0, while 1287 Dragon God
 	// and 1002 Blessing scrolls sat in their bags (zglosil sekuras).
 	const int PLAYERBOT_PRIZE_SAFE_REFINE_PROB = 80;
+	// The step at which a worn piece goes under a scroll whatever its plus
+	// (ManagePlayerBotRefining): the one from +4, at eighty percent, burns one
+	// worn weapon in five, where the ninety-percent steps below it are not worth
+	// a scroll the market is short of.
+	const int PLAYERBOT_WORN_SCROLL_MAX_PROB = 80;
 
 	const int PLAYERBOT_STACK_MERGES_PER_PASS = 4;
 	const int PLAYERBOT_STACK_MAX = 200;
@@ -820,6 +834,10 @@ namespace
 	// that is what the operator asked for and because agreeing on the same tick
 	// reads like a script rather than an opponent.
 	const DWORD PLAYERBOT_PVP_ACCEPT_DELAY = 3000;
+	// How long the engine may refuse a duellist its blow before the bot takes
+	// the duel as over: comfortably past the agreement above even on a busy
+	// tick, well short of the bound below. See ManagePlayerBotDuelCombat.
+	const DWORD PLAYERBOT_PVP_REFUSED_GIVE_UP = 15000;
 	// How long the bot assumes an agreed duel lasts. The engine knows exactly
 	// (CPVPManager), but its IsFighting sits behind ENABLE_NEWSTUFF on one line
 	// and does not exist at all on the other, so the bot remembers instead. Only
@@ -2136,6 +2154,14 @@ namespace
 	const int PLAYERBOT_CHEST_FREE_CELLS = 5;
 	const DWORD PLAYERBOT_CHEST_REFUSED_RETRY = 600000;
 	const DWORD PLAYERBOT_BOOSTER_INTERVAL = 60000;
+	// How many of one booster a bot keeps when nobody else can have it. A
+	// booster that may go neither to a merchant (ANTI_SELL) nor on a counter
+	// (ANTI_MYSHOP) - the Dlonie of the Moonlight chest - is worth only what
+	// its holder drinks, ten minutes at a time. Past this the merchant visit
+	// throws the rest away, or three stacks of two hundred fill a bag the bot
+	// can then no longer loot into ("dlonie przebicia i krytyki zalegaja w eq
+	// w 3 stakach po 200", uxietoszef).
+	const int PLAYERBOT_BOOSTER_KEEP_PER_VNUM = 100;
 	// The chest's two boosters, and the two grilled fish that work the same
 	// way: a Carp for twenty movement speed, a Rudd for ten dexterity, ten
 	// minutes each (item_proto USE_ABILITY_UP).
@@ -2859,6 +2885,19 @@ namespace
 	// live in playerbot_monkey_policy.h, because char.cpp has to read the same
 	// number: two copies of it are how a bounce would come back.
 	const DWORD PLAYERBOT_MONKEY_CHAMBER_DWELL = playerbot_monkey::kChamberDwellMs;
+	// How long the walk to the first room's chosen door may take before the
+	// bot gives it up and hunts where it stands - the walking alone, with the
+	// time a fight or a retreat held it up left out. The entrance room is not a
+	// few thousand units across: one door of the hard dungeon stands seventeen
+	// and a half thousand from the arrival point, some twenty-three seconds in
+	// the saddle, and a clock that ran through the fights on the way gave up
+	// four walks in six that were going the right way. A walk that has had a
+	// minute of walking and not arrived is not arriving.
+	const DWORD PLAYERBOT_MONKEY_SPREAD_WALK_MS = 60000;
+	// And the bound on the intent itself, in wall time, for a bot the corridor's
+	// monkeys never let walk: it fights where it stands either way, and after
+	// this long it hunts there on its own account.
+	const DWORD PLAYERBOT_MONKEY_SPREAD_MAX_MS = 180000;
 	// Every kingdom has an easy dungeon of its own and they are three separate
 	// maps: metin2_map_monkey_dungeon_11 (5), _12 (25) and _13 (45), at three
 	// base positions 76800 apart. Only Chunjo's was ever listed here, so a

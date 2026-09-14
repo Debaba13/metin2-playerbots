@@ -55,6 +55,11 @@ MAPS = [
     (104, "metin2_map_spiderdungeon", 51200, 486400, 76800, 76800),
     (65, "metin2_map_milgyo", 537600, 51200, 102400, 102400),
     (71, "metin2_map_spiderdungeon_02", 665600, 435200, 102400, 102400),
+    # The hunting grounds 2.0.39 opened. The panel had their bounds and names
+    # from then on and no picture, so none of the three could even be picked.
+    (66, "metin2_map_deviltower1", 128000, 793600, 76800, 76800),
+    (67, "metin2_map_trent", 281600, 0, 51200, 51200),
+    (68, "metin2_map_trent02", 1049600, 0, 76800, 76800),
 ]
 
 # Sand and dark earth rather than the old dark green. Two reasons, both about

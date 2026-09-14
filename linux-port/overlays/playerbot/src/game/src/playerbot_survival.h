@@ -212,6 +212,15 @@ namespace
 			state.dwRetreatThreatVID = 0;
 			state.dwLastDeathTime = dwNow;
 			state.dwLastKillerVID = state.dwTargetVID;
+			// A bot that falls in a duel has lost it, whoever struck last, and
+			// the duel ends on the tick it falls. It used to end only once the
+			// bot had stood up again and been refused its blows for
+			// PLAYERBOT_PVP_REFUSED_GIVE_UP, still counting itself in the duel
+			// - and before 2.0.41, when those blows were not refused, going on
+			// hitting a winner whose client would not let them hit back ("wali
+			// jakas zemste, gdzie nie moge mu oddac", Drip).
+			if (playerbot_pvp::GetDuelOpponent(ch->GetPlayerID(), dwNow) != 0)
+				EndPlayerBotDuel(ch, state, dwNow, "lost");
 			state.lDeathX = ch->GetX();
 			state.lDeathY = ch->GetY();
 			++state.bDeathCount;

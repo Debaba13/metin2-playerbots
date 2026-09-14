@@ -1471,8 +1471,13 @@ namespace
 		// which is all SendPlayerBotAttackPacket does - and not one of them lost
 		// a single point of health, because this function returned zero before
 		// Damage was ever called.
+		//
+		// And only a foe the engine agrees may be struck: Damage asks nothing
+		// by itself, so opening this door without that question is what made
+		// duel kills count as murders - see CanPlayerBotStrikeCharacter.
 		const bool bIsDuel = !primary->IsMonster() && !primary->IsStone() &&
-				IsPlayerBotDuelOpponent(ch, primary, get_dword_time());
+				IsPlayerBotDuelOpponent(ch, primary, get_dword_time()) &&
+				CanPlayerBotStrikeCharacter(ch, primary);
 		const bool bIsTargetValid = (primary->IsMonster() || primary->IsStone() || bIsDuel);
 		if (!bIsTargetValid || primary->IsDead())
 			return 0;
@@ -1614,7 +1619,8 @@ namespace
 				// exactly why an agreed duel used to end in the two of them
 				// standing and looking at one another.
 				(!target->IsMonster() && !target->IsStone() &&
-					!IsPlayerBotDuelOpponent(ch, target, dwNow)) ||
+					(!IsPlayerBotDuelOpponent(ch, target, dwNow) ||
+					 !CanPlayerBotStrikeCharacter(ch, target))) ||
 				ch->GetMapIndex() != target->GetMapIndex() ||
 				IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()) ||
 				IsPlayerBotSafeZone(target->GetMapIndex(), target->GetX(), target->GetY()))

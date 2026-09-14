@@ -2982,6 +2982,95 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   owner's tick. When a feature is reported dead, check the binary for its
   literals before checking its logic.
 
+- **A decided duel is still a pair, and the winner's client is locked out
+  of it.** `CPVP::Win` takes the loser's agreement back and sends
+  `PVP_MODE_REVENGE`: the loser may restart the fight, the winner's client
+  will not attack the loser, and the pair lives until `CPVPManager::Process`
+  drops it after ten minutes without a fight. A bot never takes a revenge, so
+  a player who beat one could neither hit it nor challenge it again for ten
+  minutes - and before 2.0.41, when the bot's swing was a bare
+  `CHARACTER::Damage`, the respawned loser went on hitting a winner who could
+  not hit back ("wali jakas zemste, gdzie nie moge mu oddac", Drip).
+  `EndPlayerBotDuel` (playerbot_combat.h) is the only way a bot's duel ends:
+  on its own death (`reason=lost`, from `HandleDeath`), on the foe's
+  (`foe_fell`), and after the refusal clock (`engine_refuses`, `safe_zone`).
+  It deletes the pair with `Packet(true)` and `CPVPManager::Delete` - both
+  public on both engines; `GiveUp` is not safe, it erases the companion's
+  whole set - and ends the other side's memory of the duel when that side is
+  a bot. `pair_removed=` in the `duel over` line says whether there was one.
+- **`SCROLL_FROM` is a floor, not a start.** The weights key (1-9, default 1
+  = no floor; a slider in the classic panel, and the advanced panel keeps the
+  line it does not know) is the lowest plus a refine under a Blessing or
+  Dragon God scroll may land on. `IsPlayerBotScrollStepAllowed` is asked by
+  the blacksmith pass - for the scroll and for the prize hold, which under the
+  floor gives way to the plain anvil instead of holding a piece for good -
+  by the field scroll pass, and by `GetPlayerBotRefineTarget`, which keeps the
+  +9 ladder only for a piece standing on the first rung or whose own ambition
+  carries it there. Above the floor the old rules decide where a scroll is
+  worth it: from +7, earlier for a worn piece at a step that can burn and for
+  a prize piece.
+
+- **A bot's party is its own kingdom's, the way a player's is.** The party
+  finder in `ManagePlayerBotParty` joins with `CParty::Join` directly, and that
+  never asks `CHARACTER::IsPartyJoinableCondition`, whose first rule is
+  `PERR_DIFFEMPIRE`. On the shared maps - all of them, and the villages too,
+  under `unified` - the bots of the three kingdoms stand side by side, and they
+  grouped as if they were one; a player saw "boty z roznych krolestw expia w
+  jednym PT" and could not invite one of them himself (l0st3k). The finder asks
+  the candidate's empire and the party leader's; `joined party ...
+  leader_empire=` and `created party ... partner_empire=` put both in the log.
+- **The mt2009 safebox does not stack, so the bot pours.**
+  `ENABLE_MT2009_DISABLE_SAFEBOX_STACK` (CommonDefines.h) takes stacking out of
+  `CSafebox::MoveItem`; a player merges by taking a stack out, dropping it on
+  the other in the bag and putting it back. The deposit took the first empty
+  slot for every stack, so the boxes filled with split stacks - 357 groups and
+  683 wasted slots in 344 boxes on the test world ("boty nie lacza przedmiotow
+  w magazynie", jaksiezabic). `TopUpPlayerBotSafeboxStacks` pours a bag stack
+  into the box's own stacks before it takes a slot, and
+  `MergePlayerBotSafeboxStacks` pours split ones together,
+  `PLAYERBOT_SAFEBOX_STACK_MERGES_PER_VISIT` a visit: counts move with
+  `SetCount`, the destination is flushed (`FlushDelayedSave`) before the
+  source goes, and an emptied item is removed and destroyed exactly as
+  `CSafebox::MoveItem` does it. `topped_up=` and `stacked=` are in the
+  `safebox deposit` line.
+- **A bot past the age of pennies leaves them on the ground.** Every drop in
+  reach was loot, so a bot of sixty with millions ran for a small potion like a
+  bot of ten ("boty rzucaja sie jak zombie po przedmioty", sizowski).
+  `IsPlayerBotChoosyLooter` (level `PLAYERBOT_LOOT_CHOOSY_MIN_LEVEL`, yang
+  `PLAYERBOT_LOOT_CHOOSY_MIN_GOLD`) and `IsPlayerBotLootBeneathBot` - potions,
+  gear outgrown by `PLAYERBOT_LOOT_OUTGROWN_GEAR_LEVELS` under
+  `PLAYERBOT_PRECIOUS_REFINE` with no prize lines, and the merchant's herbs,
+  worth under `PLAYERBOT_LOOT_CHOOSY_MAX_VALUE` at the merchant; no price at
+  all counts as unknown, not cheap - sit in `CCollectPlayerBotLoot`, so the
+  walk and the combat Z pass skip the same drops. The operator set the numbers
+  (Tieru, 14 September: "od 40k wartosci u handlarza"). This is a value filter,
+  not the ownership rule: an item nobody owns is still everybody's.
+  `PLAYERBOT_LOOT: left merchant fodder` is throttled population-wide.
+- **A duel from a transport saddle is refused whole.** `CPVPManager::CanAttack`
+  refuses every blow from a horse under grade two, and the tick's own dismount
+  waits for a target, which a refused duel never sets - so a bot that agreed in
+  the saddle sat there until `PLAYERBOT_PVP_REFUSED_GIVE_UP` ended the duel
+  without a blow. `ManagePlayerBotDuelCombat` climbs down first when
+  `CanPlayerBotEverFightOnHorse` says no (`PLAYERBOT_HORSE: dismounted ...
+  reason=duel`). Before 2.0.41 the blows landed from the saddle anyway, which
+  is what "nawalal hitami z konia, a ma zwyklego konia" (Drip) was.
+- **"Teleportuj mnie" moves whichever human is in the game.** The live map's
+  bot popup puts one green button over everything else, and
+  `api_admin_warp_me` with `player_name: 'auto'` queues a `WARP` for up to eight
+  human characters of the last week and lets the online one take it. A queued
+  teleport cannot fire late: the button deletes its own pending rows after six
+  seconds and the quest's sweep retires any pending row at thirty
+  (`player_offline`) - so "I stood AFK and was suddenly in the Demon Tower"
+  (sizowski, 2.0.40, a bot of his in the Tower) means a click seconds before,
+  from the panel or from F9. The panel now logs `teleport me` for every such
+  request, and F9's own warps log `GMPANEL:`, which the support bundle collects.
+- **The support bundle's tag list was twenty-six tags behind the code.**
+  `PLAYERBOT_PVP`, `PLAYERBOT_LOOT` and `GMPANEL` were added with the fixes that
+  needed them. The rest were left out on purpose, because the bundle keeps the
+  last 40 000 matching lines and some tags would crowd out everything else -
+  `PLAYERBOT_PARTY: assist` alone writes about a hundred lines a minute at a
+  thousand bots. Adding a tag is a decision about that budget, not a formality.
+
 ## Engine facts worth not re-deriving
 
 - Item types/subtypes live in `common/item_length.h`; map attributes and

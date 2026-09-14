@@ -194,6 +194,10 @@ namespace
 				wanted = PlayerBotNeedsRefineMaterial(ch, item->GetVnum()) ||
 						(GetPlayerBotLedgerDemand(item->GetVnum()) > 0 &&
 							PlayerBotCanOpenShop(ch));
+			else if (item->GetType() == ITEM_MATERIAL && IsPlayerBotNonGearMaterial(item->GetVnum()))
+				// The herbs an older version put down as materials: out, and to
+				// the merchant on the next visit (IsPlayerBotNonGearMaterial).
+				wanted = true;
 			if (!wanted)
 				continue;
 
@@ -217,10 +221,92 @@ namespace
 		return taken;
 	}
 
+	// The box's own stacks take what they have room for before anything takes
+	// a slot of its own.
+	//
+	// This line's engine keeps the safebox from stacking at all
+	// (ENABLE_MT2009_DISABLE_SAFEBOX_STACK in CommonDefines.h), so a player
+	// merges by taking a stack out, dropping it on the other in the bag and
+	// putting it back - and a bot, which only ever took the first empty slot,
+	// left every visit's materials in a stack of their own: 357 split groups
+	// and 683 slots wasted in 344 boxes on the test world ("boty nie lacza
+	// przedmiotow w magazynie", jaksiezabic). The result here is the player's,
+	// reached without the round trip: counts move, nothing is created, the
+	// destination is saved before the source goes, and an emptied item is
+	// destroyed the way CSafebox::MoveItem destroys one. Returns true when the
+	// whole bag stack went in and the bag item is gone.
+	bool TopUpPlayerBotSafeboxStacks(LPCHARACTER ch, CSafebox* box, LPITEM item)
+	{
+		if (!ch || !box || !item || !item->IsStackable() ||
+				IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK))
+			return false;
+		for (DWORD pos = 0; pos < SAFEBOX_MAX_NUM; ++pos)
+		{
+			if (!box->IsValidPosition(pos))
+				continue;
+			LPITEM held = box->Get(pos);
+			if (!held || !PlayerBotStacksTogether(held, item) ||
+					(int)held->GetCount() >= PLAYERBOT_STACK_MAX)
+				continue;
+			const int moved = std::min(PLAYERBOT_STACK_MAX - (int)held->GetCount(),
+					(int)item->GetCount());
+			char szHint[128];
+			snprintf(szHint, sizeof(szHint), "%s %d", item->GetName(), moved);
+			LogManager::instance().ItemLog(ch, item, "SAFEBOX PUT", szHint);
+			held->SetCount(held->GetCount() + moved);
+			ITEM_MANAGER::instance().FlushDelayedSave(held);
+			if ((int)item->GetCount() <= moved)
+			{
+				M2_DESTROY_ITEM(item->RemoveFromCharacter());
+				return true;
+			}
+			item->SetCount(item->GetCount() - moved);
+		}
+		return false;
+	}
+
+	// And the stacks older visits left split in the box, poured together a
+	// few at a time on the same rule.
+	int MergePlayerBotSafeboxStacks(CSafebox* box, int maxMerges)
+	{
+		int merged = 0;
+		for (DWORD i = 0; box && i < SAFEBOX_MAX_NUM && merged < maxMerges; ++i)
+		{
+			if (!box->IsValidPosition(i))
+				continue;
+			LPITEM item = box->Get(i);
+			if (!item || (int)item->GetCount() >= PLAYERBOT_STACK_MAX)
+				continue;
+			for (DWORD j = i + 1; j < SAFEBOX_MAX_NUM && merged < maxMerges; ++j)
+			{
+				if (!box->IsValidPosition(j))
+					continue;
+				LPITEM other = box->Get(j);
+				if (!other || !PlayerBotStacksTogether(item, other))
+					continue;
+				const int moved = std::min(PLAYERBOT_STACK_MAX - (int)item->GetCount(),
+						(int)other->GetCount());
+				if (moved <= 0)
+					break;
+				item->SetCount(item->GetCount() + moved);
+				ITEM_MANAGER::instance().FlushDelayedSave(item);
+				if ((int)other->GetCount() <= moved)
+					M2_DESTROY_ITEM(box->Remove(j));
+				else
+					other->SetCount(other->GetCount() - moved);
+				++merged;
+				if ((int)item->GetCount() >= PLAYERBOT_STACK_MAX)
+					break;
+			}
+		}
+		return merged;
+	}
+
 	// Into the open safebox, the way CInputMain::SafeboxCheckin does it: off the
 	// character, onto the first empty slot of the grid. Returns how many books
 	// went in; the rest stay in the bag as goods when the page is full.
-	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, TPlayerBotAIState& state, CSafebox* box)
+	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, TPlayerBotAIState& state, CSafebox* box,
+			int* pToppedUp = NULL)
 	{
 		std::vector<WORD> cells;
 		CollectPlayerBotSafeboxBooks(ch, cells);
@@ -238,6 +324,20 @@ namespace
 			LPITEM item = ch->GetInventoryItem(cells[i]);
 			if (!item)
 				continue;
+			const int before = (int)item->GetCount();
+			if (TopUpPlayerBotSafeboxStacks(ch, box, item))
+			{
+				deposited += before;
+				if (pToppedUp)
+					++*pToppedUp;
+				continue;
+			}
+			if ((int)item->GetCount() < before)
+			{
+				deposited += before - (int)item->GetCount();
+				if (pToppedUp)
+					++*pToppedUp;
+			}
 			bool placed = false;
 			for (DWORD pos = 0; pos < SAFEBOX_MAX_NUM && !placed; ++pos)
 			{
@@ -3437,16 +3537,18 @@ namespace
 			}
 			if (box)
 			{
-				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box);
+				int toppedUp = 0;
+				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box, &toppedUp);
 				// And then back the other way, on the same open box. The deposit
 				// runs first on purpose: it is what frees the bag cells the
 				// withdrawal then needs, so a bot under pressure can still take
 				// back the one material it came for.
 				const int taken = WithdrawPlayerBotSafebox(ch, box);
+				const int stacked = MergePlayerBotSafeboxStacks(box, PLAYERBOT_SAFEBOX_STACK_MERGES_PER_VISIT);
 				ch->CloseSafebox();
-				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d",
+				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d topped_up=%d stacked=%d",
 						ch->GetPlayerID(), ch->GetName(), deposited, taken, CountPlayerBotSkillBooks(ch),
-						CountPlayerBotFreeInventoryCells(ch));
+						CountPlayerBotFreeInventoryCells(ch), toppedUp, stacked);
 				done = true;
 			}
 			else if (dwNow >= state.dwTownWaitUntil)

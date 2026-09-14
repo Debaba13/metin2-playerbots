@@ -127,6 +127,57 @@ namespace
 		return false;
 	}
 
+	// A bot past the age of pennies leaves the pennies on the ground.
+	//
+	// Every drop in reach was loot, so a bot of sixty with millions in its
+	// purse ran for a small red potion, a level-ten sword and a handful of
+	// herbs like a bot of ten, and carried them to the merchant for a few
+	// hundred yang ("boty rzucaja sie jak zombie po przedmioty", sizowski).
+	// The operator's rule: once a bot has the level and the yang to be past
+	// it, merchant fodder worth under PLAYERBOT_LOOT_CHOOSY_MAX_VALUE is not
+	// worth a step. Fodder is exactly three things - potions, gear it has
+	// outgrown by PLAYERBOT_LOOT_OUTGROWN_GEAR_LEVELS under
+	// PLAYERBOT_PRECIOUS_REFINE with no prize lines, and the herbs the merchant
+	// takes - so a refine material, a book, a scroll, a chest, a stone, a gear
+	// piece it could still wear and yang are picked up by everybody as before,
+	// and an item with no merchant price counts as unknown, never as cheap.
+	bool IsPlayerBotChoosyLooter(LPCHARACTER ch)
+	{
+		return ch && (int)ch->GetLevel() >= PLAYERBOT_LOOT_CHOOSY_MIN_LEVEL &&
+				(long long)ch->GetGold() >= PLAYERBOT_LOOT_CHOOSY_MIN_GOLD;
+	}
+
+	bool IsPlayerBotLootBeneathBot(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !item->GetProto())
+			return false;
+		const long long unit = (long long)GetPlayerBotNpcSellUnitPrice(item);
+		if (unit <= 0 || unit * (long long)item->GetCount() >= PLAYERBOT_LOOT_CHOOSY_MAX_VALUE)
+			return false;
+		switch (item->GetType())
+		{
+			case ITEM_USE:
+				return item->GetSubType() == USE_POTION ||
+						item->GetSubType() == USE_POTION_NODELAY;
+			case ITEM_MATERIAL:
+				return IsPlayerBotNonGearMaterial(item->GetVnum());
+			case ITEM_WEAPON:
+			case ITEM_ARMOR:
+			{
+				if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE ||
+						IsPlayerBotPrizeItem(item) || IsPlayerBotSpecialLevel30Weapon(item))
+					return false;
+				int levelLimit = 0;
+				for (int i = 0; i < ITEM_LIMIT_MAX_NUM; ++i)
+					if (item->GetProto()->aLimits[i].bType == LIMIT_LEVEL)
+						levelLimit = (int)item->GetProto()->aLimits[i].lValue;
+				return levelLimit + PLAYERBOT_LOOT_OUTGROWN_GEAR_LEVELS <= (int)ch->GetLevel();
+			}
+			default:
+				return false;
+		}
+	}
+
 	class CCollectPlayerBotLoot
 	{
 		public:
@@ -138,7 +189,9 @@ namespace
 				// One count for the whole sweep: a full bag is a full bag for
 				// every drop in it.
 				m_bagFull(CountPlayerBotFreeInventoryCells(owner) == 0),
-				m_skippedNoRoom(0)
+				m_skippedNoRoom(0),
+				m_choosy(IsPlayerBotChoosyLooter(owner)),
+				m_skippedCheap(0)
 			{
 			}
 
@@ -163,6 +216,11 @@ namespace
 						m_owner->GetY() - item->GetY());
 				if (distance > m_maxDistance)
 					return true;
+				if (m_choosy && IsPlayerBotLootBeneathBot(m_owner, item))
+				{
+					++m_skippedCheap;
+					return true;
+				}
 				// A drop the bag cannot take is not loot: walking up to it,
 				// announcing the pickup and being refused by the engine every
 				// five seconds is what "mowi ze podnosi lup ale nie robi nic"
@@ -184,6 +242,7 @@ namespace
 
 			const std::vector<std::pair<int, LPITEM> >& GetItems() const { return m_items; }
 			int SkippedNoRoom() const { return m_skippedNoRoom; }
+			int SkippedCheap() const { return m_skippedCheap; }
 
 		private:
 			LPCHARACTER m_owner;
@@ -192,6 +251,8 @@ namespace
 			DWORD m_dwNow;
 			bool m_bagFull;
 			int m_skippedNoRoom;
+			bool m_choosy;
+			int m_skippedCheap;
 			std::vector<std::pair<int, LPITEM> > m_items;
 	};
 
@@ -372,6 +433,11 @@ namespace
 				state.mapFailedLootVIDs, dwNow);
 		ch->GetSectree()->ForEachAround(collector);
 		collector.Sort();
+		if (collector.SkippedCheap() > 0)
+			PlayerBotLogThrottled("loot_left_cheap", dwNow,
+					"PLAYERBOT_LOOT: left merchant fodder pid=%u name=%s level=%u gold=%lld drops=%d",
+					ch->GetPlayerID(), ch->GetName(), (unsigned int)ch->GetLevel(),
+					(long long)ch->GetGold(), collector.SkippedCheap());
 		const std::vector<std::pair<int, LPITEM> >& items = collector.GetItems();
 		if (items.empty())
 		{

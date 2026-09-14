@@ -1448,21 +1448,16 @@ namespace
 		return scrolls;
 	}
 
-	BYTE GetPlayerBotRefineTarget(LPCHARACTER ch, LPITEM item)
+	// How far a bot means to take a piece on the plain anvil, where a failed
+	// step burns it. What a scroll in the bag changes is GetPlayerBotRefineTarget.
+	BYTE GetPlayerBotRefineAmbition(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item)
 			return 0;
-		// A scroll in the bag is a ladder to +9 for everybody: under it a
-		// failure costs a level or nothing, never the piece, so the ambition
-		// below - which is about not burning what was earned - does not apply
-		// while one is there. See PLAYERBOT_SCROLL_REFINE_MAX_PLUS.
-		if (CountPlayerBotSafeRefineScrolls(ch) > 0)
-			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
-
 		// The Archer's stone dagger is a tool, not a prize: carry it to +4, where
 		// the steps are still 90% and a burn is rare, and stop - going for +6
 		// without a scroll would burn it and leave the bot breaking stones with a
-		// bow again. (A scroll, handled above, still takes it higher safely.)
+		// bow again. (A scroll still takes it higher: GetPlayerBotRefineTarget.)
 		if (IsPlayerBotArcherStoneWeapon(ch, item))
 			return PLAYERBOT_ARCHER_STONE_MIN_REFINE;
 
@@ -1497,6 +1492,30 @@ namespace
 		if (ambition < plusSevenChance)
 			return 7; // another 25%
 		return 6;
+	}
+
+	BYTE GetPlayerBotRefineTarget(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item)
+			return 0;
+		// A scroll in the bag is a ladder to +9 for everybody: under it a
+		// failure costs a level or nothing, never the piece, so the ambition -
+		// which is about not burning what was earned - does not apply while
+		// one is there. See PLAYERBOT_SCROLL_REFINE_MAX_PLUS.
+		if (CountPlayerBotSafeRefineScrolls(ch) == 0)
+			return GetPlayerBotRefineAmbition(ch, item);
+		// The operator's SCROLL_FROM can put the ladder's first rung above
+		// where a piece would climb by itself, and the steps under that rung
+		// go to the plain anvil. So the ladder is the answer only for a piece
+		// already on the rung or one whose own ambition carries it there; the
+		// rest keep their ambition, or a bot content with +6 and scrolls kept
+		// for +8 would try +7 unprotected for the sake of a scroll it may not
+		// use. With no floor the first rung is +0 and every piece climbs.
+		const int firstRung = GetPlayerBotScrollFromPlus() - 1;
+		if ((int)item->GetRefineLevel() >= firstRung)
+			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
+		const BYTE ambition = GetPlayerBotRefineAmbition(ch, item);
+		return (int)ambition >= firstRung ? PLAYERBOT_SCROLL_REFINE_MAX_PLUS : ambition;
 	}
 
 	// What the village merchants actually stock, and what they charge for it.

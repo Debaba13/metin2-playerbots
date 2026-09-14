@@ -115,6 +115,14 @@ namespace
 	// is what "some aggressive, some neutral" has to mean if a kingdom is to
 	// have a character rather than a mood.
 	int s_iPlayerBotKingdomPvpPercent = 0;
+	// The lowest plus a refine under a Blessing or Dragon God scroll may land
+	// on. One is no floor, and the default: the refine passes keep their own
+	// rules about where a scroll is worth it (from +7, earlier for a worn piece
+	// that can burn and for a prize piece). Seven puts a scroll on the steps to
+	// +7, +8 and +9 only, and every step under that goes to the plain anvil the
+	// way a bot with no scroll refines - asked for as one setting for the whole
+	// world ("tylko mozna np uzywac na +7 +8 +9", Tieru).
+	int s_iPlayerBotScrollFromPlus = 1;
 	// Whether a bot reads its books without the engine's day between them.
 	// On by default: the day is what makes a book a month's project, and the
 	// books were rotting in the bags of bots that could not read them yet.
@@ -160,6 +168,7 @@ namespace
 		s_iPlayerBotScrapPercent = 0;
 		s_iPlayerBotRestPercent = 100;
 		s_iPlayerBotKingdomPvpPercent = 0;
+		s_iPlayerBotScrollFromPlus = 1;
 		s_bPlayerBotFastBooks = true;
 		s_bPlayerBotNight = true;
 		if (s_iPlayerBotChestConfigPermille < 0)
@@ -270,6 +279,15 @@ namespace
 			if (percent != s_iPlayerBotKingdomPvpPercent)
 				sys_log(0, "PLAYERBOT_CONFIG: kingdom hostility %d%% of bots", percent);
 			s_iPlayerBotKingdomPvpPercent = percent;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "SCROLL_FROM"))
+		{
+			const int plus = value < 1 ? 1 : (value > PLAYERBOT_SCROLL_REFINE_MAX_PLUS
+					? (int)PLAYERBOT_SCROLL_REFINE_MAX_PLUS : (int)value);
+			if (plus != s_iPlayerBotScrollFromPlus)
+				sys_log(0, "PLAYERBOT_CONFIG: refine scrolls from +%d", plus);
+			s_iPlayerBotScrollFromPlus = plus;
 			return;
 		}
 		for (size_t i = 0; i < sizeof(PLAYERBOT_WEIGHT_NAMES) /
@@ -705,6 +723,21 @@ namespace
 			return false;
 		return (int)(((dwPID ^ 0x5bf03635U) * 2246822519U) % 100U) <
 				PLAYERBOT_RESOURCE_TRADER_PERCENT;
+	}
+
+	int GetPlayerBotScrollFromPlus()
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		return s_iPlayerBotScrollFromPlus;
+	}
+
+	// Whether the refine from this plus may go under a Blessing or Dragon God
+	// scroll: it lands on plusLevel + 1, and SCROLL_FROM is the lowest landing
+	// a scroll is spent on. Every pass that reaches for a scroll asks this.
+	bool IsPlayerBotScrollStepAllowed(BYTE plusLevel)
+	{
+		return (int)plusLevel + 1 >= GetPlayerBotScrollFromPlus();
 	}
 
 	int GetPlayerBotRestPercent()
