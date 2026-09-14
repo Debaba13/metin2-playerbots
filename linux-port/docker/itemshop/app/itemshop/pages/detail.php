@@ -1,6 +1,6 @@
 <?php
 	if (!isset($_GET['id'])) {
-		die("Musisz wybrac przedmiot.");
+		die("Bir eşya seçmelisin.");
 	}
 	$id = intval($_GET['id']);
 	$isPreview = isset($_GET['preview']);
@@ -42,7 +42,7 @@
 								if (empty($item['desc']))
 								{
 							?>
-								<span>Ten przedmiot nie ma opisu.</span>
+								<span>Bu eşyanın açıklaması yok.</span>
 							<?php
 								} else {
 									echo $item['desc'];
@@ -56,31 +56,31 @@
 			<div class="box boxRight buy onlyItem">
 				<?php
 					$currency = ($item['currency'] === 'mileage') ? 'mileage' : 'cash';
-					$currencyLabel = ($currency === 'mileage') ? 'Smocze Znaki' : 'Smocze Monety';
+					$currencyLabel = ($currency === 'mileage') ? 'Ejder Nişanı' : 'Ejder Sikkesi';
 					$balance = (int)$info[$currency];
 				?>
 				<?php if ($isPreview) { ?>
-				<a id="buyItemLink" class="tip assignMarks" href="?s=buy&id=<?php echo $id . $pv; ?>">Kup teraz!</a>
+				<a id="buyItemLink" class="tip assignMarks" href="?s=buy&id=<?php echo $id . $pv; ?>">Şimdi Satın Al!</a>
 				<?php } else { ?>
 				<div class="priceSelect">
-					<div class="sprice">Cena: <span id="priceAmount"><?php echo $item['price']; ?></span> <?php echo $currencyLabel; ?></div>
+					<div class="sprice">Fiyat: <span id="priceAmount"><?php echo $item['price']; ?></span> <?php echo $currencyLabel; ?></div>
 				</div>
 				<?php
 					if($balance >= $item['price']) {
 				?>
-				<a id="buyItemLink" class="tip assignMarks" href="?s=buy&id=<?php echo $id; ?>">Kup teraz!</a>
+				<a id="buyItemLink" class="tip assignMarks" href="?s=buy&id=<?php echo $id; ?>">Şimdi Satın Al!</a>
 				<?php
 					} else {
 				?>
-				<a id="buyItemLink" class="blank" style="cursor: default">Za malo <?php echo $currencyLabel; ?></a>
+				<a id="buyItemLink" class="blank" style="cursor: default">Yetersiz <?php echo $currencyLabel; ?></a>
 				<?php
 					}
 				?>
-				<div class="buyInfo">Masz <b><span id="mileageAmount"><?php echo $balance; ?></span></b> <?php echo $currencyLabel; ?>.</div>
+				<div class="buyInfo">Elinde <b><span id="mileageAmount"><?php echo $balance; ?></span></b> <?php echo $currencyLabel; ?> var.</div>
 				<?php } ?>
 			</div>
 			<div class="box suggestions">
-				<h2>Zobacz takze:</h2>
+				<h2>Şunlara da bak:</h2>
 				<ol id="suggestions">
 					<?php
 						$get_recomandare = mysqli_query($sqlServ, "SELECT * FROM itemshop.ishop_items ORDER BY rand() LIMIT 7");
