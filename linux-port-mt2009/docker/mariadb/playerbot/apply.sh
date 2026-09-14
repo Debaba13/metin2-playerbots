@@ -189,6 +189,29 @@ fi
 # cash alone. IF NOT EXISTS keeps it a no-op after the first time.
 db -e "ALTER TABLE account.account ADD COLUMN IF NOT EXISTS mileage INT NOT NULL DEFAULT 0;"
 db -e "ALTER TABLE account.account ADD COLUMN IF NOT EXISTS jackpot INT NOT NULL DEFAULT 0;"
+# Fishing from thirty, which is what the wiki says and what the operator
+# asked for. This line shipped fifty in three places and moving two was not
+# enough: CHARACTER::fishing() (playerbotify.py lowers it), the AI gate, and
+# the rod LIMIT_LEVEL - the one that refuses the equip, so a bot of thirty
+# could neither wear a rod nor be drawn as an angler. item_proto is read out
+# of world.item_proto here (PROTO_FROM_DB = 1), which is why this sticks;
+# idempotent, and it touches only rods still carrying the old fifty.
+db -e "UPDATE world.item_proto SET limitvalue0 = 30 WHERE type = 13 AND limittype0 = 1 AND limitvalue0 = 50;"
+# fish_log came from r40250's dump and has that engine's eight columns,
+# while this one writes six - so every catch failed with errno 1136 and the
+# table is empty on every 2.x world that ever ran. CREATE IF NOT EXISTS
+# cannot repair a table that already exists with the wrong shape, so the
+# old one is dropped here, before log_schema.sql below recreates it.
+# Recognised by a column this engine never writes; a table already in the
+# right shape, and whatever history it holds, is left alone.
+fish_old=$(db -e "
+    SELECT COUNT(*) FROM information_schema.columns
+     WHERE table_schema='log' AND table_name='fish_log' AND column_name='map_index';
+" 2>/dev/null || echo 0)
+if [ "$fish_old" = "1" ]; then
+    echo "[playerbot-migrate] fish_log has the r40250 shape and cannot be written; rebuilding it"
+    db -e "DROP TABLE IF EXISTS log.fish_log;"
+fi
 # The log tables the engine writes and the package dump lacks (port/logschemify.py).
 if [ -s /opt/playerbot/log_schema.sql ]; then
     if db < /opt/playerbot/log_schema.sql 2>/tmp/logschema.err; then
@@ -299,15 +322,13 @@ before=$(db -e "
 echo "[playerbot-migrate] applying deterministic Playerbot seed (PID $first_pid..$last_pid)"
 result=/tmp/playerbot-seed.out
 trap 'rm -f "$result"' EXIT HUP INT TERM
-# Shinsoo and Jinno are on unless M2_PLAYERBOT_KINGDOMS says 0 (opt-in until
-# 2.0.7; the operator wants every world to run all three kingdoms). With the
-# switch on the seed creates their cohorts - on an existing world too, once,
-# because the seed is idempotent - and anything else keeps the file to the
-# Chunjo cohort. The variable goes in ahead of the file, in the same session,
+# Shinsoo and Jinno are opt-in: M2_PLAYERBOT_KINGDOMS=1 lets the seed create
+# their cohorts, anything else keeps the file to the Chunjo cohort it has
+# always been. The variable goes in ahead of the file, in the same session,
 # because a SET is per-connection.
-kingdoms=1
-case "${M2_PLAYERBOT_KINGDOMS:-1}" in
-    0|false|FALSE|no|NO) kingdoms=0 ;;
+kingdoms=0
+case "${M2_PLAYERBOT_KINGDOMS:-0}" in
+    1|true|TRUE|yes|YES) kingdoms=1 ;;
 esac
 echo "[playerbot-migrate] kingdoms (Shinsoo/Jinno) cohorts: $kingdoms"
 if { printf 'SET @playerbot_seed_kingdoms = %s;

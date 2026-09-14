@@ -25,11 +25,30 @@ OUT = os.path.normpath(os.path.join(HERE, '..', 'docker', 'mariadb', 'playerbot'
 INITDB_COPY = os.path.normpath(os.path.join(HERE, '..', 'docker', 'mariadb', 'initdb.d', '20-log-schema.sql'))
 
 # Tables r40250's dump defines with the columns this engine's INSERTs use.
-FROM_R40250 = ['bootlog', 'command_log', 'cube', 'dragon_slay_log', 'fish_log', 'goldlog',
+FROM_R40250 = ['bootlog', 'command_log', 'cube', 'dragon_slay_log', 'goldlog',
                'levellog', 'loginlog2', 'money_log', 'quest_reward_log', 'refinelog', 'speed_hack']
 
 # Tables only this engine writes (log.cpp), columns in the INSERT's own order.
 OWN = {
+    # fish_log was taken from r40250's dump until 2.0.39, and the two engines do
+    # not agree about it: r40250 writes eight columns (map_index, fishing_level,
+    # waiting_time, success, size) and this one writes six -
+    # FishLog(playerId, itemVnum, count, rodLevel, baitVnum). Every catch on a
+    # 2.x world therefore failed with "Column count doesn't match value count"
+    # (errno 1136), one syserr line per fish. Nobody had seen it because nobody
+    # fished: the rod's own LIMIT_LEVEL was fifty and the bots stopped short of
+    # it. Lowering that to thirty is what finally made the fish bite - and the
+    # error appear 364 times in the first ten minutes.
+    'fish_log': """CREATE TABLE IF NOT EXISTS `fish_log` (
+  `time` datetime NOT NULL DEFAULT current_timestamp(),
+  `player_id` int(10) unsigned NOT NULL DEFAULT 0,
+  `item_vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  `count` int(11) NOT NULL DEFAULT 0,
+  `rod_level` int(11) NOT NULL DEFAULT 0,
+  `bait_vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  KEY `player_id_idx` (`player_id`),
+  KEY `time_idx` (`time`)
+) ENGINE=InnoDB;""",
     'loginlog': """CREATE TABLE IF NOT EXISTS `loginlog` (
   `type` varchar(10) NOT NULL DEFAULT 'LOGIN',
   `time` datetime NOT NULL DEFAULT current_timestamp(),

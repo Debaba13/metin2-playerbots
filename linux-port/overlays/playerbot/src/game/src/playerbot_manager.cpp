@@ -62,6 +62,17 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "ikarus_shop_manager.h"
 #include "playerbot_offline_policy.h"
 #endif
+// The engine leaves two kinds of request here for the bot's tick to answer: a
+// player's party invitation and a duel challenge. Both are inline and
+// engine-free, and both belong OUTSIDE the ikashop guard above - the offline
+// shop is mt2009's alone, these two are not, and putting them inside it cost a
+// compile against r40250 with eleven "has not been declared". They come before
+// the fragments because the health potion pass in playerbot_gear.h asks
+// whether the bot is in a duel.
+#include "playerbot_party_policy.h"
+#include "playerbot_pvp_policy.h"
+#include "playerbot_monkey_policy.h"
+#include "pvp.h"
 #include "playerbot_types.h"
 #include "playerbot_price_tables.h"
 #include "playerbot_log.h"
@@ -75,6 +86,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_gear.h"
 #include "playerbot_consumables.h"
 #include "playerbot_activities.h"
+#include "playerbot_mining.h"
 #include "playerbot_missions.h"
 #include "playerbot_skills.h"
 #include "playerbot_combat.h"
@@ -254,6 +266,486 @@ namespace
 		return a && b && a->GetGuild() != NULL && a->GetGuild() == b->GetGuild();
 	}
 
+	// Is this party a player's rather than the bots' own? The leader's
+	// descriptor answers it: a bot's says IsBot, a person's does not.
+	bool IsPlayerBotHumanLedParty(LPPARTY party)
+	{
+		if (!party)
+			return false;
+		LPCHARACTER leader = party->GetLeaderCharacter();
+		if (!leader)
+			return false;
+		return !leader->GetDesc() || !leader->GetDesc()->IsBot();
+	}
+
+	// Answering a player's invitation.
+	//
+	// The engine sends HEADER_GC_PARTY_INVITE to the invitee's descriptor and
+	// waits ten seconds for an Accept that a bot has nobody to send. So the
+	// engine leaves the invitation in playerbot_party (playerbotify.py puts the
+	// call into CHARACTER::PartyInvite) and this runs on the bot's own tick,
+	// inside those ten seconds, calling the same method the client's Accept
+	// would have reached. The bot never refuses: every condition that could
+	// refuse is the engine's own (same kingdom, thirty levels, a free place in a
+	// party of eight) and PartyInviteAccept reports those itself.
+	void AcceptPlayerBotPartyInvite(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch)
+			return;
+		uint32_t leaderPid = 0, notedAt = 0;
+		if (!playerbot_party::TakeInvite(ch->GetPlayerID(), leaderPid, notedAt))
+			return;
+		LPCHARACTER leader = CHARACTER_MANAGER::instance().FindByPID(leaderPid);
+		if (!leader || leader->IsDead())
+			return;
+		// Joining is a thing the bot is now doing: an errand it was walking to
+		// keeps its own state, but the party check must not run in the same
+		// second and weigh a party the bot has not joined yet.
+		state.dwNextPartyCheckTime = dwNow + 5000;
+		leader->PartyInviteAccept(ch);
+		sys_log(0, "PLAYERBOT_PARTY: accepted an invitation pid=%u name=%s leader_pid=%u leader=%s",
+				ch->GetPlayerID(), ch->GetName(), leaderPid, leader->GetName());
+	}
+
+	// The level a dropper stops at, or zero for everybody else.
+	BYTE GetPlayerBotExpLockLevel(BYTE personality)
+	{
+		switch (personality)
+		{
+			case BOT_PERSONALITY_METIN_DROPPER: return PLAYERBOT_EXP_LOCK_METIN_DROPPER;
+			case BOT_PERSONALITY_M3_DROPPER:    return PLAYERBOT_EXP_LOCK_M3_DROPPER;
+			case BOT_PERSONALITY_M2_DROPPER:    return PLAYERBOT_EXP_LOCK_M2_DROPPER;
+			case BOT_PERSONALITY_MEDAL_DROPPER: return PLAYERBOT_EXP_LOCK_MEDAL_DROPPER;
+			default: return 0;
+		}
+	}
+
+	// A farmer keeps the level its table pays at. See the constants: every drop
+	// in this engine fades with the level gap, so a dropper that goes on
+	// levelling farms its way out of its own living. The lock is the engine's
+	// AFFECT_EXP_BLOCK, which PointChange checks before it adds any experience,
+	// so nothing else has to know about it - and it is permanent, because the
+	// point is a bot that does the same thing for good.
+	void ManagePlayerBotExpLock(LPCHARACTER ch, const TPlayerBotAIState& state)
+	{
+		if (!ch)
+			return;
+		const BYTE lockLevel = GetPlayerBotExpLockLevel(state.bPersonality);
+		if (lockLevel == 0 || ch->GetLevel() < lockLevel)
+			return;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		if (ch->FindAffect(AFFECT_EXP_BLOCK))
+			return;
+		ch->AddAffect(AFFECT_EXP_BLOCK, POINT_NONE, 0, 0, INFINITE_AFFECT_DURATION, 0, true, true);
+		sys_log(0, "PLAYERBOT_AI: exp locked for a dropper pid=%u name=%s level=%u personality=%u",
+				ch->GetPlayerID(), ch->GetName(), (unsigned)ch->GetLevel(),
+				(unsigned)state.bPersonality);
+#else
+		// r40250 has no AFFECT_EXP_BLOCK at all - PointChange there knows no
+		// such affect, so there is nothing to ask it for and a dropper on that
+		// line goes on levelling as it always did. Freezing it would need an
+		// engine patch of its own, and this feature was asked for on the 2.x
+		// world; the shared overlay simply does nothing here.
+		(void)lockLevel;
+#endif
+	}
+
+	// When a marble is worth more than the whole skill rotation.
+	//
+	// A polymorph marble gives a large flat damage bonus for five minutes and
+	// the engine refuses every skill while it lasts (char_skill.cpp), so it is a
+	// trade, not an upgrade: worth taking against something that stands there
+	// long enough for the bonus to add up and cannot be killed faster by a
+	// rotation anyway. That is a boss, at the start of the fight - which is
+	// exactly where the players use them.
+	//
+	// Every refusal the engine can raise is left to the engine (already
+	// transformed, in the saddle, a monster too high for the bot's level): none
+	// of them spends the marble, and the retry clock keeps a refused one from
+	// being tried every tick for the rest of the fight.
+	void ManagePlayerBotPolymorph(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
+	{
+		static std::map<DWORD, DWORD> s_mapPlayerBotPolymorphRetry;
+		if (!ch || ch->IsDead() || ch->IsPolymorphed() || ch->IsRiding())
+			return;
+		LPCHARACTER victim = ch->GetVictim();
+		if (!victim || victim->IsDead() || !victim->IsMonster() ||
+				victim->GetMobRank() < MOB_RANK_BOSS)
+			return;
+		// Early in the fight, or the five minutes are spent on a boss that is
+		// nearly down and the bot has thrown a marble away for one hit.
+		if (victim->GetMaxHP() <= 0 ||
+				(victim->GetHP() * 100) / victim->GetMaxHP() < PLAYERBOT_POLYMORPH_BOSS_HP_PERCENT)
+			return;
+		std::map<DWORD, DWORD>::const_iterator retry =
+				s_mapPlayerBotPolymorphRetry.find(ch->GetPlayerID());
+		if (retry != s_mapPlayerBotPolymorphRetry.end() && dwNow < retry->second)
+			return;
+
+		for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->GetType() != ITEM_POLYMORPH || item->GetSocket(0) == 0)
+				continue;
+			bool known = false;
+			for (size_t i = 0; i < sizeof(PLAYERBOT_POLYMORPH_MARBLE_VNUMS) /
+					sizeof(PLAYERBOT_POLYMORPH_MARBLE_VNUMS[0]); ++i)
+				if (PLAYERBOT_POLYMORPH_MARBLE_VNUMS[i] == item->GetVnum())
+					known = true;
+			if (!known)
+				continue;
+			s_mapPlayerBotPolymorphRetry[ch->GetPlayerID()] = dwNow + PLAYERBOT_POLYMORPH_RETRY_MS;
+			if (ch->UseItem(TItemPos(INVENTORY, cell)))
+			{
+				sys_log(0, "PLAYERBOT_AI: polymorphed for a boss pid=%u name=%s marble=%u mob=%u boss=%u",
+						ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
+						item->GetSocket(0), (unsigned)victim->GetRaceNum());
+			}
+			return;
+		}
+	}
+
+	// Agreeing to a duel.
+	//
+	// CPVPManager::Insert is a two-sided agreement, so answering a challenge is
+	// the same call the challenger made. The engine recorded the challenge
+	// (pvp.cpp, playerbotify.py) because a bot has no client to type /pvp back;
+	// this waits the agreed three seconds and then agrees, which is what makes
+	// the fight start.
+	//
+	// A bot never refuses. What it will not do is agree from the floor: a
+	// challenge taken at a sliver of health is a free kill, not a duel, and the
+	// engine has no rule against it.
+	void AcceptPlayerBotPvpChallenge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch)
+			return;
+		uint32_t challengerPid = 0, seenAt = 0;
+		if (!playerbot_pvp::PeekChallenge(ch->GetPlayerID(), challengerPid, seenAt, dwNow))
+			return;
+		if (ch->IsDead())
+		{
+			playerbot_pvp::Forget(ch->GetPlayerID());
+			return;
+		}
+		if (dwNow < seenAt + PLAYERBOT_PVP_ACCEPT_DELAY)
+			return;
+		playerbot_pvp::Forget(ch->GetPlayerID());
+		LPCHARACTER challenger = CHARACTER_MANAGER::instance().FindByPID(challengerPid);
+		if (!challenger || challenger->IsDead() ||
+				challenger->GetMapIndex() != ch->GetMapIndex())
+			return;
+		CPVPManager::instance().Insert(ch, challenger);
+		playerbot_pvp::NoteDuelStarted(ch->GetPlayerID(), challengerPid,
+				dwNow + PLAYERBOT_PVP_DUEL_ASSUMED);
+		sys_log(0, "PLAYERBOT_PVP: agreed to a duel pid=%u name=%s challenger_pid=%u challenger=%s",
+				ch->GetPlayerID(), ch->GetName(), challengerPid, challenger->GetName());
+	}
+
+	// An agreed duel, fought before anything else can claim the tick.
+	//
+	// Choosing the opponent in the target section is the natural place for "who
+	// am I hitting", and that is where this was done first - but that section
+	// sits below a dozen passes which each end the tick with continue, and a bot
+	// that has just agreed to a duel is usually in the middle of one of them.
+	// Measured six seconds after an agreement: one of the pair was walking to
+	// the weapon merchant and the other looking for a monster, seventy units
+	// apart, both at full health. A duel is a commitment to another character,
+	// so it belongs where the stun gate belongs - at the top, above the errands.
+	//
+	// It logs once per opponent rather than per tick: a duel runs for minutes
+	// and this pass fires every other second. Without a line of its own the
+	// change could not be verified at all - the target log beside it is
+	// sys_log level 1, and this core writes none of those.
+	bool ManagePlayerBotDuelCombat(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		static std::map<DWORD, DWORD> s_mapPlayerBotDuelLogged;
+		if (!ch || ch->IsDead())
+			return false;
+		LPCHARACTER foe = FindPlayerBotDuelOpponent(ch, dwNow);
+		if (!foe)
+			return false;
+		if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()) ||
+				IsPlayerBotSafeZone(foe->GetMapIndex(), foe->GetX(), foe->GetY()))
+			return false;
+		const int distance = DISTANCE_APPROX(ch->GetX() - foe->GetX(),
+				ch->GetY() - foe->GetY());
+		// Further than the bot can see is no longer the fight that was agreed.
+		if (distance > PLAYERBOT_SEARCH_RANGE)
+			return false;
+
+		state.dwTargetVID = (DWORD)foe->GetVID();
+		ch->SetVictim(foe);
+		SetPlayerBotAction(state, BOT_ACTION_FIGHT, dwNow);
+		ch->SetRotationToXY(foe->GetX(), foe->GetY());
+
+		const DWORD foePid = foe->GetPlayerID();
+		if (s_mapPlayerBotDuelLogged[ch->GetPlayerID()] != foePid)
+		{
+			s_mapPlayerBotDuelLogged[ch->GetPlayerID()] = foePid;
+			sys_log(0, "PLAYERBOT_PVP: fighting the duel pid=%u name=%s foe_pid=%u foe=%s dist=%d hp=%d/%d",
+					ch->GetPlayerID(), ch->GetName(), foePid, foe->GetName(),
+					distance, ch->GetHP(), ch->GetMaxHP());
+		}
+
+		LPITEM weapon = ch->GetWear(WEAR_WEAPON);
+		const bool isBow = (weapon && weapon->GetType() == ITEM_WEAPON &&
+				weapon->GetSubType() == WEAPON_BOW);
+		const int combatRange = isBow ? 800 : 280;
+		if (distance > combatRange)
+		{
+			MovePlayerBot(ch, foe->GetX(), foe->GetY(), dwNow, 4, false, false);
+			return true;
+		}
+		if (ch->IsStateMove())
+			ch->Stop();
+		ch->SetPosition(POS_FIGHTING);
+		if (!ExecutePlayerBotAttackSkill(ch, foe, state, dwNow))
+			ExecutePlayerBotBasicAttack(ch, foe, state, dwNow);
+		return true;
+	}
+
+	// Bots challenging one another.
+	//
+	// Rare on purpose: a duel is something that happens in a world, not the
+	// thing the world does. One roll a minute per bot, six in a thousand, and
+	// only between two bots standing close, near enough in level for the fight
+	// to be a fight, both healthy and neither already in one. The challenged
+	// bot answers through the journal above exactly as it would answer a
+	// player, so there is one code path for both.
+	void ManagePlayerBotPvpChallenge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		static std::map<DWORD, DWORD> s_mapPlayerBotPvpRollNext;
+		if (!ch || ch->IsDead() || ch->GetSectree() == NULL)
+			return;
+		if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()))
+			return;
+		if (playerbot_pvp::IsInDuel(ch->GetPlayerID(), dwNow))
+			return;
+		// Anything the bot is actually doing outranks picking a fight.
+		if (state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
+				state.bMarketTrip || state.bFishingSession || state.bTacticalRetreat ||
+				state.bRecoveringAfterDeath || ch->GetMyShop())
+			return;
+		if (ch->GetMaxHP() <= 0 ||
+				(ch->GetHP() * 100) / ch->GetMaxHP() < PLAYERBOT_PVP_MIN_HP_PERCENT)
+			return;
+		std::map<DWORD, DWORD>::const_iterator nextRoll =
+				s_mapPlayerBotPvpRollNext.find(ch->GetPlayerID());
+		if (nextRoll != s_mapPlayerBotPvpRollNext.end() && dwNow < nextRoll->second)
+			return;
+		s_mapPlayerBotPvpRollNext[ch->GetPlayerID()] =
+				dwNow + PLAYERBOT_PVP_CHALLENGE_INTERVAL + number(0, 15000);
+		if (number(1, 1000) > PLAYERBOT_PVP_CHALLENGE_PER_MILLE)
+			return;
+
+		struct FFindDuelPartner
+		{
+			FFindDuelPartner(LPCHARACTER me, DWORD now) :
+				m_me(me), m_now(now), m_pFound(NULL) {}
+			bool operator()(LPENTITY ent)
+			{
+				if (m_pFound || !ent || !ent->IsType(ENTITY_CHARACTER))
+					return false;
+				LPCHARACTER candidate = static_cast<LPCHARACTER>(ent);
+				if (candidate == m_me || !candidate->IsPC() || candidate->IsDead())
+					return false;
+				// Bots pick on each other, never on a person: a player who wants
+				// a duel with a bot asks for one, and gets it.
+				if (!candidate->GetDesc() || !candidate->GetDesc()->IsBot())
+					return false;
+				if (candidate->GetParty() && candidate->GetParty() == m_me->GetParty())
+					return false;
+				if (playerbot_pvp::IsInDuel(candidate->GetPlayerID(), m_now))
+					return false;
+				if (abs((int)candidate->GetLevel() - (int)m_me->GetLevel()) >
+						PLAYERBOT_PVP_CHALLENGE_LEVEL_DELTA)
+					return false;
+				if (candidate->GetMaxHP() <= 0 ||
+						(candidate->GetHP() * 100) / candidate->GetMaxHP() <
+							PLAYERBOT_PVP_MIN_HP_PERCENT)
+					return false;
+				if (DISTANCE_APPROX(m_me->GetX() - candidate->GetX(),
+						m_me->GetY() - candidate->GetY()) > PLAYERBOT_PVP_CHALLENGE_RANGE)
+					return false;
+				m_pFound = candidate;
+				return false;
+			}
+			LPCHARACTER m_me;
+			DWORD m_now;
+			LPCHARACTER m_pFound;
+		};
+
+		FFindDuelPartner finder(ch, dwNow);
+		ch->GetSectree()->ForEachAround(finder);
+		if (!finder.m_pFound)
+			return;
+		// The challenge itself. The other bot's tick agrees three seconds later
+		// through the same journal a player's challenge goes through.
+		CPVPManager::instance().Insert(ch, finder.m_pFound);
+		playerbot_pvp::NoteDuelStarted(ch->GetPlayerID(),
+				finder.m_pFound->GetPlayerID(), dwNow + PLAYERBOT_PVP_DUEL_ASSUMED);
+		sys_log(0, "PLAYERBOT_PVP: challenged another bot pid=%u name=%s target_pid=%u target=%s",
+				ch->GetPlayerID(), ch->GetName(), finder.m_pFound->GetPlayerID(),
+				finder.m_pFound->GetName());
+	}
+
+	// Two kingdoms meeting on shared ground.
+	//
+	// Off unless the operator says otherwise - KINGDOMPVP in the weights file
+	// is zero by default. This changes how the world behaves towards itself
+	// rather than how one bot spends its time, and a world that starts fighting
+	// itself because a build shipped is not a world anybody asked for.
+	//
+	// Built on the duel the bots already fight rather than on the target
+	// collector, deliberately. Admitting player characters to that collector
+	// means threading them through the combat value policy, the held-target
+	// rule, the multi-pull and the party focus - every one of which was written
+	// about monsters - for a feature that ships switched off. A duel is bounded
+	// by construction: it ends when somebody falls, the health-potion pass
+	// already refuses to drink through one, and neither bot can be walked
+	// across the map by it. That is "no loops" and "the one that loses gives up
+	// and goes back to work" without a leash of its own.
+	void ManagePlayerBotKingdomHostility(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		static std::map<DWORD, DWORD> s_mapPlayerBotKingdomNext;
+		// One comparison for the whole population while the switch is off.
+		if (s_iPlayerBotKingdomPvpPercent <= 0)
+			return;
+		if (!ch || ch->IsDead() || ch->GetSectree() == NULL)
+			return;
+		// A kingdom's own maps are where its bots shop and train; the frontier
+		// is the ground the three share, and the only place this belongs.
+		if (!IsPlayerBotFrontierMapIndex(ch->GetMapIndex()))
+			return;
+		if (IsPlayerBotSafeZone(ch->GetMapIndex(), ch->GetX(), ch->GetY()))
+			return;
+		if (playerbot_pvp::IsInDuel(ch->GetPlayerID(), dwNow))
+			return;
+		// Who is aggressive is decided by pid, not rolled: a kingdom then has a
+		// character rather than a mood, the same bots pick the fights after
+		// every restart, and the rest are left alone to hunt - which is what
+		// "some aggressive, some neutral" has to mean to be visible at all.
+		if ((int)(PlayerBotNavHash(ch->GetPlayerID() ^ 0x4B494E47U) % 100U) >=
+				s_iPlayerBotKingdomPvpPercent)
+			return;
+		// Anything the bot is actually doing outranks picking a fight.
+		if (state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
+				state.bMarketTrip || state.bFishingSession || state.bTacticalRetreat ||
+				state.bRecoveringAfterDeath || ch->GetMyShop() ||
+				IsPlayerBotMiningNow(ch->GetPlayerID(), dwNow))
+			return;
+		if (ch->GetMaxHP() <= 0 ||
+				(ch->GetHP() * 100) / ch->GetMaxHP() < PLAYERBOT_PVP_MIN_HP_PERCENT)
+			return;
+		std::map<DWORD, DWORD>::const_iterator nextRoll =
+				s_mapPlayerBotKingdomNext.find(ch->GetPlayerID());
+		if (nextRoll != s_mapPlayerBotKingdomNext.end() && dwNow < nextRoll->second)
+			return;
+		s_mapPlayerBotKingdomNext[ch->GetPlayerID()] =
+				dwNow + PLAYERBOT_KINGDOM_PVP_INTERVAL + number(0, 20000);
+
+		struct FFindEnemyKingdomBot
+		{
+			FFindEnemyKingdomBot(LPCHARACTER me, DWORD now) :
+				m_me(me), m_now(now), m_pFound(NULL) {}
+			bool operator()(LPENTITY ent)
+			{
+				if (m_pFound || !ent || !ent->IsType(ENTITY_CHARACTER))
+					return false;
+				LPCHARACTER candidate = static_cast<LPCHARACTER>(ent);
+				if (candidate == m_me || !candidate->IsPC() || candidate->IsDead())
+					return false;
+				// Never a person. A player who wants to fight a bot challenges
+				// one and is answered; this is the world's own quarrel.
+				if (!candidate->GetDesc() || !candidate->GetDesc()->IsBot())
+					return false;
+				if (candidate->GetEmpire() == m_me->GetEmpire())
+					return false;
+				if (candidate->GetParty() && candidate->GetParty() == m_me->GetParty())
+					return false;
+				if (playerbot_pvp::IsInDuel(candidate->GetPlayerID(), m_now))
+					return false;
+				if (abs((int)candidate->GetLevel() - (int)m_me->GetLevel()) >
+						PLAYERBOT_KINGDOM_PVP_LEVEL_DELTA)
+					return false;
+				// A bot on its knees is not a fight. This is also what keeps the
+				// loser out of a second quarrel while it walks away from the
+				// first one: it is under the health floor until it has rested.
+				if (candidate->GetMaxHP() <= 0 ||
+						(candidate->GetHP() * 100) / candidate->GetMaxHP() <
+							PLAYERBOT_PVP_MIN_HP_PERCENT)
+					return false;
+				if (DISTANCE_APPROX(m_me->GetX() - candidate->GetX(),
+						m_me->GetY() - candidate->GetY()) > PLAYERBOT_KINGDOM_PVP_RANGE)
+					return false;
+				m_pFound = candidate;
+				return false;
+			}
+			LPCHARACTER m_me;
+			DWORD m_now;
+			LPCHARACTER m_pFound;
+		};
+
+		FFindEnemyKingdomBot finder(ch, dwNow);
+		ch->GetSectree()->ForEachAround(finder);
+		if (!finder.m_pFound)
+			return;
+		CPVPManager::instance().Insert(ch, finder.m_pFound);
+		playerbot_pvp::NoteDuelStarted(ch->GetPlayerID(),
+				finder.m_pFound->GetPlayerID(), dwNow + PLAYERBOT_PVP_DUEL_ASSUMED);
+		sys_log(0, "PLAYERBOT_PVP: kingdom quarrel pid=%u name=%s empire=%d target_pid=%u target=%s target_empire=%d map=%ld",
+				ch->GetPlayerID(), ch->GetName(), (int)ch->GetEmpire(),
+				finder.m_pFound->GetPlayerID(), finder.m_pFound->GetName(),
+				(int)finder.m_pFound->GetEmpire(), ch->GetMapIndex());
+	}
+
+	// Walking with the player who invited you.
+	//
+	// Claims the tick when it moves, because the alternative is the wander pass
+	// sending the bot to its own hunting hub twenty kilometres away while the
+	// player it just joined watches it leave. Combat is not interrupted - the
+	// target sections run later and a bot with a victim is kept where it is -
+	// and an errand the bot had already begun keeps its own state; this only
+	// covers the ordinary case of standing about far from the leader.
+	bool ManagePlayerBotFollowHumanLeader(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		// The clock lives beside the pass rather than in TPlayerBotAIState: a
+		// new field in that struct has to be initialised in declaration order or
+		// -Wreorder fires, and this one is nobody else's business.
+		static std::map<DWORD, DWORD> s_mapPlayerBotFollowNext;
+		if (!ch || ch->IsDead())
+			return false;
+		std::map<DWORD, DWORD>::const_iterator nextFollow =
+				s_mapPlayerBotFollowNext.find(ch->GetPlayerID());
+		if (nextFollow != s_mapPlayerBotFollowNext.end() && dwNow < nextFollow->second)
+			return false;
+		LPPARTY party = ch->GetParty();
+		if (!party || !IsPlayerBotHumanLedParty(party))
+			return false;
+		LPCHARACTER leader = party->GetLeaderCharacter();
+		if (!leader || leader->IsDead() || leader == ch)
+			return false;
+		// A leader on another map is a leader this bot cannot walk to: the map
+		// change is somebody else's decision and a bot has no client to follow
+		// a warp with.
+		if (leader->GetMapIndex() != ch->GetMapIndex())
+			return false;
+		// Fighting something is not standing about.
+		if (ch->GetVictim() && !ch->GetVictim()->IsDead())
+			return false;
+		const int dist = DISTANCE_APPROX(ch->GetX() - leader->GetX(), ch->GetY() - leader->GetY());
+		if (dist <= PLAYERBOT_PARTY_FOLLOW_DISTANCE)
+			return false;
+		s_mapPlayerBotFollowNext[ch->GetPlayerID()] = dwNow + PLAYERBOT_PARTY_FOLLOW_INTERVAL;
+		// The horse is allowed: a player crossing a map on one leaves a walking
+		// bot behind within seconds.
+		if (!MovePlayerBot(ch, leader->GetX(), leader->GetY(), dwNow, 8, true, true, false, false))
+			return false;
+		SetPlayerBotAction(state, BOT_ACTION_TRAVEL, dwNow);
+		return true;
+	}
+
 	void ManagePlayerBotParty(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->GetSectree() || dwNow < state.dwNextPartyCheckTime)
@@ -262,6 +754,18 @@ namespace
 		state.dwNextPartyCheckTime = dwNow + PLAYERBOT_PARTY_CHECK_INTERVAL + number(0, 3000);
 
 		LPPARTY pParty = ch->GetParty();
+		// A party a player leads is the player's, and none of the rules below
+		// are about it. The cohort draw, the five-to-fifteen-minute rotation and
+		// the straggler radius all exist to stop bot parties ossifying around
+		// one camp; applied to a person's party they would walk the bot back
+		// out within a minute of it being invited, which is the opposite of
+		// what an invitation means. The player decides when it ends.
+		if (pParty && IsPlayerBotHumanLedParty(pParty))
+		{
+			if (pParty->GetExpDistributionMode() != PARTY_EXP_DISTRIBUTION_PARITY)
+				pParty->SetParameter(PARTY_EXP_DISTRIBUTION_PARITY);
+			return;
+		}
 		// Party play is an explicit, deterministic cohort. Archer weighting is
 		// decided at login, while the total cohort remains close to ten percent.
 		if (!IsPlayerBotPartyEligible(ch, state))
@@ -886,6 +1390,7 @@ namespace
 		// A bot resting in town stands still on purpose, exactly like an angler
 		// waiting for a bite - stillness is the activity, not a symptom.
 		if (moved || foughtRecently || castRecently || state.bFishingSession ||
+				IsPlayerBotMiningNow(ch->GetPlayerID(), dwNow) ||
 				state.dwTownLingerUntil != 0)
 		{
 			state.dwLastMeaningfulActivityTime = dwNow;
@@ -1663,6 +2168,11 @@ void CPlayerBotManager::Update()
 	ManagePlayerBotNight(dwNow);
 	UpdatePlayerBotLLMBridge(dwNow);
 	PrunePlayerBotPendingTrades(dwNow);
+	// The ore veins, once a minute for the whole world. A vein deletes itself
+	// after 7-15 minutes and nothing in this world's regen files puts one back -
+	// there are no vein spawns on any of its maps at all - so the sites are
+	// ours to keep standing.
+	MaintainPlayerBotOreVeins(dwNow);
 
 	static DWORD s_dwTick = 0;
 	++s_dwTick;
@@ -1782,7 +2292,35 @@ void CPlayerBotManager::Update()
 		if (HandleDeath(ch, state, dwNow))
 			continue;
 
+		// Stunned is stunned, for a bot as much as for anybody.
+		//
+		// The engine puts AFFECT_STUN on a playerbot exactly as on a player -
+		// battle.cpp's AttackAffect and the Charge branch of char_skill.cpp,
+		// both through IMMUNE_STUN and neither of them asking whether the
+		// descriptor IsBot - and CHARACTER::CanAttack refuses anyone whose
+		// IsStun() is true. This tick simply never asked: the bot kept walking,
+		// kept swinging and kept planning through the whole thing, so a player
+		// who landed a Charge saw nothing happen at all ("bot po sekundzie juz
+		// biegnie dalej", cyfrowy_mat on the Discord). Stop where it stands and
+		// let the engine's own stun event be the thing that ends it.
+		//
+		// No watchdog exemption is needed with it: a stun is seconds and the
+		// inactivity reset is ninety of them.
+		if (ch->IsStun())
+		{
+			if (ch->IsStateMove())
+				ch->Stop();
+			continue;
+		}
+
 		if (!d->IsPhase(PHASE_GAME))
+			continue;
+
+		// The duel the bot agreed to, ahead of every errand. A challenge is
+		// answered within three seconds and then fought; a bot that walks off
+		// to the blacksmith instead is what "bot zaakceptowal PvP ale mnie nie
+		// bije" was.
+		if (ManagePlayerBotDuelCombat(ch, state, dwNow))
 			continue;
 
 		// Before anything that can claim the tick. An open stall is engine state
@@ -1953,7 +2491,15 @@ void CPlayerBotManager::Update()
 		// behind an open counter (the table points at cells), not during a
 		// town visit (the blacksmith phase moves gear itself), not with a rod
 		// in the hand, not at the stable.
+		// ...and not with a pickaxe in it either. The first live run of the
+		// mining pass logged one bot re-equipping its pickaxe every thirty-two
+		// seconds - exactly the swing cadence - because this pass ran above it
+		// and swapped a digging tool out for a sword between two swings. The
+		// engine's mining_event asks GetWear(WEAR_WEAPON) for an ITEM_PICK on
+		// the tick it fires, so every swing was refused and no ore ever
+		// dropped: the same exemption a rod has, for the same reason.
 		if (!ch->GetMyShop() && !state.bVisitingShop && !state.bFishingSession &&
+				!IsPlayerBotMiningNow(ch->GetPlayerID(), dwNow) &&
 				!state.bVisitingStable)
 		{
 			if (ManagePlayerBotEquipment(ch, state, dwNow))
@@ -1976,8 +2522,27 @@ void CPlayerBotManager::Update()
 		// for. One item a tick, like the chests above.
 		ProcessPlayerBotCatch(ch);
 		ManagePlayerBotHairDye(ch);
+		// A dropper that has reached its band stops earning experience, and a
+		// marble is spent on a boss. Both are cheap tests that end on the first
+		// line for everybody they do not concern.
+		ManagePlayerBotExpLock(ch, state);
+		ManagePlayerBotPolymorph(ch, state, dwNow);
 		ManagePlayerBotGuild(ch, state, dwNow);
+		// Answered every tick and not on the party pass's own clock: the engine
+		// gives an invitation ten seconds to live, and the party pass can be
+		// three minutes away.
+		AcceptPlayerBotPartyInvite(ch, state, dwNow);
+		// A duel is answered on the same cadence and for the same reason: the
+		// challenge is somebody else's move and the bot has to be the one that
+		// answers it.
+		AcceptPlayerBotPvpChallenge(ch, state, dwNow);
+		ManagePlayerBotPvpChallenge(ch, state, dwNow);
+		ManagePlayerBotKingdomHostility(ch, state, dwNow);
 		ManagePlayerBotParty(ch, state, dwNow);
+		// Keeping up with the player comes before the bot's own plans for the
+		// tick, or the wander pass walks it out of the party it just joined.
+		if (ManagePlayerBotFollowHumanLeader(ch, state, dwNow))
+			continue;
 		// The regular levelup.quest opens a selection dialog. A fake descriptor
 		// cannot press its Confirm button, so accept/claim that official mission
 		// here while leaving kill counting to the normal quest event.
@@ -2056,6 +2621,13 @@ void CPlayerBotManager::Update()
 		// pass below must not run while a session is live.
 		if (!state.bMultiPullActive && !bFightingMetin &&
 				ManagePlayerBotFishing(ch, state, dwNow))
+			continue;
+
+		// And a smaller handful digs at the ore veins on the three frontier
+		// maps. Owns the tick for the same reason fishing does: the pickaxe
+		// sits in the weapon slot, so no combat or gear pass may run under it.
+		if (!state.bMultiPullActive && !bFightingMetin &&
+				ManagePlayerBotMining(ch, state, dwNow))
 			continue;
 
 		// Spending time in town once the errand that brought the bot here is
@@ -2318,6 +2890,20 @@ void CPlayerBotManager::Update()
 					target->GetLevel(), partyStrength.iReadyMembers,
 					partyStrength.iTotalLevels, partyStrength.iChallengeMaxLevel);
 		}
+		// An agreed duel outranks whatever this bot was hunting, the party's
+		// focus included: it is a commitment to another character, and it is
+		// bounded by construction - PLAYERBOT_PVP_DUEL_ASSUMED, or the moment
+		// one of the two falls. Without this the bot agreed and then went back
+		// to its monsters, which is what a player sees as being ignored.
+		LPCHARACTER duelFoe = FindPlayerBotDuelOpponent(ch, dwNow);
+		if (duelFoe && duelFoe != target &&
+				!IsPlayerBotSafeZone(ch->GetMapIndex(), duelFoe->GetX(), duelFoe->GetY()))
+		{
+			target = duelFoe;
+			state.dwTargetVID = (DWORD)target->GetVID();
+			ClearPlayerBotRoute(state, true);
+		}
+		const bool bTargetIsDuelFoe = (target != NULL && target == duelFoe);
 		const bool bTargetIsStone = (target && target->IsStone());
 		const bool bTargetIsMonster = (target && target->IsMonster());
 		const bool bTargetNeedsParty = bTargetIsMonster &&
@@ -2332,7 +2918,8 @@ void CPlayerBotManager::Update()
 				(target && target->GetVictim() == ch) ||
 				CanPlayerBotPartyChallenge(ch, target, dwNow, NULL);
 
-		if (!target || target->IsDead() || (!bTargetIsMonster && !bTargetIsStone) ||
+		if (!target || target->IsDead() ||
+			(!bTargetIsMonster && !bTargetIsStone && !bTargetIsDuelFoe) ||
 			(bTargetIsStone && !IsPlayerBotMetinWorthFighting(ch, target)) ||
 			// And the same question for an ordinary monster, on a clock: the
 			// errand that justified this fight may have finished since it began.

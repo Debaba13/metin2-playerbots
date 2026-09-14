@@ -407,6 +407,10 @@ namespace
 		// Valley, and the Black Wind band it needs lives in the desert.
 		if (IsPlayerBotOnBattleHorseTrial(ch))
 			return PLAYERBOT_MAP_DESERT;
+		// And the military trial is in the Demon Tower, for the same reason: the
+		// bot hunts where the trial is, whatever its level would otherwise say.
+		if (IsPlayerBotOnMilitaryHorseTrial(ch))
+			return PLAYERBOT_MAP_DEMON_TOWER;
 
 		const BYTE level = ch->GetLevel();
 		const DWORD draw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x45534f54U);
@@ -432,6 +436,38 @@ namespace
 		// first one had - spiders of sixty to sixty-eight that never attack
 		// first, against V1's fifty to fifty-eight - and a stone hunter
 		// still goes to Sohan, because neither dungeon has a stone.
+		// Seventy-one and up: the Red Forest, whose 2311-2315 run 74 to 82 and
+		// are the highest ordinary ground this world hosts, with the Forest
+		// below it as the other half of the draw. Neither carries a stone.txt,
+		// so a Metin hunter by role keeps Sohan - the same rule the Spider
+		// Dungeon already lives under.
+		if (level >= PLAYERBOT_RED_FOREST_MIN_LEVEL)
+		{
+			switch (draw % 3U)
+			{
+				case 0: return stoneHunter ? PLAYERBOT_MAP_SOHAN : PLAYERBOT_MAP_RED_FOREST;
+				case 1: return stoneHunter ? PLAYERBOT_MAP_SOHAN : PLAYERBOT_MAP_FOREST;
+				default: return PLAYERBOT_MAP_HWANG;
+			}
+		}
+		// Sixty-two and up: the Forest, 65 to 71.
+		if (level >= PLAYERBOT_FOREST_MIN_LEVEL)
+		{
+			switch (draw % 3U)
+			{
+				case 0: return stoneHunter ? PLAYERBOT_MAP_SOHAN : PLAYERBOT_MAP_FOREST;
+				case 1: return PLAYERBOT_MAP_SOHAN;
+				default: return PLAYERBOT_MAP_HWANG;
+			}
+		}
+		// The Demon Tower takes one draw in four from fifty-seven up, and no
+		// more than that: it is where the Biologist's last specimen lives, not
+		// a place to move into. It has a stone (8015) and
+		// PlayerBotMapHasMetinStones says no anyway, so nobody is sent there to
+		// break one - the operator asked that the dungeon stay unrun until it is
+		// worked out properly.
+		if (level >= PLAYERBOT_DEMON_TOWER_MIN_LEVEL && (draw % 4U) == 0 && !stoneHunter)
+			return PLAYERBOT_MAP_DEMON_TOWER;
 		if (level >= PLAYERBOT_SPIDER_V2_MIN_LEVEL)
 		{
 			switch (draw % 3U)
@@ -517,12 +553,13 @@ namespace
 		if (!IsPlayerBotAngler(ch, state))
 			return false;
 #if defined(PLAYERBOT_ENGINE_MT2009)
-		// CHARACTER::fishing() here wants level 50, the fishing pass (unique
+		// CHARACTER::fishing() here wants a level, the fishing pass (unique
 		// item 27620) worn and water in front of the rod. The level is asked
 		// here so a bot under it never walks to the water; the pass is bought
 		// and worn on the spot (EnsurePlayerBotFishingPass), because nothing
 		// sells one and refusing without it meant no bot ever fished here.
-		if (ch->GetLevel() < 50 || !EnsurePlayerBotFishingPass(ch, dwNow))
+		if (ch->GetLevel() < PLAYERBOT_FISHING_MIN_LEVEL ||
+				!EnsurePlayerBotFishingPass(ch, dwNow))
 			return false;
 #endif
 		// A trip to a village with no measured bank is a walk to nowhere: the

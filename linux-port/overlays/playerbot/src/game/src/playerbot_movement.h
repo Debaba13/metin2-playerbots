@@ -973,7 +973,20 @@ namespace
 		// shortest way out of the door's own three hundred units.
 		state.bMonkeySpot = (BYTE)FindNearestPlayerBotMonkeySpot(
 				baseX, baseY, room, ch->GetX(), ch->GetY());
-		ClearPlayerBotRoute(state, false);
+		// Everything the bot was doing belongs to the room it has left. The
+		// route used to be cleared with its goal kept - and parked, when long -
+		// so the next move towards that goal, or towards the monster it had been
+		// fighting, found it unreachable from here and was routed back through
+		// the door the bot had just come by. Of 87 returns to the entrance
+		// chamber within fifteen seconds, 35 had exactly such a portal route
+		// planned in between. The goal, the parked route and the target go with
+		// the room; nothing that fights there can follow, because a GOTO door
+		// moves only player characters.
+		ClearPlayerBotRoute(state, true);
+		state.vecParkedRoute.clear();
+		state.lParkedMapIndex = 0;
+		state.dwTargetVID = 0;
+		ch->SetVictim(NULL);
 		state.dwNextWanderTime = dwNow;
 		sys_log(0, "PLAYERBOT_MONKEY: chamber pid=%u name=%s map=%ld chamber=%d from=%d spots=%u",
 				ch->GetPlayerID(), ch->GetName(), mapIndex, chamber, previous,
@@ -1030,7 +1043,17 @@ namespace
 		}
 
 		bool redirectedToMonkeyPortal = false;
+		// Not through a door before the room has been worked. A destination in
+		// another chamber, asked for inside the dwell, is simply unreachable from
+		// here. Routing it through a door was the AI's half of the returns to
+		// the entrance chamber, and with the engine now refusing to move a bot
+		// through a door for the same time, every such route would end with a
+		// bot waiting at a door that will not open - 86% of the routes through a
+		// door were planned inside the dwell. A chosen exit is unaffected: the
+		// wander pass walks to a door that stands in this chamber, which needs
+		// no redirect.
 		if (IsPlayerBotMonkeyMap(mapIndex) &&
+				dwNow - state.dwMonkeyChamberTime >= PLAYERBOT_MONKEY_CHAMBER_DWELL &&
 				!navigation.CanReach(ch->GetX(), ch->GetY(), destX, destY))
 		{
 			long doorX = 0, doorY = 0;
@@ -1160,6 +1183,13 @@ namespace
 				}
 			}
 			state.bNavDeferredCount = 0;
+			// And the clock with it. Nothing ever cleared this, so `waited_ms`
+			// in the deferral line was the time since the bot's *first* refusal
+			// ever, not the wait of the request being reported: the live server
+			// printed waits of four to six hours, which is simply how long the
+			// bot had been alive. A number that cannot be wrong is worth more
+			// than a number that is usually enormous.
+			state.dwFirstNavDeferTime = 0;
 
 			state.uRouteIndex = resumedIndex;
 			state.lIssuedWaypointX = 0;

@@ -121,6 +121,7 @@ namespace
 			case BOT_ACTION_MARKET: return "pazarda alisveris yapiyorum";
 			case BOT_ACTION_LURE: return "grup icin mob cekiyorum";
 			case BOT_ACTION_TOWN_REST: return "sehirde dinleniyorum";
+			case BOT_ACTION_MINING: return "maden kaziyorum";
 			default: return "takiliyorum";
 		}
 	}
@@ -395,6 +396,16 @@ namespace
 					snprintf(status, statusSize, "%sOlta ariyorum", prefix);
 				else
 					snprintf(status, statusSize, "%sYemi oltaya takiyorum", prefix);
+				break;
+			case BOT_ACTION_MINING:
+				// Walking to a vein and digging at one are different things to
+				// watch, and a mining line over a bot crossing the valley is the
+				// shape of mistake the Monkey Dungeon exit line already made.
+				if (ch->GetWear(WEAR_WEAPON) &&
+						ch->GetWear(WEAR_WEAPON)->GetType() == ITEM_PICK)
+					snprintf(status, statusSize, "%sMaden kaziyorum", prefix);
+				else
+					snprintf(status, statusSize, "%sMaden damarina gidiyorum", prefix);
 				break;
 			case BOT_ACTION_TOWN_REST:
 				// The linger after a town errand. It reads as browsing only

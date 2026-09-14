@@ -2174,6 +2174,29 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   session until the bag was full of them. `CountPlayerBotRods` counts
   `ITEM_ROD`; `EquipPlayerBotRod` takes the highest vnum; a rod that another
   rod matches or beats is junk.
+- **A tool in the weapon slot needs an exemption in the pass above it.**
+  `ManagePlayerBotMining` claims the tick like fishing does, but the equipment
+  pass runs in the upkeep group *above* both - and it swapped the pickaxe out
+  for a sword between two swings. `mining_event` asks `GetWear(WEAR_WEAPON)`
+  for an `ITEM_PICK` on the tick it fires, so every swing was refused and not
+  one ore dropped, while the pass itself logged nothing but a bot re-equipping
+  its pickaxe every thirty-two seconds - exactly the swing cadence, which is
+  what named the cause. The rod's guard at that call is `!state.bFishingSession`;
+  anything else that puts a non-weapon in that slot needs its own beside it.
+- **A gate the AI cannot see is still a gate.** Fishing from thirty moved two
+  numbers - `CHARACTER::fishing()` via playerbotify and the AI's own floor - and
+  changed nothing, because the rod's `LIMIT_LEVEL` in `world.item_proto` is 50
+  and `CanEquipNow` refuses the equip. On the 2.x line `item_proto` is read from
+  **the database** (`PROTO_FROM_DB = 1`, `InitializeItemTableFromDB` on
+  `SQL_WORLD`), not from `share/conf`, which does not exist there - so such a
+  limit is changed with SQL in `apply.sh` and it sticks. Before concluding that
+  a level rule lives in the AI, ask the item.
+- **A log table taken from the other engine fails silently for ever.**
+  `logschemify.py` had `fish_log` in `FROM_R40250`: eight columns, while
+  mt2009's `LogManager::FishLog` writes six - so every catch failed with
+  errno 1136, one syserr line each, and nothing was recorded. It went unnoticed
+  for the life of the 2.x line because nobody ever fished on it. When a feature
+  starts working for the first time, read `syserr` for what it woke up.
 
 - **The database's half of the context is five files, not a directory.**
   `Test-ContextComplete` in the installer tested that `mariadb/initdb.d/dumps`
@@ -2963,6 +2986,22 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
 
 - Item types/subtypes live in `common/item_length.h`; map attributes and
   `SECTREE_SIZE`/`CELL_SIZE` in `game/src/sectree.h`.
+- **Mining is entirely in the engine and entirely absent from this world.**
+  `mining.cpp` holds the eighteen-row ore table (vein 20047-20059 and
+  30301-30305, raw 50601-50618, smelted 50621-50638 - ebonite is vein 20054,
+  raw 50608, smelted 50628), `CHARACTER::mining(vein)` is the only entry point,
+  the pickaxe (`ITEM_PICK`, Kilof 29101-29110, LIMIT_LEVEL 30) must be in
+  `WEAR_WEAPON`, and a swing is one event of `2 * number(5,15)` seconds rolling
+  20% plus the pick's grade. But **no map here spawns a vein or an alchemist** -
+  checked across all 109 - so `playerbot_mining.h` places and maintains them
+  itself. Two engine rules govern that: `SpawnMob` refuses a vein on
+  `ATTR_BLOCK` (and only there - an ordinary NPC is also refused on
+  `ATTR_OBJECT`), and a vein kills itself after 7-15 minutes
+  (`kill_ore_load_event`), so the sites are swept once a minute. The ore drops
+  on the ground with fifteen seconds of ownership; the ordinary loot pass takes
+  it. Smelting is `mining::OreRefine` - a hundred raw for one piece, from an
+  alchemist's quest - and is reimplemented rather than called, the way
+  `CollectPlayerBotBattleHorse` reimplements the stable keeper's.
 - Map world coordinates: `world = BasePosition + cell * 100`, with `BasePosition`
   from the map's `Setting.txt` and `cell` from `npc.txt`. Map 21 is `metin2_map_b1`.
 - `server_attr` is per-sector lzo1x: `int32 width, height`, then per sector a

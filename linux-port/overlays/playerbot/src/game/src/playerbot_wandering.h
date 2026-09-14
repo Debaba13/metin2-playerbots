@@ -744,6 +744,41 @@ namespace
 			// and up; the central island's Tormentors (49), who carry the Curse
 			// Book, for a party of forty-five and up. Client-map cells for the
 			// player's eye: camps (601,625), (774,923), (933,639); centre (767,792).
+			// The Forest (67). Its own regen, densest 6400-unit cells first, each
+			// hub on the real spawn point nearest that cell's centre; the band is
+			// the cell's median monster level less three, the same rule the
+			// village hubs use. Trent carries 2301-2305 of 65-71 over 527 spawn
+			// points and no stones at all.
+			const TPlayerBotHuntingHub forestHubs[] = {
+				{  316300,   16500, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				{  316500,   40300, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				{  310300,   27200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				{  324400,   36200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				{  284800,   29700, 64, 255, false, 0 },
+				{  310500,   21500, 64, 255, false, 0 },
+				{  296600,   36500, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				{  299000,   28100, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 }
+			};
+			// The Red Forest (68): 2311-2315 of 74-82 over 693 spawn points, and
+			// the two hardest of them (80 and 82) are what makes the upper hubs
+			// a party's ground rather than anybody's.
+			const TPlayerBotHuntingHub redForestHubs[] = {
+				{ 1110100,   72700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1070400,   67400, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1123000,   15200, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1078200,   40800, 73, 255, false, 0 },
+				{ 1053300,   43700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1080600,   16200, 73, 255, false, 0 },
+				{ 1092600,   15100, 73, 255, false, 0 },
+				{ 1092600,   42500, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 }
+			};
+			// The Demon Tower (66). Only two clusters carry 1001-1004 at all, and
+			// this is a map a bot visits for one specimen rather than lives on,
+			// so two hubs is the whole table.
+			const TPlayerBotHuntingHub demonTowerHubs[] = {
+				{  143400,  860100, PLAYERBOT_DEMON_TOWER_MIN_LEVEL, 255, false, 0 },
+				{  143900,  857000, PLAYERBOT_DEMON_TOWER_MIN_LEVEL, 255, false, 0 }
+			};
 			const TPlayerBotHuntingHub orcValleyHubs[] = {
 				{ 276600, 684600, PLAYERBOT_ORC_VALLEY_ESOTERIC_MIN_LEVEL, PLAYERBOT_ORC_VALLEY_ESOTERIC_MAX_LEVEL, false },
 				{ 281700, 795300, PLAYERBOT_ORC_VALLEY_ESOTERIC_MIN_LEVEL, PLAYERBOT_ORC_VALLEY_ESOTERIC_MAX_LEVEL, false },
@@ -899,6 +934,21 @@ namespace
 			{
 				hubs = spiderV2Hubs;
 				hubCount = sizeof(spiderV2Hubs) / sizeof(spiderV2Hubs[0]);
+			}
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_DEMON_TOWER)
+			{
+				hubs = demonTowerHubs;
+				hubCount = sizeof(demonTowerHubs) / sizeof(demonTowerHubs[0]);
+			}
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_FOREST)
+			{
+				hubs = forestHubs;
+				hubCount = sizeof(forestHubs) / sizeof(forestHubs[0]);
+			}
+			else if (ch->GetMapIndex() == PLAYERBOT_MAP_RED_FOREST)
+			{
+				hubs = redForestHubs;
+				hubCount = sizeof(redForestHubs) / sizeof(redForestHubs[0]);
 			}
 			else if (ch->GetMapIndex() == PLAYERBOT_MAP_HWANG)
 			{

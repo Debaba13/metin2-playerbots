@@ -301,7 +301,10 @@ namespace
 						mapIndex != PLAYERBOT_MAP_SOHAN &&
 						mapIndex != PLAYERBOT_MAP_SPIDER_V1 &&
 						mapIndex != PLAYERBOT_MAP_SPIDER_V2 &&
-						mapIndex != PLAYERBOT_MAP_HWANG)
+						mapIndex != PLAYERBOT_MAP_HWANG &&
+						mapIndex != PLAYERBOT_MAP_FOREST &&
+						mapIndex != PLAYERBOT_MAP_RED_FOREST &&
+						mapIndex != PLAYERBOT_MAP_DEMON_TOWER)
 					return false;
 
 				if (m_initialized && m_mapIndex == mapIndex)

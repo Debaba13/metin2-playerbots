@@ -1150,6 +1150,19 @@ function New-M2SupportBundle {
                 }
         }
 
+        # Konfiguracja launchera, przepuszczona przez ten sam filtr co logi.
+        #
+        # Bez niej nie wiadomo, z ktorego manifestu ten launcher czyta - a linie
+        # 1.x i mt2009 maja osobne. Gdy SIZOWSKI zglosil, ze nie moze
+        # zainstalowac aktualizacji, bundle nie niosl tego pliku i trzeba bylo
+        # zgadywac miedzy dwiema przyczynami, ktore wygladaja w logu identycznie:
+        # zly adres manifestu i manifest, ktorego nikt nie przestawil.
+        $launcherConfig = Join-Path $root '.m2launcher.json'
+        if (Test-Path -LiteralPath $launcherConfig -PathType Leaf) {
+            $safeConfig = Protect-M2LogContent -Text (Get-Content -LiteralPath $launcherConfig -Raw -ErrorAction SilentlyContinue)
+            [IO.File]::WriteAllText((Join-Path $work 'launcher-config-redacted.json'), $safeConfig, [Text.UTF8Encoding]::new($false))
+        }
+
         Compress-Archive -Path (Join-Path $work '*') -DestinationPath $zip -CompressionLevel Optimal -Force
         return $zip
     }

@@ -46,7 +46,11 @@ BIOLOGIST_MISSIONS = (
 # key come only from 1001-1004, and all four stand solely on
 # metin2_map_deviltower1 (index 66), which game2 hosts while every bot lives on
 # game1.  Take the name out of here the day that map moves.
-BIOLOGIST_UNREACHABLE = frozenset({"collect_quest_lv50"})
+#
+# Empty since the Demon Tower (map 66) was moved onto the core the bots live on:
+# 1001-1004 carry the level-50 specimen and its key, they stand nowhere else in
+# this world, and with the map hosted the game takes that row like any other.
+BIOLOGIST_UNREACHABLE = frozenset()
 BIOLOGIST_REACHABLE = tuple(
     m for m in BIOLOGIST_MISSIONS if m[0] not in BIOLOGIST_UNREACHABLE)
 # The specimen each row wants, and how far past a row the game stops hunting
@@ -383,20 +387,27 @@ BOT_ACTION_LABELS = {
         4: "Regeneruje się", 5: "Wybiera profesję", 6: "Handluje", 7: "Ulepsza EQ",
         8: "Czyta KU", 9: "Wkłada KD", 10: "Organizuje PT", 11: "Robi Biologa",
         12: "Odwiedza Stajennego", 13: "Prowadzi stragan",
+        # 14-18 were missing here while playerbot_types.h had carried them for
+        # months: a bot whose status text was empty fell back to "Planuje
+        # nastepny ruch" whatever it was really doing.
+        14: "Łowi ryby", 15: "Przegląda stragany", 16: "Wabi potwory",
+        17: "Odpoczywa w mieście", 18: "Kopie rudę",
     },
     "en": {
         0: "Planning next move", 1: "Travelling", 2: "Fighting", 3: "Picking up loot",
         4: "Recovering", 5: "Choosing profession", 6: "Trading", 7: "Refining gear",
         8: "Reading a skill book", 9: "Socketing a spirit stone", 10: "Organising a party",
         11: "Doing Biologist mission", 12: "Visiting the Stable Boy",
-        13: "Keeping a stall",
+        13: "Keeping a stall", 14: "Fishing", 15: "Browsing stalls",
+        16: "Luring monsters", 17: "Resting in town", 18: "Mining ore",
     },
     "tr": {
         0: "Sonraki hamleyi planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet topluyor",
         4: "İyileşiyor", 5: "Meslek seçiyor", 6: "Ticaret yapıyor", 7: "Ekipman geliştiriyor",
         8: "Beceri kitabı okuyor", 9: "Ruh taşı takıyor", 10: "Grup topluyor",
         11: "Biyolog görevi yapıyor", 12: "Seyis'i ziyaret ediyor",
-        13: "Tezgah işletiyor",
+        13: "Tezgah işletiyor", 14: "Balık tutuyor", 15: "Tezgahlara bakıyor",
+        16: "Canavar çekiyor", 17: "Şehirde dinleniyor", 18: "Maden kazıyor",
     },
 }
 
@@ -1148,6 +1159,8 @@ def read_ai_weights():
     # Percent of bots that rest on the market ring after a town errand; 100 is
     # the author's town, 0 is "every bot hunting".
     vals["REST"] = 100
+    # Percent of bots that pick fights with bots of another kingdom; 0 is off.
+    vals["KINGDOMPVP"] = 0
     # The chest event's two figures. None until the file says: the panel does
     # not know what CONFIG holds, and must not write a guess over it.
     vals["CHEST"] = None
@@ -1180,6 +1193,12 @@ def read_ai_weights():
                 if name == "REST":
                     try:
                         vals["REST"] = max(0, min(100, int(parts[1])))
+                    except ValueError:
+                        pass
+                    continue
+                if name == "KINGDOMPVP":
+                    try:
+                        vals["KINGDOMPVP"] = max(0, min(100, int(parts[1])))
                     except ValueError:
                         pass
                     continue
@@ -1225,6 +1244,9 @@ def write_ai_weights(vals):
     body.append("SCRAP\t%d" % max(0, min(100, int(vals.get("SCRAP", 0)))))
     # Percent of bots that rest in town after an errand; 0 means nobody does.
     body.append("REST\t%d" % max(0, min(100, int(vals.get("REST", 100)))))
+    # Percent of bots hostile to the other kingdoms; 0 means the world is at
+    # peace with itself, which is the default the core also starts from.
+    body.append("KINGDOMPVP\t%d" % max(0, min(100, int(vals.get("KINGDOMPVP", 0)))))
     # The Moonlight chest: thousandths per kill and per Metin. Written only once
     # the operator has set them, so an untouched install keeps its CONFIG.
     for key in ("CHEST", "CHEST_STONE"):
@@ -3187,6 +3209,12 @@ T.update({
                   "tr":"İlk köydeki işlerini bitirdikten sonra yaklaşık üç dakika pazar halkasında kalıp tezgâhlar arasında dolaşan botların payı. 0 - kimse dinlenmez: botlar sürekli avlanır, şehre yalnızca iş için gelir. Kaydırıcı ne derse desin 18. seviyenin altındaki bot asla dinlenmez, açık tezgâh yokken kimse tezgâhlara bakmaz."},
  "ai_rest_off":  {"en":"nobody rests","pl":"nikt nie odpoczywa","de":"niemand ruht","tr":"kimse dinlenmez"},
  "ai_rest_all":  {"en":"every bot","pl":"każdy bot","de":"jeder Bot","tr":"her bot"},
+ "ai_kpvp":      {"en":"Hostility between kingdoms","pl":"Wrogość między królestwami","de":"Feindschaft zwischen Königreichen","tr":"Krallıklar arası düşmanlık"},
+ "ai_kpvp_help": {"en":"The share of bots that will start a duel with a bot of another kingdom when they meet on shared ground - Orc Valley, the desert, Mount Sohan, the dungeons. Never in a village, never against a player, and never against a bot that is hurt or already fighting one. Which bots are the aggressive ones is fixed per character, so the same ones quarrel after every restart. Off by default.",
+                 "pl":"Udział botów, które zaczepią bota z innego królestwa, gdy spotkają go na wspólnym terenie - w Dolinie Orków, na pustyni, na Górze Sohan, w lochach. Nigdy w wiosce, nigdy na graczu i nigdy na bocie rannym albo już walczącym. To, które boty są agresywne, jest przypisane na stałe do postaci, więc po każdym restarcie zaczepiają te same. Domyślnie wyłączone.",
+                 "de":"Anteil der Bots, die einen Bot eines anderen Königreichs angreifen.","tr":"Başka krallıktan bir botla düello başlatacak botların oranı."},
+ "ai_kpvp_off":  {"en":"peace","pl":"pokój","de":"Frieden","tr":"barış"},
+ "ai_kpvp_all":  {"en":"every bot","pl":"każdy bot","de":"jeder Bot","tr":"her bot"},
  "ai_chest":     {"en":"Moonlight Treasure Chests","pl":"Szkatułki Księżycowe","de":"Mondschein-Schatztruhen","tr":"Ay Işığı Sandıkları"},
  "ai_chest_help":{"en":"How often a chest drops, in thousandths: per monster kill, and per broken Metin stone. The game default is 10‰ (1%) and 300‰ (30%); more chests mean more bonus scrolls, speed potions and Blessing Scrolls for the bots. Applies within five seconds, to bots and players alike.",
                   "pl":"Jak często wypada szkatułka, w promilach: z zabitego potwora i z rozbitego Metina. Domyślnie w grze 10‰ (1%) i 300‰ (30%); więcej szkatułek to więcej zwojów bonusów, mikstur szybkości i Zwojów Błogosławieństwa u botów. Działa w pięć sekund, dla botów i graczy tak samo.",
@@ -4995,6 +5023,16 @@ TPL_AI = BASE.replace("__BODY__", """
   </div>
 </div>
 <div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">⚔️ {{t('ai_kpvp')}}
+      <span class="badge" id="v_KINGDOMPVP">{{cur.get('KINGDOMPVP', 0)}}%</span></h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_kpvp_help')}}</p>
+  <input type="range" name="KINGDOMPVP" id="s_KINGDOMPVP" min="0" max="100" step="5" value="{{cur.get('KINGDOMPVP', 0)}}" style="width:100%"
+         oninput="document.getElementById('v_KINGDOMPVP').textContent=this.value+'%'">
+  <div class="muted" style="display:flex;justify-content:space-between;font-size:12px">
+    <span>0 — {{t('ai_kpvp_off')}}</span><span>100 — {{t('ai_kpvp_all')}}</span>
+  </div>
+</div>
+<div style="margin-bottom:18px">
   <h3 style="margin:0 0 2px">🎁 {{t('ai_chest')}}</h3>
   <p class="muted" style="margin:0 0 6px">{{t('ai_chest_help')}}</p>
   {% set chest = cur.get('CHEST') if cur.get('CHEST') is not none else 10 %}
@@ -5057,7 +5095,7 @@ MAP_I18N = {
  "pl": {
   "title":"Mapa świata na żywo — Chunjo","live":"NA ŻYWO (1,5 s)","subtitle":"Interaktywny podgląd pozycji i rozwoju botów w czasie rzeczywistym",
   "player_panel":"Panel graczy","play_browser":"Graj w przeglądarce","show_bots":"Pokaż boty","names_levels":"Nicki i poziomy","pt_only":"Tylko w grupie (PT)",
-  "level":"Poziom","all":"Wszystkie","map":"Mapa","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Ziemia Klanu Chunjo","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Ziemia Klanu Shinsoo","smonkey":"Loch Małp Shinsoo","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Ziemia Klanu Jinno","jmonkey":"Loch Małp Jinno","monkey":"Łatwy Loch Małp","monkey_medium":"Średni Loch Małp","monkey_hard":"Trudny Loch Małp","orc":"Dolina Orków","desert":"Pustynia Yongbi","sohan":"Góra Sohan","spider":"Loch Pająków V1","spider_v2":"Loch Pająków V2","hwang":"Świątynia Hwang","heat":"Mapa cieplna","heat_deaths":"Zgony botów","heat_metins":"Rozbite metiny","heat_skills":"Awanse umiejętności","search":"🔍 Szukaj bota (np. botarek)...",
+  "level":"Poziom","all":"Wszystkie","map":"Mapa","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Ziemia Klanu Chunjo","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Ziemia Klanu Shinsoo","smonkey":"Loch Małp Shinsoo","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Ziemia Klanu Jinno","jmonkey":"Loch Małp Jinno","monkey":"Łatwy Loch Małp","monkey_medium":"Średni Loch Małp","monkey_hard":"Trudny Loch Małp","orc":"Dolina Orków","desert":"Pustynia Yongbi","sohan":"Góra Sohan","spider":"Loch Pająków V1","spider_v2":"Loch Pająków V2","hwang":"Świątynia Hwang","forest":"Las","red_forest":"Czerwony Las","demon_tower":"Wieża Demonów","heat":"Mapa cieplna","heat_deaths":"Zgony botów","heat_metins":"Rozbite metiny","heat_skills":"Awanse umiejętności","search":"🔍 Szukaj bota (np. botarek)...",
   "solo_bot":"Bot solo","party_bot":"W grupie (PT)","metin_fight":"Walka z Metinem","loading":"Ładowanie...","world_stats":"Statystyki świata","active_bots":"Aktywne boty",
   "in_parties":"W grupach (PT)","avg_level":"Średni poziom","max_level":"Maks. poziom","rankings":"Rankingi botów","rank_level":"Poziom","rank_weapon":"Broń","rank_armor":"Zbroja",
   "rank_weapon30":"Bronie 30 Lv","rank_items":"Przedmioty","rank_horse":"Koń","rank_biologist":"Biolog","rank_hunting":"Polowanie","rank_shops":"Otwarte sklepy","rank_skills":"Umiejętności","rank_plus9":"Przedmiot +9","rank_stall_open":"Stragan otwarty","rank_empty":"Brak danych rankingu.","rank_show":"Pokaż","rank_search":"Szukaj w rankingu...","none":"Brak","items_short":"przedm.",
@@ -5077,7 +5115,7 @@ MAP_I18N = {
  "en": {
   "title":"Live world map — Chunjo","live":"LIVE (1.5 s)","subtitle":"Interactive real-time view of bot positions and progression",
   "player_panel":"Player panel","play_browser":"Play in browser","show_bots":"Show bots","names_levels":"Names and levels","pt_only":"Party only (PT)",
-  "level":"Level","all":"All","map":"Map","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Chunjo guild map","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Shinsoo guild map","smonkey":"Shinsoo Monkey Dungeon","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Jinno guild map","jmonkey":"Jinno Monkey Dungeon","monkey":"Easy Monkey Dungeon","monkey_medium":"Medium Monkey Dungeon","monkey_hard":"Hard Monkey Dungeon","orc":"Orc Valley","desert":"Yongbi Desert","sohan":"Mount Sohan","spider":"Spider Dungeon V1","spider_v2":"Spider Dungeon V2","hwang":"Hwang Temple","heat":"Heatmap","heat_deaths":"Bot deaths","heat_metins":"Metins broken","heat_skills":"Skill-ups","search":"🔍 Find a bot (e.g. botarek)...",
+  "level":"Level","all":"All","map":"Map","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Chunjo guild map","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Shinsoo guild map","smonkey":"Shinsoo Monkey Dungeon","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Jinno guild map","jmonkey":"Jinno Monkey Dungeon","monkey":"Easy Monkey Dungeon","monkey_medium":"Medium Monkey Dungeon","monkey_hard":"Hard Monkey Dungeon","orc":"Orc Valley","desert":"Yongbi Desert","sohan":"Mount Sohan","spider":"Spider Dungeon V1","spider_v2":"Spider Dungeon V2","hwang":"Hwang Temple","forest":"Forest","red_forest":"Red Forest","demon_tower":"Demon Tower","heat":"Heatmap","heat_deaths":"Bot deaths","heat_metins":"Metins broken","heat_skills":"Skill-ups","search":"🔍 Find a bot (e.g. botarek)...",
   "solo_bot":"Solo bot","party_bot":"In party (PT)","metin_fight":"Fighting a Metin","loading":"Loading...","world_stats":"World statistics","active_bots":"Active bots",
   "in_parties":"In parties (PT)","avg_level":"Average level","max_level":"Max level","rankings":"Bot rankings","rank_level":"Level","rank_weapon":"Weapon","rank_armor":"Armour",
   "rank_weapon30":"Lv 30 Weapons","rank_items":"Items","rank_horse":"Horse","rank_biologist":"Biologist","rank_hunting":"Hunting","rank_shops":"Open shops","rank_skills":"Skills","rank_plus9":"Item +9","rank_stall_open":"Stall open","rank_empty":"No ranking data.","rank_show":"Show","rank_search":"Search ranking...","none":"None","items_short":"items",
@@ -5097,7 +5135,7 @@ MAP_I18N = {
  "tr": {
   "title":"Canlı dünya haritası — Chunjo","live":"CANLI (1,5 sn)","subtitle":"Bot konumlarının ve gelişiminin gerçek zamanlı etkileşimli görünümü",
   "player_panel":"Oyuncu paneli","play_browser":"Tarayıcıda oyna","show_bots":"Botları göster","names_levels":"İsimler ve seviyeler","pt_only":"Sadece grupta (PT)",
-  "level":"Seviye","all":"Tümü","map":"Harita","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Chunjo Klan Toprakları","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Shinsoo Klan Toprakları","smonkey":"Shinsoo Maymun Zindanı","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Jinno Klan Toprakları","jmonkey":"Jinno Maymun Zindanı","monkey":"Kolay Maymun Zindanı","monkey_medium":"Orta Maymun Zindanı","monkey_hard":"Zor Maymun Zindanı","orc":"Ork Vadisi","desert":"Yongbi Çölü","sohan":"Sohan Dağı","spider":"Örümcek Zindanı V1","spider_v2":"Örümcek Zindanı V2","hwang":"Hwang Tapınağı","heat":"Isı haritası","heat_deaths":"Bot ölümleri","heat_metins":"Kırılan metinler","heat_skills":"Yetenek gelişimi","search":"🔍 Bot ara (örn. botarek)...",
+  "level":"Seviye","all":"Tümü","map":"Harita","m1":"M1 — Joan (Chunjo)","m2":"M2 — Bokjung (Chunjo)","m3":"Chunjo Klan Toprakları","s1":"M1 — Yongan (Shinsoo)","s2":"M2 — Jayang (Shinsoo)","s3":"Shinsoo Klan Toprakları","smonkey":"Shinsoo Maymun Zindanı","j1":"M1 — Pyongmoo (Jinno)","j2":"M2 — Bakra (Jinno)","j3":"Jinno Klan Toprakları","jmonkey":"Jinno Maymun Zindanı","monkey":"Kolay Maymun Zindanı","monkey_medium":"Orta Maymun Zindanı","monkey_hard":"Zor Maymun Zindanı","orc":"Ork Vadisi","desert":"Yongbi Çölü","sohan":"Sohan Dağı","spider":"Örümcek Zindanı V1","spider_v2":"Örümcek Zindanı V2","hwang":"Hwang Tapınağı","forest":"Orman","red_forest":"Kızıl Orman","demon_tower":"Şeytan Kulesi","heat":"Isı haritası","heat_deaths":"Bot ölümleri","heat_metins":"Kırılan metinler","heat_skills":"Yetenek gelişimi","search":"🔍 Bot ara (örn. botarek)...",
   "solo_bot":"Solo bot","party_bot":"Grupta (PT)","metin_fight":"Metin ile savaşıyor","loading":"Yükleniyor...","world_stats":"Dünya istatistikleri","active_bots":"Aktif botlar",
   "in_parties":"Gruplarda (PT)","avg_level":"Ortalama seviye","max_level":"Maks. seviye","rankings":"Bot sıralamaları","rank_level":"Seviye","rank_weapon":"Silah","rank_armor":"Zırh",
   "rank_weapon30":"Lv 30 Silahlar","rank_items":"Eşyalar","rank_horse":"At","rank_biologist":"Biyolog","rank_hunting":"Avlanma","rank_shops":"Açık dükkanlar","rank_skills":"Yetenekler","rank_plus9":"Eşya +9","rank_stall_open":"Tezgah açık","rank_empty":"Sıralama verisi yok.","rank_show":"Göster","rank_search":"Sıralamada ara...","none":"Yok","items_short":"eşya",
@@ -7402,6 +7440,13 @@ PLAYERBOT_MAP_BOUNDS = {
     104: (51200, 486400, 76800, 76800),     # Spider Dungeon V1
     71: (665600, 435200, 102400, 102400),   # Spider Dungeon V2 (metin2_map_spiderdungeon_02)
     65: (537600, 51200, 102400, 102400),    # Hwang Temple (metin2_map_milgyo)
+    # Moved onto the bots' own core in 2.0.39. The extents are the server_attr
+    # sector counts (8x8, 12x12, 12x12) times a sector's 6400 units, which is
+    # the same number as Setting.txt's MapSize x 128 x 200 and agrees with map
+    # 64 to the unit.
+    66: (128000, 793600, 76800, 76800),     # Demon Tower (metin2_map_deviltower1)
+    67: (281600, 0, 51200, 51200),          # Forest (metin2_map_trent)
+    68: (1049600, 0, 76800, 76800),         # Red Forest (metin2_map_trent02)
 }
 
 
@@ -11378,6 +11423,10 @@ def ai_weights():
             vals["REST"] = max(0, min(100, int(request.form.get("REST", 100))))
         except (TypeError, ValueError):
             vals["REST"] = 100
+        try:
+            vals["KINGDOMPVP"] = max(0, min(100, int(request.form.get("KINGDOMPVP", 0))))
+        except (TypeError, ValueError):
+            vals["KINGDOMPVP"] = 0
         for key in ("CHEST", "CHEST_STONE"):
             try:
                 vals[key] = max(0, min(1000, int(request.form.get(key))))

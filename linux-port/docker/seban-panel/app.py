@@ -147,11 +147,11 @@ except (OSError, ValueError):
 BOT_PERSONALITIES = {0: "Kararlı Maceracı", 1: "Metin Kırıcı", 2: "Takım Arkadaşı", 3: "Ekipman Ustası", 4: "Dikkatli Toplayıcı", 5: "Tüccar", 6: "Gezgin", 7: "Metin Dropper'ı", 8: "M3 Dropper'ı", 9: "M2 Dropper'ı", 10: "Madalya Dropper'ı"}
 BOT_AMBITIONS = {0: "Seviye", 1: "Ekipman", 2: "Metinler", 3: "At", 4: "Biyolog", 5: "Yetenekler"}
 BOT_GOALS = {0: "Seviye Kazanma", 1: "Hayatta Kalma", 2: "Meslek Seçme", 3: "Ekipman Edinme", 4: "Stok Tamamlama", 5: "Ekipman Geliştirme", 6: "Yetenek Geliştirme", 7: "Metin Avlama", 8: "Grup Hedefleri", 9: "Biyolog Görevi", 10: "Avlanma Görevi", 11: "At Geliştirme"}
-BOT_ACTIONS = {0: "Sonraki Hamleyi Planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet Topluyor", 4: "İyileşiyor", 5: "Meslek Seçiyor", 6: "Ticaret Yapıyor", 7: "Ekipman Geliştiriyor", 8: "Yetenek Kitabı Okuyor", 9: "Ruh Taşı Takıyor", 10: "Grup Topluyor", 11: "Biyolog Görevi Yapıyor", 12: "Seyis'i Ziyaret Ediyor", 13: "Tezgah İşletiyor", 14: "Balık Tutuyor", 15: "Tezgahlara Bakıyor", 16: "Canavar Çekiyor", 17: "Şehirde Dinleniyor"}
+BOT_ACTIONS = {0: "Sonraki Hamleyi Planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet Topluyor", 4: "İyileşiyor", 5: "Meslek Seçiyor", 6: "Ticaret Yapıyor", 7: "Ekipman Geliştiriyor", 8: "Yetenek Kitabı Okuyor", 9: "Ruh Taşı Takıyor", 10: "Grup Topluyor", 11: "Biyolog Görevi Yapıyor", 12: "Seyis'i Ziyaret Ediyor", 13: "Tezgah İşletiyor", 14: "Balık Tutuyor", 15: "Tezgahlara Bakıyor", 16: "Canavar Çekiyor", 17: "Şehirde Dinleniyor", 18: "Maden Kazıyor"}
 # Actions where a bot stands still on purpose: stall, rod, browsing stalls,
-# an NPC counter, blacksmith, trainer, resting. Without this every keeper
-# read as "Possibly stuck" - and the status-text flag only caught anglers.
-STATIONARY_ACTIONS = {5, 6, 7, 13, 14, 15, 17}
+# an NPC counter, blacksmith, trainer, resting, mining. Without this every
+# keeper read as "Possibly stuck" - and the status-text flag only caught anglers.
+STATIONARY_ACTIONS = {5, 6, 7, 13, 14, 15, 17, 18}
 ITEM_TYPE_NAMES = (
     "ITEM_NONE", "ITEM_WEAPON", "ITEM_ARMOR", "ITEM_USE", "ITEM_AUTOUSE", "ITEM_MATERIAL", "ITEM_SPECIAL", "ITEM_TOOL", "ITEM_LOTTERY", "ITEM_ELK",
     "ITEM_METIN", "ITEM_CONTAINER", "ITEM_FISH", "ITEM_ROD", "ITEM_RESOURCE", "ITEM_CAMPFIRE", "ITEM_UNIQUE", "ITEM_SKILLBOOK", "ITEM_QUEST", "ITEM_POLYMORPH",

@@ -178,7 +178,7 @@ namespace
 					const std::vector<PIXEL_POSITION>& taken) :
 				m_owner(owner), m_anchorX(anchorX), m_anchorY(anchorY),
 				m_taken(taken), m_bestVID(0), m_bestScore(INT_MAX),
-				m_seen(0), m_busy(0), m_level(0), m_range(0), m_anchor(0),
+				m_seen(0), m_busy(0), m_level(0), m_tooClose(0), m_tooFar(0), m_anchor(0),
 				m_reserved(0), m_claimed(0), m_unreachable(0)
 			{
 			}
@@ -212,10 +212,18 @@ namespace
 
 				const int fromMe = DISTANCE_APPROX(m_owner->GetX() - candidate->GetX(),
 						m_owner->GetY() - candidate->GetY());
-				if (fromMe < PLAYERBOT_LURE_MIN_PACK_DISTANCE ||
-						fromMe > PLAYERBOT_LURE_MAX_PACK_DISTANCE)
+				// Counted apart, because they ask for opposite corrections and
+				// one number cannot say which. The first course run after the
+				// party threshold was lowered rejected 114 of 120 monsters here
+				// and the log could only say "range".
+				if (fromMe < PLAYERBOT_LURE_MIN_PACK_DISTANCE)
 				{
-					++m_range;
+					++m_tooClose;
+					return true;
+				}
+				if (fromMe > PLAYERBOT_LURE_MAX_PACK_DISTANCE)
+				{
+					++m_tooFar;
 					return true;
 				}
 				if (DISTANCE_APPROX(candidate->GetX() - m_anchorX,
@@ -265,9 +273,9 @@ namespace
 			void Explain(char* out, size_t size) const
 			{
 				snprintf(out, size,
-						"seen=%d busy=%d level=%d range=%d anchor=%d reserved=%d claimed=%d unreachable=%d",
-						m_seen, m_busy, m_level, m_range, m_anchor, m_reserved,
-						m_claimed, m_unreachable);
+						"seen=%d busy=%d level=%d too_close=%d too_far=%d anchor=%d reserved=%d claimed=%d unreachable=%d",
+						m_seen, m_busy, m_level, m_tooClose, m_tooFar, m_anchor,
+						m_reserved, m_claimed, m_unreachable);
 			}
 
 		private:
@@ -280,7 +288,8 @@ namespace
 			int m_seen;
 			int m_busy;
 			int m_level;
-			int m_range;
+			int m_tooClose;
+			int m_tooFar;
 			int m_anchor;
 			int m_reserved;
 			int m_claimed;
@@ -415,6 +424,14 @@ namespace
 		// all outrank the role. A course in progress ends here rather than
 		// being suspended: half a pull is not a state worth keeping.
 		if (!ch || ch->IsDead() || !ch->GetParty() || !IsPlayerBotArcher(ch) ||
+				// "In a party, on a big spot" is the whole point of the role, and
+				// there was no map rule at all: an Archer with a party anywhere
+				// outside a safe zone planned a course. Measured on Yongan - a
+				// party of six, five receivers ready, and "no pack seen=0" a
+				// second later, because a first village has no pack to pull.
+				// The frontier maps are where the packs and the party cohort
+				// both are.
+				!IsPlayerBotFrontierMapIndex(ch->GetMapIndex()) ||
 				state.bTacticalRetreat || state.bRecoveringAfterDeath ||
 				state.bVisitingShop || state.bVisitingBiologist ||
 				state.bVisitingStable || state.bMarketTrip || state.bFishingSession ||

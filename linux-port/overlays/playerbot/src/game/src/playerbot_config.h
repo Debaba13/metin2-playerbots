@@ -107,6 +107,14 @@ namespace
 	// author's town; zero is the operator who wants every bot hunting, asked
 	// for by name. The level floor beside it is PLAYERBOT_TOWN_REST_MIN_LEVEL.
 	int s_iPlayerBotRestPercent = 100;
+	// Percent of the bots that will pick a fight with a bot of another kingdom.
+	// Zero is off, and the default, and that is deliberate: this changes how the
+	// world behaves towards itself rather than how one bot spends its time, so
+	// it stays a decision the operator makes on purpose. The share is by pid, so
+	// the same bots are the aggressive ones from one restart to the next - which
+	// is what "some aggressive, some neutral" has to mean if a kingdom is to
+	// have a character rather than a mood.
+	int s_iPlayerBotKingdomPvpPercent = 0;
 	// Whether a bot reads its books without the engine's day between them.
 	// On by default: the day is what makes a book a month's project, and the
 	// books were rotting in the bags of bots that could not read them yet.
@@ -151,6 +159,7 @@ namespace
 		s_bPlayerBotOverheadChat = true;
 		s_iPlayerBotScrapPercent = 0;
 		s_iPlayerBotRestPercent = 100;
+		s_iPlayerBotKingdomPvpPercent = 0;
 		s_bPlayerBotFastBooks = true;
 		s_bPlayerBotNight = true;
 		if (s_iPlayerBotChestConfigPermille < 0)
@@ -255,6 +264,14 @@ namespace
 			s_iPlayerBotRestPercent = percent;
 			return;
 		}
+		if (PlayerBotWeightNameEquals(szKey, "KINGDOMPVP"))
+		{
+			const int percent = value < 0 ? 0 : (value > 100 ? 100 : (int)value);
+			if (percent != s_iPlayerBotKingdomPvpPercent)
+				sys_log(0, "PLAYERBOT_CONFIG: kingdom hostility %d%% of bots", percent);
+			s_iPlayerBotKingdomPvpPercent = percent;
+			return;
+		}
 		for (size_t i = 0; i < sizeof(PLAYERBOT_WEIGHT_NAMES) /
 				sizeof(PLAYERBOT_WEIGHT_NAMES[0]); ++i)
 		{
@@ -354,6 +371,8 @@ namespace
 			return s_iPlayerBotScrapPercent;
 		if (PlayerBotWeightNameEquals(szKey, "REST"))
 			return s_iPlayerBotRestPercent;
+		if (PlayerBotWeightNameEquals(szKey, "KINGDOMPVP"))
+			return s_iPlayerBotKingdomPvpPercent;
 		if (PlayerBotWeightNameEquals(szKey, "CHEST"))
 			return s_bPlayerBotChestFromFile ? g_iMoonlightChestPermille : -1;
 		if (PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))

@@ -234,6 +234,17 @@ namespace
 	const char* const PLAYERBOT_SAFEBOX_PAID_FLAG = "playerbot.safebox_paid";
 	const DWORD PLAYERBOT_SAFEBOX_LOAD_WAIT_MS = 8000;
 	const int PLAYERBOT_SAFEBOX_BOOK_KEEP = 12;
+	// A page COUNT, not a cell count - and that distinction was a live bug.
+	// CHARACTER::SetSafeboxSize refuses anything at or above SAFEBOX_PAGE_COUNT
+	// (three), so the old call passing SAFEBOX_PAGE_SIZE - our own compat macro
+	// for WIDTH * HEIGHT, forty-five - was rejected outright and the page the
+	// bot had just paid for never registered in memory. The window the
+	// storekeeper opens has two tabs, which is the real capacity: ninety cells.
+	const int PLAYERBOT_SAFEBOX_PAGES = 2;
+	// How much one visit may take back out. A withdrawal that filled the bag
+	// would only be deposited again on the next trip, so the door opens a
+	// crack rather than all the way.
+	const int PLAYERBOT_SAFEBOX_WITHDRAW_MAX = 6;
 	// Two stacks of one thing in two cells is what a partial purchase, a
 	// partial sale and a pick-up into a full stack all leave behind, and the
 	// engine only merges when a hand drags one onto the other - which a bot
@@ -794,9 +805,46 @@ namespace
 	const DWORD PLAYERBOT_INACTIVITY_RESET_TIME = 90000;
 	const DWORD PLAYERBOT_WANDER_INTERVAL = 8000;
 	const DWORD PLAYERBOT_PARTY_CHECK_INTERVAL = 10000;
+	// Running with the player who invited you.
+	//
+	// A bot in a party of its own keeps station by the straggler radius and
+	// leaves the party when it cannot; a bot in a PLAYER's party has to do the
+	// opposite - stay, and walk after them. The distance is under the party
+	// cohesion radius so the bot closes up before the leader is out of range of
+	// anything shared, and the pass runs on its own short clock rather than the
+	// party pass's ten seconds, because following at ten-second granularity is
+	// a bot that is always a screen behind.
+	const int PLAYERBOT_PARTY_FOLLOW_DISTANCE = 1500;
+	const DWORD PLAYERBOT_PARTY_FOLLOW_INTERVAL = 2000;
+	// A duel: three seconds between the challenge and the first blow, because
+	// that is what the operator asked for and because agreeing on the same tick
+	// reads like a script rather than an opponent.
+	const DWORD PLAYERBOT_PVP_ACCEPT_DELAY = 3000;
+	// How long the bot assumes an agreed duel lasts. The engine knows exactly
+	// (CPVPManager), but its IsFighting sits behind ENABLE_NEWSTUFF on one line
+	// and does not exist at all on the other, so the bot remembers instead. Only
+	// the health-potion ban hangs on this, and a duel that is over costs nothing
+	// but a few minutes of a bot not drinking while it is at full health anyway.
+	const DWORD PLAYERBOT_PVP_DUEL_ASSUMED = 180000;
+	// Bots challenging each other: rare, because a duel is a thing that happens
+	// in a world, not the thing the world does. One roll a minute per bot.
+	const DWORD PLAYERBOT_PVP_CHALLENGE_INTERVAL = 60000;
+	const int PLAYERBOT_PVP_CHALLENGE_PER_MILLE = 6;
+	const int PLAYERBOT_PVP_CHALLENGE_RANGE = 1200;
+	const int PLAYERBOT_PVP_CHALLENGE_LEVEL_DELTA = 5;
+	// Nobody starts a fight on a sliver of health, and nobody finishes one
+	// without being able to walk away from it.
+	const int PLAYERBOT_PVP_MIN_HP_PERCENT = 80;
 	const int PLAYERBOT_PARTY_DESIRED_MAX = 6;
 	const int PLAYERBOT_PARTY_COHESION_RADIUS = 2800;
-	const int PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS = 5;
+	// Three, not five. A course needs somebody to pull for, and the operator's
+	// rule is "aggro 1-3 party bots waiting nearer the middle" - so three is
+	// what a pull is actually for. Five was a guess, and it was a guess that
+	// switched the whole role off: measured on our own world, parties run at
+	// one or two members (census: 18 bots in 15 parties), five-member ones
+	// essentially never form, and the last lure session in the logs was two
+	// days old and ended "no_pack".
+	const int PLAYERBOT_ARCHER_LURE_MIN_PARTY_MEMBERS = 3;
 	// The Archer's luring course, as a party role rather than an extra shot.
 	//
 	// A course is: walk out, tag a pack with one ordinary arrow, read whether it
@@ -838,7 +886,9 @@ namespace
 	// Groups and monsters per course: what a first course asks for, and the
 	// ceiling a party earns by finishing courses without losing anybody.
 	const int PLAYERBOT_LURE_FIRST_GROUPS = 2;
-	const int PLAYERBOT_LURE_MAX_GROUPS = 4;
+	// Three, not four: the operator's rule for a pull is "aggro 1-3 party bots",
+	// and a fourth group is a pack the waiting members cannot share out.
+	const int PLAYERBOT_LURE_MAX_GROUPS = 3;
 	const int PLAYERBOT_LURE_FIRST_BUDGET = 7;
 	const int PLAYERBOT_LURE_MAX_BUDGET = 14;
 	// Courses in a row without a death or a failed handover before the plan
@@ -857,7 +907,14 @@ namespace
 	// party is already fighting over, and it never takes a monster somebody
 	// else has claimed.
 	const int PLAYERBOT_LURE_MIN_PACK_DISTANCE = 1100;
-	const int PLAYERBOT_LURE_MAX_PACK_DISTANCE = 3000;
+	// Four thousand, derived rather than guessed. Once the range counter was
+	// split into its two halves the answer was one-sided: two courses on the
+	// Spider Dungeon read too_close=0 too_far=33 and too_close=0 too_far=62, so
+	// every pack the Archer refused was beyond the window, never inside it.
+	// The bound that matters is PLAYERBOT_LURE_MAX_COURSE_RANGE - the Archer
+	// walks out to the pack and drags it back to the anchor - so the window
+	// stays under it with room for the return leg.
+	const int PLAYERBOT_LURE_MAX_PACK_DISTANCE = 4000;
 	const int PLAYERBOT_LURE_ANCHOR_CLEARANCE = 900;
 	const int PLAYERBOT_LURE_GROUP_SEPARATION = 700;
 	// Above this over the Archer's own level a pack is not brought home, it is
@@ -945,6 +1002,26 @@ namespace
 	const DWORD PLAYERBOT_HORSE_PHOTO_VNUM = 50051;
 	const DWORD PLAYERBOT_BATTLE_HORSE_BOOK_VNUM = 50052;
 	const char* PLAYERBOT_BATTLE_HORSE_KILLS_FLAG = "playerbot.battle_horse_kills";
+	// The military horse, the step after the combat one.
+	//
+	// The operator's shape for it: medals carry the horse to twenty, and the
+	// twenty-first level is a trial in the Demon Tower rather than one more
+	// medal - with no clock on it, like the desert trial. That is why the map
+	// had to move onto game1 at all: 1001-1004 stand nowhere else, and a trial
+	// on a map a bot cannot reach is a horse that stops at twenty for ever.
+	//
+	// Fifty kills against the desert trial's hundred, because a Demon Soldier of
+	// fifty-seven is not a Scorpion Archer of thirty-nine and the bot doing this
+	// is level fifty by the milestone above.
+	const char* PLAYERBOT_MILITARY_HORSE_KILLS_FLAG = "playerbot.military_horse_kills";
+	const int PLAYERBOT_MILITARY_HORSE_KILLS = 50;
+	const BYTE PLAYERBOT_MILITARY_HORSE_FROM_HORSE_LEVEL = 20;
+	// The character level the trial asks for. The same number
+	// GetPlayerBotNextHorseRequiredLevel already returns for a horse at twenty -
+	// named here so the two cannot drift apart.
+	const BYTE PLAYERBOT_MILITARY_HORSE_MIN_LEVEL = 50;
+	const BYTE PLAYERBOT_MILITARY_HORSE_LEVEL = 21;
+	const DWORD PLAYERBOT_MILITARY_HORSE_MOBS[] = { 1001, 1002, 1003, 1004 };
 
 	// The level at which a horse stops being transport and becomes a weapon.
 	// Below it a bot always dismounts to fight; at or above it the target
@@ -1491,6 +1568,16 @@ namespace
 	// GetPlayerBotRefineMaterialVnums reads the engine's own recipe table, so
 	// they became goods the moment a bot could stand where they drop.
 	const long PLAYERBOT_MAP_HWANG = 65;
+	// The three maps moved off game2 in m2-render-config so the bots can reach
+	// them at all. The Demon Tower (66) is where the Biologist's level-50
+	// specimen and the military horse live - 1001-1004 of 57-60 stand nowhere
+	// else in this world - and the two forests are ground this world had none
+	// of: Trent (67) carries 2301-2305 of 65-71 over 912 spawn points, the Red
+	// Forest (68) carries 2311-2315 of 74-82 over 1456. Measured out of their
+	// own regen files, not a wiki.
+	const long PLAYERBOT_MAP_DEMON_TOWER = 66;
+	const long PLAYERBOT_MAP_FOREST = 67;
+	const long PLAYERBOT_MAP_RED_FOREST = 68;
 	// The Spider Dungeon is entered from the desert, the way the game has it:
 	// NPC 10016 "Kuahlo Dong" in the desert's bottom-right corner (cell 1425,
 	// 1477 of metin2_map_n_desert_01) sends a character to (600, 4960) in V1,
@@ -1686,6 +1773,41 @@ namespace
 	// Fifty-two is where its weakest Elite Esoteric stands, and fifty-five where
 	// the east half begins. Nothing below the first has any business here.
 	const BYTE PLAYERBOT_HWANG_MIN_LEVEL = 52;
+	// The Forest (67) and the Red Forest (68), and the Demon Tower (66) as an
+	// errand rather than a frontier.
+	//
+	// Every point below is a real spawn point out of the map's own regen file,
+	// taken from the densest 6400-unit cell and nearest that cell's centre. A
+	// spawn point is ground the engine itself puts monsters on, which is the
+	// best evidence available here: this machine has no python-lzo, so
+	// server_attr could not be decoded to check the cell directly. Worth
+	// re-checking with tools/decode_server_attr.py on a machine that has it.
+	//
+	// The coordinate rule is the one in "Engine facts": world = BasePosition +
+	// cell * 100. It was confirmed the hard way tonight - the production Orc
+	// Valley hubs land on real spawn cells at x100 and on nothing at x200.
+	const long PLAYERBOT_FOREST_ARRIVAL_X = 316300;
+	const long PLAYERBOT_FOREST_ARRIVAL_Y = 16500;
+	const long PLAYERBOT_FOREST_EXIT_X = 316300;
+	const long PLAYERBOT_FOREST_EXIT_Y = 17000;
+	// Trent's own spawns are 65 to 71 (Duch Drzewa through Zle Drzewo), so the
+	// band starts where its weakest monster stops being a waste of a trip.
+	const BYTE PLAYERBOT_FOREST_MIN_LEVEL = 62;
+	const long PLAYERBOT_RED_FOREST_ARRIVAL_X = 1110100;
+	const long PLAYERBOT_RED_FOREST_ARRIVAL_Y = 72700;
+	const long PLAYERBOT_RED_FOREST_EXIT_X = 1110100;
+	const long PLAYERBOT_RED_FOREST_EXIT_Y = 73200;
+	// 74 to 82 (Czerw. Duch Drzewa through Czerwone Zle Drzewo).
+	const BYTE PLAYERBOT_RED_FOREST_MIN_LEVEL = 71;
+	// The Demon Tower is not a frontier and has no hub table: a bot goes there
+	// for the Biologist's level-50 specimen and comes back. 1001-1004 stand in
+	// two clusters and this is the denser one.
+	const long PLAYERBOT_DEMON_TOWER_ARRIVAL_X = 143400;
+	const long PLAYERBOT_DEMON_TOWER_ARRIVAL_Y = 860100;
+	const long PLAYERBOT_DEMON_TOWER_EXIT_X = 143400;
+	const long PLAYERBOT_DEMON_TOWER_EXIT_Y = 860600;
+	// 1001 is the weakest thing standing there.
+	const BYTE PLAYERBOT_DEMON_TOWER_MIN_LEVEL = 57;
 	const BYTE PLAYERBOT_HWANG_EAST_MIN_LEVEL = 55;
 
 	// Where a frontier map is entered and where it is left, by map. Every
@@ -1702,6 +1824,9 @@ namespace
 			case PLAYERBOT_MAP_SPIDER_V1: outX = PLAYERBOT_SPIDER_ARRIVAL_X; outY = PLAYERBOT_SPIDER_ARRIVAL_Y; return true;
 			case PLAYERBOT_MAP_SPIDER_V2: outX = PLAYERBOT_SPIDER_V2_ARRIVAL_X; outY = PLAYERBOT_SPIDER_V2_ARRIVAL_Y; return true;
 			case PLAYERBOT_MAP_HWANG: outX = PLAYERBOT_HWANG_ARRIVAL_X; outY = PLAYERBOT_HWANG_ARRIVAL_Y; return true;
+			case PLAYERBOT_MAP_FOREST: outX = PLAYERBOT_FOREST_ARRIVAL_X; outY = PLAYERBOT_FOREST_ARRIVAL_Y; return true;
+			case PLAYERBOT_MAP_RED_FOREST: outX = PLAYERBOT_RED_FOREST_ARRIVAL_X; outY = PLAYERBOT_RED_FOREST_ARRIVAL_Y; return true;
+			case PLAYERBOT_MAP_DEMON_TOWER: outX = PLAYERBOT_DEMON_TOWER_ARRIVAL_X; outY = PLAYERBOT_DEMON_TOWER_ARRIVAL_Y; return true;
 			default: return false;
 		}
 	}
@@ -1715,6 +1840,9 @@ namespace
 			case PLAYERBOT_MAP_SOHAN: outX = PLAYERBOT_SOHAN_EXIT_X; outY = PLAYERBOT_SOHAN_EXIT_Y; return true;
 			case PLAYERBOT_MAP_SPIDER_V1: outX = PLAYERBOT_SPIDER_EXIT_X; outY = PLAYERBOT_SPIDER_EXIT_Y; return true;
 			case PLAYERBOT_MAP_SPIDER_V2: outX = PLAYERBOT_SPIDER_V2_EXIT_X; outY = PLAYERBOT_SPIDER_V2_EXIT_Y; return true;
+			case PLAYERBOT_MAP_FOREST: outX = PLAYERBOT_FOREST_EXIT_X; outY = PLAYERBOT_FOREST_EXIT_Y; return true;
+			case PLAYERBOT_MAP_RED_FOREST: outX = PLAYERBOT_RED_FOREST_EXIT_X; outY = PLAYERBOT_RED_FOREST_EXIT_Y; return true;
+			case PLAYERBOT_MAP_DEMON_TOWER: outX = PLAYERBOT_DEMON_TOWER_EXIT_X; outY = PLAYERBOT_DEMON_TOWER_EXIT_Y; return true;
 			case PLAYERBOT_MAP_HWANG: outX = PLAYERBOT_HWANG_EXIT_X; outY = PLAYERBOT_HWANG_EXIT_Y; return true;
 			default: return false;
 		}
@@ -1725,9 +1853,18 @@ namespace
 	// be hunted - the bot is not passing through.
 	bool IsPlayerBotFrontierMapIndex(long mapIndex)
 	{
+		// The Demon Tower counts, because every road onto a map runs through
+		// this predicate: the travel pass, the arrival and the party rules all
+		// ask it, and a map that answers no is a map no bot ever walks onto. It
+		// takes one draw in four from fifty-seven up and nothing more, and the
+		// thing the operator actually asked to prevent - bots running the
+		// dungeon for stones - is prevented where it belongs, in
+		// PlayerBotMapHasMetinStones.
 		return mapIndex == PLAYERBOT_MAP_ORC_VALLEY || mapIndex == PLAYERBOT_MAP_DESERT ||
+				mapIndex == PLAYERBOT_MAP_DEMON_TOWER ||
 				mapIndex == PLAYERBOT_MAP_SOHAN || mapIndex == PLAYERBOT_MAP_SPIDER_V1 ||
-				mapIndex == PLAYERBOT_MAP_SPIDER_V2 || mapIndex == PLAYERBOT_MAP_HWANG;
+				mapIndex == PLAYERBOT_MAP_SPIDER_V2 || mapIndex == PLAYERBOT_MAP_HWANG ||
+				mapIndex == PLAYERBOT_MAP_FOREST || mapIndex == PLAYERBOT_MAP_RED_FOREST;
 	}
 
 	// Both Spider Dungeons: the ones reached across the desert and entered
@@ -1747,6 +1884,9 @@ namespace
 			case PLAYERBOT_MAP_SPIDER_V1: return "spider_v1";
 			case PLAYERBOT_MAP_SPIDER_V2: return "spider_v2";
 			case PLAYERBOT_MAP_HWANG: return "hwang";
+			case PLAYERBOT_MAP_FOREST: return "forest";
+			case PLAYERBOT_MAP_RED_FOREST: return "red_forest";
+			case PLAYERBOT_MAP_DEMON_TOWER: return "demon_tower";
 			default: return "frontier";
 		}
 	}
@@ -2000,6 +2140,20 @@ namespace
 	// way: a Carp for twenty movement speed, a Rudd for ten dexterity, ten
 	// minutes each (item_proto USE_ABILITY_UP).
 	const DWORD PLAYERBOT_BOOSTER_VNUMS[] = { 71044, 71045, 27866, 27873 };
+	// The polymorph marbles, as ItemProcess_Polymorph names them. Nothing else
+	// this world calls ITEM_POLYMORPH takes that branch, and the branch is what
+	// gives the transformation its damage bonus (200 + skill, five minutes with
+	// no Polymorph skill), so a marble outside this list would be spent for
+	// nothing. The monster is in socket 0 and the engine refuses one whose
+	// level is at or above the bot's own plus MAX(0, 20 - level*3/10) - which is
+	// why a marble is worth keeping for a boss rather than burning on a pack.
+	const DWORD PLAYERBOT_POLYMORPH_MARBLE_VNUMS[] = { 70104, 70105, 70106, 70107, 71093 };
+	// A transformation is spent on something that takes a while to kill. The
+	// engine refuses every skill while polymorphed (char_skill.cpp), so this is
+	// a trade: the marble's damage bonus against the whole rotation, and it is
+	// only worth it where the rotation is not what wins the fight anyway.
+	const int PLAYERBOT_POLYMORPH_BOSS_HP_PERCENT = 90;
+	const DWORD PLAYERBOT_POLYMORPH_RETRY_MS = 60000;
 	// Since 2.0.27 a booster is recognised by what the engine does with it, not
 	// by its vnum: USE_AFFECT with value0 510 is the timed stat buff (attack
 	// +10/+15, speed, critical, penetration, the Dragon God set, the experience
@@ -2010,7 +2164,11 @@ namespace
 	// posprzedawal handlarzowi", Pasywny, 13 September).
 	const int PLAYERBOT_USE_AFFECT_TIMED_BUFF = 510;
 	// Eliksir Ksiezyca (M/S/D/S): USE_SPECIAL whose special group is experience.
-	const DWORD PLAYERBOT_EXP_ELIXIR_VNUMS[] = { 39040, 39041, 39042, 72727, 72728, 72729, 72730, 76004, 76005 };
+	// The Moon elixirs were here and the Sun ones were not, which is the whole
+	// of the difference between them: same ITEM_USE/USE_SPECIAL shape, same
+	// experience-in-a-bottle, ten times the value (1M/3M/7M against
+	// 100k/300k/700k). A bot handed a Sun elixir treated it as ordinary loot.
+	const DWORD PLAYERBOT_EXP_ELIXIR_VNUMS[] = { 39037, 39038, 39039, 39040, 39041, 39042, 72727, 72728, 72729, 72730, 76004, 76005 };
 	// Wykrywacz Kamieni Metin: useless to a bot (it draws on a client), wanted
 	// by players - counter goods, never merchant scrap.
 	const DWORD PLAYERBOT_METIN_DETECTOR_VNUMS[] = { 27989, 76006 };
@@ -2043,10 +2201,18 @@ namespace
 	// drop of it has told the bot all it needs to know.
 	const int PLAYERBOT_SPOT_MATERIAL_BONUS_PERCENT = 50;
 	const DWORD PLAYERBOT_SPOT_MATERIAL_BARREN_FIGHTS = 200;
-	const int PLAYERBOT_BAKE_MIN_FISH = 30;
+	// Thirty was a batch no bot ever reached: the whole world held 39 dead fish
+	// between all its anglers, so the wood was never bought, no fire was ever
+	// lit and not one grilled fish existed. A session brings home a handful,
+	// and a fire takes any number of them.
+	const int PLAYERBOT_BAKE_MIN_FISH = 5;
 	const int PLAYERBOT_BAKE_RANGE = 700;
 	const DWORD PLAYERBOT_GRILLED_FISH_FIRST_VNUM = 27863;
-	const DWORD PLAYERBOT_GRILLED_FISH_LAST_VNUM = 27876;
+	// 27883, not 27876. The grilled fish run to Pieczony Zloty Karas, and the
+	// seven above the old ceiling are the good ones - the speed and dexterity
+	// buffs and the 1800-second Golden Crucian - so every one of them fell
+	// through to the junk rule's `return true` and was vendored for pennies.
+	const DWORD PLAYERBOT_GRILLED_FISH_LAST_VNUM = 27883;
 	// What a shellfish holds, from the engine's own table (char_item.cpp,
 	// case 27987): half a Stone Piece, thirty percent nothing, then a white,
 	// a blue or a blood pearl. Thousandths. Once the population has opened
@@ -2244,6 +2410,25 @@ namespace
 	// M2 or medal one, drawn evenly. The Metin dropper is a third of the metin
 	// hunter role instead, because hunting stones is that role's whole day.
 	const DWORD PLAYERBOT_DROPPER_SHARE = 8;
+	// A dropper stops levelling once it reaches the band it farms.
+	//
+	// Every drop in this engine is faded by aiPercentByDeltaLev, so a farmer
+	// that keeps levelling walks away from its own table: the medal is a kill
+	// group and is worth 1 at fifteen levels over the monster, which is how a
+	// bot of forty-five came to need 140 trips through the easy Monkey Dungeon
+	// for one medal. The operator's rule is that a dropper "ma miec staly level
+	// i robil zawsze to samo" - so at its working level it takes the engine's
+	// own AFFECT_EXP_BLOCK, which PointChange honours by returning before it
+	// adds anything, and goes on dropping and selling for good.
+	//
+	// The numbers are each personality's own ground: the easy dungeon's monkeys
+	// are 22-30, the second village's soldiers 18-36, the guild map's spawns
+	// 8-24 with the level-30 weapon farm running to forty, and a stone hunter's
+	// book top-up dies fifteen levels over the stone.
+	const BYTE PLAYERBOT_EXP_LOCK_METIN_DROPPER = 40;
+	const BYTE PLAYERBOT_EXP_LOCK_M3_DROPPER = 30;
+	const BYTE PLAYERBOT_EXP_LOCK_M2_DROPPER = 36;
+	const BYTE PLAYERBOT_EXP_LOCK_MEDAL_DROPPER = 33;
 	// A dropper opens its stall on a third of its town visits, against one in
 	// ten for an adventurer and every visit for a merchant: it hunts for a
 	// living and sells what the hunt brought, not the other way round.
@@ -2334,8 +2519,56 @@ namespace
 	// talk through, so it is created for the price of a rod and a bundle of
 	// wood together. Unused on r40250, which has no pass.
 	const DWORD PLAYERBOT_FISHING_PASS_PRICE = 50000;
+	// The level a bot may start fishing at. The mt2009 engine's own
+	// CHARACTER::fishing() refused under fifty, and the two gates here refused
+	// with it so that nobody walked to a bank it would turn away; the operator
+	// asked for thirty, so the engine's number moves with them
+	// (playerbotify.py, apply_fishing_min_level) and this is the one place the
+	// AI states it.
+	const BYTE PLAYERBOT_FISHING_MIN_LEVEL = 30;
 	const DWORD PLAYERBOT_FISHING_BAIT_VNUM = 27801;  // Robak
 	const DWORD PLAYERBOT_SHELLFISH_VNUM = 27987;     // Malz
+
+	// Mining. The engine has carried the whole mechanism since r40250 and this
+	// world spawns none of it - see playerbot_mining.h, which places the veins
+	// and keeps them standing.
+	//
+	// Kilof+0 (world.item_proto 29101) carries LIMIT_LEVEL 30 and shop_buy_price
+	// 80000. Deokbae's pick_shop stands on three maps no bot is ever sent to, so
+	// the pickaxe is created for the shop's own price the way the fishing pass
+	// and the Forgetting Scroll are.
+	const DWORD PLAYERBOT_PICKAXE_VNUM = 29101;
+	const DWORD PLAYERBOT_PICKAXE_PRICE = 80000;
+	const BYTE PLAYERBOT_MINING_MIN_LEVEL = 30;
+	// A small share on purpose. A vein pays one roll every half minute, so a
+	// crowd at one is a crowd doing nothing; the collector personality, which
+	// already keeps things rather than selling them, takes the larger share.
+	const int PLAYERBOT_MINING_PERCENT = 6;
+	const int PLAYERBOT_MINING_COLLECTOR_PERCENT = 22;
+	// A vein deletes itself after 7-15 minutes (kill_ore_load_event), so the
+	// sites are swept for gaps once a minute.
+	const DWORD PLAYERBOT_ORE_VEIN_CHECK_INTERVAL = 60000;
+	const int PLAYERBOT_MINING_ARRIVE = 300;
+	// The engine draws 5..15 swings and fires the event 2*count seconds later,
+	// so the longest swing is thirty seconds; asking again before it resolves
+	// would cancel it.
+	const DWORD PLAYERBOT_MINING_SWING_WAIT = 32000;
+	const DWORD PLAYERBOT_MINING_SWING_RETRY = 8000;
+	const DWORD PLAYERBOT_MINING_SESSION_MIN = 360000;
+	const DWORD PLAYERBOT_MINING_SESSION_MAX = 720000;
+	const DWORD PLAYERBOT_MINING_REST_MIN = 900000;
+	const DWORD PLAYERBOT_MINING_REST_MAX = 2700000;
+	const DWORD PLAYERBOT_MINING_NO_PICK_RETRY = 1800000;
+	// mining::ORE_COUNT_FOR_REFINE. A hundred raw ore is one smelted piece.
+	const int PLAYERBOT_ORE_SMELT_COUNT = 100;
+	const DWORD PLAYERBOT_ORE_SMELT_FEE = 5000;
+
+	// Two kingdoms meeting on shared ground. Only ever on a frontier map, only
+	// between bots, and only while the operator's KINGDOMPVP switch is above
+	// zero - see playerbot_config.h, where it defaults to off.
+	const DWORD PLAYERBOT_KINGDOM_PVP_INTERVAL = 120000;
+	const int PLAYERBOT_KINGDOM_PVP_RANGE = 1500;
+	const int PLAYERBOT_KINGDOM_PVP_LEVEL_DELTA = 8;
 	// What a shell can hold: Biala / Niebieska / Krwawa Perla.
 	const DWORD PLAYERBOT_PEARL_FIRST_VNUM = 27992;
 	const DWORD PLAYERBOT_PEARL_LAST_VNUM = 27994;
@@ -2620,9 +2853,12 @@ namespace
 	const long PLAYERBOT_THIRD_HAND_REWIND_BELOW = 10080;
 	const DWORD PLAYERBOT_THIRD_HAND_INTERVAL = 300000;
 	// How long a bot works one chamber before walking to the portal that leads
-	// to the next. Four minutes is two respawns of a room's dozen monsters; the
-	// thirty-minute visit therefore covers six or seven of the eleven chambers.
-	const DWORD PLAYERBOT_MONKEY_CHAMBER_DWELL = 240000;
+	// to the next - and, now that the engine refuses to move a bot through a
+	// GOTO door for the same time after the last one moved it, the only way a
+	// bot leaves a chamber at all. The value and the measurements behind it
+	// live in playerbot_monkey_policy.h, because char.cpp has to read the same
+	// number: two copies of it are how a bounce would come back.
+	const DWORD PLAYERBOT_MONKEY_CHAMBER_DWELL = playerbot_monkey::kChamberDwellMs;
 	// Every kingdom has an easy dungeon of its own and they are three separate
 	// maps: metin2_map_monkey_dungeon_11 (5), _12 (25) and _13 (45), at three
 	// base positions 76800 apart. Only Chunjo's was ever listed here, so a
@@ -2968,7 +3204,13 @@ namespace
 		// The Biologist's Curse Book: the Tormentors of the valley's central
 		// island, measured at 68 spawn points each through the valley's own
 		// group_group 306. 756 is already listed above for the hunting rows.
-		{ 706, 64, 0 }
+		{ 706, 64, 0 },
+		// The Demon Tower, now that game1 hosts it. These four are the whole of
+		// the Biologist's level-50 row: 1001 carries the Demon Souvenir and all
+		// four carry the key (30222) through the quest's own kill hook. They
+		// stand nowhere else in this world, which is why that row was switched
+		// off until the map moved.
+		{ 1001, 66, 0 }, { 1002, 66, 0 }, { 1003, 66, 0 }, { 1004, 66, 0 }
 	};
 
 	bool IsPlayerBotHuntingMobHosted(DWORD vnum, long lMapIndex = 0)
@@ -3431,7 +3673,10 @@ namespace
 		// BOT_ACTION_RECOVER, which is a bot getting its health back, and from
 		// BOT_ACTION_STALL, which is a bot behind a counter. Appended, never
 		// inserted - the id goes into the status file the panel reads.
-		BOT_ACTION_TOWN_REST
+		BOT_ACTION_TOWN_REST,
+		// Digging at an ore vein. Appended for the same reason as the one above:
+		// both panels read these ids out of playerbot_status.tsv by position.
+		BOT_ACTION_MINING
 	};
 
 	// Where an Archer is in its course. WAIT_READY is the absence of a session
@@ -4179,7 +4424,14 @@ namespace
 	// was a real status line.
 	bool PlayerBotMapHasMetinStones(long mapIndex)
 	{
-		return !IsPlayerBotSpiderMap(mapIndex) && !IsPlayerBotMonkeyMap(mapIndex);
+		// The two forests carry no stone.txt at all, so there is nothing there to
+		// break. The Demon Tower does carry one (8015), and it is excluded on
+		// purpose: the operator asked that bots not run that dungeon until it is
+		// worked out properly, and a stone hunter sent inside is exactly how
+		// they would start.
+		return !IsPlayerBotSpiderMap(mapIndex) && !IsPlayerBotMonkeyMap(mapIndex) &&
+				mapIndex != PLAYERBOT_MAP_FOREST && mapIndex != PLAYERBOT_MAP_RED_FOREST &&
+				mapIndex != PLAYERBOT_MAP_DEMON_TOWER;
 	}
 
 	// Hunting stones right now: by role for life, or by expedition for half an

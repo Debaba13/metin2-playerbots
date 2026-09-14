@@ -91,6 +91,11 @@ linux-port-mt2009/docker/game/src/server/game/src/char_battle.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_shop.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_skill.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_state.cpp
+# pvp.cpp carries the duel hook: a challenge to a bot is recorded for its own
+# tick to agree to, because a bot has no client to answer with a /pvp of its
+# own. Without this line the staged file never reaches a player's machine and
+# the whole feature exists only here.
+linux-port-mt2009/docker/game/src/server/game/src/pvp.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd_general.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd_gm.cpp

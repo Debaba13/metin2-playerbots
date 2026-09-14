@@ -317,9 +317,42 @@ namespace
 		return proto && (proto->dwFlag & SKILL_FLAG_SPLASH) != 0;
 	}
 
+	// The character this bot agreed to duel, if it is still standing where the
+	// bot can reach it. Resolved here rather than in the policy header because
+	// that one is shared with an engine translation unit and knows no
+	// LPCHARACTER; everything below the include of playerbot_combat.h may ask.
+	LPCHARACTER FindPlayerBotDuelOpponent(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (!ch)
+			return NULL;
+		const uint32_t foePid = playerbot_pvp::GetDuelOpponent(ch->GetPlayerID(), dwNow);
+		if (foePid == 0)
+			return NULL;
+		LPCHARACTER foe = CHARACTER_MANAGER::instance().FindByPID((DWORD)foePid);
+		if (!foe || foe == ch || foe->IsDead() || !foe->IsPC() ||
+				foe->GetMapIndex() != ch->GetMapIndex())
+			return NULL;
+		return foe;
+	}
+
+	bool IsPlayerBotDuelOpponent(LPCHARACTER ch, LPCHARACTER target, DWORD dwNow)
+	{
+		if (!ch || !target)
+			return false;
+		return FindPlayerBotDuelOpponent(ch, dwNow) == target;
+	}
+
 	bool ExecutePlayerBotAttackSkill(LPCHARACTER ch, LPCHARACTER target, TPlayerBotAIState& state, DWORD dwNow)
 	{
-		if (!ch || !target || ch->GetSkillGroup() == 0 || dwNow < state.dwNextSkillCastTime)
+		// Under a polymorph marble the engine refuses every skill - five
+		// separate IsPolymorphed() returns in char_skill.cpp - so a bot that
+		// kept casting spent its whole rotation on refusals and swung at
+		// nothing in between. The marble is used on a boss precisely because
+		// the plain attack is what it multiplies, so this is also the right
+		// thing to do rather than merely the cheap one ("na marmurach nie
+		// uzywa sie skilli", Tieru).
+		if (!ch || !target || ch->GetSkillGroup() == 0 || ch->IsPolymorphed() ||
+				dwNow < state.dwNextSkillCastTime)
 			return false;
 		LPITEM archerBow = NULL;
 		LPITEM archerArrow = NULL;

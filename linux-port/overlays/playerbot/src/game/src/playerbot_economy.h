@@ -795,6 +795,30 @@ namespace
 				vnum == PLAYERBOT_SHELLFISH_VNUM || vnum == PLAYERBOT_CAMPFIRE_VNUM ||
 				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM))
 			return false;
+		// A pickaxe is tackle, exactly as a rod is, and the same rule applies:
+		// one is the tool, a second one is scrap. It costs eighty thousand yang
+		// and the junk rule's default is to sell, so without this a miner would
+		// vendor its pickaxe on the town trip after every session.
+		if (item->GetType() == ITEM_PICK)
+		{
+			LPITEM worn = ch->GetWear(WEAR_WEAPON);
+			if (worn && worn != item && worn->GetType() == ITEM_PICK && worn->GetVnum() >= vnum)
+				return true;
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+			{
+				LPITEM other = ch->GetInventoryItem(cell);
+				if (other && other != item && other->GetType() == ITEM_PICK &&
+						(other->GetVnum() > vnum || (other->GetVnum() == vnum && other->GetID() < item->GetID())))
+					return true;
+			}
+			return false;
+		}
+		// Ore, raw and smelted. A hundred raw make one smelted piece and the
+		// smelted ones are what a player crosses a market for, so neither is
+		// ever the merchant's - they are the whole point of the digging, and
+		// the counter is where the operator asked the trade to happen.
+		if (IsPlayerBotRawOre(vnum) || IsPlayerBotSmeltedOre(vnum))
+			return false;
 		// Hair dye. The merchant pays nothing for it and a player will: it is
 		// the only way to change a character's colour for good, and the anglers
 		// pull it out of the water by the handful.

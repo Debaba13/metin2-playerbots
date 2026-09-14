@@ -70,6 +70,50 @@ namespace
 				vnum == PLAYERBOT_BATTLE_HORSE_MOB_SCORPION_ARCHER;
 	}
 
+	// The military horse: the same shape one step up.
+	//
+	// Medals carry a horse to twenty and stop there; the twenty-first level is a
+	// trial in the Demon Tower, with no clock on it, exactly as the combat horse
+	// is a trial in the desert. That is what the operator asked for, and it is
+	// why map 66 had to be moved onto the core the bots live on - 1001-1004
+	// stand nowhere else in this world, so before the move this trial could
+	// never have been started, let alone finished.
+	int GetPlayerBotMilitaryHorseKills(LPCHARACTER ch)
+	{
+		if (!ch)
+			return 0;
+		return std::max(0, ch->GetQuestFlag(PLAYERBOT_MILITARY_HORSE_KILLS_FLAG));
+	}
+
+	bool IsPlayerBotMilitaryHorseCandidate(LPCHARACTER ch)
+	{
+		return ch &&
+				ch->GetLevel() >= PLAYERBOT_MILITARY_HORSE_MIN_LEVEL &&
+				ch->GetHorseLevel() == PLAYERBOT_MILITARY_HORSE_FROM_HORSE_LEVEL &&
+				ch->GetHorseHealth() > 0;
+	}
+
+	bool IsPlayerBotOnMilitaryHorseTrial(LPCHARACTER ch)
+	{
+		return IsPlayerBotMilitaryHorseCandidate(ch) &&
+				GetPlayerBotMilitaryHorseKills(ch) < PLAYERBOT_MILITARY_HORSE_KILLS;
+	}
+
+	bool IsPlayerBotMilitaryHorseEarned(LPCHARACTER ch)
+	{
+		return IsPlayerBotMilitaryHorseCandidate(ch) &&
+				GetPlayerBotMilitaryHorseKills(ch) >= PLAYERBOT_MILITARY_HORSE_KILLS;
+	}
+
+	bool IsPlayerBotMilitaryHorseTrialMob(DWORD vnum)
+	{
+		for (size_t i = 0; i < sizeof(PLAYERBOT_MILITARY_HORSE_MOBS) /
+				sizeof(PLAYERBOT_MILITARY_HORSE_MOBS[0]); ++i)
+			if (PLAYERBOT_MILITARY_HORSE_MOBS[i] == vnum)
+				return true;
+		return false;
+	}
+
 	// Called wherever a bot has just swung at something. The engine has no hook
 	// that says "you killed this", so the kill is read off the target the tick
 	// after the blow: still the bot's pointer, now dead. The VID is remembered
@@ -83,6 +127,25 @@ namespace
 		if (state.dwLastKillCreditedVID == vid)
 			return;
 		state.dwLastKillCreditedVID = vid;
+
+		// The military trial is credited from the same place and under the same
+		// VID guard. A second hook of its own would have had to share
+		// dwLastKillCreditedVID with this one, and whichever ran first would
+		// have eaten the other's kill.
+		if (IsPlayerBotOnMilitaryHorseTrial(ch) &&
+				IsPlayerBotMilitaryHorseTrialMob(target->GetRaceNum()))
+		{
+			const int demonKills = GetPlayerBotMilitaryHorseKills(ch) + 1;
+			ch->SetQuestFlag(PLAYERBOT_MILITARY_HORSE_KILLS_FLAG, demonKills);
+			if (demonKills >= PLAYERBOT_MILITARY_HORSE_KILLS)
+				sys_log(0, "PLAYERBOT_HORSE: military trial complete pid=%u name=%s kills=%d",
+						ch->GetPlayerID(), ch->GetName(), demonKills);
+			else if (demonKills % 10 == 0)
+				sys_log(0, "PLAYERBOT_HORSE: military trial pid=%u name=%s kills=%d/%d",
+						ch->GetPlayerID(), ch->GetName(), demonKills,
+						PLAYERBOT_MILITARY_HORSE_KILLS);
+			return;
+		}
 
 		if (!IsPlayerBotOnBattleHorseTrial(ch) ||
 				!IsPlayerBotBattleHorseTrialMob(target->GetRaceNum()))

@@ -49,17 +49,6 @@ CREATE TABLE IF NOT EXISTS `dragon_slay_log` (
   `end_time` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `fish_log` (
-  `time` datetime NOT NULL DEFAULT current_timestamp(),
-  `player_id` int(10) unsigned NOT NULL DEFAULT 0,
-  `map_index` tinyint(4) NOT NULL DEFAULT 0,
-  `fish_id` int(10) unsigned NOT NULL DEFAULT 0,
-  `fishing_level` int(11) NOT NULL DEFAULT 0,
-  `waiting_time` int(11) NOT NULL DEFAULT 0,
-  `success` tinyint(4) NOT NULL DEFAULT 0,
-  `size` smallint(6) NOT NULL DEFAULT 0
-) ENGINE=InnoDB;
-
 CREATE TABLE IF NOT EXISTS `goldlog` (
   `date` varchar(10) NOT NULL DEFAULT current_date(),
   `time` varchar(8) NOT NULL DEFAULT '00:00:00',
@@ -136,6 +125,17 @@ CREATE TABLE IF NOT EXISTS `speed_hack` (
 ) ENGINE=InnoDB;
 
 ALTER TABLE `loginlog2` ADD COLUMN IF NOT EXISTS `hwid` varchar(255) DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS `fish_log` (
+  `time` datetime NOT NULL DEFAULT current_timestamp(),
+  `player_id` int(10) unsigned NOT NULL DEFAULT 0,
+  `item_vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  `count` int(11) NOT NULL DEFAULT 0,
+  `rod_level` int(11) NOT NULL DEFAULT 0,
+  `bait_vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  KEY `player_id_idx` (`player_id`),
+  KEY `time_idx` (`time`)
+) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS `loginlog` (
   `type` varchar(10) NOT NULL DEFAULT 'LOGIN',

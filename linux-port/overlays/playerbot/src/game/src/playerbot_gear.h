@@ -2491,6 +2491,14 @@ namespace
 		if (ch->GetMaxHP() <= 0 || ch->GetHP() * 100 > ch->GetMaxHP() * PLAYERBOT_POTION_HP_PERCENT)
 			return false;
 
+		// A duel is fought without drinking. The operator's rule, and the only
+		// thing that makes a bot-against-bot fight worth watching: two bots with
+		// full bags of red potions do not have a fight, they have an endurance
+		// test. Asked before the clock below, so a duel does not spend the
+		// bot's next potion attempt either.
+		if (playerbot_pvp::IsInDuel(ch->GetPlayerID(), dwNow))
+			return false;
+
 		if (dwNow < state.dwNextPotionTime)
 			return false;
 

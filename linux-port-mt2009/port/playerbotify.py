@@ -1213,6 +1213,10 @@ def main(root):
     apply_playerbot_offline_shops(game, db)
     apply_refine_quality_of_life(game)
     apply_affect_remove_collect(game)
+    apply_fishing_min_level(game)
+    apply_playerbot_party_invites(game)
+    apply_playerbot_pvp_challenges(game)
+    apply_playerbot_monkey_doors(game)
     apply_gm_panel(game)
     print('playerbotify: done')
 
@@ -1624,6 +1628,150 @@ def apply_affect_remove_collect(game):
          '\t\t\t{ "remove_collect",\t\taffect_remove_collect\t\t},\n'
          '\t\t\t{ "remove_all_collect",\taffect_remove_all_collect\t},\n',
          marker='{ "remove_collect",')
+
+
+def apply_playerbot_pvp_challenges(game):
+    # Wyzwanie na pojedynek dociera do bota.
+    #
+    # CPVPManager::Insert to zgoda obustronna: pierwsze wywolanie tworzy CPVP i
+    # mowi ofierze "%s challenged you to a battle", drugie - z drugiej strony -
+    # dochodzi do Agree() i walka rusza. Gracz pisze /pvp <vid>; bot nie ma
+    # klienta, ktory odpisze tym samym, wiec wyzwanie bota wisialo bez
+    # odpowiedzi w nieskonczonosc.
+    #
+    # Hak siedzi na KONCU Insert, ktory jest osiagany dokladnie raz na nowy
+    # pojedynek: galaz wyzej (Find + Agree) wraca wczesniej, gdy para juz
+    # istnieje. Dzieki temu odpowiedz bota - ktora tez jest Insert - nie zapisze
+    # sama siebie jako nowego wyzwania.
+    #
+    # Czasu tu nie stemplujemy: ile bot czeka przed zgoda, to sprawa jego
+    # zachowania, a nie silnika.
+    edit(os.path.join(game, 'pvp.cpp'),
+         '#include "war_map.h"\n',
+         '#include "war_map.h"\n#include "playerbot_pvp_policy.h"\n',
+         marker='#include "playerbot_pvp_policy.h"\n')
+    edit(os.path.join(game, 'pvp.cpp'),
+         '\t// END_OF_NOTIFY_PVP_MESSAGE\n}\n',
+         '\t// END_OF_NOTIFY_PVP_MESSAGE\n'
+         '\n'
+         '\t// Bot nie ma klienta, ktory odpisze /pvp - zostawiamy wyzwanie\n'
+         '\t// jego tickowi (AcceptPlayerBotPvpChallenge).\n'
+         '\tif (pkVictim->GetDesc() && pkVictim->GetDesc()->IsBot())\n'
+         '\t\tplayerbot_pvp::NoteChallenge(pkChr->GetPlayerID(), pkVictim->GetPlayerID());\n'
+         '}\n',
+         marker='playerbot_pvp::NoteChallenge(')
+
+
+def apply_fishing_min_level(game):
+    # Lowienie od 30 poziomu zamiast od 50 (prosba operatora).
+    #
+    # CHARACTER::fishing() na tej linii odmawia ponizej piecdziesiatki i to jest
+    # jedyne miejsce, ktore o tym decyduje po stronie silnika - reszta bramek
+    # (mapa, przepustka, przyneta) zostaje bez zmian. Nakladka pyta o ten sam
+    # prog przez PLAYERBOT_FISHING_MIN_LEVEL w dwoch miejscach (activities.h,
+    # travel.h), zeby bot ponizej progu nie szedl nad wode, ktora i tak by go
+    # odprawila; te dwie liczby musza sie zgadzac.
+    edit(os.path.join(game, 'char.cpp'),
+         '\tif (GetLevel() < 50)\n\t\treturn;\n',
+         '\t// Lowienie od 30 poziomu - patrz PLAYERBOT_FISHING_MIN_LEVEL.\n'
+         '\tif (GetLevel() < 30)\n\t\treturn;\n',
+         marker='\t// Lowienie od 30 poziomu - patrz PLAYERBOT_FISHING_MIN_LEVEL.\n')
+
+
+def apply_playerbot_monkey_doors(game):
+    # Drzwi GOTO w Lochu Malp przenosza bota najwyzej raz na czas pobytu w
+    # komorze.
+    #
+    # Loch to jedenascie komor polaczonych wylacznie NPC typu GOTO, a
+    # warp_npc_event przenosi kazdego w promieniu trzystu jednostek, dwa razy na
+    # sekunde. Bot, ktory przejdzie przez drzwi, laduje obok drzwi prowadzacych
+    # prosto z powrotem - i jesli zatrzyma sie tam, zeby walczyc, to zdarzenie
+    # odsylalo go tam, skad przyszedl, po kilku sekundach. Zmierzone na 303
+    # powrotach do komory wejsciowej: mediana 65 s, 29% w ciagu pietnastu
+    # sekund, a swiadome przejscie nie jest mozliwe przed uplywem czasu pobytu.
+    # Stad "caly loch w jednej linii": 905 przejsc na mapie 108, prawie
+    # wszystkie 0<->7 i 0<->1.
+    #
+    # Czas blokady i czas pobytu to jedna stala (playerbot_monkey_policy.h), bo
+    # tylko wtedy przejscie wybrane przez bota nigdy nie trafi na blokade, a
+    # odbicie zawsze. Gracza to nie dotyczy.
+    edit(os.path.join(game, 'char.cpp'),
+         '#include "pvp.h"\n#include "party.h"\n',
+         '#include "pvp.h"\n#include "party.h"\n#include "playerbot_monkey_policy.h"\n',
+         marker='#include "playerbot_monkey_policy.h"\n')
+    edit(os.path.join(game, 'char.cpp'),
+         '\t\t\t\t\tpkChr->Show(pkChr->GetMapIndex(), m_lTargetX, m_lTargetY);\n'
+         '\t\t\t\t\tpkChr->Stop();\n',
+         '\t\t\t\t\t// A door moves a playerbot once per chamber dwell and no more.\n'
+         '\t\t\t\t\t// A bot comes through a door beside the door that leads straight\n'
+         '\t\t\t\t\t// back, and one that stopped there to fight was returned by this\n'
+         '\t\t\t\t\t// event within seconds - the bot never chose it, and the dungeon\n'
+         '\t\t\t\t\t// was walked in one line. See playerbot_monkey_policy.h.\n'
+         '\t\t\t\t\tif (pkChr->GetDesc() && pkChr->GetDesc()->IsBot())\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tconst DWORD now = get_dword_time();\n'
+         '\t\t\t\t\t\tif (playerbot_monkey::IsGotoCrossingBlocked(pkChr->GetPlayerID(), now))\n'
+         '\t\t\t\t\t\t\treturn;\n'
+         '\t\t\t\t\t\tplayerbot_monkey::NoteGotoCrossing(pkChr->GetPlayerID(), now);\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t\tpkChr->Show(pkChr->GetMapIndex(), m_lTargetX, m_lTargetY);\n'
+         '\t\t\t\t\tpkChr->Stop();\n',
+         marker='playerbot_monkey::NoteGotoCrossing(')
+
+
+def apply_playerbot_party_invites(game):
+    # Zaproszenie gracza do party dociera do bota.
+    #
+    # CHARACTER::PartyInvite konczy sie wyslaniem HEADER_GC_PARTY_INVITE na
+    # deskryptor zapraszanego. Bot ma deskryptor, ale nie ma za nim klienta,
+    # wiec pakiet nie dociera do nikogo, nikt nie klika "Akceptuj" i po
+    # dziesieciu sekundach zdarzenie zaproszenia wygasa - zapraszanie bota nie
+    # robilo dotad dosłownie nic i nie zostawialo po sobie sladu.
+    #
+    # Silnik nie moze odpowiedziec za bota, bo akceptacja jest metoda LIDERA
+    # (leader->PartyInviteAccept(guest)) i musi sie wykonac, dopoki zdarzenie
+    # zyje. Wiec silnik tylko zapisuje, ze bot zostal zaproszony, a odpowiada
+    # tick bota (AcceptPlayerBotPartyInvite) - tam, gdzie mieszkaja wszystkie
+    # inne decyzje botow. Warunki dolaczenia zostaja silnikowe: to samo
+    # krolestwo, roznica trzydziestu poziomow i wolne miejsce w osmioosobowej
+    # druzynie.
+    edit(os.path.join(game, 'char.cpp'),
+         '#include "pvp.h"\n#include "party.h"\n',
+         '#include "pvp.h"\n#include "party.h"\n#include "playerbot_party_policy.h"\n',
+         marker='#include "playerbot_party_policy.h"\n')
+    edit(os.path.join(game, 'char.cpp'),
+         '\tTPacketGCPartyInvite p;\n'
+         '\tp.header = HEADER_GC_PARTY_INVITE;\n',
+         '\t// Bot nie ma klienta, ktory nacisnie "Akceptuj" - zostawiamy\n'
+         '\t// zaproszenie jego tickowi i nie wysylamy pakietu w prozne.\n'
+         '\tif (pchInvitee->GetDesc() && pchInvitee->GetDesc()->IsBot())\n'
+         '\t{\n'
+         '\t\tplayerbot_party::NoteInvite(GetPlayerID(), pchInvitee->GetPlayerID(),\n'
+         '\t\t\t\t(uint32_t) get_global_time());\n'
+         '\t\treturn;\n'
+         '\t}\n'
+         '\n'
+         '\tTPacketGCPartyInvite p;\n'
+         '\tp.header = HEADER_GC_PARTY_INVITE;\n',
+         marker='playerbot_party::NoteInvite(')
+    # Dlaczego bot nie odpowiedzial na zaproszenie, musi powiedziec log.
+    #
+    # Kazda odmowa ponizej konczy sie ChatPacket do zapraszajacego i return, a
+    # gracz, ktory tej linii nie przeczyta, zglasza tylko "bot mnie
+    # zignorowal". W 102 plikach syslog nie ma ani jednego przyjecia
+    # zaproszenia, a zadna z bramek silnika nie tlumaczy stu procent - wiec
+    # zamiast kolejnej hipotezy niech nastepny test poda powod.
+    edit(os.path.join(game, 'char.cpp'),
+         'void CHARACTER::PartyInvite(LPCHARACTER pchInvitee)\n{\n',
+         'void CHARACTER::PartyInvite(LPCHARACTER pchInvitee)\n{\n'
+         '\tif (pchInvitee && pchInvitee->GetDesc() && pchInvitee->GetDesc()->IsBot())\n'
+         '\t\tsys_log(0, "PLAYERBOT_PARTY: invite pid=%u name=%s bot_pid=%u bot=%s '
+         'errcode=%d my_party=%d bot_party=%d my_level=%d bot_level=%d",\n'
+         '\t\t\t\tGetPlayerID(), GetName(), pchInvitee->GetPlayerID(), pchInvitee->GetName(),\n'
+         '\t\t\t\t(int) IsPartyJoinableCondition(this, pchInvitee),\n'
+         '\t\t\t\tGetParty() ? 1 : 0, pchInvitee->GetParty() ? 1 : 0,\n'
+         '\t\t\t\t(int) GetLevel(), (int) pchInvitee->GetLevel());\n',
+         marker='PLAYERBOT_PARTY: invite pid=')
 
 
 def apply_gm_panel(game):

@@ -151,6 +151,72 @@ namespace
 		return !cells.empty();
 	}
 
+	// And out of it again, the way CInputMain::SafeboxCheckout does it.
+	//
+	// The store was one-way for as long as it has existed, and the note above
+	// said so outright: "books put in are never taken out". akhigubernator made
+	// the case that a cold store with no door is a leak rather than a design -
+	// the page fills and is never freed, what was junk an hour ago can be
+	// wanted now, and a bot can be sitting on books it has since grown into.
+	// He is right, and the rule then writes itself: take back exactly what the
+	// three deposit rules above would no longer send down. This is their
+	// inverse, asked item by item.
+	//
+	// Gear is deliberately not in it. IsPlayerBotWearableUpgrade judges a piece
+	// by the bag cell it sits in, which a stored item does not have - and
+	// measured on this world the safebox holds 2737 materials, 29 usables and
+	// not one weapon, so the case does not arise. Materials are the whole of
+	// what is down there, which is also why "it fills up and is never freed"
+	// was the right complaint.
+	int WithdrawPlayerBotSafebox(LPCHARACTER ch, CSafebox* box)
+	{
+		if (!ch || !box)
+			return 0;
+		int taken = 0;
+		for (DWORD pos = 0; pos < SAFEBOX_MAX_NUM &&
+				taken < PLAYERBOT_SAFEBOX_WITHDRAW_MAX; ++pos)
+		{
+			if (!box->IsValidPosition(pos))
+				continue;
+			LPITEM item = box->Get(pos);
+			if (!item)
+				continue;
+
+			bool wanted = false;
+			if (item->GetType() == ITEM_SKILLBOOK)
+				// No longer surplus: the skill reached Master and the keep
+				// limit rose with it, or the bot finally has a skill group.
+				wanted = !IsPlayerBotSurplusSkillBook(ch, item);
+			else if (IsPlayerBotTradeableMaterial(item))
+				// Short of it at the anvil, or the ledger says somebody is and
+				// this bot can put up a counter - the exact two tests the
+				// deposit uses to decide a material may go down.
+				wanted = PlayerBotNeedsRefineMaterial(ch, item->GetVnum()) ||
+						(GetPlayerBotLedgerDemand(item->GetVnum()) > 0 &&
+							PlayerBotCanOpenShop(ch));
+			if (!wanted)
+				continue;
+
+			// Room for this exact piece or it stays where it is; a bag filled
+			// by the withdrawal would be emptied into the box on the next trip.
+			const int cell = ch->GetEmptyInventory(item->GetSize());
+			if (cell < 0)
+				break;
+			char szHint[128];
+			snprintf(szHint, sizeof(szHint), "%s %u", item->GetName(),
+					(unsigned int)item->GetCount());
+			box->Remove(pos);
+			item->AddToCharacter(ch, TItemPos(INVENTORY, (WORD)cell));
+			ITEM_MANAGER::instance().FlushDelayedSave(item);
+			LogManager::instance().ItemLog(ch, item, "SAFEBOX GET", szHint);
+			sys_log(0, "PLAYERBOT_TOWN: safebox withdraw pid=%u name=%s vnum=%u count=%u",
+					ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
+					(unsigned int)item->GetCount());
+			++taken;
+		}
+		return taken;
+	}
+
 	// Into the open safebox, the way CInputMain::SafeboxCheckin does it: off the
 	// character, onto the first empty slot of the grid. Returns how many books
 	// went in; the rest stay in the bag as goods when the page is full.
@@ -3312,10 +3378,18 @@ namespace
 					PlayerBotChangeGold(ch, -PLAYERBOT_SAFEBOX_FEE);
 					TSafeboxChangeSizePacket page;
 					page.dwID = ch->GetDesc()->GetAccountTable().id;
-					page.bSize = 1;
+					// Two pages, matching the window the storekeeper opens and
+					// the SetSafeboxSize call below; one was half the store the
+					// account is entitled to.
+					page.bSize = PLAYERBOT_SAFEBOX_PAGES;
 					db_clientdesc->DBPacket(HEADER_GD_SAFEBOX_CHANGE_SIZE, ch->GetDesc()->GetHandle(),
 							&page, sizeof(page));
-					ch->SetSafeboxSize(SAFEBOX_PAGE_SIZE);
+					// A page count. SAFEBOX_PAGE_SIZE is forty-five cells and
+					// SetSafeboxSize refuses anything at or above three, so this
+					// call did nothing at all for as long as it has existed -
+					// which is the real cause of the "page not ready" branch
+					// below, not a slow DB round trip.
+					ch->SetSafeboxSize(PLAYERBOT_SAFEBOX_PAGES);
 					ch->SetQuestFlag(PLAYERBOT_SAFEBOX_PAID_FLAG, 1);
 					sys_log(0, "PLAYERBOT_TOWN: safebox paid pid=%u name=%s account=%u fee=%d gold_left=%lld",
 							ch->GetPlayerID(), ch->GetName(), page.dwID, PLAYERBOT_SAFEBOX_FEE, (long long)ch->GetGold());
@@ -3364,9 +3438,14 @@ namespace
 			if (box)
 			{
 				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box);
+				// And then back the other way, on the same open box. The deposit
+				// runs first on purpose: it is what frees the bag cells the
+				// withdrawal then needs, so a bot under pressure can still take
+				// back the one material it came for.
+				const int taken = WithdrawPlayerBotSafebox(ch, box);
 				ch->CloseSafebox();
-				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d books_left=%d free_cells=%d",
-						ch->GetPlayerID(), ch->GetName(), deposited, CountPlayerBotSkillBooks(ch),
+				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d",
+						ch->GetPlayerID(), ch->GetName(), deposited, taken, CountPlayerBotSkillBooks(ch),
 						CountPlayerBotFreeInventoryCells(ch));
 				done = true;
 			}

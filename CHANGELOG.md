@@ -17,6 +17,400 @@ every version here.
 
 ---
 
+## 2.0.40 — 2026-09-14
+
+Serwer. Boty biją się wreszcie w pojedynkach, na które się zgodziły, nie marnują
+umiejętności pod marmurem polimorfii, a łucznik wabi już przy trzech osobach w
+drużynie zamiast pięciu. Do tego wydanie pilnuje teraz własnego manifestu — bo
+2.0.38 nie dotarło do nikogo i nikt się o tym nie dowiedział. Klient bez zmian
+(zostaje 2.0.5).
+
+### Pojedynek, w którym padają ciosy
+
+Bot przyjmował wyzwanie i wracał do swoich potworów. Przyczyny były dwie i obie
+po naszej stronie.
+
+Pierwsza: wybór przeciwnika siedział w sekcji celu, a nad nią kilkanaście
+przebiegów kończy turę bota — zakupy, kowal, wizyta w mieście. Bot, który
+właśnie zgodził się na pojedynek, prawie zawsze jest w środku któregoś z nich i
+do wyboru przeciwnika nigdy nie docierał. Zmierzone sześć sekund po zgodzie, na
+tej samej mapie, **siedemdziesiąt jednostek od siebie**: jeden szedł do
+handlarza bronią, drugi szukał potwora, obaj na pełnym życiu.
+
+Druga wyszła dopiero po naprawieniu pierwszej. Funkcja, która zamienia zamach w
+obrażenia, zaczynała od odrzucenia wszystkiego, co nie jest potworem ani
+metinem. Boty schodziły się więc na dwadzieścia trzy jednostki, odgrywały całe
+kombo — bo wysyłanie animacji to osobna rzecz — i nie zadawały sobie nic.
+**Jedenastu pojedynkujących się, ani jednego zadrapania.**
+
+Po poprawce, na ustabilizowanym świecie: **4440 punktów życia wymienionych
+między pięcioma z dwudziestu trzech walczących**, wobec zera zawsze i bez
+wyjątku wcześniej. Pojedynek ma teraz własną linię w logu
+(`PLAYERBOT_PVP: fighting the duel`), bo bez niej nie dało się tego sprawdzić —
+sąsiednia linia o wyborze celu jest poziomu, którego ten rdzeń nie zapisuje.
+
+Bot w pojedynku nadal nie pije mikstur życia; to działało już wcześniej.
+
+### Pod marmurem nie rzuca się umiejętności
+
+Silnik odmawia rzucenia czegokolwiek postaci pod marmurem polimorfii — w pięciu
+osobnych miejscach. Bot o tym nie wiedział i przepalał całą rotację na
+odmowach, zamiast bić, a marmur zakłada się właśnie po to, żeby zwykły atak
+bolał bardziej.
+
+### Wabienie: próg trzech osób i dalsza paczka
+
+Łucznik wymagał pięcioosobowej drużyny. Zmierzone na własnym świecie: drużyny
+chodzą po jednej–dwóch osobach (18 botów w 15 drużynach), pięcioosobowe nie
+powstają praktycznie nigdy, a ostatni kurs w logach miał dwa dni. Próg to teraz
+trzy — tyle, ile wynosi sens pociągnięcia paczki na czekających.
+
+Po obniżeniu progu kursy ruszyły i od razu pokazały następną przeszkodę: ze 120
+widzianych potworów 114 odrzucano „po zasięgu". Licznik nie rozróżniał jednak
+„za blisko" od „za daleko", a to dwie przeciwne poprawki, więc najpierw został
+rozbity na pół. Odpowiedź okazała się jednostronna — `za blisko=0`,
+`za daleko=33` i `za daleko=62` — czyli sufit trzech tysięcy jednostek był tym,
+co wyłączało rolę. Okno sięga teraz czterech tysięcy, z zapasem na drogę
+powrotną wewnątrz budżetu kursu.
+
+Uczciwie: samo poszerzenie okna nie zdążyło jeszcze doczekać się kursu na
+żywym świecie. Rozbity licznik jest w logu i następny kurs to rozstrzygnie.
+
+### Zaproszenie do drużyny: log powie, co odrzuciło
+
+Bot **nadal nie dołącza** do drużyny gracza i nie umiem powiedzieć dlaczego —
+w stu dwóch plikach logów nie ma ani jednego przyjęcia, odkąd ta funkcja
+istnieje. Żadna z czterech bramek silnika tego nie tłumaczy: królestwo się
+zgadza, różnica poziomów dopuszcza 2153 z 2500 botów, a we własnych drużynach
+siedzi ledwie czternaście procent.
+
+Każda odmowa kończy się komunikatem na czacie zapraszającego i cichym
+powrotem, więc log milczał. Teraz nazwie przyczynę numerem. Jedno zaproszenie
+wystarczy, żeby zamknąć temat w następnym wydaniu.
+
+### Dlaczego 2.0.38 nie dotarło do nikogo
+
+Wydanie 2.0.38 wyszło na GitHuba i nie zainstalował go ani jeden gracz.
+Manifest — jedyny plik, z którego launcher czyta, co pobrać — został zmieniony
+lokalnie i nigdy wysłany, a następne wydanie go nadpisało. Historia idzie więc
+2.0.37 → 2.0.39, bez niczego pomiędzy.
+
+Awaria była cicha po obu stronach: u nas wydanie wyglądało na opublikowane, a u
+gracza launcher uczciwie porównywał 2.0.37 z 2.0.37 i odpowiadał „masz
+najnowszą wersję". W logu zgłaszającego stoi to siedem razy z rzędu, bez
+jednego pobrania i bez jednego błędu.
+
+Od tego wydania osobna bramka odmawia publikacji, gdy manifest wciąż wskazuje
+poprzednią wersję. Sprawdzona na prawdziwym przypadku: przepuszcza 2.0.39 i
+odrzuca 2.0.38.
+
+### Drobne
+
+Pakiet diagnostyczny niesie teraz konfigurację launchera (przepuszczoną przez
+ten sam filtr co logi). Bez niej nie da się odczytać, z którego manifestu czyta
+launcher gracza, a linie 1.x i mt2009 mają osobne — przez co dwie zupełnie
+różne przyczyny wyglądają w logu identycznie.
+
+Domyślny numer wersji w panelu zaawansowanym stał na 2.0.23 i szedł własnym
+kanałem, którego nikt nie podbijał. Idzie teraz za wersją wydania.
+
+## 2.0.39 — 2026-09-14
+
+Serwer. Pojedynki, dwie nowe mapy do polowania, Wieża Demonów, koń militarny,
+ostatni etap Biologa, górnictwo z wytapianiem ebonitu oraz wrogość między
+królestwami do włączenia. Klient bez zmian (zostaje 2.0.5).
+
+### Pojedynki
+
+Gracz może wyzwać bota i bot **zawsze się zgodzi** — po trzech sekundach, tak
+jak prosiłeś. Dotąd wyzwanie bota nie robiło nic: `CPVPManager::Insert` to zgoda
+obustronna, a bot nie miał klienta, który odpisze tym samym. Teraz silnik
+zapisuje wyzwanie, a tick bota odpowiada tą samą drogą, którą poszedłby klient.
+
+Boty wyzywają też siebie nawzajem — rzadko i tylko sensownie: sześć na tysiąc
+przy jednym losowaniu na minutę, wyłącznie blisko siebie, w promieniu pięciu
+poziomów i przy pełnym życiu obu stron.
+
+**W pojedynku nie piją potek.** Silnikowego `IsFighting` nie dało się do tego
+użyć, bo na jednej linii siedzi pod `ENABLE_NEWSTUFF`, a na drugiej nie istnieje
+w ogóle — więc bot pamięta swój pojedynek sam.
+
+**Czego to jeszcze nie robi, i mówię wprost:** bot przyjmuje wyzwanie i na tym
+koniec — **nie atakuje przeciwnika**. Cała ścieżka wybierania celu była pisana o
+potworach i metinach i odrzuca postacie graczy, więc pojedynek kończy się
+uściskiem dłoni. Zmierzone na żywym świecie: dwadzieścia zgód na pojedynek,
+zero walk. Walka w pojedynkach to osobna robota i wchodzi w następnym wydaniu —
+dotyczy to także wrogości między królestwami niżej.
+
+I jedna rzecz, która nie jest naszym błędem, a wygląda jak nasz: **jadąc na
+koniu nie zadaje się obrażeń w PvP**. Silnikowe `CanAttack` odrzuca atak
+jeźdźca, którego koń ma grade poniżej 2, a grade to `(poziom konia − 1) / 10 + 1`
+— czyli każdy koń do dziesiątego poziomu włącznie. Dotyczy gracza tak samo jak
+bota, więc jeśli obaj jesteście na koniach, nie trafi żaden z was. Zsiądź.
+
+### Magazyn u Dozorcy działa w obie strony
+
+Magazyn był składem bez drzwi — istniało wyłącznie wkładanie, a komentarz w
+kodzie mówił to wprost: „rzeczy włożone nigdy nie są wyjmowane". Zgłosił to
+**akhigubernator** na Discordzie i miał rację: strona w końcu zapełni się do
+końca i nigdy nie zostanie zwolniona, rzecz bezużyteczna godzinę temu może mieć
+popyt teraz, a bot potrafi siedzieć na księgach, w które sam już dorósł.
+
+Bot wyjmuje teraz dokładnie to, czego trzy reguły wkładania **przestały**
+uznawać za nadwyżkę: księgę, która nie jest już zbędna (umiejętność doszła do
+Mistrza albo bot wreszcie ma grupę umiejętności), oraz materiał, którego sam
+potrzebuje przy kowadle lub na który jest popyt i bot może go wystawić.
+Wyjmowanie biegnie **po** wkładaniu, na tej samej otwartej skrzyni — najpierw
+zwalniają się komórki plecaka, dopiero potem bot zabiera to, po co przyszedł.
+Ograniczone na wizytę i wielkością plecaka, bo wyjęcie pełnego plecaka
+skończyłoby się odwiezieniem wszystkiego z powrotem następnym razem.
+
+**I druga rzecz, znaleziona przy okazji: opłacona strona nigdy się nie
+zapisywała.** `SetSafeboxSize` przyjmuje **liczbę stron** i odrzuca wszystko od
+trzech wzwyż, a my podawaliśmy `SAFEBOX_PAGE_SIZE` — czyli 45 komórek. Funkcja
+wychodziła bez zrobienia czegokolwiek, za każdym razem. To jest prawdziwa
+przyczyna gałęzi „strona magazynu jeszcze nie gotowa", a nie wolna odpowiedź
+bazy. Teraz i pakiet do bazy, i rozmiar w pamięci mówią **dwie strony** — tyle,
+ile pokazuje okno Dozorcy.
+
+### Kilof, żyły rud i wytapianie ebonitu
+
+Kopanie siedzi w silniku od zawsze — `mining.cpp` ma tabelę rud, szanse i event
+uderzenia — ale **ten świat nie stawiał ani jednej żyły**. Sprawdziłem wszystkie
+109 map: zero żył rudy (20047–20059) i zero alchemików w jakimkolwiek pliku
+odrodzeń. Brakowało więc nie AI, tylko świata.
+
+Dwadzieścia żył stoi teraz na trzech mapach frontieru — Dolina Orków, pustynia i
+Góra Sohan — a każda na rzeczywistym punkcie odrodzenia danej mapy, nie na
+zgadniętej współrzędnej. Żyła kasuje się sama po 7–15 minutach (tak działa
+silnik i tak ma być), więc rdzeń dostawia brakujące raz na minutę.
+
+Bot od 30 poziomu kupuje kilof za 80 000, zakłada go w slot broni, dochodzi do
+żyły i tłucze. Sklep `pick_shop` stoi na trzech mapach, na które żaden bot nie
+chodzi, więc kilof powstaje za cenę sklepową — tak samo jak karta wędkarska.
+Ruda spada na ziemię i jest podnoszona zwykłą drogą. Sto sztuk rudy to jedno
+wytopienie: **Ruda Ebonitu → Ebonit**, i analogicznie dla wszystkich trzynastu
+rud. Alchemika w tym świecie nie ma nigdzie, więc wytapianie liczy się tam,
+gdzie bot stoi.
+
+Ruda surowa i wytopiona nigdy nie idą do handlarza — trafiają na stragany, bo o
+handel rudą prosiłeś.
+
+### Wrogość między królestwami (domyślnie wyłączona)
+
+Nowy suwak w panelu: **Wrogość między królestwami**, na starcie 0% — czyli świat
+zachowuje się dokładnie tak jak dotąd, dopóki sam go nie podniesiesz.
+
+Powyżej zera podany procent botów wyzywa boty innych królestw spotkane na
+**wspólnym terenie**: w Dolinie, na pustyni, na Sohanie, w lochach. To, które
+boty są agresywne, jest przypisane na stałe do postaci, a nie losowane co chwilę
+— więc zaczepiają wciąż te same, a reszta spokojnie poluje. Nigdy w wiosce,
+nigdy na graczu i nigdy na bocie rannym albo już walczącym.
+
+Oparłem to na pojedynku, a nie na wpuszczeniu postaci graczy do kolektora celów.
+Pojedynek kończy się sam, gdy ktoś padnie, nie da się nim przeciągnąć bota przez
+pół mapy, a reguła „w pojedynku nie piją potek" już działa — to odpowiedź na
+„bez pętli" i „ten, który ginie, odpuszcza i bierze inny spot".
+
+### Łowienie od 30 poziomu — domknięte
+
+W tym samym wydaniu zjechały wcześniej dwie bramki z pięćdziesiątki na
+trzydziestkę: silnikowa `CHARACTER::fishing()` i bramka AI. Trzeciej nie było
+widać — **sama wędka ma limit poziomu 50**, więc bot na trzydziestce i tak nie
+mógł jej założyć ani zostać wędkarzem. Limit zszedł na 30 dla wszystkich
+dwudziestu wędek. Poprawka siedzi w bootstrapie bazy, więc obejmuje i ten świat,
+i świeże instalacje.
+
+Gdy ryby wreszcie zaczęły brać, wyszła druga rzecz, która spała od zawsze:
+**każdy połów szedł do kosza**. Tabela `log.fish_log` miała osiem kolumn wzięte z
+drugiego silnika, a ten wpisuje sześć — więc każda złowiona ryba kończyła się
+błędem „Column count doesn't match value count" w `syserr` (364 linie w pierwszych
+dziesięciu minutach) i nie zapisywała się nigdzie. Nikt tego nie widział, bo na
+tej linii nikt nigdy nie łowił. Tabela ma teraz kształt, który ten silnik
+faktycznie zapisuje; stara jest przebudowywana przy starcie, ale tylko wtedy, gdy
+ma ten zły kształt — historii, jeśli kiedyś powstanie, nic nie rusza.
+
+### Ulepszanie wędki u Rybaka
+
+Silnik ma ten mechanizm w dwóch połowach, a boty robiły tylko jedną. Przy każdym
+połowie wędka losuje punkt do socketu (dla +0 jeden na pięć), aż do swojego
+pułapu — i dopiero wtedy wolno ją ulepszyć. Nikt o to nigdy nie prosił, bo
+ulepszenie wywołuje wyłącznie komenda GM i dialog questa, którego bot nie
+otworzy. Zmierzone przed poprawką: **62 z 64 wędek w świecie stały na równo
+dziesięciu punktach — pełne, na zawsze**.
+
+Liczby są wędki, nie moje: **+0 → +1 to 100% i porażka nie istnieje**, dalej
+robi się ryzykownie (88%, 77%, 66%, 55%), a nieudane ulepszenie zabiera stopień.
+Po godzinie działania: 62 wędki na +1.
+
+### Ognisko i pieczone ryby
+
+Ognisko miało **dwa** błędy. Drewno kupowane jest u Rybaka po drodze nad wodę, a
+warunek zakupu wymagał pięciu martwych ryb — które pojawiają się dopiero w
+trakcie sesji. Pętla nie do domknięcia: 27 sesji skończyło się ścieżką
+rozpalającą, dwa boty w całym świecie miały kiedykolwiek drewno, ogień nie
+zapłonął ani razu.
+
+Drugi błąd siedział w silniku i trzeba go było przeczytać, bo w logu nie było po
+nim śladu: `ITEM_CAMPFIRE` sprawdza kafelek **sto jednostek przed postacią** i
+odrzuca wodę. A wędkarz stoi obrócony twarzą do rzeki. Każde drewno leciało do
+wody, a silnik tłumaczył się klientowi, którego bot nie ma. Teraz bot odwraca się
+tyłem do wody przed zapaleniem.
+
+Przy okazji: zakres pieczonych ryb kończył się na 27876, a rodzina sięga 27883 —
+więc **siedem najlepszych szło do handlarza za grosze**, w tym karp dający
+**+20 prędkości ruchu na 600 sekund** i złoty karaś z bonusem na 1800 sekund.
+
+### Stajenny w drugiej wiosce Jinno
+
+Noga marszu do Stajennego używała zwykłego marszu, a nie marszu miejskiego —
+czyli **nigdy nie pytała o osiągalność** i nie przesuwała celu na grunt
+połączony z botem. Stajenny w Bakrze stoi na kawałku terenu odciętym od placu:
+**600 odmów trasy, wszystkie na mapie 43**, podczas gdy stajnie pozostałych
+królestw obsłużyły 193 wizyty i przyjęły 82 medale. Po poprawce: **zero**.
+
+### Omdlenie działa na boty
+
+Zgłosił **cyfrowy_mat**: „omdlenie szarżą nie działa na botach z innego
+królestwa, bot po sekundzie już biegnie dalej". Miał rację i to był nasz błąd,
+nie silnika — silnik nakłada omdlenie botowi dokładnie tak jak graczowi, przez
+tę samą odporność, i nigdzie nie pyta, czy to bot. To **nasza pętla nigdy nie
+sprawdzała**, czy bot jest ogłuszony: szedł dalej, bił dalej i planował dalej.
+Jedyne takie sprawdzenie w całym kodzie botów pilnowało otwierania sklepu
+offline.
+
+Teraz brama stoi na samej górze pętli, obok sprawdzenia śmierci, więc obejmuje
+ruch, walkę i wszystkie podsystemy naraz.
+
+### Wabienie tam, gdzie są watahy
+
+Łucznik z drużyny planował wabienie **gdziekolwiek** poza strefą bezpieczną — nie
+było żadnej reguły mapy. Zmierzone w Yongan: drużyna sześciu, pięciu odbiorców
+gotowych i „brak watahy" sekundę później, bo w pierwszej wiosce nie ma czego
+przyciągać. Teraz tylko mapy frontieru, a maksimum grup zeszło z czterech na
+trzy, zgodnie z regułą „aggro 1–3 boty z drużyny".
+
+### Las, Czerwony Las i Wieża Demonów
+
+Trzy mapy, które istniały w plikach, ale hostował je rdzeń bez botów — czyli
+żaden bot nie mógł na nie wejść. Przeniesione tam, gdzie boty żyją:
+
+- **Las (67)**: Duchy Drzewa, Pniaka, Driady i Złe Drzewa, poziomy 65–71,
+  527 punktów odrodzenia, osiem hubów.
+- **Czerwony Las (68)**: ich czerwone odpowiedniki, 74–82, 693 punkty, osiem hubów.
+- **Wieża Demonów (66)**: Demony 57–60.
+
+Huby nie są zgadnięte: każdy stoi na rzeczywistym punkcie odrodzenia z regenu
+mapy, w najgęstszej komórce, a pasmo poziomów to mediana potworów tej komórki.
+W Wieży Demonów boty **nie łamią metinów** — tak jak prosiłeś, dungeon zostaje
+na później.
+
+### Ostatni etap Biologa
+
+Pamiątka Po Demonie była w tabeli od 2.0.37, ale celowo pomijana: jej potwory
+stoją wyłącznie w Wieży Demonów. Przenosiny mapy odblokowały ją same z siebie i
+panel liczy znów dziewięć etapów.
+
+### Koń militarny
+
+Medale prowadzą konia do **dwudziestego** poziomu i tam się zatrzymują.
+Dwudziesty pierwszy pochodzi z **próby w Wieży Demonów** — pięćdziesiąt zabitych
+demonów, bez limitu czasowego — dokładnie tak, jak koń bojowy jest próbą na
+pustyni. Bot na próbie poluje tam, gdzie próba, cokolwiek mówiłby jego poziom.
+
+### Drobne
+
+Eliksiry Słońca (39037–39039) dołączyły do eliksirów doświadczenia. Wcześniej
+bot traktował je jak zwykły łup, choć Eliksiry Księżyca znał od dawna.
+
+---
+
+Sprawdzone na żywym świecie, po podniesieniu stawek do 100× i doprowadzeniu
+populacji do 340 botów powyżej 34 poziomu (najwyższy 90):
+
+- **górnictwo** — dwadzieścia żył postawionych i utrzymywanych, `spawned=20
+  refused=0`, ruda w torbach, pierwsze wytopienie (Ruda Miedzi → Miedź);
+- **ulepszanie wędki** — 62 wędki przeszły na +1 w pierwszej godzinie;
+- **łowienie od 30** — wędki w rękach botów na poziomach 30, 31, 33, 35 i 36,
+  czego przy limicie pięćdziesiątki nie dało się w ogóle zrobić;
+- **magazyn w obie strony** — pierwsze wyjęcia po kilku minutach, po godzinie 66;
+- **Stajenny** — z 600 odmów tras na mapie 43 zrobiło się zero;
+- **pojedynki** — zgody działają (dwadzieścia), walki jeszcze nie ma;
+- **wrogość królestw** — zero zaczepek, bo suwak stoi na zerze, tak jak ma stać.
+
+Czego nie dało się potwierdzić w grze: **ognisko** (poprawka wdrożona, ale w
+oknie testu żadna sesja wędkarska nie doszła do końca właściwą ścieżką) i
+**omdlenie** (wymaga gracza, który trafi szarżą). Tick przy 350 botach: 1,7–2,8 s
+z 60 000, watchdog zero.
+
+## 2.0.38 — 2026-09-14
+
+Serwer. Boty przyjmują zaproszenie do drużyny i biegną z graczem, łowią od 30
+poziomu, zakładają marmury polimorfii na bossów, a dropperzy przestają zbierać
+doświadczenie na poziomie swojego łowiska. Klient bez zmian (zostaje 2.0.5).
+
+### Zaproszenie do drużyny wreszcie dociera do bota
+
+Do tej pory zaproszenie gracza do bota **nie robiło dosłownie nic** i nie
+zostawiało po sobie śladu w żadnym logu. Przyczyna: `CHARACTER::PartyInvite`
+kończy się wysłaniem pakietu na deskryptor zapraszanego. Bot ma deskryptor, ale
+nie ma za nim klienta — pakiet szedł w próżnię, nikt nie klikał „Akceptuj", a po
+dziesięciu sekundach zaproszenie cicho wygasało.
+
+Teraz silnik odkłada takie zaproszenie w osobnym dzienniku, a tick bota
+odpowiada na nie tą samą metodą, którą wywołałby klient. Bot **nigdy nie
+odmawia** — wszystkie warunki, które mogą odrzucić, są silnikowe i o nich warto
+wiedzieć: to samo królestwo, różnica do trzydziestu poziomów i wolne miejsce w
+drużynie ośmioosobowej.
+
+Do tego dwie rzeczy, bez których to nie miałoby sensu. Drużyna prowadzona przez
+**gracza** jest wyjęta ze wszystkich reguł rotacji botów — kohorty, wygasania po
+5–15 minutach i promienia maruderów — bo inaczej bot dołączyłby i wyszedł w
+ciągu minuty. I biegnie za graczem: gdy oddali się o ponad 1500 jednostek,
+rusza za nim, z koniem, zanim pas wędrowania zdąży go wysłać na własne łowisko.
+
+Czego jeszcze nie ma: bot-lider nie zaprasza kolejnych botów. Każdego zapraszasz
+sam.
+
+### Łowienie od 30 poziomu
+
+Wymóg pięćdziesiątki siedział w trzech miejscach naraz — w samym silniku
+(`CHARACTER::fishing()`) i w dwóch bramkach botów, żeby nikt nie szedł nad wodę,
+która i tak by go odprawiła. Wszystkie trzy mówią teraz trzydzieści. Reszta
+warunków bez zmian: mapa pierwszej wioski, przepustka i przynęta.
+
+### Marmury polimorfii na bossów
+
+Dotąd **żaden bot nigdy nie użył marmuru** — były wyłącznie towarem na stragan.
+Teraz bot zakłada marmur, gdy bije bossa, który ma jeszcze co najmniej 90%
+życia. Nie robi tego w siodle ani pod inną przemianą, bo silnik i tak by
+odmówił. Zakaz używania umiejętności pod marmurem jest silnikowy i nic nie
+trzeba było dodawać — dlatego marmur idzie tylko na bossa, gdzie rotacja i tak
+nie decyduje o walce.
+
+### Dropperzy zatrzymują poziom
+
+Każdy drop w tym silniku blednie wraz z różnicą poziomów, więc farmer, który się
+dalej rozwija, wychodzi z własnej tabeli: medal to grupa „kill", a przy
+piętnastu poziomach nad potworem jest wart tyle co nic. Dropper dochodzi teraz
+do poziomu swojego łowiska i **zatrzymuje doświadczenie na stałe** — medale 33,
+M2 36, M3 30, metiny 40 — po czym robi w kółko to, po co jest: dropi i sprzedaje.
+
+### Launcher mówi po angielsku, że mówi po angielsku
+
+Przełącznik języka był, ale napis „JEZYK: POLSKI" nie mówi anglojęzycznemu, w co
+kliknąć. Przycisk pokazuje teraz oba języki naraz.
+
+---
+
+Sprawdzone przed wydaniem: składnia nakładki bez błędów na obu silnikach, obraz
+mt2009 przebudowany, rdzeń wstał z 2500 tożsamościami bez nowych błędów, a
+binarka niesie wszystkie nowe linie logu. Tick 2,8 s z 60 przy 318 botach,
+watchdog zero. Czego **nie** udało się zobaczyć na żywo: żadnej z czterech
+nowych rzeczy w działaniu — w świecie testowym jest ośmiu botów powyżej
+trzydziestki, jedyny dropper wśród nich ma 31 poziom przy progu 33, a
+zaproszenia do drużyny nie ma kto wysłać bez klienta.
+
 ## 2.0.37 — 2026-09-13
 
 Serwer i panel. Łańcuch Biologa nie kończy się już na Zębie Orka — dochodzi
