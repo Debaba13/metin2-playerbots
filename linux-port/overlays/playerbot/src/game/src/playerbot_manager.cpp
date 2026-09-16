@@ -108,7 +108,6 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_shop_signs.h"
 #include "playerbot_llm_shop.h"
 #include "playerbot_town.h"
-#include "playerbot_shop_signs.h"
 #include "playerbot_offline_shop.h"
 #include "playerbot_weapon_goal.h"
 #include "playerbot_market.h"
@@ -3155,6 +3154,7 @@ void CPlayerBotManager::Update()
 				CompletePlayerBotDeferredTradeConfirmation(ch);
 			}
 			continue;
+		}
 		}
 
 		// Keep expensive decisions staggered over two ticks, but let an already

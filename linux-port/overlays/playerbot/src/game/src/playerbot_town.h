@@ -2117,11 +2117,6 @@ namespace
 				bestScore >= PLAYERBOT_SHOP_PRIZE_SCORE;
 	}
 
-	// Iwakura's name for a counter of these goods (playerbot_shop_signs.h, which
-	// comes after this file because what heads a +7..+9 piece is its price).
-	bool ChoosePlayerBotShopName(LPCHARACTER ch, const std::vector<LPITEM>& goods,
-			char* out, size_t outSize, const char** how);
-
 	// Everything this bot can legitimately part with, best first. OpenMyShop
 	// refuses equipped, locked and ANTI_GIVE/ANTI_MYSHOP items outright - and it
 	// refuses the *whole* shop over one bad line, not just that line - so the
@@ -3004,7 +2999,25 @@ namespace
 		// Iwakura's rules (playerbot_shop_signs.h), and the best line's name for
 		// the world channel. The counter is sorted best first.
 		const char* pszBestName = NULL;
-		std::vector<LPITEM> signGoods;
+		const char* pszWeapon30 = NULL;
+		const char* pszPrecious = NULL;
+		BYTE bPreciousRefine = 0;
+		const char* apszMaterials[2] = { NULL, NULL };
+		int iMaterials = 0;
+		const char* pszBook = NULL;
+		int iBooks = 0;
+		int iScrap = 0;
+		// The rest of what a sign can be about (playerbot_shop_signs.h): the
+		// fish line's unit price for the "Malze po %C" names, the best gear
+		// line's name for the "%I" ones.
+		int iFish = 0;
+		int iGear = 0;
+		int iMedals = 0;
+		int iScrolls = 0;
+		int iStones = 0;
+		DWORD dwFishUnitPrice = 0;
+		const char* pszGear = NULL;
+		BYTE bGearRefine = 0;
 		bool grid[PLAYERBOT_SHOP_GRID_CELLS];
 		memset(grid, 0, sizeof(grid));
 		// What qualified and still stayed in the bag, by reason - the audit's
@@ -3106,9 +3119,57 @@ namespace
 				bestScore = scored[i].first;
 			++tableCount;
 
+			const char* pszName = proto->szLocaleName;
 			if (!pszBestName)
-				pszBestName = proto->szLocaleName;
-			signGoods.push_back(item);
+				pszBestName = pszName;
+			if (IsPlayerBotSpecialLevel30Weapon(item))
+				pszWeapon30 = pszWeapon30 ? pszWeapon30 : pszName;
+			else if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE)
+			{
+				if (!pszPrecious || item->GetRefineLevel() > bPreciousRefine)
+				{
+					pszPrecious = pszName;
+					bPreciousRefine = item->GetRefineLevel();
+				}
+			}
+			else if (item->GetType() == ITEM_FISH || item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM ||
+					(item->GetVnum() >= 27992 && item->GetVnum() <= 27994)) // the three pearls
+			{
+				// Asked before the material test: a shellfish and the pearls are
+				// refine materials too, and a fish counter is not a smith's supplier.
+				if (item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM && item->GetCount() > 0)
+					dwFishUnitPrice = price / item->GetCount();
+				++iFish;
+			}
+			else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
+				++iMedals;
+			else if (item->GetVnum() == PLAYERBOT_BLESSING_SCROLL_VNUM)
+				++iScrolls;
+			else if (item->GetType() == ITEM_METIN)
+				++iStones;
+			else if (IsPlayerBotTradeableMaterial(item))
+			{
+				if (iMaterials < 2)
+					apszMaterials[iMaterials] = pszName;
+				++iMaterials;
+			}
+			else if (item->GetType() == ITEM_SKILLBOOK)
+			{
+				pszBook = pszBook ? pszBook : pszName;
+				++iBooks;
+			}
+			else if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
+					item->GetRefineLevel() < PLAYERBOT_SHOP_MIN_GEAR_REFINE)
+				++iScrap;
+			else if (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR)
+			{
+				if (!pszGear || item->GetRefineLevel() > bGearRefine)
+				{
+					pszGear = pszName;
+					bGearRefine = item->GetRefineLevel();
+				}
+				++iGear;
+			}
 		}
 		// Asked again here rather than trusting the scan above: the inventory
 		// moves between the two - a town errand happens in between - and a stall

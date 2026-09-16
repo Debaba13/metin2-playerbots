@@ -430,8 +430,14 @@ namespace {
             return;
         }
     }
-    // A name for what the shop holds now, by Iwakura's rules over previews of
-    // its own lines.
+    // A name for what the shop holds now, from previews of its own lines,
+    // classified and named by this fork's own Turkish sign pool
+    // (playerbot_shop_signs.h / playerbot_llm_shop.h) - the same system
+    // playerbot_town.h uses for a live counter, rather than upstream's
+    // pricing-aware, non-ASCII-Polish ChoosePlayerBotShopName. There is no
+    // "poor keeper" concept offline, so the pid/poor prefix always reads
+    // as if not poor; the draw is keyed to the pid alone since an offline
+    // stand does not rotate pitches the way a live one does.
     bool BotOfflineNameForGoods(LPCHARACTER ch, NativeShop shop, char* out, size_t outSize, const char** how) {
         std::vector<LPITEM> goods;
         if (shop)
@@ -439,10 +445,93 @@ namespace {
                 if (line)
                     if (LPITEM preview = BotOfflinePreview(*line))
                         goods.push_back(preview);
-        const bool named = ChoosePlayerBotShopName(ch, goods, out, outSize, how);
+        if (!ch || goods.empty()) {
+            for (LPITEM preview : goods)
+                M2_DELETE(preview);
+            return false;
+        }
+        const char* pszBestName = NULL;
+        const char* pszWeapon30 = NULL;
+        const char* pszPrecious = NULL;
+        BYTE bPreciousRefine = 0;
+        const char* pszBook = NULL;
+        int iBooks = 0;
+        int iScrap = 0;
+        int iFish = 0;
+        int iGear = 0;
+        int iMedals = 0;
+        int iScrolls = 0;
+        int iStones = 0;
+        DWORD dwFishUnitPrice = 0;
+        const char* pszGear = NULL;
+        BYTE bGearRefine = 0;
+        for (LPITEM item : goods) {
+            const TItemTable* proto = item->GetProto();
+            if (!proto) continue;
+            const char* pszName = proto->szLocaleName;
+            if (!pszBestName)
+                pszBestName = pszName;
+            if (IsPlayerBotSpecialLevel30Weapon(item))
+                pszWeapon30 = pszWeapon30 ? pszWeapon30 : pszName;
+            else if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE) {
+                if (!pszPrecious || item->GetRefineLevel() > bPreciousRefine) {
+                    pszPrecious = pszName;
+                    bPreciousRefine = item->GetRefineLevel();
+                }
+            }
+            else if (item->GetType() == ITEM_FISH || item->GetVnum() == PLAYERBOT_SHELLFISH_VNUM ||
+                    (item->GetVnum() >= 27992 && item->GetVnum() <= 27994)) // the three pearls
+                ++iFish;
+            else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
+                ++iMedals;
+            else if (item->GetVnum() == PLAYERBOT_BLESSING_SCROLL_VNUM)
+                ++iScrolls;
+            else if (item->GetType() == ITEM_METIN)
+                ++iStones;
+            else if (item->GetType() == ITEM_SKILLBOOK) {
+                pszBook = pszBook ? pszBook : pszName;
+                ++iBooks;
+            }
+            else if ((item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) &&
+                    item->GetRefineLevel() < PLAYERBOT_SHOP_MIN_GEAR_REFINE)
+                ++iScrap;
+            else if (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR) {
+                if (!pszGear || item->GetRefineLevel() > bGearRefine) {
+                    pszGear = pszName;
+                    bGearRefine = item->GetRefineLevel();
+                }
+                ++iGear;
+            }
+        }
+        const DWORD dwDraw = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5349474eU);
+        EPlayerBotSignKind signKind = SIGN_UNIVERSAL;
+        const DWORD tableCount = (DWORD)goods.size();
+        bool bSignByKind = tableCount > 0 && !pszWeapon30 && !pszPrecious;
+        if (bSignByKind) {
+            if (iFish > 0 && iFish * 2 >= (int)tableCount) signKind = SIGN_FISH;
+            else if (iBooks > 0 && iBooks * 2 >= (int)tableCount) signKind = SIGN_BOOKS;
+            else if (iGear > 0 && iGear * 2 >= (int)tableCount) signKind = SIGN_GEAR;
+            else if (iMedals > 0 && iMedals * 2 >= (int)tableCount) signKind = SIGN_MEDALS;
+            else if (iScrolls > 0 && iScrolls * 2 >= (int)tableCount) signKind = SIGN_SCROLLS;
+            else if (iStones > 0 && iStones * 2 >= (int)tableCount) signKind = SIGN_STONES;
+            else if (iScrap > 0 && iScrap >= (int)tableCount / 2) bSignByKind = false;
+            else if (tableCount == 1) bSignByKind = false;
+        }
+        char signBody[SHOP_SIGN_MAX_LEN + 1];
+        if (bSignByKind && PickPlayerBotShopSign(signBody, sizeof(signBody), signKind, dwDraw,
+                ch->GetName(), dwFishUnitPrice, pszGear)) {
+            ApplyPlayerBotShopSignPrefix(ch, false, signBody, out, outSize);
+        }
+        else {
+            BuildPlayerBotTurkishShopSign(ch, false, tableCount, pszWeapon30, pszPrecious,
+                    iFish, dwFishUnitPrice, iBooks, pszBook, 0, iGear, pszGear,
+                    iMedals, iScrolls, iStones, iScrap, pszBestName, dwDraw,
+                    out, outSize);
+        }
+        *how = "pool";
         for (LPITEM preview : goods)
             M2_DELETE(preview);
-        return named;
+        return true;
     }
     bool ManagePlayerBotOfflineService(LPCHARACTER ch, TPlayerBotAIState& state, DWORD now) {
         using namespace playerbot_offline;
