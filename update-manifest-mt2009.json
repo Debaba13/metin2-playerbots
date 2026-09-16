@@ -14,7 +14,7 @@
   },
   "client": {
     "version": "2.0.11",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.55/metin2-client-update-2.0.11.zip",
-    "sha256": "70801863A1A7ACC599DF17C1DF0000A4FE17B86A7300A794CA5EEC324B88C53B"
+    "url": "https://github.com/debaba13/metin2-playerbots/releases/download/client-v2.0.11/metin2-client-update-2.0.11.zip",
+    "sha256": "D377CEF95A06FB2B878FBFE8617AF52EEC731DDF1BBEA0A69BABC5FAA6A64693"
   }
 }
