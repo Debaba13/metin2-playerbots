@@ -10,11 +10,23 @@
 <div class="player-identity"><img class="class-portrait class-portrait--profile" src="{{class_portrait(character.job)}}" alt="{{character.job_name}}"><div><h1>{{character.name}} <span class="muted">· {{character.job_name}} · seviye {{character.level}}</span></h1><p class="muted">{{character.class_profile.gender}} · oyun istemcisinden portre</p></div></div>
 <section class="bot-profile-head">
   <article>
-    <div class="profile-tags">{% set empire=empire_info(character.empire) %}{% if empire.flag %}<span class="empire-badge empire-badge--profile"><img src="{{empire_flag(character.empire)}}" alt="{{empire.name}}">{{empire.name}}</span>{% endif %}<span>HP {{character.hp}} / {{character.max_hp}}</span><span>MP {{character.mp}} / {{character.max_mp}}</span><span>Yang {{'{:,}'.format(character.gold or 0).replace(',', ' ')}}</span><span>{{map_name(character.map_index)}}</span></div>
+    <div class="profile-tags">{% set empire=empire_info(character.empire) %}{% if empire.flag %}<span class="empire-badge empire-badge--profile"><img src="{{empire_flag(character.empire)}}" alt="{{empire.name}}">{{empire.name}}</span>{% endif %}<span>HP {{character.hp}} / {{character.max_hp}}</span><span>MP {{character.mp}} / {{character.max_mp}}</span><span>Yang {{'{:,}'.format(character.gold or 0).replace(',', ' ')}}</span><span>{{map_name(character.map_index)}}</span><span>⏱ {{character.playtime_hours}} sa {{character.playtime_minutes}} dk</span><span>🕐 Son giriş: {{character.last_play.strftime('%d.%m.%Y %H:%M') if character.last_play else '—'}}</span><span>💎 {{'{:,}'.format(character.cash).replace(',', ' ')}} Ejder Parası</span>{% if character.marriage_partner %}<span>💍 {{character.marriage_partner}} ile evli</span>{% endif %}{% if character.guild_name %}<span>🏯 {{character.guild_name}}{% if character.guild_grade %} ({{character.guild_grade}}){% endif %}</span>{% endif %}{% for p in character.premiums %}<span>⭐ {{p.label}} — {{p.expires.strftime('%d.%m.%Y')}}'e kadar</span>{% else %}<span class="muted">⭐ Aktif VIP yok</span>{% endfor %}</div>
+    <div class="profile-actions">{% if offline_shop %}<a class="button secondary" href="#offline-shop">🏪 Dükkanı Gör</a>{% endif %}<button type="button" class="secondary" id="teleport-me-btn" data-pid="{{character.id}}">⚡ Oyun İçi Karakterimi Işınla (1 Tık)</button><small id="teleport-me-status" class="muted"></small></div>
     <div class="vital-bars" aria-label="Karakter durumu"><div class="vital hp"><span>❤ Can</span><div class="bar"><i style="width:{{character.hp_percent}}%"></i></div><b>{{character.hp_percent}}%</b></div><div class="vital mp"><span>✦ Mana</span><div class="bar"><i style="width:{{character.mp_percent}}%"></i></div><b>{{character.mp_percent}}%</b></div><div class="vital exp"><span>⚡ EXP</span><div class="bar"><i style="width:{{character.experience.percent}}%"></i></div><b>{{character.experience.percent}}% · {{'{:,}'.format(character.experience.current).replace(',', ' ')}} / {{'{:,}'.format(character.experience.required).replace(',', ' ')}}</b></div></div>
     <dl class="bot-live-details"><div><dt>Konum</dt><dd>{{character.x}}, {{character.y}}</dd></div><div><dt>Rütbe</dt><dd><span class="honor {{character.honor.css}}">{{character.honor.title}}</span> · {{'{:,}'.format(character.honor.points).replace(',', ' ')}} puan</dd></div><div><dt>Kişilik</dt><dd>{{character.personality}}</dd></div><div><dt>Hırs</dt><dd>{{character.ambition}}</dd></div><div><dt>Güncel Hedef</dt><dd>{{character.goal}}</dd></div><div><dt>Eylem</dt><dd>{{character.action}}</dd></div><div><dt>At</dt><dd>Lv {{character.horse_level}}</dd></div></dl>
-    <div class="profile-sections"><section><h2>📊 İstatistikler</h2><div class="stat-cells"><div>STR<b>{{character.st}}</b></div><div>VIT<b>{{character.ht}}</b></div><div>DEX<b>{{character.dx}}</b></div><div>INT<b>{{character.iq}}</b></div></div><p class="muted">Dağıtılmamış: {{character.stat_point or 0}} istatistik puanı · {{character.skill_point or 0}} yetenek puanı</p></section><section><h2>✨ Yetenekler</h2><div class="skills">{% for skill in character.skills %}<div class="skill"><img class="skill-icon" src="{{tieru_url}}/static/skill_icons/{{skill.vnum}}{{skill.icon_suffix}}.png" alt="" onerror="this.style.display='none'"><span>{{skill.name}}</span><b>{{skill.rank}}</b></div>{% else %}<p class="muted">Karakter henüz meslek seçmedi.</p>{% endfor %}</div></section></div>
-    <section class="panel bot-log"><h2>📜 Son Karakter Logları</h2><div class="log-lines">{% for line in logs %}<div><time>{{line.time}}</time><span>{{line.type}} · {{line.how}}{% if line.hint %} · {{line.hint}}{% endif %}{% if line.what %} · {{line.what}}{% endif %}</span></div>{% else %}<p class="muted">Logda kayıtlı olay yok.</p>{% endfor %}</div></section>
+    <div class="profile-sections"><section><h2>📊 İstatistikler</h2><div class="stat-cells"><div>STR<b>{{character.st}}</b></div><div>VIT<b>{{character.ht}}</b></div><div>DEX<b>{{character.dx}}</b></div><div>INT<b>{{character.iq}}</b></div></div><p class="muted">Dağıtılmamış: {{character.stat_point or 0}} istatistik puanı · {{character.skill_point or 0}} yetenek puanı</p></section><section><h2>✨ Yetenekler</h2><div class="skill-icons">{% for skill in character.skills %}<div class="skill-slot"><img src="{{url_for('static',filename='skill_icons/'+skill.vnum|string+skill.icon_suffix+'.png')}}" alt="{{skill.name}}" onerror="this.style.display='none'"><b>{{skill.rank}}</b><div class="item-tip"><b>{{skill.name}}</b><span>Rütbe: {{skill.rank}}</span></div></div>{% else %}<p class="muted">Karakter henüz meslek seçmedi.</p>{% endfor %}</div>{% if character.passive_skills %}<div class="skills">{% for skill in character.passive_skills %}<div class="skill skill-passive"><span>{{skill.name}}</span><b>{{skill.level}}</b></div>{% endfor %}</div>{% endif %}</section></div>
+    {% if offline_shop %}<section class="panel" id="offline-shop"><h2>🏪 Çevrimdışı Dükkan{% if offline_shop.is_premium %} <span class="muted">(Premium)</span>{% endif %}</h2><p class="muted">"{{offline_shop.name}}" — {{offline_shop.map_name}}, koordinat {{offline_shop.x}}, {{offline_shop.y}}.</p><div class="live-log-actions"><button type="button" class="secondary" id="teleport-shop-btn" data-x="{{offline_shop.x}}" data-y="{{offline_shop.y}}">⚡ Oyun İçi Karakterimi Dükkana Işınla</button><small id="teleport-shop-status" class="muted"></small></div><table><thead><tr><th>Eşya</th><th>Adet</th><th>Fiyat</th></tr></thead><tbody>{% for o in offline_shop.offers %}<tr><td class="item-cell">{% if o.icon_url %}<img src="{{o.icon_url}}" loading="lazy" alt="">{% endif %}{{o.item_name}}</td><td>{{o.count}}</td><td>{{'{:,}'.format(o.price).replace(',', ' ')}}</td></tr>{% else %}<tr><td colspan="3" class="muted">Tezgah açık ama üzerinde hiçbir şey yok.</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+    <section class="panel bot-log"><h2>📜 Ekipman Geçmişi</h2><div class="log-lines">{% for line in gear_history %}<div class="gear-{{line.kind}}"><time>{{line.time}}</time><span><b>{{line.label}}</b> {{line.item}}{% if line.detail %} <small>{{line.detail}}</small>{% endif %}</span></div>{% else %}<p class="muted">Kayıtlı ekipman olayı yok.</p>{% endfor %}</div></section>
+    <section class="panel bot-log"><h2>📟 Bot Olay Günlüğü (Canlı Loglar)</h2><p class="muted">Bu karakterden bahseden oyun çekirdeği log satırları — bu sayfa açıldığından beri toplanır, yenilemeler arasında kaybolmaz.</p><div class="live-log-actions"><button type="button" class="secondary" id="live-log-toggle" data-pid="{{character.id}}">⏸ İzlemeyi Durdur</button><button type="button" class="secondary" id="live-log-copy">📋 Logları Kopyala</button></div><div id="live-log-box" class="live-log-box">Loglar yükleniyor…</div></section>
+    <section class="panel"><h2>🏆 Karakter Rekorları</h2><table><tbody><tr><td>Yenilen bosslar</td><td>{{character_stats.bosses}}</td></tr><tr><td>Kırılan Metin taşları</td><td>{{character_stats.metins}}</td></tr><tr><td>Yenilen oyuncular (rakip krallık)</td><td>{{character_stats.pvp_kills}}</td></tr><tr><td>Canavarlardan ölümler</td><td>{{character_stats.deaths_by_mob}}</td></tr><tr><td>Oyunculardan ölümler</td><td>{{character_stats.pvp_deaths}}</td></tr><tr><td>Başarılı geliştirmeler</td><td>{{character_stats.refine_success}}</td></tr><tr><td>Kuyumcuda yanan eşyalar</td><td>{{character_stats.refine_burned}}</td></tr><tr><td>Kazanılan Yang <small class="muted">(kısmi — aşağıdaki nota bakın)</small></td><td>{{'{:,}'.format(character_stats.yang_earned).replace(',', ' ')}}</td></tr></tbody></table><p class="muted">"Kazanılan Yang" logdaki yalnızca GET_GOLD olaylarını sayar — GM'in altın/eşya nadanları ve NPC'ye satış, logda hiçbir yerde miktarı kaydetmez, bu yüzden toplam oyun içi Y panelinden düşük çıkar. Y panelinin geri kalanı — öldürülen canavarlar (toplam), yenilen minibosslar, kazanılan düellolar, kazılan cevherler, tutulan balıklar, toplanan çiçekler, açılan sandıklar, tamamlanan lochlar/görev kitapları, en yüksek hasar, NPC satışından yang — bu motor sürümünde sunucu tarafında kaydedilmiyor: logdaki 50 `how` değerinin tamamı ve tüm karakter veritabanı şeması kontrol edildi, hiçbir iz yok. Bunun için motorda ayrı bir hook gerekirdi.</p></section>
+    <section class="panel"><h2>⚙ Yönetim İşlemleri</h2><div class="grid two">
+      <form class="manage-form" method="post" action="{{url_for('player_action_vip', pid=character.id)}}"><h3>VIP Ver</h3><input type="hidden" name="premium_type" value="8"><label>Gün<input type="number" name="days" min="1" max="3650" value="30" required></label><button>VIP Ver</button></form>
+      <form class="manage-form" method="post" action="{{url_for('player_action_coins', pid=character.id)}}"><h3>Ejder Parası Ver</h3><label>Miktar (account.cash)<input type="number" name="amount" min="1" max="1000000" required></label><button>Para Ekle</button></form>
+      <form class="manage-form" method="post" action="{{url_for('player_action_rename', pid=character.id)}}"><h3>İsmi Değiştir</h3><label>Yeni İsim<input type="text" name="new_name" minlength="2" maxlength="24" pattern="[A-Za-z0-9]+" required></label><small class="muted">Bu canlı bir botsa, çekirdek kaydederken değişikliği geri almamalı — ama gerekirse oyun kanalını kısaca yeniden başlatın.</small><button class="secondary">İsmi Değiştir</button></form>
+      <form class="manage-form" method="post" action="{{url_for('player_action_reset_position', pid=character.id)}}" onsubmit="return confirm('Karakterin konumu kendi krallığının başkentine sıfırlansın mı?');"><h3>Konumu Sıfırla</h3><small class="muted">Kendi krallığının başkentine ışınlar (canlı bir bot gibi — bellekten kaydedilirken üzerine yazılabilir).</small><button class="secondary">Konumu Sıfırla</button></form>
+      </div>
+      <form class="manage-form danger-form" method="post" action="{{url_for('player_action_delete', pid=character.id)}}" onsubmit="return confirm('Bu işlem GERİ ALINAMAZ ve bu karakterin tüm eşyalarını siler. Devam edilsin mi?');"><h3>⚠ Karakteri Sil (geri alınamaz)</h3><small class="muted">Onaylamak için karakterin tam adını yazın: <b>{{character.name}}</b>. Silinmeden önce satırın bir kopyası web_seban_deleted_players'a gider.</small><input type="text" name="confirm_name" placeholder="{{character.name}} yazın" required><button class="secondary">Karakteri Sil</button></form>
+    </section>
   </article>
   <aside class="inventory-panel">
     <h2>⚔ Envanter İçeriği</h2>
@@ -28,7 +40,11 @@
       </div>
       <p id="inventory-empty" class="muted" hidden>Envanterin bu sayfası boş.</p>
     </div>
-    <div id="safebox-storage" hidden><div class="safebox-grid">{% for item in safebox %}<div class="safebox-slot" style="grid-column:{{(item.pos % 45) % 5 + 1}};grid-row:{{((item.pos % 45) // 5) + 1}}">{% if item_icon(item.vnum) %}<img src="{{item_icon(item.vnum)}}" alt="{{item.item_name}}">{% else %}<span>{{item.vnum}}</span>{% endif %}{% if item.count > 1 %}<b>{{item.count}}</b>{% endif %}{{ tooltip(item) }}</div>{% endfor %}</div>{% if not safebox %}<p class="muted">Kasa boş.</p>{% endif %}</div>
+    <div id="safebox-storage" hidden>
+      <div class="safebox-tabs"><button class="active" data-page="0">Sayfa I</button><button data-page="1">Sayfa II</button><button data-page="2">Sayfa III</button></div>
+      <div class="safebox-inventory"><div class="safebox-layer">{% for item in safebox %}{% set page=item.pos // 45 %}{% set local=item.pos % 45 %}<div class="safebox-slot" data-page="{{page}}" {% if page != 0 %}hidden{% endif %} style="--col:{{local % 5}};--row:{{local // 5}};--size:{{item.item_size}}">{% if item_icon(item.vnum) %}<img src="{{item_icon(item.vnum)}}" alt="{{item.item_name}}">{% else %}<span>{{item.vnum}}</span>{% endif %}{% if item.count > 1 %}<b>{{item.count}}</b>{% endif %}{{ tooltip(item) }}</div>{% endfor %}</div></div>
+      <p id="safebox-empty" class="muted" hidden>Kasanın bu sayfası boş.</p>
+    </div>
   </aside>
 </section>
 <script>
@@ -37,5 +53,67 @@ function setPage(n){document.querySelectorAll('.inv-tabs button').forEach(x=>{co
 document.querySelectorAll('.inv-tabs button').forEach(b=>b.onclick=()=>setPage(Number(b.dataset.page)));
 document.querySelectorAll('.storage-tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.storage-tabs button').forEach(x=>x.classList.toggle('active',x===b));document.getElementById('inventory-storage').hidden=b.dataset.storage!=='inventory';document.getElementById('safebox-storage').hidden=b.dataset.storage!=='safebox'});
 setPage(0);
+function setSafeboxPage(n){document.querySelectorAll('.safebox-tabs button').forEach(x=>x.classList.toggle('active',x.dataset.page===String(n)));const slots=document.querySelectorAll('.safebox-slot[data-page]');slots.forEach(x=>x.hidden=x.dataset.page!==String(n));document.getElementById('safebox-empty').hidden=[...slots].some(x=>x.dataset.page===String(n))}
+document.querySelectorAll('.safebox-tabs button').forEach(b=>b.onclick=()=>setSafeboxPage(Number(b.dataset.page)));
+setSafeboxPage(0);
+async function runTeleport(btn, statusEl, payload){
+  btn.disabled = true; statusEl.textContent = '⏳ Teleportowanie Twojej postaci w grze...';
+  try {
+    const res = await fetch('/api/admin/teleport-me', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await res.json();
+    if (data.ok) statusEl.textContent = `✅ Przeteleportowano ${data.name} do bota w grze!`;
+    else if (data.error === 'bot_offline') statusEl.textContent = '⛔ Ten bot nie jest teraz online, nie znam jego pozycji.';
+    else if (data.error === 'no_human_player' || data.error === 'player_offline') statusEl.textContent = '⛔ Żadna Twoja postać nie jest teraz zalogowana w grze.';
+    else statusEl.textContent = '⛔ Nie udało się (' + (data.status || data.error || 'błąd') + ').';
+  } catch (_) { statusEl.textContent = '⛔ Błąd sieci.'; }
+  btn.disabled = false;
+}
+const teleportBtn=document.getElementById('teleport-me-btn'),teleportStatus=document.getElementById('teleport-me-status');
+teleportBtn?.addEventListener('click', () => runTeleport(teleportBtn, teleportStatus, {pid: Number(teleportBtn.dataset.pid)}));
+const teleportShopBtn=document.getElementById('teleport-shop-btn'),teleportShopStatus=document.getElementById('teleport-shop-status');
+teleportShopBtn?.addEventListener('click', () => runTeleport(teleportShopBtn, teleportShopStatus, {x: Number(teleportShopBtn.dataset.x), y: Number(teleportShopBtn.dataset.y)}));
+const liveLogToggle=document.getElementById('live-log-toggle'),liveLogBox=document.getElementById('live-log-box'),liveLogCopy=document.getElementById('live-log-copy');
+// Accumulate + dedupe instead of replacing each poll -- a plain tail of the
+// live syslog only holds ~800 lines across every bot on the server, so a
+// quiet bot's lines can scroll out of that window between two polls and
+// "flicker" if we just show whatever the latest fetch contains. Matches
+// Tieru's own bot-log console (7788), including the keyword colors.
+let liveLogTimer=null, collectedLogs=[], seenLogs={};
+const LOG_COLOR_RULES=[[/USE_SKILL|activated self buff/,'log-skill'],[/target acquired/,'log-target'],[/picked up loot|GIVE_GOLD/,'log-loot'],[/used health potion|used mana potion|USE_ITEM/,'log-potion'],[/SYSERR|failed/,'log-error']];
+const escapeHtml=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function logLineClass(line){for(const [re,cls] of LOG_COLOR_RULES)if(re.test(line))return cls;return 'log-default'}
+function renderLiveLogs(){
+  liveLogBox.innerHTML = collectedLogs.length
+    ? collectedLogs.map(line=>`<div class="${logLineClass(line)}">${escapeHtml(line)}</div>`).join('')
+    : '<div class="muted">Brak zdarzeń tej postaci w ostatnich logach rdzenia.</div>';
+  liveLogBox.scrollTop=liveLogBox.scrollHeight;
+}
+async function fetchLiveLogs(){
+  try{
+    const res=await fetch(`/api/bot-logs/${liveLogToggle.dataset.pid}`,{cache:'no-store'});
+    const data=await res.json();
+    if (data.logs && data.logs.length){
+      data.logs.forEach(line=>{if(!seenLogs[line]){seenLogs[line]=true;collectedLogs.push(line)}});
+      if (collectedLogs.length>1000) collectedLogs=collectedLogs.slice(-1000);
+      renderLiveLogs();
+    } else if (!collectedLogs.length) renderLiveLogs();
+  }catch(_){ if (!collectedLogs.length) liveLogBox.innerHTML='<div class="log-error">⛔ Błąd sieci.</div>'; }
+}
+liveLogToggle?.addEventListener('click', () => {
+  if (liveLogTimer) {
+    clearInterval(liveLogTimer); liveLogTimer=null;
+    liveLogToggle.textContent='▶ Wznów śledzenie'; liveLogToggle.classList.remove('active');
+  } else {
+    liveLogToggle.textContent='⏸ Zatrzymaj śledzenie'; liveLogToggle.classList.add('active');
+    fetchLiveLogs(); liveLogTimer=setInterval(fetchLiveLogs, 1500);
+  }
+});
+liveLogCopy?.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(collectedLogs.join('\n')); liveLogCopy.textContent='✅ Skopiowano'; }
+  catch(_) { liveLogCopy.textContent='⛔ Nie udało się'; }
+  setTimeout(()=>liveLogCopy.textContent='📋 Kopiuj logi', 2000);
+});
+// Auto-start, like Tieru's panel: logs are already flowing by the time you look.
+liveLogToggle?.classList.add('active'); fetchLiveLogs(); liveLogTimer=setInterval(fetchLiveLogs, 1500);
 </script>
 {% endblock %}

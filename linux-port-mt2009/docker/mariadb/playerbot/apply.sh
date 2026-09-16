@@ -197,6 +197,85 @@ db -e "ALTER TABLE account.account ADD COLUMN IF NOT EXISTS jackpot INT NOT NULL
 # of world.item_proto here (PROTO_FROM_DB = 1), which is why this sticks;
 # idempotent, and it touches only rods still carrying the old fifty.
 db -e "UPDATE world.item_proto SET limitvalue0 = 30 WHERE type = 13 AND limittype0 = 1 AND limitvalue0 = 50;"
+# Maska Sabaha left the world with the Hwang curse (playerbotify
+# apply_hwang_curse_removed, the share step of the game Dockerfile): the shop
+# that sold one sells it no more. The db core reads the shops at boot, so this
+# is live on the next start; idempotent.
+db -e "DELETE FROM world.shop_item WHERE item_vnum IN (72731, 72735);"
+# And nobody keeps one: every Maska Sabaha still in a bag, on a character, in a
+# safebox or on a counter is removed (Tieru, 15 September, "usun" to the masks
+# players already held). On every start, so a mask an old core still held while
+# an update ran this beside it goes on the next one.
+masks=$(db -e "DELETE FROM player.item WHERE vnum IN (72731, 72735); SELECT ROW_COUNT();" || echo x)
+masks=$(printf '%s' "$masks" | tr -d '[:space:]')
+if [ "$masks" = "x" ]; then
+    echo "[playerbot-migrate] WARNING: could not remove the Maska Sabaha items" >&2
+elif [ -n "$masks" ] && [ "$masks" != "0" ]; then
+    echo "[playerbot-migrate] removed $masks Maska Sabaha item(s)"
+fi
+# The market of Shinsoo's and Jinno's villages moved onto the kingdom's guard
+# in 2.0.52 (GetTownPitch, playerbot_empire_rules.h), and nothing would ever
+# have moved the shops standing round the old pitch: an offline shop stands
+# where its keeper stood when it was opened (OpenOfflineShop takes the
+# character's position, a reopen included) and a keeper walks to its shop to
+# serve it. So each bot's shop of the old ring is carried across by the
+# distance between the two pitches, which keeps the ring's shape and spacing,
+# and pulled in to 1650 of the guard where it stood further out - the ring of
+# 400 to 1700 round each guard is open ground inside the safe zone on
+# server_attr. A shop already inside the new ring and outside the old one
+# belongs to the new pitch and stays. Once, marked in
+# player.playerbot_migrations in the same transaction as the move; on every
+# start after that only a bot's shop still within 2000 of an old pitch and more
+# than 2000 from the new one moves - a keeper that reopened on the old spot
+# while an update ran this beside the old game container (update.sh does not
+# stop the game first). The db core writes a position only when a shop is
+# opened or moved, so an old core cannot write the moved ones back. A player's
+# own shop is left where its owner put it. Before the game container starts,
+# because the db core reads the shops at boot.
+db -e "CREATE TABLE IF NOT EXISTS player.playerbot_migrations (name VARCHAR(64) NOT NULL PRIMARY KEY, done_at DATETIME NOT NULL) ENGINE=InnoDB;"
+pitch_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = 'pitch_on_guard_2052';" 2>/dev/null || echo x)
+case "$pitch_done" in
+    0) pitch_near=1700; pitch_far=1700 ;;
+    1) pitch_near=-1; pitch_far=2000 ;;
+    *) pitch_near= ;;
+esac
+if [ -n "$pitch_near" ]; then
+    if pitch_moved=$(db -e "
+        CREATE TEMPORARY TABLE player.tmp_pitch_moves AS
+        SELECT d.owner,
+               d.nx + ROUND(d.dx * LEAST(1, 1650 / GREATEST(1, d.d_old))) AS tx,
+               d.ny + ROUND(d.dy * LEAST(1, 1650 / GREATEST(1, d.d_old))) AS ty
+          FROM (SELECT s.owner, m.nx, m.ny,
+                       CAST(s.x AS SIGNED) - m.ox AS dx,
+                       CAST(s.y AS SIGNED) - m.oy AS dy,
+                       SQRT(POW(CAST(s.x AS SIGNED) - m.ox, 2) + POW(CAST(s.y AS SIGNED) - m.oy, 2)) AS d_old,
+                       SQRT(POW(CAST(s.x AS SIGNED) - m.nx, 2) + POW(CAST(s.y AS SIGNED) - m.ny, 2)) AS d_new
+                  FROM player.ikashop_offlineshop AS s
+                  JOIN player.player AS p ON p.id = s.owner
+                  JOIN account.account AS a ON a.id = p.account_id
+                  JOIN (SELECT 1 AS map, 473625 AS ox, 954925 AS oy, 474325 AS nx, 954225 AS ny
+                        UNION ALL SELECT 3, 353987, 880012, 353025, 882325
+                        UNION ALL SELECT 41, 961212, 270162, 959925, 268825
+                        UNION ALL SELECT 43, 865500, 244975, 863425, 246025) AS m ON m.map = s.map
+                 WHERE a.login LIKE 'playerbot%') AS d
+         WHERE d.d_old <= 2000 AND (d.d_old <= $pitch_near OR d.d_new > $pitch_far);
+        START TRANSACTION;
+        UPDATE player.ikashop_offlineshop AS s
+          JOIN player.tmp_pitch_moves AS t ON t.owner = s.owner
+           SET s.x = t.tx, s.y = t.ty;
+        SELECT ROW_COUNT();
+        INSERT IGNORE INTO player.playerbot_migrations (name, done_at) VALUES ('pitch_on_guard_2052', NOW());
+        COMMIT;
+        DROP TEMPORARY TABLE player.tmp_pitch_moves;
+    "); then
+        pitch_moved=$(printf '%s' "$pitch_moved" | tr -d '[:space:]')
+        if [ "${pitch_moved:-0}" != "0" ]; then
+            echo "[playerbot-migrate] $pitch_moved bot offline shop(s) in Yongan, Jayang, Pyongmoo and Bakra carried onto the guard's square"
+        fi
+    else
+        echo "[playerbot-migrate] WARNING: could not move the bots' offline shops onto the new pitches" >&2
+    fi
+fi
 # fish_log came from r40250's dump and has that engine's eight columns,
 # while this one writes six - so every catch failed with errno 1136 and the
 # table is empty on every 2.x world that ever ran. CREATE IF NOT EXISTS
@@ -345,6 +424,38 @@ before=$(db -e "
       FROM player.player
      WHERE id BETWEEN $first_pid AND $last_pid;
 ")
+
+# The world's difficulty, as event flags in seconds (player.quest, dwPID 0 -
+# what the db core loads at boot and pushes to every game core, the package's
+# own idiom for a world-wide switch). quest/m2_difficulty.lua reads them: the
+# Biologist's wait between two hand-ins and the stable keeper's four waits
+# (the pony, each Horse Book, the medal trainings of 1-10 and of 11-19). The
+# presets scale the package's own numbers - hard is what it shipped with,
+# medium a third of it, easy none (what 2.0.55 and 2.0.56 gave everybody) -
+# and custom takes the two hour counts from .env, the horse's for every wait.
+# Written before the seed, which may leave early on a foreign cohort.
+difficulty=$(printf '%s' "${M2_DIFFICULTY:-easy}" | tr 'A-Z' 'a-z' | tr -d ' \r')
+case "$difficulty" in
+    medium) dlevel=1; bio=28800; hbuy=14400; hup=14400; htr=21600; htr2=25200 ;;
+    hard)   dlevel=2; bio=86400; hbuy=43200; hup=43200; htr=64800; htr2=75600 ;;
+    custom)
+        dlevel=3
+        bio=$(printf '%s' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        hbuy=$(printf '%s' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        hup=$hbuy; htr=$hbuy; htr2=$hbuy ;;
+    *)      difficulty=easy; dlevel=0; bio=0; hbuy=0; hup=0; htr=0; htr2=0 ;;
+esac
+if db -e "REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES
+        (0, 'm2_difficulty', '', $dlevel),
+        (0, 'm2_biologist_wait', '', $bio),
+        (0, 'm2_horse_buy_wait', '', $hbuy),
+        (0, 'm2_horse_upgrade_wait', '', $hup),
+        (0, 'm2_horse_train_wait', '', $htr),
+        (0, 'm2_horse_train2_wait', '', $htr2);"; then
+    echo "[playerbot-migrate] difficulty: $difficulty (Biologist wait ${bio}s, horse: buy ${hbuy}s upgrade ${hup}s train ${htr}s/${htr2}s)"
+else
+    echo "[playerbot-migrate] WARNING: could not write the difficulty flags; the quests keep the last ones" >&2
+fi
 
 echo "[playerbot-migrate] applying deterministic Playerbot seed (PID $first_pid..$last_pid)"
 result=/tmp/playerbot-seed.out

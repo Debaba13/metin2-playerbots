@@ -138,7 +138,8 @@ namespace
 								m_owner->GetX(), m_owner->GetY(), candidate->GetX(), candidate->GetY()) ||
 						DISTANCE_APPROX(candidate->GetX() - m_owner->GetX(), candidate->GetY() - m_owner->GetY()) > PLAYERBOT_PARTY_COHESION_RADIUS ||
 						(candidate->IsStone() &&
-						 !IsPlayerBotMetinWorthFighting(m_owner, candidate)) ||
+						 !IsPlayerBotMetinWorthFighting(m_owner, candidate) &&
+						 (int)candidate->GetLevel() > (int)m_owner->GetLevel() + PLAYERBOT_STONE_JOIN_LEVEL_DELTA) ||
 						(candidate->IsMonster() &&
 							 candidate->GetLevel() > m_owner->GetLevel() + PLAYERBOT_MAX_TARGET_LEVEL_DELTA &&
 							 !CanPlayerBotPartyChallenge(m_owner, candidate, m_dwNow, NULL)))
@@ -255,7 +256,7 @@ namespace
 	{
 		public:
 			CCountPlayerBotStoneAttackers(LPCHARACTER stone, LPCHARACTER exclude = NULL) :
-				m_stone(stone), m_exclude(exclude), m_count(0) {}
+				m_stone(stone), m_exclude(exclude), m_count(0), m_bots(0), m_players(0) {}
 
 			bool operator () (LPENTITY entity)
 			{
@@ -277,16 +278,26 @@ namespace
 						it->second.dwTargetVID == (DWORD)m_stone->GetVID())
 					attacksStone = true;
 				if (attacksStone && m_count < 255)
+				{
 					++m_count;
+					if (it != s_mapPlayerBotAIStates.end())
+						++m_bots;
+					else
+						++m_players;
+				}
 				return true;
 			}
 
 			BYTE GetCount() const { return m_count; }
+			int GetBots() const { return m_bots; }
+			int GetPlayers() const { return m_players; }
 
 		private:
 			LPCHARACTER m_stone;
 			LPCHARACTER m_exclude;
 			BYTE m_count;
+			int m_bots;
+			int m_players;
 	};
 
 	BYTE CountPlayerBotStoneAttackers(LPCHARACTER stone, LPCHARACTER exclude = NULL)
@@ -296,6 +307,50 @@ namespace
 		CCountPlayerBotStoneAttackers counter(stone, exclude);
 		stone->GetSectree()->ForEachAround(counter);
 		return counter.GetCount();
+	}
+
+	void CountPlayerBotStoneAttackersByKind(LPCHARACTER stone, LPCHARACTER exclude,
+			int& bots, int& players)
+	{
+		bots = 0;
+		players = 0;
+		if (!stone || !stone->GetSectree())
+			return;
+		CCountPlayerBotStoneAttackers counter(stone, exclude);
+		stone->GetSectree()->ForEachAround(counter);
+		bots = counter.GetBots();
+		players = counter.GetPlayers();
+	}
+
+	// Somebody is already breaking this stone, and it is somebody a bot
+	// joins: another bot always, a player only with PLAYERBOT_STONE_JOIN_PLAYERS.
+	bool IsPlayerBotStoneUnderJoinableAttack(LPCHARACTER ch, LPCHARACTER stone)
+	{
+		int bots = 0, players = 0;
+		CountPlayerBotStoneAttackersByKind(stone, ch, bots, players);
+		return bots > 0 || (PLAYERBOT_STONE_JOIN_PLAYERS && players > 0);
+	}
+
+	// A stone above the bot's own band that others are already breaking. "Jesli
+	// nie da sobie rady, niech dolacza jesli ktos w danym momencie bije kamien"
+	// (Tieru, 16 September): up to PLAYERBOT_STONE_JOIN_LEVEL_DELTA over the bot,
+	// never one it has outgrown by PLAYERBOT_STONE_OUTGROWN_LEVELS (the drop
+	// curve is gone there for everybody) - sixteen either way, the operator's
+	// band - and never a dungeon trigger, unless the bot is climbing the tower
+	// with a player, for whom it is the floor's objective and needs nobody
+	// else on it first. Kiciamol's report was the other half - one bot on a
+	// stone and the rest walking past, because a claimed target was a claimed
+	// target; see IsTargetClaimedByAnotherBot.
+	bool IsPlayerBotStoneJoinable(LPCHARACTER ch, LPCHARACTER stone)
+	{
+		if (!ch || !stone || !stone->IsStone() || stone->IsDead())
+			return false;
+		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
+			return IsPlayerBotDungeonStoneObjective(ch, stone);
+		if ((int)stone->GetLevel() > (int)ch->GetLevel() + PLAYERBOT_STONE_JOIN_LEVEL_DELTA ||
+				(int)ch->GetLevel() > (int)stone->GetLevel() + PLAYERBOT_STONE_OUTGROWN_LEVELS)
+			return false;
+		return IsPlayerBotStoneUnderJoinableAttack(ch, stone);
 	}
 
 	// An Archer breaks a Metin with a dagger, and only a refined one manages it.
@@ -402,6 +457,7 @@ namespace
 	void ResetPlayerBotFightProgress(TPlayerBotAIState& state)
 	{
 		state.dwFightProgressVID = 0;
+		state.bFightProgressBoss = false;
 		state.dwFightStartTime = 0;
 		state.dwFightLastProgressTime = 0;
 		state.iLastFightHP = 0;
@@ -438,6 +494,7 @@ namespace
 		if (state.dwFightProgressVID != vid)
 		{
 			state.dwFightProgressVID = vid;
+			state.bFightProgressBoss = target->IsMonster() && target->GetMobRank() >= MOB_RANK_BOSS;
 			state.dwFightStartTime = dwNow;
 			state.dwFightLastProgressTime = dwNow;
 			state.iLastFightHP = target->GetHP();
@@ -476,6 +533,16 @@ namespace
 	{
 		if (!owner || dwTargetVID == 0)
 			return false;
+
+		// A stone is nobody's: it is broken together, and the only claim on it
+		// is a full crowd. One bot's claim kept every other off the one stone in
+		// sight ("jak jest jeden metek to jeden bije a reszta sie nie dolacza",
+		// Kiciamol, 16 September).
+		{
+			LPCHARACTER target = CHARACTER_MANAGER::instance().Find(dwTargetVID);
+			if (target && target->IsStone())
+				return CountPlayerBotStoneAttackers(target, owner) >= PLAYERBOT_STONE_MAX_ATTACKERS;
+		}
 
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
 				it != s_mapPlayerBotAIStates.end(); ++it)
@@ -691,8 +758,11 @@ namespace
 			// Outgrown prey across the field. The level table is too kind to
 			// catch it (see PLAYERBOT_VILLAGE_OUTGROWN_LEVELS), so the rule is
 			// the level difference itself, and it only applies where the walk
-			// would take the bot away from its own band's ground.
-			if (IsPlayerBotM1Map(ch->GetMapIndex()) &&
+			// would take the bot away from its own band's ground: the villages,
+			// first and second. The second joined in 2.0.58, when the bots were
+			// found chain-killing outward from the gate they came in by and the
+			// far half of Jayang and Bakra stood empty.
+			if ((IsPlayerBotM1Map(ch->GetMapIndex()) || IsPlayerBotM2Map(ch->GetMapIndex())) &&
 					(int)ch->GetLevel() - (int)candidate->GetLevel() >=
 						PLAYERBOT_VILLAGE_OUTGROWN_LEVELS &&
 					DISTANCE_APPROX(ch->GetX() - candidate->GetX(),
@@ -893,7 +963,8 @@ namespace
 				// decorative low Metins which no longer reward their time.
 				if (candidate->IsStone())
 				{
-					if (!IsPlayerBotMetinWorthFighting(m_owner, candidate))
+					if (!IsPlayerBotMetinWorthFighting(m_owner, candidate) &&
+							!IsPlayerBotStoneJoinable(m_owner, candidate))
 						return false;
 
 					// An Archer with no refined dagger does not solo a stone; it
@@ -987,7 +1058,12 @@ namespace
 
 				if (candidate->IsStone())
 				{
-					baseScore = isMetinHunter ? 1500000 : 350000;
+					// A stone is the game's key fight for every bot, not a hunter's
+					// speciality (Tieru, 16 September): above the sweet-spot monster
+					// for anybody, and one somebody is already on comes first of all.
+					baseScore = isMetinHunter ? 1500000 : PLAYERBOT_STONE_BASE_SCORE;
+					if (IsPlayerBotStoneUnderJoinableAttack(m_owner, candidate))
+						baseScore += PLAYERBOT_STONE_JOIN_BONUS;
 				}
 				else
 				{
@@ -1170,7 +1246,11 @@ namespace
 
 	bool StartPlayerBotMaterialHunt(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
-		if (!ch)
+		// A dropper is not sent across the map after a refine material: the
+		// medal droppers took 124 of these errands in their first twenty-five
+		// minutes after a restart, the first two after a tiger thirty-three and
+		// a bear fourteen thousand units away.
+		if (!ch || IsPlayerBotDropper(state.bPersonality))
 			return false;
 		if (state.dwNextMaterialScanTime == 0)
 		{
@@ -1444,10 +1524,12 @@ namespace
 
 				LPCHARACTER candidate = static_cast<LPCHARACTER>(entity);
 				// A sweep that grazes a Demon Tower stone can break it, and the
-				// kill is the bot's: see PLAYERBOT_DEVIL_TOWER_STONE_FIRST.
+				// kill is the bot's: see PLAYERBOT_DEVIL_TOWER_STONE_FIRST - unless
+				// the bot is climbing with a player, for whom that is the point.
 				if (candidate == m_owner || candidate->GetVID() == m_primaryVID ||
 						(!candidate->IsMonster() && !candidate->IsStone()) || candidate->IsDead() ||
-						(candidate->IsStone() && IsPlayerBotDungeonTriggerStone(candidate->GetRaceNum())))
+						(candidate->IsStone() && IsPlayerBotDungeonTriggerStone(candidate->GetRaceNum()) &&
+							!IsPlayerBotDungeonStoneObjective(m_owner, candidate)))
 					return false;
 
 				if (candidate->GetMapIndex() != m_owner->GetMapIndex() ||
@@ -1503,7 +1585,13 @@ namespace
 		LPITEM weapon = ch->GetWear(WEAR_WEAPON);
 		const bool isBow = (weapon && weapon->GetType() == ITEM_WEAPON && weapon->GetSubType() == WEAPON_BOW);
 		LPITEM arrow = NULL;
-		if (isBow && ch->GetArrowAndBow(&weapon, &arrow, 1) != 1)
+		// A quiver the last shot emptied is nocked again from the bag before
+		// the shot is refused: seven archers of the test world stood with a bow,
+		// nothing in the arrow slot and a thousand arrows in the bag, and only
+		// the skill path put them back (16 September). No arrow anywhere, no
+		// shot - the engine's GetArrowAndBow is the rule for a player too.
+		if (isBow && (!EnsurePlayerBotArrowsEquipped(ch) ||
+				ch->GetArrowAndBow(&weapon, &arrow, 1) != 1))
 			return 0;
 
 		int iDamage = isBow ? CalcArrowDamage(ch, primary, weapon, arrow, false) : CalcMeleeDamage(ch, primary, false, false);

@@ -79,6 +79,13 @@ struct State {
     uint32_t observedShop = 0;
     // Which compiled price table this shop was last priced against.
     uint32_t priceGeneration = 0;
+    // The empty-hand probe of the counter, and the last line taken back to
+    // wear with when, so a piece the bot will not put on is not taken back
+    // and listed again every visit.
+    uint32_t nextReclaimProbe = 0, lastReclaimItem = 0, lastReclaimAt = 0;
+    // The line cut out of its stack before the shop board opened, for the
+    // add of the same visit (BotOfflinePrepareVisitLine): item id and cell.
+    uint32_t preparedItem = 0, preparedCell = 0;
     std::map<uint32_t, ListedLine> listed;
     bool visiting = false;
 };

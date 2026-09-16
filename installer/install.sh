@@ -3294,6 +3294,21 @@ main() {
         printf '  %s** DRY RUN -- nothing on this machine will be changed **%s\n\n' "$C_YELLOW$C_BOLD" "$C_RESET"
     fi
 
+    # A 2.x (mt2009) server is not this installer's to touch. It stages the 1.x
+    # build files over whatever it finds, a docker-compose.yml that starts
+    # MariaDB 10.11 on a database made by 11.8 among them; a 2.x server that ran
+    # this or the 1.x updater ended with the 1.x line on top of it (l0st3k,
+    # 12 September) or with damaged log indexes (seban latino, 15 September).
+    # That line updates from its release package.
+    for _engine in "$INSTALL_DIR/ENGINE" "$INSTALL_DIR/linux-port/docker/ENGINE"; do
+        if [ -f "$_engine" ] && [ "$(tr -d ' \r\n' < "$_engine" 2>/dev/null)" = "mt2009" ]; then
+            die "$INSTALL_DIR holds a 2.x (mt2009) server, and this installer sets up the 1.x line. Update that server from its release package instead: sh linux-port/tools/update.sh from the server folder. Nothing was changed."
+        fi
+    done
+    if grep -q 'image: mariadb:11\.' "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; then
+        die "$INSTALL_DIR runs MariaDB 11, which only the 2.x (mt2009) line uses, and this installer sets up the 1.x line with MariaDB 10.11. Update that server with sh linux-port/tools/update.sh from its server folder. Nothing was changed."
+    fi
+
     step "Checking this machine"
     check_root
     detect_os

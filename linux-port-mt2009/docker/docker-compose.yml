@@ -75,6 +75,11 @@ services:
       PLAYERBOT_EXPECT_MIN_EXISTING_BOTS: "${PLAYERBOT_EXPECT_MIN_EXISTING_BOTS:-0}"
       M2_PLAYERBOT_KINGDOMS: "${M2_PLAYERBOT_KINGDOMS:-1}"
       M2_PLAYERBOT_HUMAN_NAMES: "${M2_PLAYERBOT_HUMAN_NAMES:-1}"
+      # The world's difficulty: apply.sh turns it into the event flags the
+      # Biologist and the stable keeper read (quest/m2_difficulty.lua).
+      M2_DIFFICULTY: "${M2_DIFFICULTY:-easy}"
+      M2_BIOLOGIST_WAIT_HOURS: "${M2_BIOLOGIST_WAIT_HOURS:-0}"
+      M2_HORSE_WAIT_HOURS: "${M2_HORSE_WAIT_HOURS:-0}"
 
     entrypoint: ["/bin/sh", "/opt/playerbot/apply.sh"]
 
@@ -134,6 +139,20 @@ services:
       M2_ADMINPAGE_PASSWORD: "${M2_ADMINPAGE_PASSWORD:-}"
       M2_CORE_DUMPS: "${M2_CORE_DUMPS:-0}"
       PLAYERBOT_AUTOSPAWN_COUNT: "${PLAYERBOT_AUTOSPAWN_COUNT:-350}"
+      PLAYERBOT_MEDAL_DROPPERS: "${PLAYERBOT_MEDAL_DROPPERS:-0}"
+      PLAYERBOT_MEDAL_DROPPER_LEVEL: "${PLAYERBOT_MEDAL_DROPPER_LEVEL:-25}"
+      # The spawn plan (input_db.cpp): the cohort's window in minutes, and a
+      # second cohort joining one at a time over hours.
+      PLAYERBOT_SPAWN_WINDOW_MINUTES: "${PLAYERBOT_SPAWN_WINDOW_MINUTES:-1}"
+      PLAYERBOT_LATE_JOINERS: "${PLAYERBOT_LATE_JOINERS:-0}"
+      PLAYERBOT_LATE_JOIN_HOURS: "${PLAYERBOT_LATE_JOIN_HOURS:-24}"
+      # m2-render-config writes these four into CONFIG. Without a line here the
+      # value in .env never reaches the container and the defaults stand, which
+      # is what every 2.x world had until 2.0.52 (the 1.x compose passes them).
+      M2_MOONLIGHT_CHEST_PERMILLE: "${M2_MOONLIGHT_CHEST_PERMILLE:-10}"
+      M2_MOONLIGHT_CHEST_STONE_PERMILLE: "${M2_MOONLIGHT_CHEST_STONE_PERMILLE:-300}"
+      M2_DRAGON_COIN_STONE_PERMILLE: "${M2_DRAGON_COIN_STONE_PERMILLE:-3}"
+      M2_DRAGON_COIN_BOSS_PERMILLE: "${M2_DRAGON_COIN_BOSS_PERMILLE:-50}"
       # 0 keeps Shinsoo and Jinno from being started even when the seed once
       # registered them (the migrate service reads the same switch for the
       # seed itself).
@@ -143,6 +162,8 @@ services:
       # frontier on game1, so every bot reaches 1..104 (m2-render-config reads
       # this). One core carries every bot then - keep the population modest.
       M2_PLAYERBOT_WORLD_LAYOUT: "${M2_PLAYERBOT_WORLD_LAYOUT:-split}"
+      # Only said in the start log here; the migrate service is what acts on it.
+      M2_DIFFICULTY: "${M2_DIFFICULTY:-easy}"
       TZ: "${M2_TZ:-UTC}"
 
     ports:
@@ -392,7 +413,7 @@ services:
       # server it is actually looking at rather than "nieustawiona".
       # The default is bumped with every release, so a world nobody has
       # configured still reports the version it is actually running.
-      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-2.0.46}"
+      PLAYERBOTS_VERSION: "${M2_PLAYERBOTS_VERSION:-2.0.59}"
       TZ: "${M2_TZ:-UTC}"
     ports:
       # 7790 outside: 7789 is the browser bridge's port in this stack.

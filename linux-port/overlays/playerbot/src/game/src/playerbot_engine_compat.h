@@ -84,6 +84,14 @@
 #define APPLY_SKILL_DAMAGE_BONUS      POINT_SKILL_DAMAGE_BONUS
 #define APPLY_NORMAL_HIT_DAMAGE_BONUS POINT_NORMAL_HIT_DAMAGE_BONUS
 #define APPLY_NORMAL_HIT_DEFEND_BONUS POINT_NORMAL_HIT_DEFEND_BONUS
+// Five points Iwakura's bonus prices name (playerbot_price_tables.h). The
+// first two exist on r40250 under the same APPLY names; the last three
+// exist only here, and their rows sit in an #if there.
+#define APPLY_MANA_BURN_PCT           POINT_MANA_BURN_PCT
+#define APPLY_MALL_EXPBONUS           POINT_MALL_EXPBONUS
+#define APPLY_REFLECT_ARROW           POINT_REFLECT_ARROW
+#define APPLY_ST_REGEN                POINT_ST_REGEN
+#define APPLY_SKILL_DURATION          POINT_SKILL_DURATION
 
 #define AFF_JEONGWIHON  AFF_SKILL_BERSERK
 #define AFF_GEOMGYEONG  AFF_SKILL_SWORD_AURA

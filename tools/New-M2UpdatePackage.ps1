@@ -34,6 +34,22 @@ try {
     # this list too, and forgetting to is what shipped a manager without its own
     # headers twice. A pattern that matches nothing is still an error: it means
     # the tree moved and the package would be silently short.
+    # Python leaves bytecode beside every module it has run: a syntax check
+    # (py_compile) or a test run of a panel drops __pycache__\*.pyc into the
+    # tree, and a wildcard line takes whatever is on disk. Two server packages
+    # carried it to players - three .pyc files in 2.0.46, and the seban panel's
+    # app and collector bytecode in the first build of 2.0.48, caught by a zip
+    # check and rebuilt by hand. Bytecode is never a source, so every wildcard
+    # or directory expansion leaves it out; a file named on a line of its own is
+    # still published exactly as named.
+    function Test-M2PythonBytecode([string]$Relative) {
+        $parts = @($Relative.Replace('/', '\').Split('\'))
+        if ($parts -contains '__pycache__') { return $true }
+        $extension = [IO.Path]::GetExtension($Relative)
+        return ($extension -ieq '.pyc' -or $extension -ieq '.pyo')
+    }
+    $skippedBytecode = 0
+
     $expanded = @()
     foreach ($entry in $entries) {
         if ($entry -notmatch '[\*\?]') { $expanded += $entry; continue }
@@ -63,10 +79,20 @@ try {
             $matched = @(Get-ChildItem -LiteralPath $searchRoot -File -Filter $leaf |
                 Sort-Object Name | ForEach-Object { (Join-Path $directory $_.Name) })
         }
-        if ($matched.Count -eq 0) { throw "Pattern matched no files: $entry" }
-        $expanded += $matched
+        $kept = @($matched | Where-Object { -not (Test-M2PythonBytecode $_) })
+        $skippedBytecode += $matched.Count - $kept.Count
+        if ($kept.Count -eq 0) {
+            if ($matched.Count -gt 0) { throw "Pattern matched only Python bytecode: $entry" }
+            throw "Pattern matched no files: $entry"
+        }
+        $expanded += $kept
     }
     $entries = @($expanded | Select-Object -Unique)
+    Write-Host "Skipped Python bytecode (__pycache__, .pyc, .pyo) under wildcard lines: $skippedBytecode file(s)"
+    $explicitBytecode = @($entries | Where-Object { Test-M2PythonBytecode $_ })
+    if ($explicitBytecode.Count -gt 0) {
+        Write-Warning ("Python bytecode named on a line of its own is published as named: " + ($explicitBytecode -join ', '))
+    }
 
     # Published name for a listed (source) path: the first matching prefix of
     # the map, forward slashes either way.

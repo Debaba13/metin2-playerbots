@@ -1856,9 +1856,9 @@ class ItemToolTip(ToolTip):
 		time = item.GetValue(1)
 		point = item.GetValue(2)
 
-		if abilityType == item.APPLY_ATT_SPEED:
+		if abilityType == getattr(item, "APPLY_ATT_SPEED", 17):
 			self.AppendTextLine(localeInfo.TOOLTIP_POTION_PLUS_ATTACK_SPEED % point, self.GetChangeTextLineColor(point))
-		elif abilityType == item.APPLY_MOV_SPEED:
+		elif abilityType == getattr(item, "APPLY_MOV_SPEED", 19):
 			self.AppendTextLine(localeInfo.TOOLTIP_POTION_PLUS_MOVING_SPEED % point, self.GetChangeTextLineColor(point))
 
 		if time > 0:

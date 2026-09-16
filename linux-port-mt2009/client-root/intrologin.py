@@ -282,6 +282,12 @@ class LoginWindow(ui.ScriptWindow):
 		self.yServerBoard = 0
 
 		self.loadingImage = None
+		self.animatedBackground = False
+		self.backgroundFrame = 1
+		self.backgroundLastFrameTime = 0.0
+		self.backgroundPreloadFrames = []
+		self.backgroundPreloadIndex = 0
+		self.backgroundPreloadDone = True
 
 		# @fixme001 BEGIN (timeOutMsg and timeOutOk undefined)
 		self.timeOutMsg = False
@@ -418,6 +424,7 @@ class LoginWindow(ui.ScriptWindow):
 		self.inputDialog = None
 		self.connectingDialog = None
 		self.loadingImage = None
+		self.backgroundPreloadFrames = []
 
 		self.tooltip = None
 
@@ -821,6 +828,32 @@ class LoginWindow(ui.ScriptWindow):
 					import exception; exception.Abort("__CreateSaveAccountBoard SAB REMOVE")
 			self.SAB_BtnRearrange()
 
+	def __PreloadAnimatedBackground(self):
+		# Only create the hidden ImageBox holders here. The actual texture
+		# uploads are streamed in gradually from OnUpdate (see
+		# __UpdateAnimatedBackgroundPreload) so opening the window doesn't
+		# block on 32 synchronous full-HD texture loads.
+		self.backgroundPreloadFrames = []
+		for frameNumber in xrange(1, 33):
+			frameImage = ui.ImageBox()
+			frameImage.SetParent(self.background)
+			frameImage.Hide()
+			self.backgroundPreloadFrames.append(frameImage)
+		self.backgroundPreloadIndex = 0
+		self.backgroundPreloadDone = False
+
+	def __UpdateAnimatedBackgroundPreload(self):
+		if self.backgroundPreloadDone:
+			return
+		framesPerTick = 2
+		for i in xrange(framesPerTick):
+			if self.backgroundPreloadIndex >= len(self.backgroundPreloadFrames):
+				self.backgroundPreloadDone = True
+				break
+			frameNumber = self.backgroundPreloadIndex + 1
+			self.backgroundPreloadFrames[self.backgroundPreloadIndex].LoadImage("locale/pl/ui/animated/login_big_%02d.dds" % frameNumber)
+			self.backgroundPreloadIndex += 1
+
 	def __LoadScript(self, fileName):
 		import dbg
 		try:
@@ -863,8 +896,12 @@ class LoginWindow(ui.ScriptWindow):
 				self.background.LoadImage("locale/pl/ui/login_small.jpg")
 				self.background.SetScale(float(screen_width) / 800.0, float(screen_height) / 600.0)
 			elif screen_width > 1280:
-				self.background.LoadImage("locale/pl/ui/login_big.jpg")
+				self.background.LoadImage("locale/pl/ui/animated/login_big_01.jpg")
 				self.background.SetScale(float(screen_width) / 1920.0, float(screen_height) / 1080.0)
+				self.animatedBackground = True
+				self.backgroundFrame = 1
+				self.backgroundLastFrameTime = time.clock()
+				self.__PreloadAnimatedBackground()
 
 			self.rulesButton.SAFE_SetEvent(self.__OnClickRulesButton)
 			self.settingsButton.SAFE_SetEvent(self.__OnClickSettingsButton)
@@ -985,6 +1022,15 @@ class LoginWindow(ui.ScriptWindow):
 	def OnUpdate(self):
 		eventManager.EventManager().Update()
 		ServerStateChecker.Update()
+
+		if self.animatedBackground and not self.backgroundPreloadDone:
+			self.__UpdateAnimatedBackgroundPreload()
+
+		# 32 frames, 12 FPS; enabled only for login_big (screen width > 1280 px).
+		if self.animatedBackground and time.clock() - self.backgroundLastFrameTime >= 0.083:
+			self.backgroundFrame = (self.backgroundFrame % 32) + 1
+			self.background.LoadImage("locale/pl/ui/animated/login_big_%02d.dds" % self.backgroundFrame)
+			self.backgroundLastFrameTime = time.clock()
 
 	def EmptyFunc(self):
 		pass

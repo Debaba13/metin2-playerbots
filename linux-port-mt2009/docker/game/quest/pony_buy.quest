@@ -1,3 +1,12 @@
+-- metin2-suite: the package's pony_buy with the wait for the horse taken
+-- from the world's difficulty (m2_difficulty.lua, M2_DIFFICULTY in .env)
+-- instead of the twelve hours for the pony and each upgrade and the
+-- twenty-one between two trainings that the package wrote in. 2.0.56
+-- took the wait out for everybody ("niezaleznie od poziomu konia",
+-- Tieru, 16 September; greess's "Zniesienie czasu oczekiwania na 1lv
+-- konia"); 2.0.57 gives it back to whoever chooses hard. Compiled by the
+-- game Dockerfile beside pony_levelup; its objects land over the stock
+-- ones. Everything else byte for byte as the package has it.
 quest pony_buy begin
 	state start begin
 		when 20349.chat.gameforge.pony_buy._10_npcChat with horse.get_grade()==0 begin
@@ -142,11 +151,18 @@ quest pony_buy begin
 		when 20349.chat.gameforge.horse_upgrade2._260_npcChat with horse.get_grade()==0 begin
 			say_title(gameforge.horse_exchange_ticket._20_sayTitle)
 			say(gameforge.pony_buy._200_say)
-			-- pony_levelup/horse_levelup removed the wait between Horse Medal
-			-- steps; this one -- getting the horse itself, ~12h -- was still
-			-- gated. Skip the wait state instead of just shortening it.
-			pc.setqf("make_time", get_time())
-			setstate(buy)
+			-- metin2-suite: the wait is the world's difficulty; none means the
+			-- horse is ready at once (the package waited twelve hours here)
+			if is_test_server() or game.get_event_flag("beta_server") > 0 then
+				pc.setqf("make_time", get_time()+10)
+				setstate(wait)
+			elseif m2_horse_wait("buy") > 0 then
+				pc.setqf("make_time", get_time()+m2_horse_wait("buy"))
+				setstate(wait)
+			else
+				pc.setqf("make_time", get_time())
+				setstate(buy)
+			end
 		end
 	end
 	state wait begin
@@ -164,8 +180,16 @@ quest pony_buy begin
 			say_title(gameforge.pony_buy._210_makequestbutton)
 			say(gameforge.pony_buy._220_sayReward)
 		end
-		when login with get_time()>=pc.getqf("make_time") begin
-			setstate(buy)
+		when login begin
+			-- metin2-suite: the wait is the world's difficulty as it stands now, so
+			-- one begun under a longer wait lasts no longer than the current one
+			-- (Hiob, 16 September: easy set, "dalej trzeba czekac")
+			if pc.getqf("make_time") > get_time()+m2_horse_wait("buy") then
+				pc.setqf("make_time", get_time()+m2_horse_wait("buy"))
+			end
+			if get_time()>=pc.getqf("make_time") then
+				setstate(buy)
+			end
 		end
 		when 20349.chat.gameforge.horse_upgrade2._250_npcChat with horse.get_grade()!=0 begin
 			setstate(start)
@@ -173,7 +197,18 @@ quest pony_buy begin
 		end
 		when 20349.chat.gameforge.pony_buy._230_npcChat with horse.get_grade()==0 begin
 			say_title(gameforge.horse_exchange_ticket._20_sayTitle)
-			say(gameforge.pony_buy._240_say)
+			-- metin2-suite: the wait is the world's difficulty as it stands now, so
+			-- one begun under a longer wait lasts no longer than the current one
+			-- (Hiob, 16 September: easy set, "dalej trzeba czekac")
+			if pc.getqf("make_time") > get_time()+m2_horse_wait("buy") then
+				pc.setqf("make_time", get_time()+m2_horse_wait("buy"))
+			end
+			if get_time()>=pc.getqf("make_time") then
+				say("Gotowe! Porozmawiaj ze mna jeszcze raz.")
+				setstate(buy)
+			else
+				say(gameforge.pony_buy._240_say)
+			end
 		end
 	end
 	state buy begin
@@ -262,4 +297,3 @@ quest pony_buy begin
 		end
 	end
 end
-

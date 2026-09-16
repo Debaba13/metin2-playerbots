@@ -258,6 +258,32 @@ namespace
 	typedef std::map<DWORD, TPlayerBotAskMemory> TPlayerBotAskMap;
 	TPlayerBotAskMap s_mapAskMemory;
 
+	// The yang rate both memories were learned under. Every price Iwakura's
+	// sheet sets is scaled by the rate, and the memories hold plain yang: the
+	// ask anchor moves five percent per ten minutes and the sale median blends
+	// in whatever was paid, so after the operator moved mob_gold the counters
+	// went on asking the old rate's numbers for hours - a zero too many, or one
+	// too few. A new rate is a new market, so both are forgotten.
+	int s_iPlayerBotPriceRate = 0;
+
+	void ForgetPlayerBotPricesOnRateChange()
+	{
+		const int rate = CHARACTER_MANAGER::instance().GetMobGoldAmountRate(NULL);
+		if (rate == s_iPlayerBotPriceRate)
+			return;
+		if (s_iPlayerBotPriceRate != 0)
+		{
+			sys_log(0, "PLAYERBOT_MARKET: yang rate changed from %d to %d, forgetting asks=%u sales=%u",
+					s_iPlayerBotPriceRate, rate, (unsigned int)s_mapAskMemory.size(),
+					(unsigned int)s_mapSaleMemory.size());
+			s_mapAskMemory.clear();
+			s_mapSaleMemory.clear();
+		}
+		else
+			sys_log(0, "PLAYERBOT_MARKET: yang rate %d", rate);
+		s_iPlayerBotPriceRate = rate;
+	}
+
 	DWORD GetPlayerBotLastAsk(DWORD vnum, BYTE refine, DWORD dwNow)
 	{
 		TPlayerBotAskMap::const_iterator it = s_mapAskMemory.find(PlayerBotSaleKey(vnum, refine));
@@ -277,6 +303,8 @@ namespace
 	DWORD LimitPlayerBotAskStep(DWORD vnum, BYTE refine, DWORD wanted, DWORD dwNow,
 			DWORD skillVnum = 0)
 	{
+		// Before the reference below is taken: a new rate clears the map.
+		ForgetPlayerBotPricesOnRateChange();
 		TPlayerBotAskMemory& mem = s_mapAskMemory[PlayerBotSaleKey(vnum, refine, skillVnum)];
 		// An anchor under the floor is not a price to step away from, it is an
 		// accident to forget. One yang got onto the counters because the median

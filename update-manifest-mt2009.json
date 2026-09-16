@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-14T17:18:45Z",
-  "statusMessage": "2.0.46: **boty nie stoją nad łupem, który nie mieści się w torbie, nie szukają Kapitana Bestii z cudzej wioski, a godzina w panelu i w logach to godzina komputera.** W Wieży Demonów bez umiejętności obszarowych przy kamieniu. Tylko serwer — klient zostaje 2.0.5.",
+  "publishedAt": "2026-09-16T13:49:32Z",
+  "statusMessage": "2.0.59: **Stopniowe wpuszczanie botów (okno wejścia kohorty i dodatkowi boty dołączający w ciągu godzin — w launcherze pod LICZBA BOTÓW), przełącznik „Boty grają jak żywi ludzie” w panelu (sesje i odpoczynki, eksperymentalne, domyślnie wyłączone), metiny w przedziale 16 poziomów, kamienie Wieży Demonów jako cel piętra dla bota w drużynie gracza, a zmiana poziomu trudności skraca też trwające czekanie u Stajennego.** Serwer; klient bez zmian (2.0.11).",
   "server": {
     "version": "2.0.46",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.46/metin2-server-update-2.0.46.zip",
@@ -13,8 +13,8 @@
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.5",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.34/metin2-client-update-2.0.5.zip",
-    "sha256": "7EBBBBC3DD3E6337F75FB74DE4613732CB6EB9A36131BDFC3ED2AA69909B8119"
+    "version": "2.0.11",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.55/metin2-client-update-2.0.11.zip",
+    "sha256": "70801863A1A7ACC599DF17C1DF0000A4FE17B86A7300A794CA5EEC324B88C53B"
   }
 }

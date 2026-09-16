@@ -132,6 +132,10 @@ namespace
 	// and the switch in the panel is for the ones who would rather not.
 	bool s_bPlayerBotNight = true;
 	bool s_bPlayerBotNightReported = true;
+	// "Boty graja jak zywi ludzie" (the LIFE key): sessions and rests, in
+	// CPlayerBotManager::ManageLifeSchedule. Off until the panel says so.
+	bool s_bPlayerBotLifeSchedule = false;
+	bool s_bPlayerBotLifeScheduleReported = false;
 	// What the clock last asked the DB core for, so a request is not repeated
 	// every minute while the round trip is still in flight, and so switching
 	// the clock off in the middle of a night lowers the flag it raised.
@@ -171,6 +175,7 @@ namespace
 		s_iPlayerBotScrollFromPlus = 1;
 		s_bPlayerBotFastBooks = true;
 		s_bPlayerBotNight = true;
+		s_bPlayerBotLifeSchedule = false;
 		if (s_iPlayerBotChestConfigPermille < 0)
 		{
 			s_iPlayerBotChestConfigPermille = g_iMoonlightChestPermille;
@@ -243,6 +248,17 @@ namespace
 				s_bPlayerBotNightReported = enabled;
 			}
 			s_bPlayerBotNight = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "LIFE"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotLifeScheduleReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: life schedule %s", enabled ? "on" : "off");
+				s_bPlayerBotLifeScheduleReported = enabled;
+			}
+			s_bPlayerBotLifeSchedule = enabled;
 			return;
 		}
 		if (PlayerBotWeightNameEquals(szKey, "CHEST") || PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))
@@ -377,6 +393,10 @@ namespace
 	// -1 for the two chest keys while no file has set them: the chest odds then
 	// come from CONFIG and the panel must show "-" rather than a number it did
 	// not choose, or the first slider drag would silently take them over.
+	// The chest figures are the sliders' own, not the zero the event gate
+	// (playerbot_events.h, later in the include order) may be holding the
+	// engine's variables at while no chest window is open.
+	int GetPlayerBotChestWantedPermille(bool stone);
 	long GetPlayerBotPanelWeightValue(const char* szKey)
 	{
 		if (PlayerBotWeightNameEquals(szKey, "CHAT"))
@@ -385,6 +405,8 @@ namespace
 			return s_bPlayerBotFastBooks ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "NIGHT"))
 			return s_bPlayerBotNight ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "LIFE"))
+			return s_bPlayerBotLifeSchedule ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "SCRAP"))
 			return s_iPlayerBotScrapPercent;
 		if (PlayerBotWeightNameEquals(szKey, "REST"))
@@ -392,9 +414,11 @@ namespace
 		if (PlayerBotWeightNameEquals(szKey, "KINGDOMPVP"))
 			return s_iPlayerBotKingdomPvpPercent;
 		if (PlayerBotWeightNameEquals(szKey, "CHEST"))
-			return s_bPlayerBotChestFromFile ? g_iMoonlightChestPermille : -1;
+			return !s_bPlayerBotChestFromFile ? -1 :
+					(GetPlayerBotChestWantedPermille(false) >= 0 ? GetPlayerBotChestWantedPermille(false) : g_iMoonlightChestPermille);
 		if (PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))
-			return s_bPlayerBotChestFromFile ? g_iMoonlightChestStonePermille : -1;
+			return !s_bPlayerBotChestFromFile ? -1 :
+					(GetPlayerBotChestWantedPermille(true) >= 0 ? GetPlayerBotChestWantedPermille(true) : g_iMoonlightChestStonePermille);
 		for (size_t i = 0; i < sizeof(PLAYERBOT_WEIGHT_NAMES) /
 				sizeof(PLAYERBOT_WEIGHT_NAMES[0]); ++i)
 		{
@@ -428,7 +452,8 @@ namespace
 	{
 		if (PlayerBotWeightNameEquals(szKey, "CHAT") ||
 				PlayerBotWeightNameEquals(szKey, "BOOKS") ||
-				PlayerBotWeightNameEquals(szKey, "NIGHT"))
+				PlayerBotWeightNameEquals(szKey, "NIGHT") ||
+				PlayerBotWeightNameEquals(szKey, "LIFE"))
 		{
 			value = value ? 1 : 0;
 			return true;
@@ -758,9 +783,12 @@ namespace
 	// sklepu wystawionego, to niech nie ogladaja straganow, bo ich nie ma".
 	// Asked when a rest is rolled and on every tick of one, so a slider moved
 	// to zero ends the rests already running rather than waiting them out.
+	// A dropper does not: its time is its table's, and ten medal droppers were
+	// found resting on Yongan's square between two dungeon trips.
 	bool MayPlayerBotRestInTown(LPCHARACTER ch)
 	{
 		return ch && IsPlayerBotM1Map(ch->GetMapIndex()) &&
+				!IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())) &&
 				ch->GetLevel() >= PLAYERBOT_TOWN_REST_MIN_LEVEL &&
 				GetPlayerBotRestPercent() > 0 &&
 				GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0;
@@ -777,6 +805,12 @@ namespace
 		if (!s_bPlayerBotWeightsInitialised)
 			ResetPlayerBotWeights();
 		return s_bPlayerBotOverheadChat;
+	}
+
+	// The LIFE switch, asked by CPlayerBotManager::ManageLifeSchedule.
+	bool IsPlayerBotLifeScheduleEnabled()
+	{
+		return s_bPlayerBotLifeSchedule;
 	}
 
 	bool IsPlayerBotFastBooksEnabled()

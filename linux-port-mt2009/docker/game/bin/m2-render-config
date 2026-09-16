@@ -121,6 +121,9 @@ if [ "$M2_PLAYERBOT_WORLD_LAYOUT" = "unified" ]; then
 else
   log "world layout: split (per-kingdom cores; Shinsoo/Jinno cap ~36)"
 fi
+# The difficulty is acted on by the migrate service (event flags the quests
+# read); said here so a support bundle carries it next to the layout.
+log "difficulty: ${M2_DIFFICULTY:-easy} (Biologist and stable keeper waits; apply.sh writes the flags)"
 
 # -----------------------------------------------------------------------------
 # Helpers

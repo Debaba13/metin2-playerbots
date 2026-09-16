@@ -578,6 +578,12 @@ namespace
 				s_mapPlayerBotAIStates.find(ch->GetPlayerID());
 		const BYTE personality = it != s_mapPlayerBotAIStates.end()
 				? it->second.bPersonality : BOT_PERSONALITY_STEADY_ADVENTURER;
+		// The medal dropper's ground is its kingdom's Monkey Dungeon, never the
+		// frontier: three medal droppers of level thirty-three were seen riding
+		// for the Yongbi Desert with "poziom" over their heads, levels their
+		// lock gives them none of.
+		if (personality == BOT_PERSONALITY_MEDAL_DROPPER)
+			return false;
 		// Above the Bokjung ceiling there is nothing there left to stay behind
 		// for, so the reserve rule has nothing to protect and only strands bots.
 		if (IsPlayerBotPastM2Ceiling(ch))
@@ -676,15 +682,40 @@ namespace
 	{
 		if (!ch)
 			return false;
-		// A medal needs a cell. This gate is what the Monkey Dungeon's exit
-		// decision and the planner both read, so a bot already inside with a
-		// full bag finishes its medal and leaves, and a dropper does too.
-		if (IsPlayerBotBagFull(ch))
+		// Nobody past PLAYERBOT_MONKEY_MEDAL_MAX_LEVEL farms medals, the dropper
+		// included: the rolls there are worth a few percent of a medal, and such
+		// a bot buys its medal from a counter instead.
+		if (ch->GetLevel() > PLAYERBOT_MONKEY_MEDAL_MAX_LEVEL)
 			return false;
 		// The medal dropper goes for the medals themselves, whatever its own horse
-		// needs, in whichever dungeon its level earns them.
+		// needs, in whichever dungeon its level earns them, for as long as a medal
+		// has a cell to land in. It used to leave at PLAYERBOT_BAG_FULL_PERCENT
+		// like everybody else, and a keeper's bag is its counter's stock - fifty
+		// to seventy of ninety cells - so a minute of the dungeon's loot took it
+		// over the line: 29 of 37 visits after the dropper's errands were cleared
+		// ended inside three minutes as "horse complete", with the planner turning
+		// the goal back to levelling in the same second. A bag whose items have
+		// not loaded yet (the seconds after a warp) is not a full one.
 		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_MEDAL_DROPPER)
+		{
+			if (ch->IsItemLoaded() && ch->GetEmptyInventory(1) < 0)
+				return false;
+			// And not with its stock in the bag: the dungeon's exit rule sends
+			// a dropper out at PLAYERBOT_MEDAL_DROPPER_MEDAL_STOCK medals
+			// (DecideMonkeyExit, MEDAL_READY) and this gate used to send it
+			// straight back - 703 of 854 visits under ten seconds in an hour on
+			// the test world, one bot every fifty seconds (16 September). It
+			// hunts on its village's ground until a counter line sells.
+			if (ch->IsItemLoaded() &&
+					ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) >= PLAYERBOT_MEDAL_DROPPER_MEDAL_STOCK)
+				return false;
 			return GetPlayerBotMonkeyMapFor(ch) != 0;
+		}
+		// A medal needs a cell. This gate is what the Monkey Dungeon's exit
+		// decision and the planner both read, so a bot already inside with a
+		// full bag finishes its medal and leaves.
+		if (IsPlayerBotBagFull(ch))
+			return false;
 		if (!CanPlayerBotAdvanceHorse(ch))
 			return false;
 
@@ -731,11 +762,16 @@ namespace
 				chance = hasCombatHorse ? 6 : (ch->GetHorseLevel() == 0 ? 15 : 10);
 				break;
 		}
+		// Twice as often before the battle horse: the chances above sent 17 of
+		// 999 bots into a dungeon (PLAYERBOT_HORSE_EXPEDITION_NO_COMBAT_HORSE_MULT).
+		if (!hasCombatHorse)
+			chance = (BYTE)std::min<int>(PLAYERBOT_HORSE_EXPEDITION_MAX_CHANCE,
+					chance * PLAYERBOT_HORSE_EXPEDITION_NO_COMBAT_HORSE_MULT);
 		TPlayerBotAIStateMap::const_iterator stateIt =
 				s_mapPlayerBotAIStates.find(ch->GetPlayerID());
 		if (stateIt != s_mapPlayerBotAIStates.end() &&
 				stateIt->second.bAmbition == BOT_AMBITION_HORSE && !hasCombatHorse)
-			chance = std::min<BYTE>(55, chance + 15);
+			chance = (BYTE)std::min<int>(PLAYERBOT_HORSE_EXPEDITION_MAX_CHANCE, chance + 15);
 
 		const DWORD window = dwNow / (30U * 60U * 1000U);
 		const DWORD seed = ch->GetPlayerID() ^ (window * 0x9e3779b9U) ^
@@ -752,6 +788,8 @@ namespace
 	{
 		if (!ch)
 			return 1;
+		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_MEDAL_DROPPER)
+			return PLAYERBOT_MEDAL_DROPPER_MEDAL_STOCK;
 		// The high-priority builds occasionally prepare the next horse level in the
 		// same visit. Other classes leave after one medal, freeing dungeon capacity
 		// and returning to ordinary experience progression much sooner.
@@ -1145,16 +1183,12 @@ namespace
 			const WORD ticks = state.wPortalWalkTicks;
 			state.wPortalWalkTicks = 0;
 			state.wPortalWalkRouteIndex = 0;
-			// And get off the horse on the way out. The tick handed back here is
-			// the bot's whole escape - it is meant to fall through to hunting and
-			// wandering, end up somewhere else and plan from there - and the
-			// manager's "a transport horse must not fight" pass was taking it:
-			// that pass dismounts a rider and claims the tick, so the bot spent
-			// the escape tick getting off the horse, mounted again on the next
-			// travel pass, and stalled for another twenty seconds. Forty-six bots
-			// were found doing exactly that at the Sohan exit, mounting and
-			// dismounting every twenty seconds without moving a step.
-			SetPlayerBotRidingForTravel(ch, state, false, dwNow, "portal_walk_stalled");
+			// The rider keeps the saddle on the way out. It used to get off here,
+			// because the manager's "a transport horse must not fight" pass took any
+			// rider off and claimed the tick - the bot's whole escape - and
+			// forty-six bots at the Sohan exit mounted and dismounted every twenty
+			// seconds without a step. That pass wants a target now (combat_ready),
+			// and nothing the escape falls through to wants the ground.
 			// Everything needed to tell the three failures apart without a
 			// second deploy: whether the walk was ever asked to happen (ticks),
 			// whether it had a route to follow (route), whether the planner was
@@ -1309,9 +1343,28 @@ namespace
 		if (!ch || state.bVisitingShop || state.bVisitingBiologist ||
 				state.bVisitingStable || state.bRecoveringAfterDeath || state.bTacticalRetreat)
 			return false;
+		// A bot in a player's party goes where the player goes
+		// (ManagePlayerBotFollowHumanLeader), not where its own plans send it.
+		// The follow pass leaves the bot to the rest of the tick once it stands
+		// near the player, and this pass then sent it off: three shamans in
+		// sizowski's party paid the Teleporter for Hwang, Sohan and the desert,
+		// were warped back to him a second later, and set off again - six round
+		// trips in two minutes, and a buff landed once (14 September). Every
+		// departure waits for the party to end; a crossing that was under way
+		// is dropped rather than resumed from wherever the player has led.
+		if (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty()))
+		{
+			state.lDesertCrossingTo = 0;
+			return false;
+		}
 
 		const long mapIndex = ch->GetMapIndex();
 		const bool hasMedal = ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) > 0;
+		// A medal in a medal dropper's bag is stock for its counter, not an errand
+		// at the stable: neither village holds such a bot back for one, and its
+		// expedition goes on past it (GetPlayerBotDesiredHorseMedalStock).
+		const bool holdsMedalToHandIn = hasMedal &&
+				state.bPersonality != BOT_PERSONALITY_MEDAL_DROPPER;
 		// A trader does not down tools to go and farm horse medals in the Monkey
 		// Dungeon. That errand takes a bot right across the world for the better
 		// part of an hour, and it is exactly the striving this personality exists
@@ -1319,7 +1372,7 @@ namespace
 		const bool pursuesHorseExpedition =
 				state.bPersonality != BOT_PERSONALITY_MERCHANT &&
 				ShouldPlayerBotPursueHorseExpedition(ch, dwNow);
-		const bool needsHorseExpedition = pursuesHorseExpedition && !hasMedal;
+		const bool needsHorseExpedition = pursuesHorseExpedition && !holdsMedalToHandIn;
 		// GetWear answers NULL for every slot until the item cache has loaded,
 		// which is exactly the state a character is in for the first seconds after
 		// a map change. Trusting it there made a bot believe it had lost its
@@ -1372,6 +1425,14 @@ namespace
 					reason = "monkey_medal_found_direct";
 				else if (exitDecision == playerbot_world_rules::MONKEY_EXIT_TIMEOUT)
 					reason = "monkey_timeout_direct";
+				// Four answers leave through one transition line, and "horse
+				// complete" says nothing of which gate closed; the line below
+				// is what named the dropper's full bag.
+				sys_log(0, "PLAYERBOT_MONKEY: exit pid=%u name=%s map=%ld reason=%s pursues=%d free_cells=%d medals=%d stock=%d visit_s=%u",
+						ch->GetPlayerID(), ch->GetName(), mapIndex, reason,
+						pursuesHorseExpedition ? 1 : 0, CountPlayerBotFreeInventoryCells(ch),
+						medalCount, context.desiredMedalCount,
+						(unsigned int)((dwNow - state.dwDungeonEnteredTime) / 1000));
 				long homeMap = 0, homeX = 0, homeY = 0;
 				if (!GetPlayerBotVillageReturn(ch, playerbot_empire_rules::MAP_ROLE_M2,
 							homeMap, homeX, homeY))
@@ -1483,7 +1544,7 @@ namespace
 			// The soft needs get one town visit to be met. If the bot has just
 			// been shopping and still wants something, the town cannot supply it,
 			// and standing here is worse than moving on.
-			if (hasMedal || BlocksPlayerBotTravel(ch) || needsM1OnlyServices ||
+			if (holdsMedalToHandIn || BlocksPlayerBotTravel(ch) || needsM1OnlyServices ||
 					HasPlayerBotExcessPotions(ch) ||
 					((needsTownPreparation || needsCriticalTownServices) &&
 					 !townVisitRecentlyCompleted))
@@ -1554,7 +1615,7 @@ namespace
 		{
 			// ManagePlayerBotHorse owns the medal on M2 and walks to the local Stable
 			// Boy. Returning to M1 here was the source of the needless three-map trip.
-			if (hasMedal)
+			if (holdsMedalToHandIn)
 				return false;
 
 			// Profession trainers and the Biologist only exist in Joan. Routine gear,
@@ -1575,9 +1636,16 @@ namespace
 			// audit's point: a higher-priority purchase defers the departure,
 			// it does not cancel it, and after the visit the traveller comes
 			// straight back rather than waiting for another roll of ambition.
+			// A trip for a medal is not held back by the soft half of that list.
+			// It counts a bag at 45% as critical, and a keeper's bag is its
+			// counter's stock: the medal droppers carried fifty to seventy of
+			// their ninety cells, twenty-four of them materials, and three of
+			// 116 got into the dungeon in twenty-five minutes. What stops a fight
+			// still holds, and a full bag or the last potion ends the errand on
+			// its own (ShouldPlayerBotPursueHorseExpedition, DecideMonkeyExit).
 			if (BlocksPlayerBotTravel(ch) ||
-					(needsCriticalTownServices && (state.dwNextShopCheckTime == 0 ||
-						dwNow < state.dwNextShopCheckTime)))
+					(needsCriticalTownServices && !needsHorseExpedition &&
+						(state.dwNextShopCheckTime == 0 || dwNow < state.dwNextShopCheckTime)))
 			{
 				const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
 				if (wantMap != 0 && state.lDepartureMap != wantMap)

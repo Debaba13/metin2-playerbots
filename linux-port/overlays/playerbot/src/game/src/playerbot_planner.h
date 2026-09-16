@@ -79,6 +79,15 @@ namespace
 	{
 		if (!ch || state.bBotRole == BOT_ROLE_METIN_HUNTER)
 			return;
+		// A medal, M2 or M3 dropper farms its own table and goes on no Metin
+		// expedition - the half hour that kept a medal dropper of twenty-five
+		// out of its dungeon. The Metin dropper's table is the stones.
+		if (IsPlayerBotDropper(state.bPersonality) &&
+				state.bPersonality != BOT_PERSONALITY_METIN_DROPPER)
+		{
+			state.dwMetinExpeditionUntil = 0;
+			return;
+		}
 		if (state.dwMetinExpeditionUntil != 0 && dwNow >= state.dwMetinExpeditionUntil)
 		{
 			state.dwMetinExpeditionUntil = 0;

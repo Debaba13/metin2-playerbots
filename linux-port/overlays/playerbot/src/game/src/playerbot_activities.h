@@ -63,6 +63,24 @@ namespace
 	void GetPlayerBotNpcApproach(DWORD playerID, long npcX, long npcY, DWORD salt,
 			long& approachX, long& approachY);
 
+	// horse.advance() climbs down and back round the new level, so the rider sits
+	// on the animal it has just become. The stable pass does the same on the one
+	// tick a level changes and keeps the saddle for the rest of the visit, the
+	// way CollectPlayerBotBattleHorse does.
+	void SetPlayerBotHorseLevelInSaddle(LPCHARACTER ch, int level)
+	{
+		if (!ch || (int)ch->GetHorseLevel() >= level)
+			return;
+		const bool wasRiding = ch->IsRiding();
+		if (wasRiding)
+			ch->StopRiding();
+		ch->SetHorseLevel(level);
+		ch->ComputePoints();
+		ch->SkillLevelPacket();
+		if (wasRiding)
+			ch->StartRiding();
+	}
+
 	bool ManagePlayerBotHorse(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		// The stable keeper stands in all six villages, so the horse errand is a
@@ -147,7 +165,8 @@ namespace
 			return true;
 		}
 
-		SetPlayerBotRidingForTravel(ch, state, false, dwNow, "stable_interaction");
+		// The keeper talks to a rider; only the level itself is changed on foot
+		// (SetPlayerBotHorseLevelInSaddle).
 		ch->Stop();
 		ch->SetPosition(POS_STANDING);
 		if (state.dwNextHorseActionTime == 0)
@@ -175,7 +194,7 @@ namespace
 		// its twenty-first level.
 		if (IsPlayerBotMilitaryHorseEarned(ch))
 		{
-			ch->SetHorseLevel(PLAYERBOT_MILITARY_HORSE_LEVEL);
+			SetPlayerBotHorseLevelInSaddle(ch, PLAYERBOT_MILITARY_HORSE_LEVEL);
 			ch->SetQuestFlag(PLAYERBOT_HORSE_MEDALS_FLAG, PLAYERBOT_MILITARY_HORSE_LEVEL);
 			ch->SetSkillLevel(131, 10);
 			sys_log(0, "PLAYERBOT_HORSE: military horse granted pid=%u name=%s horse_level=%u kills=%d",
@@ -205,8 +224,7 @@ namespace
 		delivered = std::min(delivered, (int)PLAYERBOT_MILITARY_HORSE_FROM_HORSE_LEVEL);
 		ch->SetQuestFlag(PLAYERBOT_HORSE_MEDALS_FLAG, delivered);
 		ch->SetQuestFlag(PLAYERBOT_HORSE_LAST_DELIVERY_TIME_FLAG, get_global_time());
-		if (ch->GetHorseLevel() < delivered)
-			ch->SetHorseLevel(delivered);
+		SetPlayerBotHorseLevelInSaddle(ch, delivered);
 		ch->SetSkillLevel(131, 10);
 
 		const char* stage = delivered >= PLAYERBOT_MILITARY_HORSE_FROM_HORSE_LEVEL
@@ -249,7 +267,9 @@ namespace
 
 	bool IsPlayerBotAngler(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
-		if (!CanPlayerBotUseFishingRod(ch))
+		// A dropper is no angler: a session is a stay on a bank in the first
+		// village, away from the one thing it farms.
+		if (IsPlayerBotDropper(state.bPersonality) || !CanPlayerBotUseFishingRod(ch))
 			return false;
 		const DWORD roll = PlayerBotNavHash(ch->GetPlayerID() ^ 0x46495348U) % 100U;
 		// Thirty collectors in a hundred and eight of everyone else, stretched or
@@ -596,7 +616,11 @@ namespace
 		if (worn && worn->GetType() == ITEM_ROD && worn->GetRefinedVnum() > 0 &&
 				worn->GetSocket(0) >= worn->GetValue(2))
 		{
-			if (!ch->UnequipItem(worn))
+			// The engine's UnequipItem does not ask for room itself, and the new
+			// rod is put in the old one's cell: a rod that stayed in the hand
+			// would hand the slot's cell to an item nobody equipped.
+			if (ch->GetEmptyInventory(worn->GetSize()) < 0 || !ch->UnequipItem(worn) ||
+					worn->IsEquipped())
 				return false;
 			rod = worn;
 		}
@@ -611,6 +635,8 @@ namespace
 		if (!rod)
 			return false;
 
+		if (rod->GetWindow() != INVENTORY || rod->GetCell() >= PLAYERBOT_BAG_CELLS)
+			return false;
 		const DWORD oldVnum = rod->GetVnum();
 		const BYTE bCell = rod->GetCell();
 		const int chance = rod->GetValue(3);
@@ -989,6 +1015,9 @@ namespace
 	{
 		if (!ch)
 			return false;
+		// Asked for now: the equipment pass leaves a worn pass alone for a while
+		// (IsPlayerBotFishingPassHeld).
+		s_mapPlayerBotFishingPassAskedAt[ch->GetPlayerID()] = dwNow;
 		if (ch->IsEquipUniqueItem(UNIQUE_ITEM_FISHING_PASS))
 			return true;
 		LPITEM pass = NULL;
@@ -1006,7 +1035,8 @@ namespace
 			if (ch->GetEmptyInventory(1) < 0)
 				return false;
 			pass = ch->AutoGiveItem(UNIQUE_ITEM_FISHING_PASS, 1, -1, false);
-			if (!pass)
+			// On the ground is not in the bag (IsPlayerBotWornItemSound).
+			if (!pass || pass->GetOwner() != ch || pass->GetWindow() != INVENTORY)
 				return false;
 			PlayerBotChangeGold(ch, -(int)PLAYERBOT_FISHING_PASS_PRICE);
 			sys_log(0, "PLAYERBOT_FISHING: fishing pass bought pid=%u name=%s price=%u gold=%lld",

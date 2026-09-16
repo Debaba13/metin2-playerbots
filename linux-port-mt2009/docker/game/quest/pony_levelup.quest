@@ -5910,6 +5910,12 @@ quest pony_levelup begin
 			elseif pc.get_empire() == 3 then -- = Jinno
 				HomeMapIndex = 41 -- = Pyungmoo
 			end
+			-- metin2-suite: the wait is the world's difficulty as it stands now, so
+			-- one begun under a longer wait lasts no longer than the current one
+			-- (Hiob, 16 September: easy set, "dalej trzeba czekac")
+			if pc.getqf("next_time") > get_time()+m2_horse_wait("train") then
+				pc.setqf("next_time", get_time()+m2_horse_wait("train"))
+			end
 			if pc.get_map_index() != HomeMapIndex  then
 				say_title(gameforge.horse_exchange_ticket._20_sayTitle)
 				local map_lookup = { "Yongan", "Joan", "Pyongmoo" }
@@ -5918,9 +5924,10 @@ quest pony_levelup begin
 				say_title(gameforge.horse_exchange_ticket._20_sayTitle)
 				say(gameforge.pony_levelup._530_say)
 				setstate(need_item50050)
-			-- metin2-suite 2.0.12: the package waited 18 hours between two medals
-			-- (pc.getqf("next_time")); this world hands the next one over at once.
-			elseif false then
+			-- metin2-suite: the package waited 18 hours between two medals; 2.0.12
+			-- handed the next one over at once, and since 2.0.57 the wait is the
+			-- world's difficulty (m2_horse_wait("train"), M2_DIFFICULTY in .env).
+			elseif get_time()<pc.getqf("next_time") then
 				say_title(gameforge.horse_exchange_ticket._20_sayTitle)
 				say(gameforge.pony_levelup._540_say)
 			elseif horse.get_stamina_pct()<=10 then
@@ -5942,7 +5949,7 @@ quest pony_levelup begin
 					say_reward("BETA: czas skrocony do 90s")
 					pc.setqf("next_time", get_time()+90)
 				else
-					pc.setqf("next_time", get_time()+18*60*60)
+					pc.setqf("next_time", get_time()+m2_horse_wait("train"))
 				end
 				if is_test_server() then
 					say_split("[DEBUG] MENU WYBORU TYLKO NA TESTOWYM TRYBIE (INACZEJ LOSOWO)", say_reward)
@@ -5991,7 +5998,7 @@ quest pony_levelup begin
 					say_reward("BETA: czas skrocony do 90s")
 					pc.setqf("next_time", get_time()+90)
 				else
-					pc.setqf("next_time", get_time()+18*60*60)
+					pc.setqf("next_time", get_time()+m2_horse_wait("train"))
 				end
 				if is_test_server() then
 					say_split("[DEBUG] MENU WYBORU TYLKO NA TESTOWYM TRYBIE (INACZEJ LOSOWO)", say_reward)
@@ -6045,7 +6052,7 @@ quest pony_levelup begin
 					say_reward("BETA: czas skrocony do 10s")
 					pc.setqf("next_time", get_time()+10)
 				else
-					pc.setqf("next_time", get_time()+18*60*60)
+					pc.setqf("next_time", get_time()+m2_horse_wait("train"))
 				end
 				if pc.get_empire()==1 then
 					if is_test_server() then
@@ -6130,7 +6137,7 @@ quest pony_levelup begin
 					say_reward("BETA: czas skrocony do 90s")
 					pc.setqf("next_time", get_time()+90)
 				else
-					pc.setqf("next_time", get_time()+18*60*60)
+					pc.setqf("next_time", get_time()+m2_horse_wait("train"))
 				end
 				if pc.get_empire()==1 then
 					if is_test_server() then

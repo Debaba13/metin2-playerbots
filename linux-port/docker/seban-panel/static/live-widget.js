@@ -16,7 +16,7 @@
   restartInfo.id = 'last-restart';
   document.querySelector('.live-shell header > div').appendChild(restartInfo);
   [...document.querySelectorAll('.live-shell footer span')].filter(node => node.textContent.includes('Podkład graficzny')).forEach(node => node.remove());
-  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Kolay Maymun Zindanı',61:'Sohan Dağı',64:'Ork Vadisi',63:'Yongbi Çölü',104:'Örümcek Zindanı V1',108:'Orta Maymun Zindanı',109:'Zor Maymun Zindanı'};
+  const mapLabels = {21:'Chunjo M1 — Joan',23:'Chunjo M2 — Bokjung',24:'Chunjo M3 — Waryong',25:'Kolay Maymun Zindanı',61:'Sohan Dağı',64:'Ork Vadisi',63:'Yongbi Çölü',104:'Örümcek Zindanı V1',108:'Orta Maymun Zindanı',109:'Zor Maymun Zindanı',65:'Hwang Tapınağı',4:'Shinsoo M3 — Jungrang',44:'Jinno M3 — Imha',5:'Shinsoo Maymun Zindanı',45:'Jinno Maymun Zindanı',1:'Shinsoo M1 — Yongan',3:'Shinsoo M2 — Jayang',41:'Jinno M1 — Pyongmoo',43:'Jinno M2 — Bakra',67:'Orman',68:'Kızıl Orman',66:'Şeytan Kulesi'};
   Object.entries(mapLabels).forEach(([id,label]) => {
     const option = select.querySelector(`option[value="${id}"]`);
     if (option) option.textContent = label;
@@ -26,14 +26,16 @@
   if (overview) {
     overviewMaps = document.createElement('section');
     overviewMaps.className = 'overview-maps';
-    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4><div class="muted">Yükleniyor…</div>';
+    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4><div class="overview-maps-list"><div class="muted">Yükleniyor…</div></div>';
     overview.insertBefore(overviewMaps, overview.querySelector('.overview-restart'));
   }
   function renderOverviewMaps() {
     if (!overviewMaps) return;
     const counts = snapshot.reduce((all, bot) => { all[bot.map_index] = (all[bot.map_index] || 0) + 1; return all; }, Object.fromEntries(Object.keys(mapLabels).map(id => [id, 0])));
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4>' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Harita #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Çevrimiçi bot yok.</div>');
+    // Scrollable inner list -- with 20+ maps now tracked, the plain list
+    // used to spill past the fixed-height world-overview sidebar box.
+    overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4><div class="overview-maps-list">' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Harita #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Çevrimiçi bot yok.</div>') + '</div>';
   }
   const levelOK = (level) => currentLevel === 'all' || (currentLevel === '16+' ? level >= 16 : (() => { const [a,b] = currentLevel.split('-').map(Number); return level >= a && level <= b; })());
   const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -43,7 +45,7 @@
     if (/bal[ıi]k|tutuyor|fishing/.test(status)) return 'Balık Tutuyor';
     const goals = {2:'Meslek Seçiyor',3:'Ekipman Ediniyor',4:'Stok Tamamlıyor',5:'Ekipman Geliştiriyor',6:'Yetenek Geliştiriyor',7:'Metin Avlıyor',8:'Grupta Oynuyor',9:'Biyolog Görevi Yapıyor',10:'Avlanma Görevi',11:'At Geliştiriyor'};
     if (goals[bot.goal] !== undefined) return goals[bot.goal];
-    const actions = {2:'Expliyor / Savaşıyor',3:'Ganimet Topluyor',4:'İyileşiyor',6:'Ticaret Yapıyor',7:'Ekipman Geliştiriyor',8:'Yetenek Geliştiriyor',9:'Ekipman Geliştiriyor',10:'Grupta Oynuyor',11:'Biyolog Görevi Yapıyor',12:'At Geliştiriyor'};
+    const actions = {2:'Expliyor / Savaşıyor',3:'Ganimet Topluyor',4:'İyileşiyor',5:'Meslek Seçiyor',6:'Ticaret Yapıyor',7:'Ekipman Geliştiriyor',8:'Yetenek Geliştiriyor',9:'Ekipman Geliştiriyor',10:'Grupta Oynuyor',11:'Biyolog Görevi Yapıyor',12:'At Geliştiriyor',13:'Tezgah İşletiyor',15:'Tezgahlara Bakıyor',16:'Canavar Çekiyor',17:'Şehirde Dinleniyor',18:'Maden Kazıyor'};
     return actions[bot.action] || (bot.action === 1 ? 'Yol Alıyor' : 'Expliyor / Savaşıyor');
   }
   function renderActivities(bots) {

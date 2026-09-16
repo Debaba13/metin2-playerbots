@@ -355,6 +355,33 @@ namespace
 		return count;
 	}
 
+	// The second villages' choice: the band rule above, and when it admits
+	// fewer than PLAYERBOT_M2_HUB_CHOICES_MIN hubs, the nearest bands by
+	// distance fill the set. The first villages have thirty-two hubs over a
+	// spread of thirty levels and never needed this; a second village has
+	// three bands, and the one under twenty-five matches none of them.
+	int CollectPlayerBotM2HubsForLevel(int botLevel, const TPlayerBotVillageHub* hubs,
+			int hubTotal, int* out, int cap)
+	{
+		int count = CollectPlayerBotM1HubsForLevel(botLevel, hubs, hubTotal, out, cap);
+		for (int distance = 0;
+				count < PLAYERBOT_M2_HUB_CHOICES_MIN && count < hubTotal && count < cap && distance < 64;
+				++distance)
+		{
+			for (int h = 0; h < hubTotal && count < PLAYERBOT_M2_HUB_CHOICES_MIN && count < cap; ++h)
+			{
+				if (abs(hubs[h].mobLevel - botLevel) != distance)
+					continue;
+				bool have = false;
+				for (int i = 0; i < count && !have; ++i)
+					have = out[i] == h;
+				if (!have)
+					out[count++] = h;
+			}
+		}
+		return count;
+	}
+
 	void ManagePlayerBotWandering(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow);
 
 	// A frontier map is worked, not squatted on.
@@ -703,11 +730,28 @@ namespace
 			}
 			else
 			{
-				// Real spawn clusters from this village's own regen.txt.
-				// Persistent hub assignment stops the M2 cohort from tracing one
-				// identical route.
+				// Real spawn clusters from this village's own regen.txt, each with
+				// the median monster level round it, and a bot goes only to the
+				// hubs of its own band, the way the first villages do it. Persistent
+				// hub assignment by pid stops the cohort from tracing one route.
+				//
+				// The table used to be twelve hubs taken by pid with no band, and
+				// the wander pass only runs on a tick nothing was worth attacking:
+				// a bot came in at the gate, found monsters, and chain-killed its
+				// way outward from there for the rest of its life. Jayang's gate is
+				// in its south and Bakra's in its north, and the far half of each -
+				// the 501-504 ground of 29-36 - had nobody on it ("boty z Shinsoo
+				// omijaja gorna czesc Jayang, z Jinno dolna czesc Bakra", blasty,
+				// 16 September). The band choice sends the 33+ there, and the
+				// outgrown-prey rule in the combat policy is what lets them leave.
 				const TPlayerBotVillageHub* hubs = ground->hubs;
-				const size_t hubIndex = (pid + state.uMetinHotspotIndex) % ground->hubCount;
+				int hubChoices[32];
+				const int hubCount = CollectPlayerBotM2HubsForLevel(ch->GetLevel(),
+						hubs, (int)ground->hubCount, hubChoices, 32);
+				if (hubCount <= 0)
+					return;
+				const size_t hubIndex =
+						(size_t)hubChoices[(pid + state.uMetinHotspotIndex) % (DWORD)hubCount];
 				long offsetX = 0, offsetY = 0;
 				GetPlayerBotStableOffset(pid, 0x4d324855U + (DWORD)hubIndex,
 						150, 700, offsetX, offsetY);

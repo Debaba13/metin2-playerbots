@@ -215,6 +215,28 @@ def main():
     # "Unknown column 'hwid' in 'INSERT INTO'" on every login of such a world.
     parts.append("ALTER TABLE `loginlog2` ADD COLUMN IF NOT EXISTS `hwid` varchar(255) DEFAULT NULL;")
     parts.append('')
+    # hack_log came with the package's dump as time, name, server and why,
+    # while LogManager::HackLog writes login and ip as well - so every line it
+    # tried failed with "Unknown column 'login' in 'INSERT INTO'" and the
+    # table never held a row (a few hundred a day on the test world, each a
+    # bot's FAST_ITEM_SWAP). The two columns go where r40250's table has them,
+    # and name widens to CHARACTER_NAME_MAX_LEN, which the dump's sixteen bytes
+    # were short of. ADD COLUMN IF NOT EXISTS for a world made before this;
+    # the MODIFY is a no-op on a table already that wide.
+    parts.append("ALTER TABLE `hack_log` ADD COLUMN IF NOT EXISTS `login` varbinary(30) DEFAULT NULL AFTER `time`;")
+    parts.append("ALTER TABLE `hack_log` ADD COLUMN IF NOT EXISTS `ip` varbinary(20) DEFAULT NULL AFTER `name`;")
+    parts.append("ALTER TABLE `hack_log` MODIFY COLUMN IF EXISTS `name` varbinary(24) DEFAULT NULL;")
+    parts.append('')
+    # refinelog.setType says how a refine was made, and the classic panel puts
+    # it in brackets in a character's gear history. The dump's SET held SCROLL
+    # for every scroll and dropped the three longer names mt2009 writes, and
+    # playerbotify's apply_refine_log_way now writes DEVILTOWER for the Demon
+    # Tower smith and SCROLL:<vnum> for a scroll; a varchar holds all of them
+    # and keeps what the SET held. The index is for the history's lookup by
+    # character and time on a table of a few hundred thousand rows.
+    parts.append("ALTER TABLE `refinelog` MODIFY COLUMN IF EXISTS `setType` varchar(40) DEFAULT NULL;")
+    parts.append("ALTER TABLE `refinelog` ADD INDEX IF NOT EXISTS `pid_time_idx` (`pid`, `time`);")
+    parts.append('')
     for t, ddl in OWN.items():
         parts.append(ddl)
         parts.append('')

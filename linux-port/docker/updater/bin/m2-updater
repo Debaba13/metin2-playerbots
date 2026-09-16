@@ -183,6 +183,45 @@ repo_version() {
 }
 
 # ---------------------------------------------------------------------------
+#  Which line this stack is.  The 2.x (mt2009) line ships an ENGINE file with
+#  the word mt2009 beside its docker-compose.yml and updates from the release
+#  package with linux-port/tools/update.sh -- never from this checkout.  What
+#  this script copies over the stack is the repository's linux-port/docker,
+#  and on a 2.x server that is the r40250 compose file: MariaDB 10.11 started
+#  on a database 11.8 made, and two log indexes damaged in the two minutes it
+#  ran (seban latino, 15 September, through `docker compose exec updater
+#  m2-updater', which the 2.x compose file's own entrypoint never runs).
+#  Without the ENGINE file, a compose file naming MariaDB 11 says the same.
+# ---------------------------------------------------------------------------
+stack_engine() {
+    for _f in "$STACK_DIR/ENGINE" "$STACK_DIR/linux-port/docker/ENGINE"; do
+        if [ -f "$_f" ]; then
+            tr -d ' \r\n' < "$_f" 2>/dev/null
+            return 0
+        fi
+    done
+    for _f in "$STACK_DIR/docker-compose.yml" "$STACK_DIR/linux-port/docker/docker-compose.yml"; do
+        if grep -q 'image: mariadb:11\.' "$_f" 2>/dev/null; then
+            printf 'mt2009'
+            return 0
+        fi
+    done
+    printf 'r40250'
+}
+
+refuse_mt2009() {
+    note "!! this server runs the 2.x (mt2009) line, and m2-updater updates only the 1.x line."
+    note "   It would copy the repository's 1.x build files over this server - among them a"
+    note "   docker-compose.yml that starts MariaDB 10.11 on a database made by 11.8."
+    note "   The 2.x line updates from the release package instead:"
+    note "       sh linux-port/tools/update.sh        (from the server folder)"
+    note "   and the updater container started from this server's own docker-compose.yml"
+    note "   runs exactly that when the panel asks. Nothing was changed."
+    set_status failed "this is a 2.x (mt2009) server: it updates with linux-port/tools/update.sh, not m2-updater"
+    RC=1
+}
+
+# ---------------------------------------------------------------------------
 #  Is everything this needs actually here?
 # ---------------------------------------------------------------------------
 check_env() {
@@ -244,6 +283,11 @@ do_update() {
     note "branch    $BRANCH"
     note ""
     set_status running "starting"
+
+    if [ "$(stack_engine)" = mt2009 ]; then
+        refuse_mt2009
+        return 1
+    fi
 
     if ! check_env; then
         fail "this container is missing something it needs -- see the lines above"
@@ -346,6 +390,10 @@ prepare_spool() {
 # ---------------------------------------------------------------------------
 cmd_selftest() {
     note "self-test -- nothing is changed"
+    if [ "$(stack_engine)" = mt2009 ]; then
+        refuse_mt2009
+        return 1
+    fi
     if check_env; then
         note "   everything it needs is here"
         note "   spool     $SPOOL"
@@ -360,6 +408,8 @@ cmd_selftest() {
 cmd_watch() {
     say "watching $SPOOL for update requests (every ${POLL}s)"
     say "stack $STACK_DIR, checkout $REPO_DIR, branch $BRANCH"
+    [ "$(stack_engine)" = mt2009 ] \
+        && say "NOTE: this is a 2.x (mt2009) server -- every request is refused; its updater is linux-port/tools/update.sh"
     check_env >/dev/null 2>&1 \
         || say "NOTE: something it needs is missing -- 'm2-updater selftest' says what"
     while :; do

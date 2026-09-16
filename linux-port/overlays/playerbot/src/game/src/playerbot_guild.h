@@ -129,6 +129,9 @@ namespace
 	{
 		if (!ch || ch->GetGuild() != NULL || state.bFoundedGuild)
 			return false;
+		// Nor a dropper: see LeavePlayerBotGuildAsDropper.
+		if (IsPlayerBotDropper(state.bPersonality))
+			return false;
 		if (ch->GetLevel() < PLAYERBOT_GUILD_MIN_LEVEL)
 			return false;
 		// The engine takes the fee after the guild exists, so a bot that cannot
@@ -192,6 +195,8 @@ namespace
 				return true;
 			if (!candidate->GetDesc() || !candidate->GetDesc()->IsBot())
 				return true;
+			if (IsPlayerBotDropper(GetPlayerBotPersonalityByPID(candidate->GetPlayerID())))
+				return true;
 			if (candidate->GetEmpire() != m_me->GetEmpire())
 				return true;
 			if (DISTANCE_APPROX(m_me->GetX() - candidate->GetX(),
@@ -213,6 +218,62 @@ namespace
 		int m_invited;
 	};
 
+	// A dropper is a drop character, not a guildmate: "takie postacie niech nie
+	// dochodza do gildii, to tylko dropki" (Tieru, 15 September), and 238 of the
+	// test world's 250 were in one. It is never asked and never founds one, and
+	// one already inside leaves on its next guild check. A master cannot leave
+	// its own guild, so a dropper master hands it to the strongest bot of that
+	// guild standing near it, or disbands a guild of one.
+	struct FPlayerBotGuildHeir
+	{
+		FPlayerBotGuildHeir(LPCHARACTER me, CGuild* guild) : m_me(me), m_guild(guild), m_best(NULL) {}
+
+		bool operator()(LPENTITY ent)
+		{
+			if (!ent || !ent->IsType(ENTITY_CHARACTER))
+				return true;
+			LPCHARACTER candidate = static_cast<LPCHARACTER>(ent);
+			if (candidate == m_me || !candidate->IsPC() || candidate->IsDead() ||
+					candidate->GetGuild() != m_guild || !candidate->GetDesc() ||
+					!candidate->GetDesc()->IsBot() ||
+					IsPlayerBotDropper(GetPlayerBotPersonalityByPID(candidate->GetPlayerID())))
+				return true;
+			if (!m_best || candidate->GetLevel() > m_best->GetLevel())
+				m_best = candidate;
+			return true;
+		}
+
+		LPCHARACTER m_me;
+		CGuild* m_guild;
+		LPCHARACTER m_best;
+	};
+
+	void LeavePlayerBotGuildAsDropper(LPCHARACTER ch, CGuild* guild)
+	{
+		const DWORD pid = ch->GetPlayerID();
+		if (guild->GetMasterPID() != pid)
+		{
+			if (guild->RequestRemoveMember(pid))
+				sys_log(0, "PLAYERBOT_GUILD: dropper left pid=%u name=%s guild=%s",
+						pid, ch->GetName(), guild->GetName());
+			return;
+		}
+		if (guild->GetMemberCount() <= 1)
+		{
+			sys_log(0, "PLAYERBOT_GUILD: dropper disbands its guild of one pid=%u name=%s guild=%s",
+					pid, ch->GetName(), guild->GetName());
+			guild->RequestDisband(pid);
+			return;
+		}
+		FPlayerBotGuildHeir heir(ch, guild);
+		if (ch->GetSectree())
+			ch->GetSectree()->ForEachAround(heir);
+		if (heir.m_best && guild->ChangeMasterTo(heir.m_best->GetPlayerID()))
+			sys_log(0, "PLAYERBOT_GUILD: dropper handed its guild over pid=%u name=%s guild=%s heir_pid=%u heir=%s",
+					pid, ch->GetName(), guild->GetName(), heir.m_best->GetPlayerID(),
+					heir.m_best->GetName());
+	}
+
 	// Upkeep, not an activity: this never claims the tick. Founding is one call
 	// and recruiting is one sweep of the sector the bot is already standing in.
 	void ManagePlayerBotGuild(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
@@ -227,6 +288,11 @@ namespace
 		{
 			if (ShouldPlayerBotFoundGuild(ch, state))
 				state.bFoundedGuild = FoundPlayerBotGuild(ch);
+			return;
+		}
+		if (IsPlayerBotDropper(state.bPersonality))
+		{
+			LeavePlayerBotGuildAsDropper(ch, guild);
 			return;
 		}
 

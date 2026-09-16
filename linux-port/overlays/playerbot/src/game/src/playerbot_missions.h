@@ -70,6 +70,25 @@ namespace
 				ch->GetQuestFlag(GetPlayerBotBiologistFlag(mission, "__status")) == completeState;
 	}
 
+	// The collect rows are one chain in the quests themselves: the Orc Tooth's
+	// last state starts the Curse Book, and the Curse Book's the Demon Souvenir.
+	// A bot takes its missions without the quest's dialog, so it keeps that
+	// order itself - it did not, and bots of seventy finished the Demon Souvenir
+	// with the Orc Tooth still open (Tieru, 15 September: "Ksiegi Klatw sa po
+	// Zebach Orka, a po Ksiegach Klatw sa Pamiatki Po Demonie"). A collect row
+	// after the first is open once the row before it is complete.
+	bool IsPlayerBotBiologistMissionOpen(LPCHARACTER ch, size_t missionIndex)
+	{
+		if (!ch || missionIndex == 0 || missionIndex >= PLAYERBOT_BIOLOGIST_MISSION_COUNT)
+			return true;
+		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
+		const TPlayerBotBiologistMission& previous = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex - 1];
+		if (mission.requiredLevel <= PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL ||
+				previous.requiredLevel < PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL)
+			return true;
+		return IsPlayerBotBiologistMissionComplete(ch, missionIndex - 1);
+	}
+
 	// Anything a row collects, and anything a row's second half waits for.
 	// Both used to be spelled out as vnums wherever they mattered - the junk
 	// rule and the stall each carried "50701..50706, the tooth, the stone" -
@@ -100,13 +119,18 @@ namespace
 	// handed in. Those used to stay in the bag for good ("niech dadza sklepik
 	// z zebami jesli maja nadmiar"); now they are goods. A key item is never
 	// surplus - it is what the second half of its own row is waiting for.
+	bool IsPlayerBotBiologistKeyPhase(LPCHARACTER ch, size_t missionIndex);
+
 	bool IsPlayerBotBiologistSpecimenSurplus(LPCHARACTER ch, DWORD vnum)
 	{
 		if (!ch || IsPlayerBotBiologistKeyItem(vnum))
 			return false;
+		// So is one whose row waits in key_item: the Biologist has every
+		// specimen he wanted and asks only for the key now.
 		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
 			if (PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum == vnum)
-				return IsPlayerBotBiologistMissionComplete(ch, i);
+				return IsPlayerBotBiologistMissionComplete(ch, i) ||
+						IsPlayerBotBiologistKeyPhase(ch, i);
 		return false;
 	}
 
@@ -123,6 +147,37 @@ namespace
 		const int keyState = GetPlayerBotBiologistStateIndex(missionIndex, "key_item");
 		return keyState != PLAYERBOT_QUEST_STATE_UNKNOWN && ch->GetQuestFlag(GetPlayerBotBiologistFlag(
 				PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex], "__status")) == keyState;
+	}
+
+	// How many of a specimen the Biologist is still owed: for every row that
+	// collects it, that the bot is old enough for and has neither finished
+	// nor filled (a row in key_item wants the key), the rest of its count over
+	// the accept roll - ten teeth at sixty percent is seventeen. Only rows from
+	// PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL, whose specimens are refine
+	// materials; a herb is nobody's material. The anvil leaves this many alone
+	// (CanPlayerBotAttemptRefineItem).
+	int GetPlayerBotBiologistReserve(LPCHARACTER ch, DWORD vnum)
+	{
+		if (!ch || vnum == 0)
+			return 0;
+		int reserve = 0;
+		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
+		{
+			const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[i];
+			if (mission.itemVnum != vnum ||
+					mission.requiredLevel < PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL ||
+					ch->GetLevel() < mission.requiredLevel ||
+					!IsPlayerBotHuntingMobHosted(mission.mobVnum) ||
+					IsPlayerBotBiologistMissionComplete(ch, i) ||
+					IsPlayerBotBiologistKeyPhase(ch, i))
+				continue;
+			const int accepted = std::max(0, ch->GetQuestFlag(
+					GetPlayerBotBiologistFlag(mission, "collect_count")));
+			const int remaining = std::max(0, (int)mission.requiredCount - accepted);
+			const int percent = std::max(1, (int)mission.acceptPercent);
+			reserve += (remaining * 100 + percent - 1) / percent;
+		}
+		return reserve;
 	}
 
 	// What the mission wants carried right now, and how many: the collection
@@ -146,6 +201,13 @@ namespace
 	{
 		if (!ch)
 			return NULL;
+		// A dropper is a drop character: its table, its gear and its counter,
+		// and no quests ("jesli to osobowosc typowo dropek medali to powinien
+		// sie skupic tylko na lochu i eq ... a nie na robieniu questow", Tieru,
+		// 15 September - dropki of twenty-five doing the Biologist in M2). The
+		// planner, the pass, the travel and the status all ask this.
+		if (IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())))
+			return NULL;
 		// Four passes: a mission whose specimens the bot already carries, then
 		// one whose monster stands on this map, then the first left undone that
 		// the bot has not outgrown, and last the highest one it has left. A bot
@@ -167,6 +229,9 @@ namespace
 			if (ch->GetLevel() < mission.requiredLevel)
 				break;
 			if (IsPlayerBotBiologistMissionComplete(ch, i))
+				continue;
+			// A chain row waits for the one before it (IsPlayerBotBiologistMissionOpen).
+			if (!IsPlayerBotBiologistMissionOpen(ch, i))
 				continue;
 			// A row whose monster stands on no map this world hosts can never
 			// be finished, and choosing it means saying so above the bot's head
@@ -202,7 +267,12 @@ namespace
 			// the whole hand-in; a row the bot has not outgrown keeps the old
 			// rule, because there it will hunt the rest.
 			const int held = ch->CountSpecifyItem(wanted);
-			if (carrying < 0 && held > 0 && (!outgrown || held >= required))
+			// From PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL up any specimen counts:
+			// it is a refine material as well, and the hand-in comes before the
+			// counter and the anvil (Tieru, 15 September) - 358 bots were carrying
+			// 1484 Orc Teeth past a row they had outgrown, handing in none.
+			if (carrying < 0 && held > 0 && (!outgrown || held >= required ||
+					mission.requiredLevel >= PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL))
 				carrying = (int)i;
 			if (here < 0 && !outgrown &&
 					IsPlayerBotHuntingMobHosted(mission.mobVnum, ch->GetMapIndex()))

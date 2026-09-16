@@ -234,7 +234,9 @@ namespace
 	// so a crowd at one is a crowd doing nothing.
 	bool IsPlayerBotMiner(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
-		if (!ch || ch->GetLevel() < PLAYERBOT_MINING_MIN_LEVEL)
+		// Nor is a dropper a miner: a session at a vein is time away from the
+		// one thing it farms (IsPlayerBotAngler).
+		if (!ch || IsPlayerBotDropper(state.bPersonality) || ch->GetLevel() < PLAYERBOT_MINING_MIN_LEVEL)
 			return false;
 		const DWORD roll = PlayerBotNavHash(ch->GetPlayerID() ^ 0x4D494E45U) % 100U;
 		const int chance = state.bPersonality == BOT_PERSONALITY_CAREFUL_COLLECTOR
@@ -313,7 +315,10 @@ namespace
 		if (!best)
 			return false;
 		LPITEM worn = ch->GetWear(WEAR_WEAPON);
-		if (worn && !ch->UnequipItem(worn))
+		// The engine's UnequipItem takes a bag cell without asking whether there
+		// is one; the room is asked here, and the weapon has to be off after.
+		if (worn && (ch->GetEmptyInventory(worn->GetSize()) < 0 || !ch->UnequipItem(worn) ||
+				worn->IsEquipped()))
 			return false;
 		if (!PlayerBotEquipItem(ch, best))
 			return false;
@@ -378,22 +383,29 @@ namespace
 		return it != s_mapPlayerBotMiningUntil.end() && dwNow < it->second;
 	}
 
+	// Health at the session's last look, so a blow landed between two looks
+	// is noticed (ManagePlayerBotMining).
+	std::map<DWORD, int> s_mapPlayerBotMiningHP;
+
+	// dwRetry, when not zero, replaces the rest: a session a fight or a death
+	// broke off is picked up again soon after, not half an hour later.
 	void EndPlayerBotMiningSession(LPCHARACTER ch, TPlayerBotAIState& state,
-			DWORD dwNow, const char* szReason)
+			DWORD dwNow, const char* szReason, DWORD dwRetry = 0)
 	{
 		if (!ch)
 			return;
 		const DWORD pid = ch->GetPlayerID();
 		s_mapPlayerBotMiningUntil.erase(pid);
 		s_mapPlayerBotMiningSwingAt.erase(pid);
+		s_mapPlayerBotMiningHP.erase(pid);
 		// The pickaxe must not travel in the weapon slot: every combat path
 		// judges by the weapon in the hand, and a bot that walked away holding
 		// one would swing a digging tool at an orc until the gear pass noticed.
 		LPITEM worn = ch->GetWear(WEAR_WEAPON);
 		if (worn && worn->GetType() == ITEM_PICK)
 			ch->UnequipItem(worn);
-		s_mapPlayerBotMiningNext[pid] = dwNow +
-				number(PLAYERBOT_MINING_REST_MIN, PLAYERBOT_MINING_REST_MAX);
+		s_mapPlayerBotMiningNext[pid] = dwNow + (dwRetry != 0 ? dwRetry :
+				(DWORD)number(PLAYERBOT_MINING_REST_MIN, PLAYERBOT_MINING_REST_MAX));
 		ClearPlayerBotRoute(state, true);
 		sys_log(0, "PLAYERBOT_MINING: session end pid=%u name=%s reason=%s",
 				pid, ch->GetName(), szReason ? szReason : "done");
@@ -415,13 +427,19 @@ namespace
 				EndPlayerBotMiningSession(ch, state, dwNow, "left_map");
 			return false;
 		}
-		// Anything the bot is actually doing outranks digging.
+		// Anything the bot is actually doing outranks digging. Standing up after
+		// a death is not a new errand, though: it used to end the session with
+		// the full rest, so a miner killed at its vein walked off to fight
+		// monsters and did not dig again for up to three quarters of an hour
+		// ("zawsze po odrodzeniu porzuca rude", Mat, 14 September).
 		if (state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
 				state.bRecoveringAfterDeath || state.bTacticalRetreat ||
 				state.bMultiPullActive || state.bFishingSession || ch->GetMyShop())
 		{
 			if (inSession)
-				EndPlayerBotMiningSession(ch, state, dwNow, "busy");
+				EndPlayerBotMiningSession(ch, state, dwNow,
+						state.bRecoveringAfterDeath ? "recovering" : "busy",
+						state.bRecoveringAfterDeath ? PLAYERBOT_MINING_RESUME_AFTER_FIGHT : 0);
 			return false;
 		}
 
@@ -458,6 +476,24 @@ namespace
 			sys_log(0, "PLAYERBOT_MINING: session start pid=%u name=%s map=%ld level=%d",
 					pid, ch->GetName(), ch->GetMapIndex(), (int)ch->GetLevel());
 		}
+
+		// A session owns the tick, so nothing below it runs while the bot digs -
+		// not the fight, and not the emergency recovery that would have taken
+		// it away at low health. A bot of another kingdom could be killed at its
+		// vein without lifting a hand (Mat, 14 September). A blow now ends the
+		// session on the tick it is noticed, and the fight below takes over.
+		// Health at its maximum is not a blow: a maximum that drops - a buff
+		// running out, the pickaxe taking a weapon's vitality with it - pulls
+		// health down to meet it, and that is all it does.
+		const int hp = ch->GetHP();
+		std::map<DWORD, int>::iterator lastHP = s_mapPlayerBotMiningHP.find(pid);
+		if (lastHP != s_mapPlayerBotMiningHP.end() && hp < lastHP->second &&
+				hp < ch->GetMaxHP())
+		{
+			EndPlayerBotMiningSession(ch, state, dwNow, "attacked", PLAYERBOT_MINING_RESUME_AFTER_FIGHT);
+			return false;
+		}
+		s_mapPlayerBotMiningHP[pid] = hp;
 
 		state.bCurrentAction = BOT_ACTION_MINING;
 

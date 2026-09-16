@@ -168,6 +168,11 @@ namespace
 	{
 		if (!ch || !item || !item->GetProto())
 			return false;
+		// Never the goods a player crafts further, whatever the merchant pays:
+		// a bot of seventy-three walked past Grzyb Tue, Korzen Gango and a
+		// Zbroja Twarzy Ducha+3 on a floor (Tieru, 15 September).
+		if (IsPlayerBotPickupGoods(item))
+			return false;
 		const long long unit = (long long)GetPlayerBotNpcSellUnitPrice(item);
 		if (unit <= 0 || unit * (long long)item->GetCount() >= PLAYERBOT_LOOT_CHOOSY_MAX_VALUE)
 			return false;
@@ -181,6 +186,14 @@ namespace
 			case ITEM_WEAPON:
 			case ITEM_ARMOR:
 			{
+				// Helmets and shields are picked up whatever their merchant price:
+				// the ones of level 21, 41 and 61 are worth more than it says, and a
+				// dungeon floor kept its Upiorna Maska while bots of fifty walked
+				// past (Tieru, 15 September: "tarcze na 21 41 61 poziom czy helmy
+				// ... warto podnosic tak czy siak").
+				if (item->GetType() == ITEM_ARMOR &&
+						(item->GetSubType() == ARMOR_HEAD || item->GetSubType() == ARMOR_SHIELD))
+					return false;
 				if (item->GetRefineLevel() >= PLAYERBOT_PRECIOUS_REFINE ||
 						IsPlayerBotPrizeItem(item) || IsPlayerBotSpecialLevel30Weapon(item))
 					return false;
@@ -193,6 +206,24 @@ namespace
 			default:
 				return false;
 		}
+	}
+
+	// What a medal dropper bends down for. Its bag is its counter's stock
+	// already - fifty to seventy of ninety cells - and a Monkey Dungeon floor
+	// filled the rest in two to five minutes: once the dropper was let stay while
+	// a medal had a cell, 28 of 37 visits ended with no cell left and the average
+	// visit lasted under three minutes. It takes the medal, the goods a player
+	// crafts further, a skill book, a Moonlight chest (for its counter,
+	// PLAYERBOT_CHEST_DROPPER_HOLD) and whatever pours into a stack it already
+	// carries; the rest stays on the floor for whoever wants it.
+	bool IsPlayerBotMedalDropperLoot(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !item->GetProto())
+			return false;
+		if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM || item->GetType() == ITEM_SKILLBOOK ||
+				item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM || IsPlayerBotPickupGoods(item))
+			return true;
+		return PlayerBotLootMergesIntoStack(ch, item);
 	}
 
 	class CCollectPlayerBotLoot
@@ -208,7 +239,9 @@ namespace
 				m_bagFull(CountPlayerBotFreeInventoryCells(owner) == 0),
 				m_skippedNoRoom(0),
 				m_choosy(IsPlayerBotChoosyLooter(owner)),
-				m_skippedCheap(0)
+				m_skippedCheap(0),
+				m_medalDropper(owner && GetPlayerBotPersonalityByPID(owner->GetPlayerID()) ==
+						BOT_PERSONALITY_MEDAL_DROPPER)
 			{
 			}
 
@@ -232,6 +265,11 @@ namespace
 						m_owner->GetX() - item->GetX(),
 						m_owner->GetY() - item->GetY());
 				if (distance > m_maxDistance)
+					return true;
+				if (m_medalDropper && !IsPlayerBotMedalDropperLoot(m_owner, item))
+					return true;
+				// A cape or a symbol nobody wears (IsPlayerBotLeftOnGroundItem).
+				if (IsPlayerBotLeftOnGroundItem(item->GetVnum()))
 					return true;
 				if (m_choosy && IsPlayerBotLootBeneathBot(m_owner, item))
 				{
@@ -277,6 +315,7 @@ namespace
 			int m_skippedNoRoom;
 			bool m_choosy;
 			int m_skippedCheap;
+			bool m_medalDropper;
 			std::vector<std::pair<int, LPITEM> > m_items;
 	};
 

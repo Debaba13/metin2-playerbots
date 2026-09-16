@@ -4,9 +4,9 @@ Metin2 Singleplayer Panel to alternatywny panel administracyjny i obserwacyjny d
 
 Projekt korzysta z tej samej bazy, plików statusu Playerbots i kolejki administracyjnej. Nie zastępuje klasycznego panelu ani nie wymaga migracji danych — rozszerza instalację o dodatkowy, nowoczesny widok świata i narzędzia administracyjne. W menu znajduje się opcjonalny odnośnik do Panelu Tieru.
 
-## Wydanie 1.40.0
+## Wydanie 1.54.1
 
-Panel zawiera odizolowany most do aktualizatora Tieru: stan, postęp i log w `/manage`, zlecenie aktualizacji tylko po zalogowaniu oraz bez dostępu Seban Panelu do socketu Dockera. Skrócona instrukcja jest zwijana bezpośrednio w `/manage`, a pełny opis znajduje się w [UPDATER_VPS.md](UPDATER_VPS.md).
+Panel zawiera niezależny Aktualizator Seban: stan, rzeczywisty postęp i log w `/manage`, automatyczny backup baz przed aktualizacją oraz ponowne nakładanie lokalnych reguł. Użytkownik może zdecydować osobnym, domyślnie wyłączonym checkboxem, czy razem z Playerbots ma zostać przebudowany również Seban Panel z wersji dołączonej przez Tieru. Aplikacja webowa nie ma dostępu do socketu Dockera; stałe zlecenie wykonuje ograniczona usługa systemowa.
 
 ## Co oferuje
 
@@ -20,7 +20,6 @@ Panel zawiera odizolowany most do aktualizatora Tieru: stan, postęp i log w `/m
 - telemetrię CPU, RAM i dysku z historią oraz wyborem prezentacji hosta/VPS albo Dockera;
 - dashboard z wersją Playerbots, poziomem jeździectwa i przypiętym paskiem istotnych wydarzeń świata;
 - zarządzanie mnożnikami, zachowaniem Playerbots i restartem przez kolejkę natywnej instalacji;
-- masowe nadawanie przedmiotów przez VNUM, ilość i warunki: poziom, klasa, koń, jeździectwo oraz czas gry;
 - kreator pierwszego uruchomienia, motywy Ocean/Ember/Forest i opcjonalną ochronę hasłem;
 - kontrolowany aktualizator Tieru: postęp i log w panelu, zlecenie aktualizacji do osobnego kontenera bez socketu Dockera w aplikacji webowej.
 
@@ -80,6 +79,29 @@ Bez ostatniego punktu działa monitoring, profile, rankingi, gospodarka i konfig
    docker compose --env-file seban-panel.env logs --tail=100 seban-panel seban-collector seban-item-grants
    ```
 
+## Aktualizator Seban na VPS
+
+Paczka panelu zawiera katalog `updater/`. Instalację wykonuje się jednorazowo,
+podając katalog serwera z plikiem `VERSION` i podkatalogiem `linux-port/docker`:
+
+```bash
+sudo updater/install-seban-updater.sh /opt/metin2/stack metin2
+```
+
+Drugi argument jest nazwą projektu Docker Compose i domyślnie wynosi `metin2`.
+Instalator wykrywa wolumen `${projekt}_update-spool`, zapisuje lokalną konfigurację
+w `/etc/seban-updater.env` i uruchamia usługę `seban-updater`. Po odświeżeniu
+`/manage` status usługi powinien zmienić się na „gotowa”.
+
+Przed każdą aktualizacją powstaje skompresowany backup baz `account`, `common`,
+`player` i `log`. Reguły Skrzyni Ucznia, Skrzyń Blasku Księżyca, postaci
+demonstracyjnych oraz opcjonalnej aktualizacji Seban Panel konfiguruje się
+checkboxami wewnątrz sekcji Aktualizator Seban. Aktualizacja panelu jest
+domyślnie wyłączona, aby nie nadpisać lokalnych zmian. Po jej włączeniu updater
+buduje `seban-panel`, `seban-collector` i `seban-item-grants` z wersji panelu
+dołączonej do pobranego wydania Tieru. Aktualizator porównuje numery wersji i nie
+cofnie nowszego lokalnego panelu do starszej wersji znajdującej się w paczce.
+
 ### Integracja ustawień respawnu i restartu
 
 Samo uruchomienie panelu daje monitoring oraz profile. Zmiana rat i respawnów wymaga dodatkowo helperów z `integration/` w **kontenerze gry**. Po ich instalacji `/manage` pokaże gotowość helpera; bez niej panel nie utworzy zlecenia, które czekałoby bez końca.
@@ -118,7 +140,7 @@ Tabele historii i ustawienia pozostają w bazie. Przed aktualizacją produkcji w
 
 ### Aktualizacja Tieru z panelu
 
-Jednorazowe przygotowanie VPS opisuje [UPDATER_VPS.md](UPDATER_VPS.md). Po wykonaniu testu `m2-updater selftest`, włącz ochronę hasłem, zaloguj się i użyj przycisku w `/manage`.
+Jednorazowo uruchom `sudo updater/install-seban-updater.sh /ścieżka/do/serwera [projekt-compose]`, następnie włącz ochronę hasłem, zaloguj się ponownie i użyj przycisku w `/manage`. Aktualny stan instalacji oraz instrukcja właściwa dla danego VPS są także dostępne pod rozwijanym przyciskiem „Instalacja i działanie aktualizatora”.
 
 ## Bezpieczeństwo
 
@@ -131,6 +153,3 @@ Jednorazowe przygotowanie VPS opisuje [UPDATER_VPS.md](UPDATER_VPS.md). Po wykon
 
 Projekt będzie rozwijany dalej. Kolejne wersje będą poszerzać diagnostykę Playerbots i widoki danych, zachowując współpracę z klasycznym Panelem Tieru.
 
-## Aktualizator w 4 krokach
-
-Dla osób, które chcą uruchomić aktualizator bez czytania pełnej dokumentacji, przygotowano [AKTUALIZATOR_PROSTO.md](AKTUALIZATOR_PROSTO.md).

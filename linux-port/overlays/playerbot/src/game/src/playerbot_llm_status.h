@@ -126,10 +126,56 @@ namespace
 		}
 	}
 
+	// On the 2.x line the overhead line is the server command
+	// "PlayerBotStatus <vid> <hex>", which the client root draws as a text tail
+	// and nothing else (playerbot_status_tail.py): the client puts every TALKING
+	// packet from a character into the chat history beside its tail
+	// (RecvChatPacket), so a town of bots filled the chat window with statuses.
+	// The text goes as hex because the client's command parser splits its line
+	// on spaces; the bytes are the status's CP1250, and the name stays out of it,
+	// because the client draws the name over the head already. A root without
+	// the handler writes "Unknown Server Command" to its syserr.txt and draws
+	// nothing. The r40250 client has no handler, so that line keeps talking.
 	void SendPlayerBotOverheadChat(LPCHARACTER ch, const char* szText)
 	{
 		if (!ch || !szText || !szText[0] || !ch->GetSectree())
 			return;
+
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		static const char kHexDigits[] = "0123456789abcdef";
+		char hex[PLAYERBOT_STATUS_TAIL_MAX_BYTES * 2 + 1];
+		size_t n = 0;
+		for (; n < PLAYERBOT_STATUS_TAIL_MAX_BYTES && szText[n]; ++n)
+		{
+			unsigned char c = (unsigned char)szText[n];
+			// The client refuses a control byte; a space keeps the rest of the line.
+			if (c < 32 || c == 127)
+				c = ' ';
+			hex[n * 2] = kHexDigits[c >> 4];
+			hex[n * 2 + 1] = kHexDigits[c & 15];
+		}
+		hex[n * 2] = '\0';
+
+		char command[sizeof(hex) + 32];
+		int commandLen = snprintf(command, sizeof(command), "PlayerBotStatus %u %s",
+				(unsigned int)ch->GetVID(), hex);
+		if (commandLen <= 0 || commandLen >= (int)sizeof(command))
+			return;
+		++commandLen;   // the trailing NUL every chat packet carries
+
+		TPacketGCChat pack_command;
+		pack_command.header = HEADER_GC_CHAT;
+		pack_command.size = sizeof(TPacketGCChat) + commandLen;
+		pack_command.type = CHAT_TYPE_COMMAND;
+		pack_command.id = 0;   // the bot's VID travels in the command
+		pack_command.bEmpire = 0;
+
+		TEMP_BUFFER commandBuf;
+		commandBuf.write(&pack_command, sizeof(TPacketGCChat));
+		commandBuf.write(command, commandLen);
+		ch->PacketAround(commandBuf.read_peek(), commandBuf.size());
+		return;
+#endif
 
 		char chatbuf[256];
 		int len = snprintf(chatbuf, sizeof(chatbuf), "%s : %s", ch->GetName(), szText);
@@ -480,7 +526,13 @@ namespace
 					snprintf(status, statusSize, "%sEkipman icin sehre gidiyorum", prefix);
 				else
 				{
-					const long wantMap = GetPlayerBotFrontierMapForLevel(ch);
+					// The frontier only for a bot the travel would actually
+					// send there: a medal dropper never leaves for it
+					// (ShouldPlayerBotLeaveForFrontier), and eleven of them at
+					// thirty-three read "going to Yongbi Desert (target: horse
+					// upgrade)" in Bokjung while riding to the Monkey Dungeon.
+					const long wantMap = ShouldPlayerBotLeaveForFrontier(ch)
+							? GetPlayerBotFrontierMapForLevel(ch) : 0;
 					const char* where = wantMap != 0 && wantMap != ch->GetMapIndex()
 							? GetPlayerBotMapDestinationTurkish(wantMap) : "";
 					// The frontier is reached from Bokjung through the
@@ -573,6 +625,53 @@ namespace
 		state.bLastStatusParty = inParty;
 		state.dwLastStatusTargetVID = relevantTargetVID;
 	}
+
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	// A bot's personality where a player's alignment title stands: the server
+	// command "PlayerBotTitle <vid> <personality>", drawn by the client root with
+	// textTail.AttachTitle and put back whenever an alignment refresh takes the
+	// place (playerbot_status_tail.py). Its own pass and its own clock beside
+	// ManagePlayerBotStatusOverhead: the panel's switch for the status line and a
+	// keeper's early return belong to that line, not to the title. A player's
+	// alignment title is untouched.
+	std::map<DWORD, DWORD> s_mapPlayerBotTitleNext;
+
+	void ManagePlayerBotPersonalityTitle(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch || !ch->GetSectree())
+			return;
+		DWORD& next = s_mapPlayerBotTitleNext[ch->GetPlayerID()];
+		if (next != 0 && dwNow < next)
+			return;
+		CCheckNearbyHumanPlayer humanChecker(ch, 2500);
+		ch->GetSectree()->ForEachAround(humanChecker);
+		if (!humanChecker.m_bFound)
+		{
+			next = dwNow + PLAYERBOT_TITLE_PROBE_MS;
+			return;
+		}
+
+		char command[64];
+		int commandLen = snprintf(command, sizeof(command), "PlayerBotTitle %u %u",
+				(unsigned int)ch->GetVID(), (unsigned int)state.bPersonality);
+		if (commandLen <= 0 || commandLen >= (int)sizeof(command))
+			return;
+		++commandLen;   // the trailing NUL every chat packet carries
+
+		TPacketGCChat pack_command;
+		pack_command.header = HEADER_GC_CHAT;
+		pack_command.size = sizeof(TPacketGCChat) + commandLen;
+		pack_command.type = CHAT_TYPE_COMMAND;
+		pack_command.id = 0;   // the bot's VID travels in the command
+		pack_command.bEmpire = 0;
+
+		TEMP_BUFFER commandBuf;
+		commandBuf.write(&pack_command, sizeof(TPacketGCChat));
+		commandBuf.write(command, commandLen);
+		ch->PacketAround(commandBuf.read_peek(), commandBuf.size());
+		next = dwNow + (DWORD)number((int)PLAYERBOT_TITLE_RESEND_MIN_MS, (int)PLAYERBOT_TITLE_RESEND_MAX_MS);
+	}
+#endif
 }
 
 #endif

@@ -193,7 +193,7 @@ namespace
 		TPlayerBotMonkeyDoor aDoors[PLAYERBOT_MONKEY_MAX_DOORS];
 	};
 
-	TPlayerBotMonkeyGeometry s_aPlayerBotMonkeyGeometry[3];
+	TPlayerBotMonkeyGeometry s_aPlayerBotMonkeyGeometry[5];
 
 	struct FPlayerBotCollectMonkeyDoors
 	{
@@ -231,6 +231,14 @@ namespace
 		}
 	};
 
+	// One cache per dungeon map. The three kingdoms' easy dungeons are the same
+	// maze on three bases and the geometry is read off each map's own NPCs, so
+	// Shinsoo's and Jinno's rooms were never the problem - having no slot was:
+	// this answered -1 for maps 5 and 45, GetPlayerBotMonkeyGeometry answered
+	// NULL, no chamber or door was known there, and every bot in those two
+	// dungeons hunted the entrance room while Chunjo's walked all eleven ("in
+	// both Kingdoms Bots only farm in starting zone of Ape Dungeon", Dixdros,
+	// 14 September).
 	int GetPlayerBotMonkeyGeometrySlot(long mapIndex)
 	{
 		switch (mapIndex)
@@ -238,6 +246,8 @@ namespace
 			case PLAYERBOT_MAP_MONKEY_EASY: return 0;
 			case PLAYERBOT_MAP_MONKEY_MEDIUM: return 1;
 			case PLAYERBOT_MAP_MONKEY_HARD: return 2;
+			case PLAYERBOT_MAP_MONKEY_SHINSOO: return 3;
+			case PLAYERBOT_MAP_MONKEY_JINNO: return 4;
 			default: return -1;
 		}
 	}
@@ -541,6 +551,30 @@ namespace
 		return leader ? leader->GetPlayerID() : ch->GetPlayerID();
 	}
 
+	// Defined with the party code in playerbot_manager.cpp; declared in
+	// playerbot_travel.h too, which comes later in the include order.
+	bool IsPlayerBotHumanLedParty(LPPARTY party);
+
+	// A bot climbing the Demon Tower with a player: in the player's party, the
+	// player on the same map. For such a bot the tower's stones are the floor's
+	// objective - "takie metiny sie zbija, by zaliczyc kolejne pietra" (Tieru,
+	// 16 September) - and no level band applies; for a bot on its own they stay
+	// what IsPlayerBotDungeonTriggerStone says, a warp sprung on strangers.
+	bool IsPlayerBotClimbingWithPlayer(LPCHARACTER ch)
+	{
+		if (!ch || !ch->GetParty() || !IsPlayerBotHumanLedParty(ch->GetParty()))
+			return false;
+		LPCHARACTER leader = ch->GetParty()->GetLeaderCharacter();
+		return leader && leader != ch && leader->GetMapIndex() == ch->GetMapIndex();
+	}
+
+	bool IsPlayerBotDungeonStoneObjective(LPCHARACTER ch, LPCHARACTER stone)
+	{
+		return ch && stone && stone->IsStone() && !stone->IsDead() &&
+				IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()) &&
+				IsPlayerBotClimbingWithPlayer(ch);
+	}
+
 	void RememberPlayerBotMetin(LPCHARACTER stone, DWORD dwNow)
 	{
 		// The Demon Tower's quest stones are nobody's hunting ground: see
@@ -584,14 +618,18 @@ namespace
 	{
 		if (!ch || !stone || !stone->IsStone() || stone->IsDead())
 			return false;
+		// A floor's objective for a bot climbing with a player: no band at all.
+		if (IsPlayerBotDungeonStoneObjective(ch, stone))
+			return true;
 		// Breaking one warps every PC on the killer's map into a new tower.
 		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return false;
-		// The server drop multiplier still has useful value at a ten-level
-		// advantage. Below that it collapses sharply (15% at -11 and 1% at -15),
-		// so a level-25 bot should pass level-5/10 stones and keep level-15+.
+		// Alone, a stone up to nine over the bot (a stronger one it cannot break
+		// by itself - it joins those, IsPlayerBotStoneJoinable), and one it has
+		// outgrown by PLAYERBOT_STONE_OUTGROWN_LEVELS is passed: the drop curve
+		// is 1% at fifteen over, and nothing comes out of it past that.
 		return stone->GetLevel() <= ch->GetLevel() + 9 &&
-				ch->GetLevel() <= stone->GetLevel() + 10;
+				(int)ch->GetLevel() <= (int)stone->GetLevel() + PLAYERBOT_STONE_OUTGROWN_LEVELS;
 	}
 
 	BYTE ChoosePlayerBotMetinHotspot(DWORD playerID, BYTE currentIndex, DWORD dwNow,
@@ -746,7 +784,10 @@ namespace
 				ch->HorseSummon(false);
 			ClearPlayerBotRoute(state, false);
 			state.dwNextNavPlanTime = 0;
-			state.dwNextHorseRideCheckTime = dwNow + 1000;
+			// The pass that climbed down wants the ground for a moment, and the
+			// travel used to put the bot back on the horse a second later
+			// (PLAYERBOT_HORSE_TRAVEL_FLIP_HOLD_MS).
+			state.dwNextHorseRideCheckTime = dwNow + PLAYERBOT_HORSE_TRAVEL_FLIP_HOLD_MS;
 			state.dwLastMeaningfulActivityTime = dwNow;
 			sys_log(0, "PLAYERBOT_HORSE: dismounted pid=%u name=%s map=%ld pos=(%ld,%ld) reason=%s",
 					ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), ch->GetX(), ch->GetY(),
@@ -825,9 +866,8 @@ namespace
 		// horse regardless of how near the destination is. SetPlayerBotRidingForTravel
 		// still refuses gracefully when the horse is spent, leaving the bot on foot.
 		//
-		// A portal wants the saddle kept for a different reason. The dismount below
-		// exists so a bot walks up to an NPC on foot, the way a player does before
-		// talking to one; a teleporter is not talked to at all.
+		// A portal wants the saddle for any distance; the leg's own mount below
+		// takes the horse only for a long way.
 		if (fightOnHorse || keepHorseAtDestination)
 		{
 			SetPlayerBotRidingForTravel(ch, state, true, dwNow,
@@ -866,11 +906,18 @@ namespace
 			if (foe && !foe->IsDead())
 				return;
 		}
-		const int distance = DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY);
-		if (!allowHorse || distance <= PLAYERBOT_HORSE_DISMOUNT_DISTANCE)
-			SetPlayerBotRidingForTravel(ch, state, false, dwNow,
-					allowHorse ? "near_destination" : "on_foot_action");
-		else if (distance >= PLAYERBOT_HORSE_MOUNT_DISTANCE)
+		// A rider keeps the saddle to the end of the leg, and on a leg that does
+		// not ask for the horse. Nothing a bot does at the end of one wants the
+		// ground on either engine: an NPC, a counter, the anvil, a chest, a book,
+		// the gear and a portal all answer a rider (Tieru, 15 September: "Nie
+		// trzeba schodzic z konia by przeczytac ksiazke, sciagnac eq, ubrac eq,
+		// otworzyc jakies skrzynki, porozmawiac z npc, przejsc przez portal"). The
+		// two climb-downs that stood here, near_destination and on_foot_action,
+		// were 13 011 of 24 389 in 36 minutes on the test world. What does want
+		// the ground gets off by itself: a fight on a transport horse, a duel, a
+		// skill, the rod, a polymorph marble, a counter going up.
+		if (allowHorse && !ch->IsRiding() &&
+				DISTANCE_APPROX(ch->GetX() - destX, ch->GetY() - destY) >= PLAYERBOT_HORSE_MOUNT_DISTANCE)
 			SetPlayerBotRidingForTravel(ch, state, true, dwNow, "long_travel");
 	}
 

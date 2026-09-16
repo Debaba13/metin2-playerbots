@@ -290,10 +290,15 @@ namespace playerbot_empire_rules
 
 	// The centre of a village's stall ring: where a keeper opens its counter and
 	// where a shopper looks for one. Chunjo's two are the points the AI has
-	// always used and are left alone - moving a live market is not this change.
-	// The other four are the centroid of that village's own eight service NPCs,
-	// snapped to the nearest standable cell inside the safe zone, so a counter
-	// stands among the shops instead of in the field behind them.
+	// always used, and both stand beside that kingdom's guard (11002) in the
+	// middle of the village's round square. The other four used to be the
+	// centroid of the village's eight service NPCs, which put Jayang's market
+	// among the merchants on the square's edge ("sklepy sa zle rozstawione,
+	// bardziej przy handlarzach niz przy kole, straznik ... na kordach 457,
+	// 630", Tieru, 15 September) and ran Pyongmoo's ring half out of the safe
+	// zone. They are the cell under the kingdom's own guard now - 11000 in
+	// Shinsoo, 11004 in Jinno, read from each map's npc.txt - and server_attr
+	// says the whole ring of 400..1700 round every one is open safe ground.
 	struct TTownPitchRow
 	{
 		long mapIndex;
@@ -303,12 +308,12 @@ namespace playerbot_empire_rules
 	inline bool GetTownPitch(long mapIndex, TPoint& out)
 	{
 		static const TTownPitchRow rows[] = {
-			{ 1,  { 473625, 954925 } },
-			{ 3,  { 353987, 880012 } },
+			{ 1,  { 474325, 954225 } },
+			{ 3,  { 353025, 882325 } },
 			{ 21, { 63400, 166300 } },
 			{ 23, { 145500, 240000 } },
-			{ 41, { 961212, 270162 } },
-			{ 43, { 865500, 244975 } },
+			{ 41, { 959925, 268825 } },
+			{ 43, { 863425, 246025 } },
 		};
 		for (unsigned int i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
 		{

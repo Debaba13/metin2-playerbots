@@ -36,11 +36,23 @@ namespace {
                     if (++checked > 64) break;
                     if (!line) continue;
                     const auto price = line->GetPrice().GetTotalYangAmount();
-                    const long long cap = (long long)GetPlayerBotMarketMedianWallet() * PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100;
-                    if (price <= 0 || price > budget || (cap > 0 && price > cap)) continue;
+                    // A level-30 weapon, a medal or a scroll is saved up for: the
+                    // bot's own budget caps it, not the median wallet.
+                    const long long strategicCap = budget * PLAYERBOT_STRATEGIC_BUDGET_PERCENT / 100;
+                    const bool strategic = IsPlayerBotStrategicPurchase(line->GetInfo().vnum);
+                    const long long cap = strategic ? strategicCap
+                            : (long long)GetPlayerBotMarketMedianWallet() * PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100;
+                    // A weapon far better than the one in the hand is saved for
+                    // the same way (IsPlayerBotStrategicWeaponOffer): over the
+                    // wallet cap it is still looked at, against the bot's budget.
+                    const bool overCap = cap > 0 && price > cap;
+                    const bool weaponLine = line->GetTable() && line->GetTable()->bType == ITEM_WEAPON;
+                    if (price <= 0 || price > budget ||
+                            (overCap && (strategic || !weaponLine || price > strategicCap))) continue;
                     auto preview = BotOfflinePreview(*line);
                     if (!preview) continue;
-                    bool want = WantsPlayerBotStallItem(ch, preview) && ch->GetEmptyInventory(preview->GetSize()) >= 0;
+                    bool want = WantsPlayerBotStallItem(ch, preview) && ch->GetEmptyInventory(preview->GetSize()) >= 0 &&
+                            (!overCap || IsPlayerBotStrategicWeaponOffer(ch, preview));
                     M2_DELETE(preview);
                     if (!want) continue;
                     o.buyOwner = shop->GetOwnerPID();
@@ -68,6 +80,11 @@ namespace {
             return false;
         }
         if (!BotOfflineBudget(now)) return true;
+        // Read before the request: the log line below must not touch the shop
+        // line once the purchase is in the engine's hands.
+        const DWORD boughtVnum = line->GetInfo().vnum;
+        if (boughtVnum == PLAYERBOT_MOONLIGHT_CHEST_VNUM)
+            NotePlayerBotChestBought(ch->GetPlayerID(), now);
         if (Begin(ch->GetPlayerID(), Buy, o.buyItem, now)) {
             auto& request = requests.at(ch->GetPlayerID());
             request.vnum = line->GetInfo().vnum;
@@ -82,8 +99,8 @@ namespace {
             manager.RecvShopBuyItemClientPacket(ch, o.buyOwner, o.buyItem, false, price);
             const bool sent = EndCall(ch->GetPlayerID());
             manager.RecvCloseShopGuestClientPacket(ch);
-            sys_log(0, "PLAYERBOT_OFFLINE: purchase_requested buyer=%u owner=%u item=%u sent=%d",
-                ch->GetPlayerID(), o.buyOwner, o.buyItem, sent);
+            sys_log(0, "PLAYERBOT_OFFLINE: purchase_requested buyer=%u owner=%u item=%u vnum=%u price=%lld sent=%d",
+                ch->GetPlayerID(), o.buyOwner, o.buyItem, (unsigned int)boughtVnum, (long long)price, sent);
         }
         o.buyOwner = 0;
         ClearPlayerBotRoute(state, true);

@@ -17,7 +17,22 @@ namespace {
             (ch->GetVictim() && !ch->GetVictim()->IsDead()) ||
             state.bVisitingShop || state.bVisitingBiologist || state.bVisitingStable ||
             state.bRecoveringAfterDeath || state.bTacticalRetreat || state.bMultiPullActive ||
-            state.bFishingSession;
+            state.bFishingSession ||
+            // A bot in a player's party does not warp off to its counter every
+            // ten minutes; the stand keeps selling until the party ends.
+            (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty())) ||
+            // Nor out of a Monkey Dungeon: a visit is half an hour in rooms
+            // joined only by their doors, and a keeper warped out of it has the
+            // whole way back in to walk. The service waits for the way out.
+            IsPlayerBotMonkeyMap(ch->GetMapIndex());
+    }
+    // The wait before the next service visit: the long one for a dropper
+    // (PLAYERBOT_DROPPER_SHOP_SERVICE_MIN_MS), ten to fifteen minutes for
+    // everybody else.
+    DWORD BotOfflineServiceGap(const TPlayerBotAIState& state) {
+        if (IsPlayerBotDropper(state.bPersonality))
+            return (DWORD)number((int)PLAYERBOT_DROPPER_SHOP_SERVICE_MIN_MS, (int)PLAYERBOT_DROPPER_SHOP_SERVICE_MAX_MS);
+        return (DWORD)number(600000, 900000);
     }
     void BotOfflineFinishVisit(LPCHARACTER ch, TPlayerBotAIState& state, DWORD now) {
         auto& o = state.offlineShop;
@@ -28,7 +43,7 @@ namespace {
         }
         o.visiting = false;
         o.visitUntil = 0;
-        o.nextService = now + number(600000, 900000);
+        o.nextService = now + BotOfflineServiceGap(state);
     }
     bool BotOfflinePoll(LPCHARACTER ch, DWORD now) {
         auto it = playerbot_offline::requests.find(ch->GetPlayerID());
@@ -133,8 +148,8 @@ namespace {
         state.offlineShop.nextService = now + number(600000, 900000);
         ClearPlayerBotRoute(state, true);
         state.vecShopOffers.clear(); // native ownership, not the old inventory mirror
-        sys_log(0, "PLAYERBOT_OFFLINE: create pid=%u sent=%d lines=%u map=%ld",
-            ch->GetPlayerID(), sent, unsigned(count), ch->GetMapIndex());
+        sys_log(0, "PLAYERBOT_OFFLINE: create pid=%u sent=%d lines=%u map=%ld sign=\"%s\"",
+            ch->GetPlayerID(), sent, unsigned(count), ch->GetMapIndex(), sign);
         if (!sent) {
             // OpenMyShop refuses silently - a chat line to a descriptor nobody
             // reads - and refuses the whole shop over one condition, so name
@@ -197,6 +212,238 @@ namespace {
         }
         playerbot_offline::sold.erase(it);
     }
+    // The first line this counter would not take today: gear under level thirty
+    // below PLAYERBOT_SHOP_LOW_GEAR_MIN_REFINE, or past the
+    // PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES of it one counter carries. lowGear is
+    // what stays of that gear, for the add that follows. An item the operator
+    // put on "stall" is never second-guessed.
+    DWORD BotOfflineUnwantedLine(NativeShop shop, int& lowGear) {
+        lowGear = 0;
+        DWORD unwanted = 0;
+        if (!shop) return 0;
+        // Moonlight chests stand on a counter in packs, and only on the counter
+        // of a bot that sells them (IsPlayerBotSurplusChest): a line of eleven
+        // to thirty never sold, and one a bot that opens its chests put up
+        // before 2.0.53 comes home to be opened.
+        const DWORD owner = shop->GetOwnerPID();
+        const bool sellsChests = IsPlayerBotResourceTrader(owner) ||
+            IsPlayerBotDropper(GetPlayerBotPersonalityByPID(owner));
+        for (const auto& [id, line] : shop->GetItems()) {
+            if (!line) continue;
+            LPITEM preview = BotOfflinePreview(*line);
+            if (!preview) continue;
+            if (preview->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
+                    (!sellsChests || (int)preview->GetCount() > PLAYERBOT_CHEST_LINE_UNITS)) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
+            // A scroll line of more than PLAYERBOT_SHOP_SCROLL_LINE_UNITS went
+            // up as a whole stack before 2.0.55; it comes home to be cut.
+            if (IsPlayerBotSafeRefineScroll(preview->GetVnum()) &&
+                    (int)preview->GetCount() > PLAYERBOT_SHOP_SCROLL_LINE_UNITS &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
+            if (IsPlayerBotLowLevelGear(preview) &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
+                const bool capped = CountsAgainstPlayerBotLowGearCap(preview);
+                if (preview->GetRefineLevel() < GetPlayerBotLowGearMinRefine(preview) ||
+                        (capped && lowGear >= PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES)) {
+                    if (!unwanted) unwanted = id;
+                } else if (capped) {
+                    ++lowGear;
+                }
+            }
+            M2_DELETE(preview);
+        }
+        return unwanted;
+    }
+    // One line back into the owner's bag, through the journal like every other
+    // mutation. A bag with no room refuses it synchronously and the next visit
+    // asks again. True when the request reached the DB core.
+    bool BotOfflineTakeOff(LPCHARACTER ch, TPlayerBotAIState& state, DWORD itemid, int lowGear, DWORD now) {
+        using namespace playerbot_offline;
+        if (!Begin(ch->GetPlayerID(), Remove, itemid, now)) return false;
+        ikashop::GetManager().RecvShopRemoveItemClientPacket(ch, itemid);
+        if (!EndCall(ch->GetPlayerID())) return false;
+        state.offlineShop.listed.erase(itemid);
+        sys_log(0, "PLAYERBOT_OFFLINE: took off pid=%u name=%s item=%u low_gear_kept=%d",
+            ch->GetPlayerID(), ch->GetName(), itemid, lowGear);
+        return true;
+    }
+    // A piece on the owner's own counter it should be wearing: better, by the
+    // equipment pass's own score, than what it has on and than anything in its
+    // bag for the slot. Nothing asked the counter for gear - only for room to
+    // add goods - so a warrior of 75 whose weapon burned at the anvil fought on
+    // with a Gilotynowe Ostrze +7 of level ten while a Halabarda +6 and three
+    // swords of level 55 stood on her own counter (CiosZKarpia, Tieru,
+    // 15 September). A line taken back within six hours is not taken again:
+    // a piece the equipment pass will not put on would otherwise go back on
+    // the counter and come off it every visit.
+    DWORD BotOfflineReclaimLine(LPCHARACTER ch, const TPlayerBotAIState& state, NativeShop shop,
+            DWORD now, long long& gain) {
+        gain = 0;
+        DWORD best = 0;
+        if (!ch || !shop) return 0;
+        const auto& o = state.offlineShop;
+        for (const auto& [id, line] : shop->GetItems()) {
+            if (!line || !line->GetTable()) continue;
+            const BYTE type = line->GetTable()->bType;
+            if (type != ITEM_WEAPON && type != ITEM_ARMOR) continue;
+            if (id == o.lastReclaimItem && !playerbot_offline::Due(now, o.lastReclaimAt + 21600000U)) continue;
+            LPITEM preview = BotOfflinePreview(*line);
+            if (!preview) continue;
+            long long lineGain = 0;
+            const int wearCell = IsPlayerBotEquipmentCandidate(ch, preview) &&
+                    preview->GetLevelLimit() <= ch->GetLevel() ? preview->FindEquipCell(ch) : -1;
+            if (wearCell >= 0 && wearCell < WEAR_MAX_NUM &&
+                    (wearCell != WEAR_SHIELD || PlayerBotWantsShield(ch))) {
+                LPITEM worn = ch->GetWear((BYTE)wearCell);
+                if (!worn || !IS_SET(worn->GetFlag(), ITEM_FLAG_IRREMOVABLE)) {
+                    // A rod or a pickaxe in the weapon slot is the session's tool,
+                    // not the weapon to beat; that one waits in the bag.
+                    long long baseline = worn && worn->GetType() == type ? GetPlayerBotEquipmentScore(worn, ch) : 0;
+                    for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell) {
+                        LPITEM held = ch->GetInventoryItem(cell);
+                        if (!held || held->IsEquipped() || held->GetType() != type ||
+                                !IsPlayerBotEquipmentCandidate(ch, held) ||
+                                held->GetLevelLimit() > ch->GetLevel() || held->FindEquipCell(ch) != wearCell)
+                            continue;
+                        baseline = std::max(baseline, GetPlayerBotEquipmentScore(held, ch));
+                    }
+                    lineGain = GetPlayerBotEquipmentScore(preview, ch) - baseline;
+                    // Worth a round trip and a line off the counter only by a margin.
+                    if (baseline > 0 && lineGain * 100 < baseline * PLAYERBOT_OFFLINE_RECLAIM_MIN_GAIN_PERCENT)
+                        lineGain = 0;
+                }
+            }
+            M2_DELETE(preview);
+            if (lineGain > gain) {
+                gain = lineGain;
+                best = id;
+            }
+        }
+        return best;
+    }
+    // Back into the bag through the journal, for the equipment pass to put on.
+    bool BotOfflineReclaim(LPCHARACTER ch, TPlayerBotAIState& state, DWORD itemid, long long gain, DWORD now) {
+        using namespace playerbot_offline;
+        if (!Begin(ch->GetPlayerID(), Remove, itemid, now)) return false;
+        ikashop::GetManager().RecvShopRemoveItemClientPacket(ch, itemid);
+        if (!EndCall(ch->GetPlayerID())) return false;
+        state.offlineShop.listed.erase(itemid);
+        state.offlineShop.lastReclaimItem = itemid;
+        state.offlineShop.lastReclaimAt = now;
+        sys_log(0, "PLAYERBOT_OFFLINE: took back to wear pid=%u name=%s item=%u gain=%lld",
+            ch->GetPlayerID(), ch->GetName(), itemid, gain);
+        return true;
+    }
+    // How many lines of this vnum the counter carries already.
+    int BotOfflineLinesOf(NativeShop shop, DWORD vnum) {
+        int lines = 0;
+        if (shop)
+            for (const auto& [id, line] : shop->GetItems())
+                if (line && line->GetInfo().vnum == vnum) ++lines;
+        return lines;
+    }
+    // The bag cell of the line to add. A hoard's pack of ten, a single key, a
+    // pack of Moonlight chests (PLAYERBOT_CHEST_LINE_UNITS) or a line of
+    // refine scrolls (PLAYERBOT_SHOP_SCROLL_LINE_UNITS)
+    // is cut off its stack into a free cell (GetPlayerBotStallLineUnitsFor);
+    // anything else goes up as the stack it is, as it always has - a stand
+    // adds one line a visit. -1 when no line can be cut without the stack's
+    // reserve or the bag's last free cells.
+    int BotOfflinePrepareLine(LPCHARACTER ch, WORD cell) {
+        LPITEM item = ch->GetInventoryItem(cell);
+        if (!item) return -1;
+        const int units = GetPlayerBotStallLineUnitsFor(ch, item);
+        if (IsPlayerBotSafeRefineScroll(item->GetVnum())) {
+            // A scroll line is what the bot holds over its own keep
+            // (GetPlayerBotStallBaseKeep), up to the line: a stack of five
+            // with a keep of three is a line of two, never the whole stack.
+            // The keep is counted over every stack of the kind, so a line
+            // already cut off (BotOfflinePrepareVisitLine) goes up whole while
+            // the rest of the scrolls stay in the stack it came from.
+            const int keep = GetPlayerBotStallBaseKeep(ch, item);
+            const int spare = (int)ch->CountSpecifyItem(item->GetVnum()) - keep;
+            const int take = std::min(units, std::min((int)item->GetCount(), spare));
+            if (take <= 0) return -1;
+            if (take >= (int)item->GetCount()) return cell;
+            if (CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS) return -1;
+            const int to = ch->GetEmptyInventory(item->GetSize());
+            if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, cell), TItemPos(INVENTORY, (WORD)to), take))
+                return -1;
+            sys_log(0, "PLAYERBOT_OFFLINE: cut a line pid=%u name=%s vnum=%u units=%d left=%u keep=%d",
+                ch->GetPlayerID(), ch->GetName(), item->GetVnum(), take, (unsigned int)item->GetCount(), keep);
+            return to;
+        }
+        const bool cut = units == PLAYERBOT_SHOP_HOARD_PACK_UNITS ||
+            (units == 1 && item->GetType() == ITEM_TREASURE_KEY) ||
+            item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM;
+        if (!cut || (int)item->GetCount() <= units) return cell;
+        if ((int)item->GetCount() - units < GetPlayerBotStallBaseKeep(ch, item) ||
+                CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS)
+            return -1;
+        const int to = ch->GetEmptyInventory(item->GetSize());
+        if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, cell), TItemPos(INVENTORY, (WORD)to), units))
+            return -1;
+        sys_log(0, "PLAYERBOT_OFFLINE: cut a line pid=%u name=%s vnum=%u units=%d left=%u",
+            ch->GetPlayerID(), ch->GetName(), item->GetVnum(), units, (unsigned int)item->GetCount());
+        return to;
+    }
+    // The line this visit will add, cut out of its stack while the bot can
+    // still handle its bag. Once the board is open - looking at the shop, its
+    // safebox, edit mode - IsBusy is true and MoveItem refuses through
+    // CanHandleItem, so every cut in the add loop failed silently: not one
+    // scroll, hoard pack or chest pack was ever cut on a service visit, and
+    // the diag lines of 16 September read score 800, a slot, a keep of three
+    // and lineCell=-1 for every scroll. Remembered by item id and cell for the
+    // add of the same visit; a cut left behind by a visit that ended early is
+    // an ordinary split stack, poured back by the merge pass.
+    void BotOfflinePrepareVisitLine(LPCHARACTER ch, TPlayerBotAIState& state, NativeShop shop) {
+        auto& o = state.offlineShop;
+        o.preparedItem = 0;
+        if (!ch || !shop || shop->GetDuration() == 0) return;
+        int lowGear = 0;
+        BotOfflineUnwantedLine(shop, lowGear);
+        std::vector<std::pair<int, WORD> > scored;
+        CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state), lowGear);
+        for (auto [score, cell] : scored) {
+            LPITEM item = ch->GetInventoryItem(cell);
+            if (!item || BotOfflineSlot(ch, shop, item) < 0) continue;
+            if (IsPlayerBotHoardedMaterial(ch, item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_HOARD_LINES) continue;
+            if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
+            if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
+            const int lineCell = BotOfflinePrepareLine(ch, cell);
+            if (lineCell < 0) continue;
+            LPITEM line = ch->GetInventoryItem((WORD)lineCell);
+            if (!line) continue;
+            o.preparedItem = line->GetID();
+            o.preparedCell = (uint32_t)lineCell;
+            return;
+        }
+    }
+    // A name for what the shop holds now, by Iwakura's rules over previews of
+    // its own lines.
+    bool BotOfflineNameForGoods(LPCHARACTER ch, NativeShop shop, char* out, size_t outSize, const char** how) {
+        std::vector<LPITEM> goods;
+        if (shop)
+            for (const auto& [id, line] : shop->GetItems())
+                if (line)
+                    if (LPITEM preview = BotOfflinePreview(*line))
+                        goods.push_back(preview);
+        const bool named = ChoosePlayerBotShopName(ch, goods, out, outSize, how);
+        for (LPITEM preview : goods)
+            M2_DELETE(preview);
+        return named;
+    }
     bool ManagePlayerBotOfflineService(LPCHARACTER ch, TPlayerBotAIState& state, DWORD now) {
         using namespace playerbot_offline;
         if (!ch) return false;
@@ -218,11 +465,24 @@ namespace {
         // had just been spawned on, and the same wave again ten to fifteen
         // minutes later because the whole population's clocks started together.
         // The thirty seconds stay: the shop list has to arrive from the DB first.
+        // A dropper's first visit is spread over its own long round: the ten
+        // minutes pulled the medal droppers out of the second village 69 times
+        // in the first fourteen minutes after a restart.
         if (o.nextService == 0)
-            o.nextService = now + 30000 + PlayerBotNavHash(ch->GetPlayerID() ^ 0x4f534856U) % 600000;
+            o.nextService = now + 30000 + PlayerBotNavHash(ch->GetPlayerID() ^ 0x4f534856U) %
+                (IsPlayerBotDropper(state.bPersonality) ? PLAYERBOT_DROPPER_SHOP_SERVICE_MAX_MS : (DWORD)600000);
         if (BotOfflineBusy(ch, state) || !db_clientdesc || !db_clientdesc->IsPhase(PHASE_DBCLIENT)) {
             if (o.visiting) BotOfflineFinishVisit(ch, state, now);
             return false;
+        }
+        // An empty hand does not wait out the service interval when its own
+        // counter holds something to wear (BotOfflineReclaimLine); probed once
+        // a minute.
+        if (!o.visiting && shop && !ch->GetWear(WEAR_WEAPON) && Due(now, o.nextReclaimProbe)) {
+            o.nextReclaimProbe = now + 60000;
+            long long gain = 0;
+            if (BotOfflineReclaimLine(ch, state, shop, now, gain) != 0)
+                o.nextService = now;
         }
         if (!Due(now, o.nextService)) return false;
         if (!shop) {
@@ -244,7 +504,7 @@ namespace {
                 }
                 manager.RecvShopSafeboxCloseClientPacket(ch);
             }
-            o.nextService = now + number(600000, 900000);
+            o.nextService = now + BotOfflineServiceGap(state);
             return false;
         }
         const auto spawn = shop->GetSpawn();
@@ -273,12 +533,30 @@ namespace {
         if (!Due(now, o.nextStep)) return true;
         o.nextStep = now + 3000;
         if (!BotOfflineBudget(now)) return true;
+        BotOfflinePrepareVisitLine(ch, state, shop);
         ch->SetLookingShopOwner(true);
         manager.RecvShopSafeboxOpenClientPacket(ch);
         auto box = ch->GetIkarusShopSafebox();
         if (box && box->GetValutes().yang > 0) manager.RecvShopSafeboxGetValutesClientPacket(ch);
         manager.RecvShopSafeboxCloseClientPacket(ch);
         if (shop->GetDuration() == 0) {
+            // An expired stand needs no edit mode to give a line back, and one
+            // it would no longer take comes off before the stand is renewed.
+            int lowGear = 0;
+            const DWORD unwanted = BotOfflineUnwantedLine(shop, lowGear);
+            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGear, now)) {
+                BotOfflineFinishVisit(ch, state, now);
+                return false;
+            }
+            // So does a piece the owner should be wearing.
+            {
+                long long gain = 0;
+                const DWORD reclaim = BotOfflineReclaimLine(ch, state, shop, now, gain);
+                if (reclaim && BotOfflineReclaim(ch, state, reclaim, gain, now)) {
+                    BotOfflineFinishVisit(ch, state, now);
+                    return false;
+                }
+            }
             // The operator moved the TRADE slider while this stand was up. An
             // eight-hour offline stand is not worth closing early - the fee is
             // paid and the goods are with the entity - but it is not renewed
@@ -290,8 +568,17 @@ namespace {
             if (stillWanted && !shop->GetItems().empty() &&
                     ch->GetGold() - aOfflineShopTime[1].price >= GetPlayerBotReservedGold(ch) &&
                     Begin(ch->GetPlayerID(), Create, 0, now)) {
-                manager.RecvShopReopenClientPacket(ch, shop->GetName(), 1);
-                EndCall(ch->GetPlayerID());
+                // Renamed for what it holds now - eight hours of service visits
+                // have added to it - by the same rules as a new stand. A name
+                // from before those rules is not renewed either.
+                char sign[SHOP_SIGN_MAX_LEN + 1];
+                const char* how = "kept";
+                if (!BotOfflineNameForGoods(ch, shop, sign, sizeof(sign), &how))
+                    strlcpy(sign, shop->GetName(), sizeof(sign));
+                manager.RecvShopReopenClientPacket(ch, sign, 1);
+                if (EndCall(ch->GetPlayerID()))
+                    sys_log(0, "PLAYERBOT_OFFLINE: reopen pid=%u name=%s lines=%u sign=\"%s\" how=%s",
+                        ch->GetPlayerID(), ch->GetName(), unsigned(shop->GetItems().size()), sign, how);
             }
             BotOfflineFinishVisit(ch, state, now);
             return false;
@@ -310,20 +597,65 @@ namespace {
             BotOfflineFinishVisit(ch, state, now);
             return false;
         }
+        // A line the counter would not take today comes off before anything
+        // goes on - that is the operation of this visit. The stands already up
+        // when the rule arrived held 2 409 such lines between them; a bag with
+        // no room for the piece refuses, and then the visit adds instead.
+        int lowGearOnCounter = 0;
+        {
+            const DWORD unwanted = BotOfflineUnwantedLine(shop, lowGearOnCounter);
+            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGearOnCounter, now)) {
+                BotOfflineFinishVisit(ch, state, now);
+                return false;
+            }
+        }
+        // And a piece the owner should be wearing comes home before anything
+        // goes on (BotOfflineReclaimLine).
+        {
+            long long gain = 0;
+            const DWORD reclaim = BotOfflineReclaimLine(ch, state, shop, now, gain);
+            if (reclaim && BotOfflineReclaim(ch, state, reclaim, gain, now)) {
+                BotOfflineFinishVisit(ch, state, now);
+                return false;
+            }
+        }
         std::vector<std::pair<int, WORD> > scored;
-        CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state));
+        CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state), lowGearOnCounter);
+        // The line cut before the board opened goes first, whatever it scores
+        // now: it is exactly a line, so BotOfflinePrepareLine below hands it
+        // back as it is. A stale cell (the item gone, or another in its
+        // place) is simply not it.
+        if (o.preparedItem) {
+            LPITEM line = ch->GetInventoryItem((WORD)o.preparedCell);
+            if (line && line->GetID() == o.preparedItem)
+                scored.insert(scored.begin(), std::make_pair(1000000, (WORD)o.preparedCell));
+            o.preparedItem = 0;
+        }
         bool sent = false;
         for (auto [score, cell] : scored) {
             auto item = ch->GetInventoryItem(cell);
             int pos = BotOfflineSlot(ch, shop, item);
             if (pos < 0) continue;
+            // A hoard carries PLAYERBOT_SHOP_HOARD_LINES of one kind on a
+            // counter, each a pack cut here (BotOfflinePrepareLine).
+            if (IsPlayerBotHoardedMaterial(ch, item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_HOARD_LINES) continue;
+            if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
+            if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
+            const int lineCell = BotOfflinePrepareLine(ch, cell);
+            if (lineCell < 0) continue;
+            const WORD at = (WORD)lineCell;
+            item = ch->GetInventoryItem(at);
+            if (!item || !BotOfflineValid(ch, item, pos)) continue;
             ikashop::TPriceInfo price{};
             price.yang = std::max(GetPlayerBotShopAskingPrice(item), GetPlayerBotRefineInvestment(item));
             if (price.yang <= 0 || price.yang >= GOLD_MAX ||
                     shop->GetTotalYangValue() >= GOLD_MAX - price.yang) continue;
             DWORD id = item->GetID();
             if (Begin(ch->GetPlayerID(), Add, id, now)) {
-                manager.RecvShopAddItemClientPacket(ch, TItemPos(INVENTORY, cell), price, pos);
+                manager.RecvShopAddItemClientPacket(ch, TItemPos(INVENTORY, at), price, pos);
                 sent = EndCall(ch->GetPlayerID());
                 // Remembered while the item is still in hand: once it sells,
                 // the only thing left is its id. The skill is socket 0 - every
@@ -360,8 +692,9 @@ namespace {
             // A counter priced against an older table is walked at the pace of the
             // service visit (10-15 min), not one line an hour; the stamp is set
             // only once the rotation has come round, so every line was seen.
-            if (o.priceGeneration != PLAYERBOT_PRICE_TABLE_VERSION) {
-                if (wrapped) o.priceGeneration = PLAYERBOT_PRICE_TABLE_VERSION;
+            // The stamp carries the yang rate too (GetPlayerBotPriceGeneration).
+            if (o.priceGeneration != GetPlayerBotPriceGeneration()) {
+                if (wrapped) o.priceGeneration = GetPlayerBotPriceGeneration();
                 o.nextReprice = now;
             } else {
                 o.nextReprice = now + 3600000;

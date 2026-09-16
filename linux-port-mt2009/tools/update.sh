@@ -66,7 +66,10 @@ req = urllib.request.Request(sys.argv[1], headers={
 sys.stdout.write(urllib.request.urlopen(req, timeout=30).read().decode('utf-8', 'replace'))
 EOF
     elif have curl; then
-        curl -fsSL -A 'metin2-playerbots-update/2' -H 'Accept: application/vnd.github.raw+json' "$_url"
+        # Bounded, like python's timeout above: a connection that stalls
+        # without failing held "[1/4] reading what is published" for good,
+        # and the raw CDN fallback below only runs once this one gives up.
+        curl -fsSL --connect-timeout 20 --max-time 60 -A 'metin2-playerbots-update/2' -H 'Accept: application/vnd.github.raw+json' "$_url"
     else
         die "neither python3 nor curl is installed"
     fi
@@ -95,7 +98,7 @@ EOF
 download() {
     _url=$1; _out=$2
     if have curl; then
-        curl -fL --retry 3 -A 'metin2-playerbots-update/2' -o "$_out" "$_url"
+        curl -fL --retry 3 --connect-timeout 20 -A 'metin2-playerbots-update/2' -o "$_out" "$_url"
     elif have python3; then
         python3 - "$_url" "$_out" <<'EOF'
 import sys, urllib.request, shutil

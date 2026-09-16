@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     assert panel.playerbots_release_status()['tone'] in ('current', 'outdated')
     assert panel.MAP_BOUNDS[61] == (358400, 153600, 153600, 153600)
     assert 61 in panel.MAP_STONE_RESPAWN_IDS and not {25, 104, 108, 109} & panel.MAP_STONE_RESPAWN_IDS
-    assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [21, 23, 24, 25, 61, 63, 64, 104, 108, 109]
+    assert [index for index, _name in panel.TRACKED_MAP_OPTIONS] == [1, 3, 4, 5, 41, 43, 44, 45, 21, 23, 24, 25, 61, 63, 64, 104, 65, 71, 108, 109, 67, 68, 66]
     assert panel.changelog_entries()[0]['version'] == '1.40.0'
     assert (Path(panel.__file__).parent / 'static' / 'inventory-background.svg').is_file()
     assert panel.class_profile(5)['portrait'] == 'assassin_m.bmp' and panel.class_profile(6)['gender'] == 'Kadın'
@@ -115,6 +115,7 @@ with tempfile.TemporaryDirectory() as tmp, patch.object(panel,'RATES_SPOOL',Path
     with patch.object(panel,'live_map_counts',return_value=[]), patch.object(panel,'live_bots',return_value=[]), \
          patch.object(panel,'read_rates',return_value={'exp':150,'drop':170,'yang':190}), \
          patch.object(panel,'restart_progress',return_value={'state':'ok','percent':100,'stage':'Serwer działa'}), \
+         patch.object(panel,'CUSTOM_PATCHES_ENABLED',True), \
          patch.object(panel,'globals_for_templates'):
         # Use real Jinja rendering with context processors disabled (all DB mocked).
         processors=panel.app.template_context_processors[None]

@@ -220,6 +220,14 @@ int main()
 		// purpose.
 		assert(GetTownPitch(21, p) && p.x == 63400 && p.y == 166300);
 		assert(GetTownPitch(23, p) && p.x == 145500 && p.y == 240000);
+		// The other four stand on their kingdom's own guard, 11000 in Shinsoo
+		// and 11004 in Jinno, in the middle of each village's round square -
+		// the place Chunjo's two share with 11002. If one of these moves, a
+		// market has left its square.
+		assert(GetTownPitch(1, p) && p.x == 474325 && p.y == 954225);
+		assert(GetTownPitch(3, p) && p.x == 353025 && p.y == 882325);
+		assert(GetTownPitch(41, p) && p.x == 959925 && p.y == 268825);
+		assert(GetTownPitch(43, p) && p.x == 863425 && p.y == 246025);
 		// Every village has one, and only villages have one.
 		const long villages[6] = { 1, 3, 21, 23, 41, 43 };
 		for (int i = 0; i < 6; ++i)

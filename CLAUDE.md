@@ -92,6 +92,7 @@ dependency order at the top of `playerbot_manager.cpp`:
 | `playerbot_world_memory.h` | What the population has learned about the world, as opposed to about itself. |
 | `playerbot_movement.h` | Following a route: mounts, waypoints, portals, and the known-metin registry. |
 | `playerbot_gear.h` | What a bot wears and carries: equipment scoring, the progression ladder, arrows, potions. |
+| `playerbot_unique_slots.h` | The two unique slots: the uniques a bot never wears, and the rings and gloves on a clock it wears only while it hunts. |
 | `playerbot_activities.h` | The horse, and fishing. Each owns the whole tick while it runs. |
 | `playerbot_missions.h` | The Biologist's collections and the level-up hunt, driven without a quest dialog. |
 | `playerbot_skills.h` | The character sheet: stat points, the job's skill order, keeping buffs up. |
@@ -2334,13 +2335,35 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   probe-pid trick, because nothing public says whether the event is alive);
   the operator reverted it in 1.31.5 - a bot taking what a player left is
   wanted. Do not put it back without asking.
-- **A rider is served at every counter.** The engine refuses a rider only a
-  skill book (`LearnSkillByBook`), a costume and a second mount; the shop,
-  the blacksmith, the storekeeper and every quest NPC answer from the
-  saddle. `MovePlayerBotTownLeg` and the Biologist keep the horse
-  (`keepHorseAtDestination`), the book pass dismounts itself, and the
-  fishing session sends the horse away with `HorseSummon(false)` because
-  `StopRiding()` alone parks it beside the angler for the whole session.
+- **A rider reads, dresses, opens chests and is served from the saddle.**
+  On mt2009 the engine refuses a rider exactly these: a skill (`UseSkill`,
+  `CanUseSkill`), a blow from a horse that cannot fight, the rod
+  (`fishing.cpp`), a polymorph marble, a tuxedo or a ride item
+  (`EquipItem`); `CPVPManager::CanAttack` refuses a duel blow under grade
+  two. `LearnSkillByBook`, a book's and a chest's use (`UseItemEx`), the rest
+  of `EquipItem`, `PickupItem`, a quest NPC, the shop, the anvil and ikashop
+  ask nothing about a horse, and r40250's book and chest do not either. This
+  note used to say the book did, so the book pass climbed down, returned, and
+  was put back in the saddle by the travel before its next visit: 5 121
+  climb-downs in 36 minutes on the test world for 3 801 books, one rider down
+  268 times for 15. The travel climbed down at the end of every leg too
+  (near_destination and on_foot_action, 13 011 of 24 389 climb-downs), and
+  14 502 of 24 379 mounts came within six seconds of a climb-down (Tieru,
+  15 September: "Nie trzeba schodzic z konia by przeczytac ksiazke, sciagnac
+  eq, ubrac eq, otworzyc jakies skrzynki, porozmawiac z npc, przejsc przez
+  portal"). So `UpdatePlayerBotTravelMount` only mounts for a long leg, the
+  book pass reads from the saddle, the stable keeper talks to a rider and the
+  level is changed round a `StopRiding`/`StartRiding` the way
+  `horse.advance()` does it (`SetPlayerBotHorseLevelInSaddle`), the stalled
+  portal walk keeps the saddle, and every climb-down that is left holds the
+  next mount for `PLAYERBOT_HORSE_TRAVEL_FLIP_HOLD_MS`
+  (`SetPlayerBotRidingForTravel`). The first ten minutes after it: 214 mounts
+  a minute against 682, remounts inside six seconds 20 a minute against 406,
+  books read 231 a minute against 106. What is left belongs to the transport
+  horse: a bot that mounts for a long leg and picks a target inside six
+  seconds climbs down for it (714 in those ten minutes). The fishing session
+  still sends the horse away with `HorseSummon(false)`, because `StopRiding()`
+  alone parks it beside the angler for the whole session.
 - **Dead stock is counted by item id across stands.** `mapStallUnsold` in
   the state: `ClosePlayerBotShop` adds a stand to every line that came home
   (`FindPlayerBotOfferItem` still finds it), the open pass takes
@@ -2740,7 +2763,13 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   m2-render-config` did not emit the token, so `g_iMoonlightChestPermille`
   stayed 0 and no Moonlight chest ever dropped on a 2.x world (zero in six
   hours on the test stack). A CONFIG token added to one line's renderer has
-  to be added to the other's; the two scripts are separate files.
+  to be added to the other's; the two scripts are separate files. And the
+  renderer only sees what compose hands the game service: the mt2009 compose
+  never passed `M2_MOONLIGHT_CHEST_*` or `M2_DRAGON_COIN_*`, so a value in
+  `.env` stayed in `.env` and CONFIG carried the defaults (seen on m2zip on 15
+  September: no such variable in the container, 10 and 300 in CONFIG). Both
+  compose files pass them since 2.0.52; edit `docker-compose.yml` and re-run
+  `port/composify.py`, which renders the deploy file.
 - **SE_LEVELUP_ON_14_FOR_GERMANY is an advert.** On the mt2009 client that
   effect id draws "Noch 1 Level-Up! ... siehe www.metin2.de" over the
   character; 2.0.15 hung it over every stall the finder found. Pick effects
@@ -2877,17 +2906,35 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   reserve were off by the height of the gear. `PlayerBotBagTakesGroup`
   already laid items out by size; its r40250 fallback repeats the grid loop
   because consumables.h comes after gear.h in the include order.
-- **Prices are Iwakura's tables now, not taste.** `PLAYERBOT_BOOK_PRICES`
-  (44 skills, base at mob_gold 100, scaled by `GetMobGoldAmountRate(NULL)`,
-  jittered 80-125% per listing after the limiter, no wallet scaling) and
-  `PLAYERBOT_BONUS_PRICE_ROWS` in playerbot_bonus.h (per slot mask and
-  APPLY, a max-roll multiplier and an other-value multiplier, the three
-  animal/undead/orc races split at level 33, weapon damage lines by tiers).
+- **Prices are Iwakura's sheet, rendered, not typed.** `data/iwakura_ceny.txt`
+  is his price list v1.0 as he sent it (14 September), and
+  `tools/generate_iwakura_prices.py` renders all of it into
+  `playerbot_price_tables.h`: the yang-rate curve, gear by family and refine
+  (weapons, armour, boots, bracelets, necklaces, earrings and shields, his
+  "do handlarki" bands as a merchant mask that `IsPlayerBotMerchantOnlyGear`
+  keeps off a counter), upgrade materials, books, Forgetting Scrolls, soul
+  stones and their socket multipliers, marbles, herbs, guild materials, ores,
+  and the bonus multipliers with the two weapon damage tiers. The three tables
+  that were typed by hand into types.h and bonus.h are gone. Every price goes
+  through `ScalePlayerBotIwakuraPrice`, his curve (100% x1.0, 200% x2.2, 500%
+  x5.0 ... 10000% x100, straight between the points and proportional outside
+  them); the books' own x1.1 line and the materials' bare rate went with the
+  hand tables. The generator refuses a name it cannot bind to a vnum, a bonus
+  without an APPLY, and a bonus that world.item_attr says does not roll on the
+  slot he wrote it under - and that last check found three rows the hand table
+  had wrong: "Szansa na kradziez PE" is MANA_BURN_PCT (it was STEAL_SP),
+  "Punkty doswiadczenia +%" is MALL_EXPBONUS (EXP_DOUBLE_BONUS never rolls on
+  boots or a necklace), and "Szansa na dobicie ciosu" on body armour is
+  REFLECT_MELEE, because a critical line does not roll on armour. A name the
+  game gives two vnums prices both (Nieznany Talizman+, Zabie Udka, Nieznane
+  Lekarstwo, Ozdobna Spinka), except the two overrides the generator names.
   "Max roll" is `g_map_itemAttr[apply].lValues[bMaxLevelBySet[set] - 1]`
-  (constants.h extern, both engines). The product is capped at x100. On
-  mt2009 APPLY_* are the POINT_* aliases in playerbot_engine_compat.h - add
-  one there before using a new apply (STEAL_SP and POISON_REDUCE were
-  missing). His CENY KU.txt / MNOZNIK BONUSOW.txt are the source.
+  (constants.h extern, both engines), the bonus product is capped at x100, and
+  on mt2009 APPLY_* are the POINT_* aliases in playerbot_engine_compat.h: the
+  five the sheet needed are there, three of them mt2009-only and under an #if
+  in the table. A counter's price still moves through `LimitPlayerBotAskStep`,
+  so a changed table reaches the stalls over hours, and
+  `PLAYERBOT_PRICE_TABLE_VERSION` (3) is what makes every offline shop reprice.
 - **"±" for "ą" is the client, not the data.** Checked bytes in
   `world.mob_proto`/`item_proto`: "Handlarz Bronią" ends B9, "Różności" is
   F3 BF ... 9C - CP1250, correct - and there is no mob_names.txt on this
@@ -3217,6 +3264,1478 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   runs only when the bot's own cast of that buff has just failed - which is
   why no player was ever buffed by it and why the Shaman's pass for the
   player (`ManagePlayerBotBuffHumanLeader`, above) is a pass of its own.
+- **A stock quest is fixed by compiling its pre_qc form, not its source.**
+  The package's quests carry `define` and `define group`, which its own
+  `precompile.py` expands into `quest/pre_qc/` before the FreeBSD qc runs; the
+  qc built in the image's quests stage does not read `define` and aborts on
+  line 1. `linux-port-mt2009/docker/game/quest/new_quest_lv19.quest` is the
+  pre_qc file with the bear group completed - the stock group named 140 and
+  141, so the Cursed Bear (139) and the Cursed Brown Bear (142) never counted
+  towards the five skins (Pabloo, from Dixdros' report) - compiled in the loop
+  beside pony_levelup, and its object files land over the stock ones.
+  Compared whitespace-blind with the stock objects, 27 of its 28 files are the
+  same and the kill handler is the one that differs, so a character already in
+  the quest keeps its state. The stock quests are gitignored serverfiles: the
+  fixed copy in the quest directory is the only part that ships.
+- **A release of Seban's panel carries none of our commits to it.** 1.41.0
+  put back the hunting ranking that 5d853df took out and the log.log hint
+  decoding that 2273c31 fixed, so a new zip is checked against our own commits
+  to `linux-port/docker/seban-panel` (how many of each commit's added lines it
+  still holds) before it lands. It also wires three controls to his own
+  game-side scripts - m2-botcount, m2-map-regens, and a `common.m2_switches`
+  row his starter-chest quest reads - and none of them is in this image: the
+  manage page queried the missing table and answered 500, and the bot count and
+  the respawns would have written requests nothing reads.
+  `M2_PANEL_CUSTOM_PATCHES=1` (our `SEBAN_GAME_INTEGRATION` until his 1.48.0
+  brought a flag of his own) in the panel's environment turns the three on for
+  an install that has his scripts; without it they are hidden and refused. Two
+  more things came in that zip: bounds for maps 66, 67 and 68 that are not this
+  world's (taken from each map's Setting.txt instead), and a collector that
+  asked `SHOW COLUMNS` of a table new in that release - an error, not an empty
+  answer, on every install that never had the table, so the table was never
+  made and /economy/shops answered 500 until the check asked
+  information_schema.
+- **A party member's pickup put the owner's item in the wrong cell under the
+  wrong name.** `CHARACTER::PickupItem` on mt2009 has a branch for an item
+  another member of the party owns. It put the item into the owner's bag at
+  an empty cell - the owner's own pickup calls `AutoStackItem` first - so
+  every potion a bot picked up for its player took a slot of its own, and it
+  told the owner that the picker "receives" it, because `GetName()` there is
+  the picker's. With bots in a player's party the picker is nearly always a
+  bot, which is how a branch few people ever reached became a report
+  (mkls6649; the analysis and the fix are Kenny's). `apply_party_pickup_to_owner`
+  in playerbotify.py stacks into the owner's bag first, sends only what a full
+  stack cannot take on to the empty cell, and names the owner in both
+  messages; char_item.cpp ships staged because of it. The branch logs nothing
+  and the test world has no player to stand in a bot's party, so this was
+  compiled and read, not watched.
+- **The package's `log.hack_log` could not take a single line.** Its dump
+  defines time, name, server and why; `LogManager::HackLog` inserts login and
+  ip as well, so every hack line failed with "Unknown column 'login' in
+  'INSERT INTO'" - 262 in one day on the test world, each a bot's
+  FAST_ITEM_SWAP - and the table held nothing on any 2.x world. It is the
+  loginlog2 hwid shape again: `CREATE TABLE IF NOT EXISTS` never mends a table
+  that exists, so logschemify.py appends `ADD COLUMN IF NOT EXISTS` for login
+  and ip (where r40250's table has them) and widens name to
+  CHARACTER_NAME_MAX_LEN; the migrator applies it on every start and initdb on
+  a fresh world. Checked by running the migrator twice over the test world:
+  the columns are there once and the second run changes nothing. After the migrator the error stopped - 16 lines in the half hour before, none in the twelve minutes after - and the table took its first six lines, every one of them FAST_ITEM_SWAP from the same bot two minutes apart, which is what the table is now there to show.
+- **Gear under level thirty goes on a counter at +6 or not at all, and two
+  lines of it at most.** `PLAYERBOT_SHOP_MIN_GEAR_LEVEL` had said since 1.x
+  that such a piece was junk at any refine, and never ran: the precious-refine
+  branch of `ScorePlayerBotShopStock` returned first for everything at +4, so
+  the level test only ever saw +0 to +3. On 14 September the counters of the
+  test world held 4 802 lines of it, 2 409 at +4 and +5 - Czer. Ubranie
+  Mrowki+5 on 348 of them - and a player asked the Discord whether every
+  server had "takie janusze biznesu". The operator's rule is
+  `PLAYERBOT_SHOP_LOW_GEAR_MIN_REFINE` and `PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES`,
+  asked before the bonus and the precious refine; the cap lives in
+  `CollectPlayerBotShopItems` and counts what an offline shop already holds.
+  Below +6 such a piece is the merchant's (`IsPlayerBotJunkItem`) - for this
+  gear only, the eleventh of September's "nothing above +4 to the merchant"
+  stands for the rest - or it would ride in the bag for good, because the
+  unsold-stands rule only counts what went up. The shops already standing are
+  cleaned by the service visit, one line a visit: `RecvShopRemoveItemClientPacket`
+  through the journal's `Remove`, which needs edit mode on a running stand and
+  none on an expired one, and which a bag with no cell refuses synchronously. Twenty-five minutes after it went live on the test world: 786 lines taken off the standing shops, gear under thirty at +4 and +5 down from 2 409 to 1 844 on the counters and from 487 to 253 in the bags, 67 names chosen - 31 from a list, 26 neutral rolls, 9 material names, 7 top-gear headlines - and no core died.
+- **A shop's name is Iwakura's list, rendered, and the engine decides what can
+  be on it.** `data/iwakura_nazwy_sklepow.txt` is his list of 14 September -
+  seven categories and the rules at its head - rendered by
+  `tools/generate_shop_names.py` into `playerbot_shop_names.h`;
+  `playerbot_shop_name_rules.h` is those rules as pure code
+  (`tests/playerbot_shop_name_rules_test.cpp`), and `playerbot_shop_signs.h`
+  describes a real counter in their terms. A name that mentions goods ("ZEBY
+  ORKA TANIO") has a binding in the generator's POWIAZANIA and is drawn only
+  over a counter holding them; the generator refuses a binding to an item
+  item_proto does not know or to a name no longer on the list, and reads the
+  33%, the x1.5 and the x1.4 out of his wording. `ikashop::CShopManager::ParseShopName`
+  runs a name through `EscapeString`, cuts the escaped string to 32
+  (`SHOP_SIGN_MAX_LEN`, `OFFLINE_SHOP_NAME_MAX_LEN`), and refuses it on
+  `has_proper_characters` (printable ASCII and the eighteen Polish CP1250
+  letters, `common/utils.h`) and on any `world.banword` as a substring after
+  ASCII lower-casing - so "Nauka czytania dla opornych" is refused for "porn".
+  The shop keeps the escaped string, so a backslash shows doubled unless the
+  cut lands on it. The generator trims decoration off both ends when that is
+  enough, drops the rest and lists both in the header. A standing shop cannot
+  be renamed by a bot - `RecvShopChangeNameClientPacket` wants `PREMIUM_SHOP` -
+  so it is renamed when it is renewed (`RecvShopReopenClientPacket` takes a
+  name). His names keep their diacritics, CP1250 like an item name: the
+  ASCII-only convention is for our own strings, and
+  `ikashop_offlineshop.name` is `cp1250_polish_ci`.
+- **A merchant's helmets are every class's at once.** The ladder
+  (`GetPlayerBotProgressionHelmetVnum`) was class-based, and the purchase that
+  fills a slot from 9001-9003 (`FindPlayerBotBestMerchantSlotVnum`) took the
+  highest-level helmet in stock whoever it was for: a sura of 74 was sold the
+  warrior's Tradycyjny Helm, could not wear it, and went bareheaded
+  (NaCoPaczysz, 14 September). On the test world 198 of 669 bots of fifty and
+  up wore no helmet, 120 of them with another class's in the bag.
+  `IsPlayerBotProtoForCharacter` is the anti-flag half of `CanUsedBy`, for a
+  proto the bot does not hold yet. In the seventeen minutes after the change the test world bought 173 helmets, each of the buyer's class - 147 bots once, 13 twice, none more - against a shaman that had bought and sold back the warrior's helmet 99 times in the sixteen minutes before it; helmetless bots of fifty and up went from 198 to 164, and those carrying another class's helmet from 120 to 48.
+- **Outgrown armour compounds towards nothing and never reaches it.** The
+  penalty was five percent of the defence figure per level past
+  `PLAYERBOT_ARMOR_OUTGROWN_LEVELS`, capped at all of it, so every armour
+  twenty levels outgrown scored the same single point and the bonus lines
+  alone decided: the same sura wore a level-1 plate +6 with a level-34 one +4
+  in its bag, then put the level-34 one on its counter. Each level past the
+  threshold now keeps ninety-five percent of the level before, so a higher
+  tier keeps more of its defence at any level.
+- **A bot in a player's party makes no plan of its own that changes map.**
+  `ManagePlayerBotFollowHumanLeader` leaves the bot to the rest of the tick once
+  it stands near the player, and the rest of the tick sent it away: in
+  sizowski's bundle of 14 September three shamans went `m1_direct_to_hwang`,
+  `m1_direct_to_sohan` and `desert_crossing_to_v1` through the Teleporter and
+  came back by `follow_leader` a second later, six round trips in two minutes,
+  and a buff landed once. `ManagePlayerBotWorldTravel` (both call sites), the
+  offline shop's service visit (`BotOfflineBusy`) and the Joan-first market
+  trip stand down for `IsPlayerBotHumanLedParty`; a desert crossing under way
+  is dropped, not resumed from wherever the player has led. Compiled and
+  deployed; the test world has no player to stand in a party.
+- **The package's Teleport Ring had no quest.** 70058 drops from monsters and
+  chests (mob_drop_item.txt, special_item_group.txt) and nothing in the
+  compiled quests answered its use, so the ring did nothing.
+  `linux-port-mt2009/docker/game/quest/teleport_ring.quest` is
+  map_warp.quest's list, level floor and fee behind `when 70058.use`, compiled
+  in the Dockerfile loop (object/70058/use in the image). qc checks only the
+  dotted engine functions against quest_functions: the questlib helpers
+  map_warp uses (say_split, select_table, parse_number, get_player_map1_index)
+  compile without being listed. Compiled, not used in game yet.
+- **A GM on this line is its owner playing.** `apply_gm_gameplay` in
+  playerbotify.py, from an audit of 14 September (gm_gameplayify.py): Ikarus's
+  `CheckGMLevel` refused every shop operation above GM_PLAYER,
+  `IsLevelViewable` hid a GM's level, `SetLevel` and the login block both forced
+  PK_MODE_PROTECT, and `CanOpenShop` asked a GM for the kill count. The badge
+  (AFF_YMIR) and every other check stay. Compiled and deployed; never tried in
+  game, because the admin account's GM characters are not for testing.
+- **The seban collector's first snapshot creates the tables the dashboard
+  reads.** It slept its whole interval after a failure, and an update
+  recreates it beside a database that is still starting, so the first attempt
+  met "Connection refused" and the front page answered 500 for five minutes
+  ("po 5 minutach zaczal dzialac", 14 September). A failure is retried after
+  five seconds, doubling up to the interval, and the two pages that read
+  `web_seban_shop_snapshot` treat a missing table as no data yet. Measured
+  after a recreate: 200 on both pages within seconds.
+- **playerbotify.py has to match the staged tree, comments and all.** The
+  fishing edit's marker was a Polish comment and the staged char.cpp carries
+  the English one, so the script found neither and stopped before every later
+  edit - found only because the GM edits after it never ran. And mt2009's
+  char.cpp is not pure CP949 (the stock `MonsterLog` lines are UTF-8 Korean),
+  so the cp949 check from the r40250 note says nothing about it.
+- **A refine line says what the recipe wanted.** `PLAYERBOT_AI: refine ...
+  materials=vnum:need/have`, counted before the attempt takes them - "the bot
+  refined to +8 without Orkowe Jadra" was read off a bag after the refine had
+  consumed them. Both engine paths check and remove the materials
+  (`DoRefine(false)`, `DoRefineWithScroll`); only a REFINE_BONUS_SCROLL with
+  TUNING_FLAG_NO_ITEM (Gwarancja Rzemiosla, 25051-25054) skips them, and no
+  bot uses one.
+- **A pass the fishing just asked for is not the equipment pass's to trade.**
+  `EnsurePlayerBotFishingPass` wears Karta Wedkarska (27620) in a unique slot
+  and `ManagePlayerBotEquipment` scored Maska Sabaha (72735) above it for the
+  same slot, so the two took turns every second or two: `equipped upgrade
+  wear=8 old_vnum=27620` 83 to 1274 times an hour on the test world between
+  14:00 and 20:00 on 14 September, and the engine's FAST_ITEM_SWAP check threw
+  KimTyJestes out of the game nineteen times in thirty-six minutes - the first
+  rows `log.hack_log` ever held. The fishing stamps
+  `s_mapPlayerBotFishingPassAskedAt` and the equipment pass leaves a worn pass
+  alone for `PLAYERBOT_FISHING_PASS_HOLD_MS`; none in the first twelve minutes
+  after the deploy (eleven in the hour before it, so that alone is thin; the
+  better proof is that KimTyJestes and Tryhard1337 were still wearing the pass
+  with a Maska Sabaha in the bag, the exact shape of the loop). It is the
+  pickaxe's lesson again: an activity that puts an item into a slot needs its
+  own guard in the equipment pass. Unrelated and older: every restart is
+  followed by a burst of `fishing pass bought` (58 in two minutes at 21:02, 41
+  at 20:16) against one or two a minute otherwise.
+- **Ask the anvil before taking the piece off.** `ManagePlayerBotRefining`
+  unequipped a worn candidate and only then let `DoRefine` find the material
+  or the fee missing (`refine SKIPPED ... materials=30057:2/21,27799:1/0`); the
+  equipment pass put the piece back and the next blacksmith tick took it off
+  again three seconds later, for the whole visit - about 3 000 `equipped
+  upgrade wear=0 old_vnum=0` and 30 000 `refine SKIPPED` an hour on the test
+  world. The worn-candidate loop and the unequip itself ask
+  `CanPlayerBotAttemptRefineItem`, which `HasPlayerBotRefineOpportunity` already
+  asked: "the planner and the pass that acts must ask one function", sprung
+  from the other side. Twelve minutes after the deploy: 11 armour re-equips,
+  each a different bot, and `refine SKIPPED` at a quarter of its old rate (the
+  rest are bag pieces, which nothing unequips). The refine lines carry
+  `materials=vnum:need/have` taken before the attempt, and the first hour of
+  them is the answer to "refined to +8 without Orkowe Jadra" until a log says
+  otherwise: 419 successful refines on recipes with materials, 87 of them +7
+  to +8, every one with the materials in the bag.
+- **Costumes are refused, not removed.** A costume once put on could not come
+  off again and left the character drawn as a bare weapon; the operator's call
+  was to stop them being worn. `apply_costume_block` (playerbotify.py) refuses
+  `ITEM_COSTUME` at the top of `CanEquipNow` with a chat line, before the
+  `ItemEquip` pulse is counted - EquipItem, a drag onto a costume slot and the
+  item's use all pass there. A costume already worn stays worn and nothing is
+  deleted; unequipping them at login would belong beside that edit. Compiled
+  and found in the shipped binary, not tried in a client.
+- **A playerbotify edit whose marker is its whole replacement fails the
+  second run once a later edit writes inside it.** `apply_gm_gameplay` puts
+  the GM's lines at the top of `CanOpenShop`, above the bot's lines from an
+  older edit whose marker was its entire new text, so the next run on the
+  staged tree found neither that text nor the stock anchor and stopped before
+  `apply_costume_block`. Give an edit a `marker=` of one sentence no later edit
+  will split.
+- **A client package can carry the executable, under the name the launchers
+  run.** Client 2.0.6 (ĹŌŞƬĒĶ's animated login screen and Discord Rich
+  Presence) came as `pack/{root,locale}.{index,data}` and `Metin2
+  SinglePlayer.exe`. Every launcher starts `clientExecutable` from its config
+  or finds `Klient\metin2client.exe` (`Find-ClientExecutable`,
+  `Get-M2SiblingClientExecutable`), so under the new name every player would
+  have kept the old exe with the new packs; it ships as `metin2client.exe`,
+  listed in `launcher/client-update-files.mt2009.txt`, and the same bytes had
+  already run on the test machine as `metin2client2richpresence.exe`.
+  `Test-M2ProtectedPath` guards only the launcher's own files, so the exe is
+  applied like any other file. `linux-port-mt2009/client-root` and
+  `client-locale` hold what changed against 2.0.5's packs (the login scripts,
+  three login images, logo.tga and 76 files under `ui/animated`: 32 DDS
+  frames the animation plays, the 32 JPG frames the first build played -
+  frame 01 still opens the window - and 12 loading-logo PNGs), and
+  `CLIENT_VERSION` had stayed at 2.0.3 through the 2.0.4 and 2.0.5 client
+  releases; it only matters to a full package. The first build of this
+  client loaded all 32 full-HD JPG frames synchronously as the login window
+  opened, a delay anyone could see; the one that shipped loads DDS frames two
+  a tick from `OnUpdate` (ĹŌŞƬĒĶ, the same evening, while the release was
+  being packed). `intrologo.py` plays `loading.avi` instead of the two stock
+  logo videos and goes straight to the login while that file is absent (the
+  video is to come in a later client patch), and it appends a few lines to
+  `login_preload.log` in the client folder on every start. The
+  static-background switch asked of ĹŌŞƬĒĶ is not in this build.
+- **A blow is modelled the way battle.cpp deals it, and mt2009 hides a share
+  of it.** `GetPlayerBotWeaponHitDamageAt` (playerbot_gear.h) is
+  `CalcAttackRating` against a monster of the bot's own level, `CalcMeleeDamage`
+  (`(ATT_GRADE + roll*2 - level*2) * AR + level*2 + value5*2`), the defence off
+  (about level + 15), then the average line, and for skills the same attack
+  before the defence under the skill line, mixed by school
+  (`PLAYERBOT_WEAPON_OWN_LINE_PERCENT` / `_OTHER_`). The old model had no
+  defence - a percent line multiplies what is left after it, so a big line on a
+  weak base reads better than it hits - and left skill damage out as "a PvP
+  line", while `char_battle.cpp` multiplies every skill on a monster by it: a
+  shaman's skill line scored nothing. And `CHARACTER::Damage` on mt2009 adds
+  `levelLimit * 30 / 100 - 3` percent to a normal hit on an NPC for a weapon of
+  level 32 to 65 (the level-65 elite families excepted; the engine's last range,
+  7140..5149, is empty) and ten for 70 or 75: a Krwawy Miecz (45) hits ten
+  percent harder than its numbers, a level-30 weapon gets nothing. No tooltip
+  shows it; `GetPlayerBotWeaponLevelBonusPercent` does. Worth knowing before
+  telling a player a level-30 weapon beats everything: for a body warrior of
+  forty-five (ST 90, DX 3, the bots' own average) a Full Moon Sword +7 at 25%
+  out-hits a Krwawy Miecz +6 (value5 45) by about eight percent, its hidden ten
+  included - under the project margin, so such a bot buys one from about 33%.
+- **A level-30 weapon is a project, judged at +7.** `ReadPlayerBotLevel30View`
+  reads the bag each time: `toBeat` is the best blow the bot has (a level-30
+  weapon in the hand at its own potential), the project is the bag's level-30
+  weapon whose blow at `PLAYERBOT_LEVEL30_PROJECT_PLUS` beats that by
+  `PLAYERBOT_LEVEL30_PROJECT_MARGIN_PERCENT`. The project and a worn level-30
+  weapon are refined to +9 whatever the personality, the project is a refine bag
+  candidate, and no counter or spare reason takes it; a counter's level-30
+  weapon is bought only when its potential beats both (`IsPlayerBotBetterLevel30Offer`),
+  and `PlayerBotCouldUseLevel30Weapon` gates the market walk with a hoped-for +7
+  at 20%. Measured on the test world before this (15 September): 2315 level-30
+  weapons on the counters, 2295 of them at +0..+3, 23 worn by bots. The buying
+  was never the rule, it was the cap - 30% of the median wallet, several million
+  under an asking price at mob_gold 3000 - so a level-30 weapon, the medal 50050
+  and a safe scroll (`IsPlayerBotStrategicPurchase`) cost up to
+  `PLAYERBOT_STRATEGIC_BUDGET_PERCENT` of the bot's own spare gold, in the
+  offline and the classic path both.
+- **From 37% average or 15% skill a weapon never meets the plain anvil.**
+  `IsPlayerBotScrollOnlyWeapon`; it goes under a scroll at every step, past
+  `SCROLL_FROM` (under the floor it could never be refined at all), and
+  `CanPlayerBotAttemptRefineItem` refuses it without a scroll the step can use,
+  so the planner sends no bot to a blacksmith for it. A level-30 weapon under
+  the line is ground at the anvil with no prize hold and no +6 hold, under a
+  scroll only at steps of `PLAYERBOT_WORN_SCROLL_MAX_PROB` and below (the
+  family runs 90/85/75/65/55/45/35/25/20) - and under
+  `PLAYERBOT_LEVEL30_SCROLL_LOW_AVERAGE` (30) not before the step to +5, however
+  low those odds: "do +4 u kowala, zwoje od +5" (Tieru, 15 September), after
+  CiosZKarpia spent ten of twelve scrolls in twenty minutes on the +3 and +4
+  steps of an Ostrze z Czerwonej Stali of one percent. A kept scroll logs
+  `level-30 weapon to the anvil, scroll kept for +5`.
+- **An mt2009 refine scroll is a kind, not a vnum.** `world.item_proto`,
+  USE_TUNING: 25040 and 25041 plain (value0 0), 25042 NO_REDUCTION_WHEN_FAIL,
+  25043/70039 plain +15 (value1), 25045/71032 plain +10, 25044/71021
+  UP_TO_3TH_LEVEL (refused from +4, certain below), 25051-25054 REFINE_BONUS.
+  `DoRefineWithScroll`: success is prob + value1, a failure hands the piece back
+  a level down unless NO_REDUCTION, and REFINE_BONUS destroys. The vnum lists
+  were r40250's (39xxx, 76009), so on mt2009 only 25040 and 71032 ever counted
+  and bags held nothing else. `FindPlayerBotRefineScrollCell` ranks by the
+  values there (War God under +4, then the Magic Stone at steps of
+  `PLAYERBOT_NO_REDUCTION_SCROLL_MAX_PROB` and under, then plain scrolls by
+  value1) and never takes a Gwarancja.
+- **A Biologist specimen from level thirty up goes to him whatever the bot has
+  outgrown.** Measured the same day: collect_quest_lv30 978 bots in
+  go_to_disciple, 3 in key_item, none complete, while 358 bots carried 1484
+  teeth - the carrying pass asked an outgrown row for the whole count, and past
+  forty every row below was outgrown. It takes any held specimen of a row from
+  `PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL` now; `GetPlayerBotBiologistReserve`
+  (the rest of the count over the accept roll, ten teeth at 60% being
+  seventeen) is what `CanPlayerBotAttemptRefineItem` leaves in the bag, and the
+  blacksmith pass asks that of every candidate at the attempt - it asked only of
+  worn pieces, and `DoRefine` takes a material whoever is owed it. A row in
+  key_item makes its specimens surplus. The AI's hand-in never kept the quest's
+  twenty-two hours. The Demon Souvenir row is live on this world: 1001-1004 have
+  homes on map 66 and 29 bots had finished it, so the comment in
+  `PLAYERBOT_BIOLOGIST_MISSIONS` saying 1001 has none is out of date.
+- **The medal errand was rolled by almost nobody.** 17 of 999 bots in a Monkey
+  Dungeon and none in the medium one, one medal handed in an hour, 415 of 1177
+  bots of 35 and up on no horse and 8 past level ten. A bot short of its battle
+  horse rolls twice as often (cap 70), and past `PLAYERBOT_MONKEY_MEDAL_MAX_LEVEL`
+  (64) nobody farms - the hard dungeon's rolls are a few percent there - and the
+  medal comes off a counter as a strategic purchase.
+- **A price memory is yang, so it belongs to one yang rate.**
+  `ForgetPlayerBotPricesOnRateChange` clears the ask anchors and the sale
+  medians when `GetMobGoldAmountRate` moves (`PLAYERBOT_MARKET: yang rate` once
+  a start, `changed from` after), and an offline shop's stamp is
+  `GetPlayerBotPriceGeneration` - table version and rate - so a moved rate
+  reprices every counter on the service walk. Iwakura's sheet was right; "one
+  zero too many" was stands priced under another rate, stepping five percent per
+  ten minutes towards the new one.
+- **A duel is fought with what is in the hand.** `AcceptPlayerBotPvpChallenge`
+  agreed three seconds after a challenge and `ManagePlayerBotDuelCombat` fights
+  at the top of the tick, above the fishing session, so a bot on the bank with
+  its rod out took a duel from another bot and fought it with the rod (Tieru,
+  15 September: "chyba ze chca robic zawody na lowienie ryb"). The bot duel's
+  challenger checked `bFishingSession` for itself and nobody checked the bot it
+  picked or the bot that agreed. `GetPlayerBotDuelUnreadiness` (a fishing
+  session or a rod, mining or a pickaxe, no weapon) is asked now by the
+  acceptance, which tells a player why, by both challengers - the bot duel and
+  the kingdom quarrel - for themselves and for the bot they pick, and by the
+  duel pass, which ends a duel under way rather than fight it.
+- **The operator's medal droppers are a cohort on top of the population.**
+  `PLAYERBOT_MEDAL_DROPPERS` (a kingdom, 0 by default) and
+  `PLAYERBOT_MEDAL_DROPPER_LEVEL` (25, clamped to 18-120) come through the game
+  service's environment like `PLAYERBOT_AUTOSPAWN_COUNT` into the bootstrap in
+  `input_db.cpp` (playerbotify). `SpawnMedalDropperCohort` schedules that many
+  identities from the far end of each kingdom's registry - the set is in pid
+  order and the ordinary spawn takes it from the front - passing over any saved
+  more than two levels above the lock, before the ordinary cohort, which steps
+  over them, and `TopUpMissingBots` restores them like the rest. The state init
+  makes them medal droppers with no party or stone role; `ManagePlayerBotExpLock`
+  locks them at the cohort's level rather than the personality's 33 and lifts
+  `AFFECT_EXP_BLOCK` from a bot that should not carry it, since the affect is
+  otherwise for good. The registry query reads `p.level` for it. They had to be
+  new characters: on the test world all 1000 live bots were 30 and up and the
+  1500 benched ones level 1, and a bot's level is never set by hand. The
+  bootstrap's playerbotify edit carries a marker now, because this one writes
+  into it.
+- **Seban's 1.48.0 calls `collector.init()` from app.py with a DictCursor.** Our
+  2.0.47 check read `fetchone()[0]`, which is a KeyError on a dict row: the
+  panel's workers failed to boot and item-grants with them, a minute after the
+  first deploy. `SELECT 1 ... LIMIT 1` with `fetchone() is None` works with
+  either cursor, the shape of his original SHOW COLUMNS. Test a merged panel by
+  starting it, not by `ast.parse`.
+- **A horse destroyed by anything but its own rider left the rider holding it.**
+  `CHARACTER::Destroy` on mt2009 unlinks a horse from its rider only under
+  `IsPC() && GetRider()`, and only a horse has a rider, so it never did: a horse
+  destroyed any way but its rider's own `HorseSummon(false)` left `m_chHorse`
+  dangling, and the rider's next `StartRiding()` called `HorseSummon(false)` on
+  freed memory - game1 SIGSEGV twice in six hours at 2000 bots, both
+  `CPlayerBotManager::Update -> CHARACTER::StartRiding+0x251 ->
+  CHARACTER::HorseSummon+0x6e` (sizowski, 15 September). What destroys one is a
+  splash skill: `battle_is_attackable` ends in `CPVPManager::CanAttack`, which
+  refuses NPC/WARP/GOTO by type and lets every other NPC through, and
+  `SetPlayerBotRidingForTravel` sends a dismounted rider's horse away only in a
+  safe zone, so a hunting map is full of follower horses standing among area
+  skills. `apply_horse_rider_links` (playerbotify.py) unlinks a horse from a
+  rider that still holds it and makes a horse with a rider nobody's target;
+  char.cpp and pvp.cpp already ship staged. A player's summoned horse had the
+  same crash waiting, it was only rarer.
+- **Shinsoo's and Jinno's easy Monkey Dungeons had no geometry slot.**
+  `GetPlayerBotMonkeyGeometrySlot` named 25, 108 and 109, so maps 5 and 45
+  answered NULL, no chamber or door was known there, and those kingdoms' bots
+  hunted the entrance room alone ("Bots only farm in starting zone of Ape
+  Dungeon", Dixdros, 14 September). The geometry was always read off each map's
+  own NPCs; the slot was all that was missing. A per-dungeon array has to grow
+  with `IsPlayerBotMonkeyMap`. The test world's logs from before the fix have
+  bots entering 5 and 45 and no geometry line for either, ever; the first
+  entry after it logged `geometry map=5 chambers=11/11 doors=24`, and a minute
+  later the second bot in logged `spread crossed ... from=0 to=2`.
+- **A bot spends only the bonus stones in its bag.** `BuyPlayerBotBonusStone`
+  created 71084/71085 with `AutoGiveItem` for 25 000 yang whenever the bag had
+  none, reasoning that the stones cannot be dropped or traded - true of r40250's
+  item_proto, not of mt2009's, where both drop (`mob_drop_item.txt`) and come
+  out of chests. With the chests switched off, the gear history showed stones
+  spent that no bag had received and the economy charts had none of (seban
+  latino, Drip, 15 September). The operator chose "only its own":
+  `HasPlayerBotBonusStone`, and a bag with no stone and no marble ends the pass
+  at once. No counter lists a stone, so drops and chests are the whole supply.
+- **The F9 panel's login probe told every player "no such command".** The
+  client sends `/gmpanel_check_gm` some 300 frames after every entry into the
+  game, and F9/F10 send `/gmpanel_open` and `/botadmin`; with HIGH_WIZARD and
+  IMPLEMENTOR rows in `cmd_info[]` a player got "Ta komenda nie istnieje." after
+  every teleport (NerrVoVy, 15 September). The three rows are GM_PLAYER, each
+  command checks its own threshold and answers nothing below it, and every
+  action of the panel still checks its own row.
+- **`/transfer` of a bot was a WarpSet.** It took the bot off its sectree and
+  the rescue put it back at its own map's start ("robi tp, ale jakby na start
+  mapy"). `do_transfer` hands a bot on this core to
+  `CPlayerBotManager::TransferBot` - `TransitionPlayerBotMap` onto the GM's spot,
+  the answer in the GM's chat - and refuses a registered bot on another core by
+  name, because a bot cannot stand on a map its core does not host.
+- **A dropper is drawn only inside its band.** The exp lock stops experience
+  and gives none back, so a bot already past its band kept the name and farmed
+  a table the engine fades to nothing - a level-45 dropper at a level-35 Metin
+  in Bokjung (sizowski, 15 September). `IsPlayerBotPastDropperBand` (more than
+  `PLAYERBOT_DROPPER_OUTGROWN_LEVELS` over the lock) draws such a bot as an
+  adventurer at its next spawn, and `ManagePlayerBotExpLock` lifts its lock.
+  The test world had no such bot to move - not one `exp locked` line above
+  lock+2 in its log, and 0 of 250 droppers past their band after the restart -
+  so the change shows on an older world like sizowski's, not on ours.
+- **A mining session ends at a blow and comes back after a death.** A session
+  owns the tick above the fight and the emergency recovery, so a miner could be
+  killed at its vein without hitting back, and standing up afterwards counted as
+  "busy" with the whole 15-45 minute rest (Mat, 14 September). Health below both
+  its last look and its maximum ends the session as `attacked`, recovery ends it
+  as `recovering`, and either comes back after
+  `PLAYERBOT_MINING_RESUME_AFTER_FIGHT`. The maximum is in the test because a
+  falling maximum pulls health down with it and is no blow. In the first four
+  minutes on the test world three sessions on Mount Sohan ended `attacked`, and
+  the first of those bots dismounted, buffed, cast and drank a potion within
+  three seconds of it.
+- **A bot in a player's party runs no errand, not only no map change.** After
+  2.0.48 a bot with a Biologist or merchant errand still walked off from the
+  player's side and the follow pass fetched it back, in turns ("[PT] Ide do
+  handlarza bronia (cel: Biolog)"). Pabloo's fix: the stable, the Biologist, the
+  start and the continuation of a town visit and the weaponless branch all
+  stand down for `IsPlayerBotHumanLedParty`; the visit flags are kept, so
+  `ManagePlayerBotBuffHumanLeader` no longer refuses a bot for carrying them.
+- **The weapon in the hand is not burned for want of a scroll when nothing
+  would replace it.** CiosZKarpia (75, Mental Warrior, 125 million yang) gifted
+  her Halabarda +8 at 01:52 on 15 September, burned Zabojca Lwow at +5 -> +6 at
+  a plain anvil with no scroll at 02:08, and fought on with a Gilotynowe Ostrze
+  +7 of level ten while a Halabarda +6 and three swords of level 55 stood on her
+  own offline counter. `IsPlayerBotWornWeaponAtRisk` (the hand weapon -
+  `GetPlayerBotHandWeapon`, worn or the one a blacksmith session keeps in the
+  bag - at a step of `PLAYERBOT_WORN_SCROLL_MAX_PROB` or under, no
+  `FindPlayerBotBackupWeapon`, and above `GetPlayerBotMerchantWeaponCeiling`)
+  goes under a scroll or waits; `CanPlayerBotAttemptRefineItem` asks it, so the
+  planner agrees, and `PlayerBotNeedsScrollForWeapon` makes the bot a scroll
+  buyer. The backup weapon is never a gift, scrap or counter goods. Level-30
+  weapons are left out: grinding those at the anvil is the operator's rule.
+  `BotOfflineReclaimLine` takes a piece back off the own offline counter when
+  it beats what is worn and what is in the bag by
+  `PLAYERBOT_OFFLINE_RECLAIM_MIN_GAIN_PERCENT` (probed once a minute while the
+  hand is empty; one line is not taken back twice in six hours) - without the
+  margin the first run took pieces back for half a point of blow. And the
+  Mental Warrior's two-hander preference is a share of its blow
+  (`PLAYERBOT_TWO_HANDED_PREFERENCE_PERCENT`), not a flat 200 000.
+- **A weapon's damage lines are priced between Iwakura's bands.** As steps,
+  19%/-5% and 1%/+3% were both x1.2: two Ostrza z Czerwonej Stali +0 at
+  15 150 000 ("czy nie pracowalismy nad tym, aby premiowana bardziej byla z
+  wyzszymi srednimi?"). `GetPlayerBotDamageTierPct` takes his number as a
+  band's middle and runs straight between middles (x1.33 and x1.10 for those
+  two); `PLAYERBOT_PRICE_TABLE_VERSION` 5 reprices every counter.
+- **Keys, hoards and marbles reach a counter.** On 15 September 2598 gold and
+  silver keys lay in 1057 bags with no chest they open, 158 bots held 19 577
+  Nieznane Lekarstwo, and the ledger called 7182 listing decisions of an hour
+  overstock. `IsPlayerBotSurplusTreasureKey` (two of a kind kept; the safebox
+  under pressure; withdrawn and bought when a chest turns up),
+  `IsPlayerBotHoardedMaterial` (50 over the anvil's reserve: packs of ten,
+  three lines a counter, past the ledger; the offline service cuts the pack
+  itself, `BotOfflinePrepareLine`) and `PLAYERBOT_SHOP_REASON_HOARD`, rolled
+  against TRADE like the books. The shop pass asks for its reason only after
+  the cheap gates: it read the whole bag on every tick of every bot without a
+  counter. Helmets and shields are loot whatever their merchant price.
+- **A scroll that is also a recipe material was priced as a material.**
+  Recipe 501 consumes the Blessing Scroll, so the material branch of
+  `ScorePlayerBotShopStock` and the ledger decided it, and the 2.0.31 rule
+  (one trader in five keeps one scroll and sells the rest) never ran: 8
+  scrolls on 978 counters, 312 in 177 safeboxes. Scrolls are scored before the
+  materials, kept out of the material deposit and withdrawn. Nor did a trader
+  ever hold "a stack of two" Moonlight chests - the chest pass opens one eight
+  seconds after the drop - so a trader now keeps them for the counter, up to
+  `PLAYERBOT_CHEST_TRADER_HOLD`.
+- **An item AutoGiveItem put on the ground must never be equipped.** BROLID
+  (15 September): 11:10:34 the emergency weapon was bought into a full bag
+  (log.log SYSTEM_DROP) and equipped anyway, 11:15:11 its ground timer found
+  "Owner exist", 11:16:13 a burn at the anvil ended in RemoveFromCharacter's
+  "Invalid Item Position" and a destroyed item left in the weapon slot, and the
+  equipment pass swapped a sword over it 21 times in a second
+  (`old_vnum=1947153072`) until FAST_ITEM_SWAP threw the bot out.
+  `BuyPlayerBotEmergencyWeapon` asks for room first and for the item's owner
+  and window after; `IsPlayerBotWornItemSound` keeps the equipment pass and
+  both refine passes off a slot the engine does not really wear; the engine's
+  `UnequipItem` takes `GetEmptyInventoryEx` without checking it, so the rod
+  refine and the pickaxe ask for room before they unequip.
+- **The weapon atlas is the world's own tables, rendered.**
+  `tools/generate_weapon_atlas.py` (dumps of item_proto, mob_proto and the
+  shops, plus the locale directory) writes `playerbot_weapon_atlas.h`: 126
+  families, who may carry them, and where one comes from - a merchant on a bot
+  map, the common drop of a rank and level band standing there, a monster or a
+  chest there, or only elsewhere; 93 are reachable. `playerbot_weapon_goal.h`
+  gives each bot the best reachable family at its level: outclassed by 30% and
+  able to pay, it walks to the market; a counter weapon 25% better than the
+  hand is paid out of the strategic budget; `PLAYERBOT_WEAPON: census` counts
+  the gap. Worth knowing before promising more: weapons of 65 and up drop only
+  on maps 67/68 (bots walk them) and 70/73 (hosted, never walked), no family of
+  80 or more has any source, and Weapon Shop Dealer 2 (9007, weapons to 60) is
+  commented out in every village's npc.txt.
+  A rod or a pickaxe in the hand is the session's tool, not a weapon with a
+  blow of nothing: the first run's goals named anglers and miners
+  (`hand=27430 blow=0`, `hand=29101 blow=0`), for whom every counter weapon was
+  a strategic offer. `GetPlayerBotHandWeapon` reads the bag when the hand holds
+  a tool, and `BotOfflineReclaimLine` measures a line against the weapon in the
+  bag, not against the rod. The census works out at most
+  `PLAYERBOT_WEAPON_CENSUS_REFRESHES` stale goals and carries on from the pid
+  it stopped at: the goal refresh and the census share one ten-minute interval,
+  so a census that always started from the first pid would read the same bots
+  every time.
+- **The 1.x updater and installer refuse a 2.x server.** seban latino (15
+  September) ran `docker compose exec updater m2-updater`, which bypasses the
+  2.x compose file's entrypoint (update.sh): it fetched main and tarred the
+  repository's linux-port/docker over the stack, MariaDB 10.11 started on a
+  database 11.8 made, and two log indexes were damaged in two minutes.
+  `stack_engine` in m2-updater and the same test in `installer/install.sh`
+  read the ENGINE file (or a compose file naming MariaDB 11) and stop.
+- **A withdrawal must not fill the bag the deposit then empties.** The two
+  safebox rules are each other's inverse only item by item: the deposit waits
+  for bag pressure (`IsPlayerBotBagFull`, eighteen free cells at 80%, or
+  `PLAYERBOT_BAG_PRESSURE_FREE_CELLS`), while the withdrawal took any material
+  the ledger said somebody was short of into any free cell. Demand moves with
+  every minute's ledger, so a bag the withdrawal had filled sent the same stack
+  back down on the next visit. On 15 September 538 of 4060 withdrawals went
+  back within fifteen minutes, 537 of them with no refine in between, and
+  Soul1994 visited the storekeeper four times in eight minutes. The ledger's
+  half now takes only what leaves the bag clear of that pressure. The anvil's
+  half is unchanged, because the deposit never sends down what the anvil needs.
+  `reason=` in `safebox withdraw` says which half moved an item.
+- **A bot's status is a text tail on the 2.x line, not talking.**
+  `SendPlayerBotOverheadChat` sent `CHAT_TYPE_TALKING` with the bot's VID,
+  and the client's `RecvChatPacket` registers a talking packet's text tail
+  *and* appends the whole line to the chat history
+  (PythonNetworkStreamPhaseGame.cpp), so a town of bots filled the chat window
+  with statuses. Under `PLAYERBOT_ENGINE_MT2009` it sends the server command
+  `PlayerBotStatus <vid> <hex>`: `CHAT_TYPE_COMMAND` goes to `ServerCommand`
+  before anything touches the chat, game.py hands it to
+  `client-root/playerbot_status_tail.py`, and that calls
+  `textTail.RegisterChatTail` and nothing else. Hex because the command parser
+  splits its line on spaces; the bytes are the status's CP1250, at most
+  `PLAYERBOT_STATUS_TAIL_MAX_BYTES`. A root without the handler returns 0 from
+  `BINARY_ServerCommand_Run` and the C++ ends in `TraceError("Unknown Server
+  Command")` in syserr.txt - no chat line and no bubble - so the server and the
+  client root have to ship in one release. game.py's two lines are
+  `clientrootify.py`'s, with anchors that take in the following line, so a
+  second run changes nothing; `tests/playerbot_status_tail_test.py` runs the
+  decoder on Python 2.7 (the client's) and 3. The refine announcement
+  (`BroadcastPlayerBotRefineSuccess`, one shout in three minutes for the whole
+  world) and the trade shouts stay shouts. The root's own `PlayerbotOverhead`
+  handler is OskarPWA's GM-only bot-admin overlay; its server half
+  (`SendPlayerBotOverheadTail`) was never merged, and nothing sends it.
+- **How a refine was made lives in log.refinelog, and its SET column lost
+  most of it.** The gear history's "Ulepszenie udane" said nothing of the way
+  (Tieru, 15 September: "w nawiasie pisz (Kowal, Zwoj Blogoslawienstwa, ...)").
+  `DoRefine` logged POWER for the plain blacksmith and the Demon Tower smith
+  alike (`bMoneyOnly`, the `REFINE_TYPE_MONEY_ONLY` path of
+  `CInputMain::Refine`), `DoRefineWithScroll` logged SCROLL for every scroll,
+  and `setType` was a SET that silently dropped the three longer names this
+  engine writes. `apply_refine_log_way` (playerbotify) writes DEVILTOWER and
+  `SCROLL:<vnum>` (the vnum taken before `SetCount` can destroy the last
+  scroll), logschemify makes the column varchar(40) with an index on
+  (pid, time), and `match_refine_ways` in admin_panel.py pairs each refine row
+  of log.log with its refinelog row - the same pid within two seconds, the
+  same outcome, the grade the attempt started from - and puts the way in
+  brackets, a scroll by its item_proto name. Two things the rows taught: a
+  refinelog row names the *old* piece while a success's log.log row names the
+  new one, a grade up; and a scroll's downgrade writes REFINE FAIL for the new
+  piece *and* REMOVE (REFINE FAIL) for the old one, the reason a burn uses, so
+  the history read "Spalone +3" over a sword that was now +2 (CiosZKarpia,
+  12:56). A REMOVE with a REFINE FAIL one grade lower beside it is skipped.
+  This world's "Magiczny Metal" (39016/71026) is a bonus item, not a refine
+  scroll; the no-reduction stone is Magiczny Kamień (25042).
+- **The Biologist ranking named the row at the position of the count.** "6/9 •
+  Grzyb Tue" was the sixth row of the table beside a count of six, read as
+  "done up to the Tue Mushroom" - but rows are not finished in order: an
+  outgrown row is stepped over, so bots whose fifth finished row was the Demon
+  Souvenir read "5/9 • Bez", and OddajKonto, six herbs done and the Orc Tooth
+  at 1/10, read as a mushroom collector (Tieru, 15 September: "nie rozumiem
+  statusu biologa"). The card and the ranking now ask one function,
+  `biologist_progress` in admin_panel.py, which picks the row the way
+  `GetActivePlayerBotBiologistMission` does - carrying, then the monster on the
+  live map, then the first not outgrown, then the highest left - reads the key
+  phase (`key_item` is -1726153001 in every quest, the state index being a hash
+  of its name) and counts the outgrown rows it skipped. The ranking says "6/9
+  ukończone • teraz: Ząb Orka 1/10"; the card adds "za niskie dla bota,
+  pominięte: 7", which is how a bot of seventy reads 1/9 beside the Demon
+  Souvenir.
+- **300 packets in one second close a player's connection.**
+  `CInputMain::Analyze` counts a PC's packets while they arrive within the same
+  second and at 300 logs `FLOOD_HEADER_<header>` to `log.hack_log` and sets
+  PHASE_CLOSE - the client is back at the login screen with nothing in its
+  own syserr. The inventory's auto-stack button sent a move (header 13) for
+  every pair of stacks of one item in a single frame, 300 for 25 stacks
+  (l0st3k, 15 September). `client-root/autostackpump.py` sends the same moves
+  six a tenth of a second. Anything a client script sends in a loop wants the
+  same pacing; commands are separately limited to five in half a second
+  (`ENABLE_ANTI_CMD_FLOOD`), and the ones over it are dropped silently.
+- **Auto Lowy is the client's walk with the server's eyes.** The player's
+  auto-hunt (Tieru, 15 September: free, no requirements, the official window's
+  features) is `client-root/uiautohunt.py`, run as one of game.py's
+  updateables. Python in this client has no list of the characters round the
+  player - the public scripts scan a million VIDs a frame and teleport with
+  `chr.SetPixelPosition` - so the hunt asks `/autohunt_target <range> <stones>
+  <x> <y>` under a second apart and `do_autohunt_target` (`apply_auto_hunt`,
+  playerbotify.py) answers `AutoHuntTarget <vid>` from `ForEachAround`:
+  monsters (stones on request) that `battle_is_attackable` allows, within the
+  range of the hunt's start, what hits the hunter first. The walk is
+  `chr.MoveToDestPosition` on the main instance, the swing is the attack key
+  and `chr.SetRotation`, a skill is `player.ClickSkillSlot`, a potion
+  `net.SendItemUsePacket`, standing up `/restart_here` (refused for ten
+  seconds after death). `tests/uiautohunt_test.py` drives the decisions against
+  stub modules on Python 2.7 and 3; the client itself was not run by us.
+- **A dropper is a drop character, and nothing else asks for its time.**
+  The operator's medal droppers of twenty-five were found doing everything but
+  their dungeon: none of 99 on a Monkey Dungeon map, thirty on the Biologist's
+  goal, ten resting on Yongan's square, and 118 of the 127 medal droppers in a
+  guild; one bot's log has the horse errand flip to the Biologist the second
+  its bag filled ("dropki medali ... robia rozne rzeczy jak biolog", "niech nie
+  dochodza do gildii, to tylko dropki", Tieru, 15 September; "latają po m2",
+  sizowski). `GetActivePlayerBotBiologistMission` answers NULL for every
+  `IsPlayerBotDropper` personality - the planner, the pass, the travel and the
+  status all ask it; `RollPlayerBotMetinExpedition` gives a medal, M2 or M3
+  dropper no expedition (the Metin dropper's table is the stones);
+  `MayPlayerBotRestInTown` refuses it; and `ManagePlayerBotGuild` neither
+  founds nor recruits one and takes one already inside out
+  (`LeavePlayerBotGuildAsDropper`: `RequestRemoveMember`, or for a master
+  `ChangeMasterTo` the strongest non-dropper bot of that guild in sight, or
+  `RequestDisband` for a guild of one). That was not the half of it: in the
+  first twenty-five minutes after that restart 116 of the medal droppers took
+  350 market trips (75 of them walks from the second village back to Joan), 68
+  service walks to their offline shops and 124 material errands, some went
+  fishing, and three reached a dungeon. None of it is a dropper's business any
+  more - `ManagePlayerBotShopping` returns for every `IsPlayerBotDropper`,
+  `IsPlayerBotAngler`, `IsPlayerBotMiner` and `StartPlayerBotMaterialHunt`
+  refuse one, its offline shop is served every
+  `PLAYERBOT_DROPPER_SHOP_SERVICE_MIN_MS` to `_MAX_MS` rather than every ten to
+  fifteen minutes, nobody's is served out of a Monkey Dungeon
+  (`BotOfflineBusy`), a medal dropper never leaves for the frontier
+  (`ShouldPlayerBotLeaveForFrontier`) and a medal in its bag holds it back
+  nowhere (`holdsMedalToHandIn`). Two gates were opened for every bot on its
+  way to a medal: the Joan-first market walk, whose gate is in the village the
+  walk leaves, and the soft half of `NeedsPlayerBotCriticalTownServices`, which
+  counts a bag at 45% as critical - and a keeper's bag holds fifty to seventy of
+  its ninety cells, twenty-four of them materials and nine potions. The next
+  fourteen minutes had 37 dungeon visits among the medal droppers, and 29 of
+  them ended as "horse complete" (the six looked at after 36 seconds to three
+  minutes): the medal dropper still left at `PLAYERBOT_BAG_FULL_PERCENT`, and
+  one holding five medals walked in and out in nine seconds against a stock of
+  five. It stays now while a medal has a cell
+  (`ShouldPlayerBotPursueHorseExpedition`), its stock is a full stack
+  (`PLAYERBOT_MEDAL_DROPPER_MEDAL_STOCK`), and `PLAYERBOT_MONKEY: exit` says
+  which gate closed a visit (`free_cells`, `medals`, `stock`, `visit_s`). Its
+  first run named the bag: 28 of 37 exits in fourteen minutes with no free
+  cell, the visits averaging 169 seconds - the dungeon's floor filled what the
+  counter's stock had left. So a medal dropper picks up only the medal, the
+  goods a player crafts further, a skill book and what pours into a stack it
+  already carries (`IsPlayerBotMedalDropperLoot`, in the loot collector), and
+  a dropper's first service visit after a spawn is spread over its long round
+  too, where the ten minutes had sent medal droppers to the first village 69
+  times in fourteen minutes.
+  Fourteen minutes after that: 93 of the 125 medal droppers stood in a Monkey
+  Dungeon (26 with the bag rule alone, 6 with the errands cleared alone, and
+  none of the 99 of level twenty-five before any of it), 111 with the horse
+  as their goal and the other 14 saving their skins; 83 visits began, all 18
+  that ended were restocks, and the fullest bag still had three cells free.
+  No market trip, errand, angler or miner, and two service walks. The restock
+  was not potions, which is what this note said first: `needsPotions` is
+  `NeedsPlayerBotEmergencyPotions` - under ten red, or eight blue for a
+  caster - and the bots that left carried hundreds of both. They were
+  archers: `NeedsPlayerBotArrows` sends one out under
+  `PLAYERBOT_ARROW_RESTOCK_THRESHOLD` (a hundred), and the merchant pass
+  bought arrows only while that need stood. A dropper archer fills up to
+  `PLAYERBOT_DROPPER_ARROW_STOCK` there now (`WantsPlayerBotArrowTopUp`, and
+  never with an emergency sale). In the fourteen minutes after that restart
+  109 of the 119 medal droppers stood in a dungeon, the 14 visits that ended
+  were restocks of 14 archers, and 85 purchases put 17 000 arrows into their
+  slots; twenty minutes on, the same fourteen held 650 to 915.
+  `PLAYERBOT_MONKEY: exit` does not say which need a restock was, and arrows
+  are worn: `EQUIPMENT` position 9 in `player.item`, so a query of `INVENTORY`
+  alone reads every archer as empty.
+- **The unique slots took whatever came to hand.** The equipment pass scores a
+  unique by its lines and an empty slot beats everything, so a unique with no
+  line on it was worn as readily as any other - Pierscien Niejawnosci (70007),
+  which hides the level (`IsLevelViewable`), was on eleven bots ("Bot Toty nie
+  ma widocznego lv, dlaczego?", Tieru, 15 September). `playerbot_unique_slots.h`
+  owns the slots now. 70007, Plaszcz Uciekiniera (70048, the alignment title)
+  and Maska Sabaha are taken off and never worn (`IsPlayerBotNeverWornUnique`,
+  also refused by `IsPlayerBotEquipmentCandidate`). The rings of experience
+  (group 10000 and 70005, half as much experience again) and the thief's gloves
+  (group 10002: 70043, 72004, 72005) go on only while the bot hunts: their
+  minutes run only while worn - value2 is 0 on all of them, so
+  `unique_expire_event` takes a minute a minute and stops at the unequip - so
+  the pass takes them off in a safe zone, on an errand, at the water or the
+  vein, behind a counter, in a duel and after `PLAYERBOT_TIMED_UNIQUE_IDLE_MS`
+  without a blow ("oby nie ubierali ich w miescie"). An exp-locked dropper
+  takes the glove and leaves the ring, and the equipment pass never displaces a
+  worn one. 72006 pays only against bosses and stones and 71016 is used rather
+  than worn, so neither is on the lists. The test world had one glove and no
+  ring in any bot's slot before this: the drops are rare.
+- **What a player crafts further is not merchant fodder.**
+  `IsPlayerBotPickupGoods` (gear.h) is the herbalist's Korzen Gango and Grzyb
+  Tue (50724, 50726 - not the Biologist's 50704/50706, which are quest items),
+  Krysztalowe Kolczyki (17160-17169), Zbroja Twarzy Ducha (11670-11679), every
+  weapon of level 65 (fourteen families, 140 to 7140), Fasolka Zen (70102) and
+  Pigulka Krwi (70014). The choosy looter walked past them - herbs at nine
+  yang and gear outgrown under +4 are exactly `IsPlayerBotLootBeneathBot`'s
+  fodder, and a bot of seventy-three left a Zbroja Twarzy Ducha+3 on a floor -
+  and the junk rule vendored the herbs as a non-gear material ("warto
+  podnosic, aby dalej przerabiac", Tieru, 15 September). The loot filter never
+  leaves them now, the junk rule lets the merchant have them only from a bag
+  under pressure with no counter, and the counter ranks them at
+  `PLAYERBOT_SHOP_PICKUP_GOODS_SCORE`, beside the materials. The rings and
+  gloves needed nothing here: they carry ANTI_SELL and were always picked up.
+- **A duel is not a hunt.** `ManagePlayerBotDuelCombat` claims the tick above
+  the buff pass, so a duellist never put its aura up; it swung from the hunt's
+  280 units, a monster's size; and its rotation ran on the hunt's clock - one
+  skill in a duel of twenty seconds (Tieru, 15 September: swords waved from
+  afar, Trzystronne Ciecie under no aura, no Szarza, no Wir Miecza). Inside
+  `PLAYERBOT_DUEL_BUFF_RANGE` it asks `ManagePlayerBotCombatBuffs(.., duel=true)`,
+  which skips the town and errand gates; it swings from
+  `PLAYERBOT_DUEL_MELEE_RANGE`, casts through `CastPlayerBotDuelSkill` on
+  `PLAYERBOT_DUEL_SKILL_INTERVAL`, lets a Shaman and a black-magic Sura cast
+  from `PLAYERBOT_DUEL_CASTER_RANGE`, and a warrior charges a foe 250-600 units
+  off (`TryPlayerBotDuelGapCloser`: Szarza for the body, Uderzenie Miecza for
+  the mind). "Boty w PvP uzywaja potki czerwonej" was the auto potion: the
+  potion ban stopped the drinking, but `AutoRecoveryItemProcess` heals by
+  itself whenever a switched-on auto potion runs. `SwitchOffPlayerBotAutoPotionsForDuel`
+  uses the running one again - the engine's own switch, the item found by the
+  id the affect carries in `dwFlag` - and `ManagePlayerBotAutoPotions` switches
+  none on during a duel; it puts them back within a minute of the end.
+- **Hwang has no curse, and the world no Maska Sabaha.** `CHARACTER::Damage`
+  turned every blow at a monster on map 65 into a DODGE unless `number(1, 100)`
+  beat 50 plus `POINT_BREAK_TEMPLE_CURSE`, which the mask's apply 146 lifts by
+  100 - a player without the mask missed half his blows there (NerrVoVy;
+  "bedziemy musieli usunac wymog i ten item", Tieru, 15 September).
+  `apply_hwang_curse_removed` (playerbotify) removes the block from the staged
+  `char_battle.cpp`. The share step `shareify.py` renders zeroes the mask's six
+  drop lines in `mob_drop_item.txt` and its line in the Hwang loot box (20706),
+  and takes it out of `reward_data.hwang_introduction` - a group stops reading
+  at the first index it lacks, so a line is zeroed, never deleted - and
+  `apply.sh` deletes it from `world.shop_item` (shop 16). The `sabaha` group
+  (10026) in special_item_group.txt is a unique-group membership list, not a
+  source, and stays. Nor does anybody keep one: `apply.sh` deletes every Maska
+  Sabaha from `player.item` on every start - bags, worn slots, safeboxes and
+  counters alike (Tieru, 15 September, "usun" to the masks players already
+  held) - so a mask an old core still held while an update ran the migrator
+  beside it goes on the next start. A bot sells one before that anyway
+  (`IsPlayerBotRetiredItem` is junk and never counter goods). The test world
+  held 138, 94 of them worn, and none were left for the delete by the time it
+  first ran there. Built and checked in the image (the step echoes `share:
+  Maska Sabaha removed`, the six lines read 0, the literal of the curse's debug
+  line is gone from the binary).
+- **A village's market stands on its guard.** `GetTownPitch` took the centroid
+  of the eight service NPCs for the Shinsoo and Jinno villages, which in Jayang
+  is the merchants' side of the square ("sklepy sa zle rozstawione, bardziej
+  przy handlarzach niz przy kole, straznik ... na kordach 457, 630", Tieru, 15
+  September) and ran Pyongmoo's ring half out of the safe zone. Each kingdom's
+  guard - 11000 Shinsoo, 11002 Chunjo, 11004 Jinno - stands in the middle of
+  its village's round square, and Chunjo's hand-made pitches were always on
+  11002. The four others are the cell under their guard now; measured on each
+  map's server_attr, the whole ring of 400 to 1700 round each is open ground
+  inside the safe zone (Jayang's old ring: 220 samples of 504 in it, Pyongmoo's
+  353). `tests/playerbot_empire_rules_test.cpp` pins the four. A moved pitch
+  moves no shop by itself: `OpenOfflineShop` takes the keeper's position, a
+  reopen included, and a keeper walks to its shop to serve it. `apply.sh`
+  carries each bot's shop of the old ring across by the distance between the
+  two pitches, which keeps the ring's shape and spacing, pulled in to 1650 of
+  the guard where it stood further out; a shop already inside the new ring and
+  outside the old one stays. Once, in one transaction with its marker
+  (`player.playerbot_migrations`, `pitch_on_guard_2052`); on every later start
+  only a bot's shop still within 2000 of an old pitch and more than 2000 from
+  the new one moves - a keeper that reopened on the old spot while update.sh
+  ran the migrator beside the old game. The db core writes a shop's position
+  only when a shop is opened or moved (`IkarusShopCache.cpp`), so an old core
+  cannot write the moved ones back. On the test world it carried 611 shops in
+  seven seconds, and the shops standing outside the safe zone on those four
+  maps went from 136 of 673 to 21 of 675, one of them put just past the edge by
+  the move; ten pairs now stand closer than fifty units, where none did - the
+  number server_attr gave before the run (`scratchpad/check_pitch_shops.py` is
+  the shape of that check). Moving only the shops outside the new ring was the
+  other candidate, and it put 37 pairs on top of each other.
+
+- **Poison is a boss's bane, so its line is worth more where the bosses are.**
+  `poison_event` (char_resist.cpp) takes `GetPoisonDamageRate` per mille of the
+  victim's maximum health ten times, three seconds apart; the rate is 25 for
+  `MOB_RANK_BOSS` and 1 for a king, and `IsImmune(IMMUNE_POISON)` is commented
+  out. One proc is therefore a quarter of the Orc Chief's, Nine Tails', the
+  Spider Queen's or the Yellow Tiger Spectre's health - all four rank 4, none
+  immune - and next to nothing against the Spider Baroness or the Elite Queen.
+  From `PLAYERBOT_POISON_BOSS_LEVEL` the reroll (`ScorePlayerBotBonusLine`) and
+  the equipment score count the line double ("przyda im sie w ekwipunku tez
+  bonus szansa na otrucie", Tieru, 15 September). The bots were hunting bosses
+  already - fifteen hours of the test world's syslog before this held 447 raid
+  departures (Yellow Tiger Spectre 218, Nine Tails 125, Bestial Captain 85, Orc
+  Chief 19), 173 guild calls and 108 marbles used on a boss (591 57, 792 25,
+  1901 12, 791 10, 691 4) - and the one boss hub nobody reaches is the Spider
+  Queen's in V1: one raid line in those fifteen hours.
+- **A bot gives nothing away; it trades.** `SharePlayerBotOldGearNearby`
+  handed a spare at +6 or better to a weaker bot of the same class and group
+  within 2200 units - after every upgrade and from the party-share pass, party
+  or not - and no counter ever saw it: a bot raised Srebrne Kolczyki from +1 to
+  +6 at 13:44 on 15 September and gave them to Igor94PL at 13:45 while it wore
+  copper earrings itself ("dobry samarytanin", AkhiGubernator; "niech handluja
+  ale nie daja za darmo", Tieru), and seven such gifts ran in the first three
+  minutes after that evening's restart. The function is gone; what comes off
+  stays in the bag for the junk rule and the counter. The party's share went
+  the same way (`SharePlayerBotUsefulItemWithParty`: a book of another class
+  and a material a member was short of, "usun", Tieru): a member buys either
+  off a counter like anybody else. The old `PLAYERBOT_GIFT_OUT/IN` rows stay
+  readable in the gear history.
+- **Kamien Duchowy is read, not sold.** 50513 is an ITEM_QUEST with antiflag 0
+  and nothing in the junk rule kept it, so the merchant bought every one for
+  194 yang ("Boty sprzedaja kamienie zamiast z nich korzystac", mateuszp211, 15
+  September) and the test world held none. It comes from boss chests (Nine
+  Tails', the Yellow Tiger's, the Fire King's, the Reaper's), the Bestial
+  Captain and the Orc mini-boss. `ManagePlayerBotGrandMasterTraining`
+  (playerbot_manager.cpp, beside the books) does what
+  `training_grandmaster_skill.quest` does behind its dialog: a skill of the
+  build at G1..G10 (the primary first, then the highest grade), twelve hours
+  between reads in the flag `training_grandmaster_skill.next_time` (waved away
+  like the books' wait while the BOOKS switch is on), the stone spent before
+  `LearnGrandMasterSkill` rolls (30%, 4% under the grade's minimum read count),
+  and the rank it costs - `1000 + 500 * (level - 30)` real alignment on a
+  success, a third to a half of that on a failure, doubled below zero. A bot
+  reads only while the full price leaves `GetRealAlignment()` at zero or above,
+  so it never carries a negative rank, which is what `ItemDropPenalty` makes a
+  character pay when a player kills it ("boty powinny unikac biegania z
+  negatywna ranga", Tieru). A monster within ten levels gives +2 a kill (+7
+  below zero), and the bots of forty and up held 1000 to over 20000 with none
+  below zero. The stone is never junk and never counter goods. Fasolka Zen
+  (70102) lifts a negative rank by up to its value0 of 5000 and the engine takes
+  it only then; `ManagePlayerBotZenBeans` eats one when the rank is below zero,
+  and a counter keeps the first `PLAYERBOT_ZEN_BEAN_KEEP` back
+  (`CountPlayerBotVnumUnitsAhead`). A rank that is below zero all the same keeps
+  its bot in the safe zone until a bean lifts it, and the bean is the only way
+  back (Tieru, 15 September): `KeepPlayerBotNegativeRankInTown`, in the tick
+  ahead of the loot, the errands, the travel and the fight, and never for a bot
+  in a player's party, holds a bot inside the ring with `dwTownLingerUntil`
+  (which the inactivity watchdog reads as a town linger), walks one on a
+  village map to its pitch and carries one on any other map home. The market
+  and bean passes both run above it, so a held bot still shops - a dropper
+  too, which otherwise buys nothing (`ManagePlayerBotShopping`) - and
+  `WantsPlayerBotStallItem` wants one bean while the rank is negative and the
+  bag holds none. Compiled and deployed; with no stone in any bag and no
+  negative rank on the test world, none of these passes has been watched
+  firing yet.
+- **Auto Lowy picks up by kind, and the server names the item.**
+  `player.PickCloseItem` takes the nearest item whatever it is, and the window
+  was asked for "nie podnos broni, zbroi" (Tieru, 15 September).
+  `/autohunt_loot <range> <kinds> <x> <y>` (`do_autohunt_loot`,
+  `apply_auto_hunt` in playerbotify.py) answers `AutoHuntLoot <vid> <x> <y>`:
+  the nearest item on the ground that `IsOwnership` lets this character take,
+  within the hunt's range, of a kind in the mask - `AutoHuntLootKind`: weapons
+  but not arrows, armour (body, helmet, shield), jewellery (the other armour
+  slots, rings, belts), potions (USE_POTION, _NODELAY, ABILITY_UP), books
+  (skill and forgetting), stones (ITEM_METIN), and the rest; yang goes with any
+  kind. The client walks there and sends `net.SendItemPickUpPacket`, which
+  `PickupItem` judges as it judges anybody's (`DistanceValid` allows 600 since
+  @fixme173, one pick-up every half second); an item it cannot reach in six
+  seconds is left alone for ten. The same change gave the window what the
+  official premium sells, for everybody: six skill slots, three items on a
+  clock, a revive delay field, and the kinds as switches ("A switch says
+  what it is set to", below). `tests/uiautohunt_test.py` covers the mask, the walk and the pick-up,
+  the unreachable item, the sixth skill and the third item on Python 2.7 and 3;
+  the operator ran the first version in the client, not this one.
+- **A giftbox that hands out the next giftbox needs the next one's group, and
+  nothing says so until somebody opens it.** The starter chain `shareify.py`
+  renders for mt2009 stopped at lv60 (50193), and lv60's last line is 50194,
+  Skrzynia Mistrza II of level seventy - so the chain went on in every bag and
+  nowhere in `special_item_group.txt`. A missing group is no load error: the
+  file loads, and `CHARACTER::DropSpecialItemGroup` writes "cannot find special
+  item group 50194" and hands out nothing at every use, a player's use too.
+  Only the chest pass in `playerbot_consumables.h` remembered a refusal;
+  `ManagePlayerBotProgressionChests` comes back every ten to fifteen seconds and
+  remembered nothing, so on m2zip on 15 September 195 bots of seventy asked for
+  it some 560 times a minute - 258 175 syserr lines in thirty hours - with 368
+  bots of sixty holding one they would start on at seventy. r40250's share
+  goes on to lv70, lv80 and lv90 (50194 -> 50195 -> 50196) and every item those
+  three hold is in this package's `item_proto` (the lv30 and lv60 rows were the
+  ones with r40250 items missing), so they are copied as they stand; the
+  Dockerfile's awk cuts whatever vnums the two appended files define, read out
+  of them rather than typed; and `check_chain` refuses a starter file that hands
+  out a giftbox with no group - against the old file it names 50194. Taking
+  50194 out of lv60 was the other way, and it would have left 574 boxes in bags
+  for good: the chain's antiflag is DROP, SELL, GIVE, STACK, MYSHOP and SAFEBOX.
+  The weapon recovery in `PrepareWeapon` opens the same chests every second
+  with the result ignored, so both passes ask `IsPlayerBotChestRefused` and tell
+  `NotePlayerBotChestRefused` now, and the progression pass logs
+  `PLAYERBOT_CHEST: progression chest refused ... group= room3=` - group=0 is
+  this bug. Built and deployed on m2zip the same evening: from the new core's
+  start at 20:58:33 not one "cannot find special item group" in syserr, 219
+  bots used their Skrzynia Mistrza II once each in the first ten minutes and
+  201 of those uses opened it, and at 21:12 the database had 197 bots of
+  seventy holding a Skrzynia Mistrza III against 17 still holding the second.
+  Most of those 17 were refused by the engine and not for want of a group:
+  16 of the 23 bags looked at had free cells and no free column three cells
+  high, which `UseItemEx` asks of any giftbox whatever its group holds
+  (`GetEmptyInventory(3)`) and `PlayerBotBagTakesGroup` does not model on this
+  line. Such a bot asks again ten minutes later to the second (Vyvanse at
+  20:59:03 and 21:09:07); modelling that rule is a change of its own. The
+  overlay compiles on r40250 with the same 89 warnings as before it. Since
+  2.0.54 the progression pass asks `FreePlayerBotGiftboxColumn` before
+  `UseItem`, as the Moonlight chest pass does, and both passes use the chest
+  by `item->GetCell()`: the column the helper frees may be the one the chest
+  itself stood in.
+- **mt2009's `affect.add` takes a point, not an apply.** `ALUA(affect_add)`
+  tests `applyOn >= POINT_MAX_NUM` and hands the number to `AddAffect` as it
+  is, where r40250's converts an APPLY_* through `aApplyInfo`; the locale's
+  `apply.MOV_SPEED` (questlib.lua) is still the APPLY_* number 8, and point 8
+  is `POINT_MAX_SP`. So the server-wide movement bonus
+  (`linux-port-mt2009/docker/game/quest/speed_boost.quest`) gave every
+  character on the 2.x line twenty SP and no speed from the port on - 58
+  characters carried affect 1000 on point 8 on the test world, found while
+  answering a player's question about movement speed (15 September). It
+  passes `POINT_MOV_SPEED` (libs/enum/enum_point.lua) now, and the flag holds
+  a version, the percentage and the point so the old affect comes off at the
+  next check - which runs from a timer, never from `login`: `QuestLoad` calls
+  `Login` the moment the quest flags arrive in PHASE_GAME and the affects are
+  a later packet (`AffectLoad`, and `LoadAffect` pushes without looking for a
+  duplicate), so the first fix removed nothing at login, added the new affect,
+  wrote the flag, and the old one loaded in beside it: 1 021 of 1 082
+  characters on the test world kept point 8. Any quest that reads or edits
+  affects at login has the same race; give it a timer of a few seconds.
+  Ten minutes after the timer went live 1 082 characters carried the bonus on
+  point 19, and two GM characters that had not logged in since still on 8.
+  `affect.add_collect` converts and was never wrong, and the potions are
+  `potion_system.lua` on affect types of their own. Any other quest of ours
+  that calls `affect.add` on this line wants a POINT_* number. The engine's
+  own ceiling for a walker is 200 (`GetLimitPoint`; sprint adds up to 40 but
+  not past 150 on foot, 230 riding; Feather Walk 220).
+- **A chest that is opened is a chest somebody buys, and a dropper is who
+  sells it.** No rule wanted a Moonlight chest (50011) off a counter, what a
+  trader listed stayed listed, and a refused chest was surplus for good:
+  4 643 chests in 322 bags (a stack of 148) and 1 916 on the counters of the
+  test world, none ever sold ("boty nigdy nie otwieraja ani nie kupuja
+  Szkatulek Blasku Ksiezyca", AkhiGubernator). `WantsPlayerBotMoonlightChest`
+  (market.h) is a bot of `PLAYERBOT_CHEST_BUY_MIN_LEVEL` that neither trades
+  resources nor drops, holds fewer than `PLAYERBOT_CHEST_BUY_HOLD`, has
+  `PLAYERBOT_CHEST_BUY_MIN_FREE_CELLS`, the engine's free column and room for
+  the group's set (`PlayerBotBagTakesGroup`), and spare gold of
+  `PLAYERBOT_CHEST_BUY_PRICE_MULTIPLE` times Iwakura's price;
+  `PlayerBotWantsAnythingFromMarket` sends one to the market only while the
+  ledger counts a chest on some counter. The first ten minutes of that: 162
+  bought, 112 opened a minute against 39. What was left sat in two places. A
+  dropper's bag: Metin droppers held 1 199 of the 3 132 chests still in bags,
+  in stacks to 158, and a medal dropper never bent down for one (darkroom22).
+  And any bag of seventy to ninety cells: a giftbox opens only into a free
+  column of three (`UseItemEx` asks `GetEmptyInventory(3)`), so a full bag's
+  chests stood unopened, while a non-trader's stack of five went up whole -
+  22 counter lines of eleven to thirty chests that no buyer's cap reached. So
+  everybody opens the chests but the two sellers: a resource trader
+  (`PLAYERBOT_CHEST_TRADER_HOLD`) and a dropper (`PLAYERBOT_CHEST_DROPPER_HOLD`;
+  the medal dropper's loot filter takes them now) keep them for the counter,
+  in packs of `PLAYERBOT_CHEST_LINE_UNITS` and at most
+  `PLAYERBOT_CHEST_COUNTER_LINES` lines (`BotOfflinePrepareLine`); a bigger
+  line, or one on the counter of a bot that opens its chests, comes off at the
+  next service visit (`BotOfflineUnwantedLine`); and
+  `FreePlayerBotGiftboxColumn` moves up to two single-cell items out of the
+  column nearest to free before a chest is given up on ("niech boty otwieraja
+  duzo tych szkatulek", Tieru, 15 September). Ten minutes after that deploy
+  the bags held 2 761 chests and the counters 851, with 35 lines of more than
+  five still standing for the service visits to cut; in sixteen minutes 1 349
+  were opened, 14 columns freed and two chests refused. What stays in the bags
+  is in full ones: 26 bots with two free cells or fewer held 601 of them.
+- **Gear for level one is worth a counter only at +8.** A weapon or body
+  armour with a level limit of one or none (Miecz, the starter plates) is
+  merchant scrap under `PLAYERBOT_SHOP_STARTER_GEAR_MIN_REFINE`
+  (`GetPlayerBotLowGearMinRefine`), the rest of the gear under thirty under
+  +6 as before; the two-line cap counts only pieces under
+  `PLAYERBOT_SHOP_LOW_GEAR_CAP_BELOW_REFINE` (+7), so a +7 is listed past
+  it; and the backup weapon is never scrap (Tieru about PoteznyToporv4's bag,
+  15 September). The offline service takes the rest off standing shops one
+  line a visit: starter +6/+7 lines 280/127 to 224/110 in the first thirteen
+  minutes. Iwakura's sheet 1.1 dropped its "do handlarki" bands and says the
+  bots may list +0..+3; the operator's rules above are what the code keeps
+  until he says otherwise.
+- **The three collect rows are one chain, started in order.**
+  `EnsurePlayerBotBiologistMissionStarted` sets a row's state directly, and
+  `GetActivePlayerBotBiologistMission` took any row the bot was old enough
+  for, so 866 characters of the test world held the Curse Book without the
+  Orc Tooth and 713 the Demon Souvenir without the Curse Book - where the
+  quests start lv40 from lv30's last state and lv50 from lv40's ("Ksiegi
+  Klatw sa po Zebach orka", Tieru). `IsPlayerBotBiologistMissionOpen` keeps
+  lv40 and lv50 shut until the row before is `__complete`, in every pass,
+  and the classic panel's `biologist_progress` asks the same
+  (`BIOLOGIST_CHAIN_PREVIOUS`). Rows already started are left as they are.
+- **A bot's personality is drawn where a player's alignment title stands.**
+  `ManagePlayerBotPersonalityTitle` (status.h, mt2009 only) sends
+  `PlayerBotTitle <vid> <personality>` for a bot a player is near, every
+  `PLAYERBOT_TITLE_RESEND_MIN_MS` to `_MAX_MS`; game.py hands it to
+  `playerbot_status_tail.py`, which calls `textTail.AttachTitle` with the
+  classic panel's names in CP1250 and a colour per personality, and its
+  `TitleKeeper` (an updateable) attaches it again every second for a minute,
+  because the client writes the alignment title back on every alignment
+  change - for a bot, every kill. A root without the handler logs "Unknown
+  Server Command" to syserr.txt, so server 2.0.53 and client 2.0.9 ship
+  together (Kenny's idea). Tested against stub modules, not in a client.
+- **Only a refine that landed is news.** `BroadcastPlayerBotRefineSuccess`
+  was called for both outcomes on one path and named the piece the refine was
+  asked of, so a scroll's downgrade was shouted as luck ("+4 na +3", Tieru,
+  15 September). It is called on a success only, takes the result's vnum and
+  names it from the item table, and still speaks from +7.
+- **Plaszcz Uciekiniera and Symb. Krola Przepowiedni stay on the ground.**
+  Both are uniques without a line (70048 hides the alignment title, 70050 is
+  `UNIQUE_ITEM_FASTER_ALIGNMENT_UP_BY_TIME`) that drop and come off the rod
+  (`fishing.cpp`). `IsPlayerBotLeftOnGroundItem` keeps them out of the loot
+  pass and makes them merchant scrap; a worn 70050 is left alone (206 bots
+  wear one). A dead fish is kept only up to `PLAYERBOT_DEAD_FISH_KEEP`, with
+  a campfire in the bag. First ten minutes: capes in bags 1 005 to 257,
+  symbols 643 to 151, dead fish 4 356 to 1 981 (the fullest bag 167 to 66).
+- **A hairstyle is not a costume the block refuses.**
+  `apply_costume_hair_allowed` (playerbotify.py) lets `COSTUME_HAIR` past
+  `apply_costume_block`'s refusal at the top of `CanEquipNow`; every other
+  costume is still refused ("fryzury z itemshopu musza dzialac", hunmar,
+  15 September). Compiled, not tried in a client.
+- **The quests name this world.** The package's `translate.lua` calls it
+  Metin2009 in sixteen quest and quiz lines, and
+  `quest/libs/translate/translate.lua` in a test-server greeting; a share
+  step `shareify.py` renders (`DOCKERFILE_BRAND_*`) runs
+  `sed s/Metin2009/Metin2 SinglePlayer/` over both and fails the build if one
+  is left. The result is byte for byte the file l0st3k sent (15 September).
+- **Iwakura's sheet 1.1** replaced 1.0 in `data/iwakura_ceny.txt`: lower
+  multipliers on several bonuses, new material prices, the chest at 85 000,
+  the medal at 180 000, the gold and silver keys, Gourou and a [Lowienie]
+  section of dyes. `generate_iwakura_prices.py` needed one alias ("Czerwona
+  Farba Do Wlosow" is "Czerw. farba do wlosow" in item_proto) and
+  `PLAYERBOT_PRICE_TABLE_VERSION` went to 6 so every counter reprices.
+- **Auto Lowy fetches the drops between fights.** A melee fight leaves its
+  drops a few hundred units off, the pick-up reached 250, and the next target
+  was named within a second, so a player hunting a crowd walked from monster
+  to monster and picked up nothing ("autolowy nie podnosza itemkow",
+  NerrVoVy, 15 September). `LOOT_PICK_DISTANCE` is 450 (the server allows
+  600), and between fights an item within `LOOT_FIRST_DISTANCE` (900) is
+  fetched before a target out of reach is chased; a fight in reach still
+  comes first. Tested against the stubs, not in a client.
+- **A switch says what it is set to.** Auto Lowy's pick-up switches were
+  `ui.ToggleButton`s, pressed meaning "takes", and a pressed button reads as
+  one switched off: the operator's own `autohunt_Tieru.cfg` came back from the
+  2.0.8 client with `pickup=0` and every kind at 0, and the character picked
+  nothing up ("dalej postac nic nie podnosi", Tieru, 15 September) - with
+  `LootMask` at 0 the server was never asked. One click on Podnos meant to
+  switch it on switched the whole pick-up off. They are plain buttons reading
+  `Podnos: tak` or `Bron: nie` now, like Metiny, Wstawaj and Wracaj, the start
+  says in the chat when the pick-up is off, and a settings file with no
+  `config_version` - what the toggle window wrote - gets the pick-up and every
+  kind back once (`ConfigFromText`). Tested against the stubs on Python 2.7
+  and 3; in the operator's client it did not help - the character still
+  picked nothing up whatever the switches said (15 September, 23:10), and
+  2.0.53 shipped saying so in its notes. The cause was the frame, not the
+  switches: the client counts positions from its map's corner - its network
+  stream takes the map's base off every position it receives, and the
+  minimap's "334, 857" in Bokjung sits on a base of 102400, 204800 - while
+  `AutoHuntLoot` carried the item's world `GetX`/`GetY`, so to `LootDistance`
+  every item lay a map's base away and the walk went for a point off the map;
+  the start point went the other way and the server threw it out for being
+  more than 10 000 from the character, so the range was always counted round
+  the character. Since 2.0.54 both go as offsets from the character
+  (`apply_auto_hunt_offsets` in playerbotify.py, `AnchorOffset` in the
+  client). Any client script that trades positions with the server has this
+  frame to convert. Compiled and tested against the stubs; the operator's
+  word the next morning (16 September) was "od ostatniej aktualizacji
+  autolowy dzialaja pieknie".
+- **Client 2.0.9's locale pack is the one ĹŌŞƬĒĶ sent.** That pack.zip (15
+  September) replaces the character-select background,
+  `locale/common/ui/select.jpg`, and nothing else: 762 files in the locale
+  pack before and after, one of them different. The package ships that
+  `pack/locale.{index,data}` unchanged, so the next locale repack
+  (`rulesify.py`, `client-locale`) has to start from the published 2.0.9 pack
+  or it puts the old background back.
+- **The offline stand's service visit put a stack up whole.**
+  `BotOfflinePrepareLine` cut a line only for a hoard, a key and the Moonlight
+  chests; everything else - the twenty Blessing Scrolls of jaksiezabic's
+  screenshot, 4.7 million for one line - went up as the stack it was, while
+  the classic split (`SplitPlayerBotStallSingles`) only ever ran for the first
+  opening. A safe refine scroll is a line of `PLAYERBOT_SHOP_SCROLL_LINE_UNITS`
+  (five) now, `PLAYERBOT_SHOP_SCROLL_LINES` of them a counter, in
+  `GetPlayerBotStallLineUnits` for both paths, and `BotOfflineUnwantedLine`
+  takes a bigger scroll line home at the next visit to be cut. Any other kind
+  a player buys a few of at a time and the bots hold in stacks wants the same
+  two lines - the offline path is the one every mt2009 stand goes through.
+- **A player's private shop opens at fifteen, kills or none.** mt2009's
+  `CanOpenShop` asked `PLAYER_STATS_MONSTER_FLAG >= 800`, the public server's
+  gate for a "tobolek"; 2.0.12 exempted bots and 2.0.45 GMs, and a new
+  character still had eight hundred kills to make before trading (gregoszky,
+  14 September). A third playerbotify edit on the same function takes the
+  count out for everybody - it sits below the two early returns, so the
+  markers of all three hold on a re-run.
+- **The Biologist's wait is a runtime library, not a quest.** Every
+  `collect_quest_lv*` asks `collect_data.is_wait` (`quest/libs/other/
+  collect_data.lua`, `dofile`d by questlib at start), so the day between two
+  hand-ins is one function in one file the image carries: a shareify step
+  makes `is_research_in_progress` answer false (`do return false end` - Lua
+  wants `return` last in a block), which also leaves the Researcher's Elixir
+  unconsumed. The file is CRLF, so the sed anchors an optional carriage
+  return. The bots' own hand-in never kept the wait; this is for players
+  (namiot_, 15 September). No quest recompiles for it.
+- **A bot's title is the player's choice, in the client.** The game options
+  carry a "Tytuly botow" row (Osobowosc / Klasyczne) since client 2.0.11:
+  `playerbot_status_tail.py` keeps `playerbot_titles.cfg` beside the client
+  (systemSetting has no key to lend), `show_title` attaches nothing while it
+  is off and the keeper forgets what it held. textTail has `AttachTitle` and
+  no detach - checked in the binary - so a title already drawn stays until the
+  bot's next alignment change, a kill away. `clientrootify.py` renders
+  `uigameoption.py` and `uiscript/gameoptiondialog.py` from the stock root
+  (its first file in a subdirectory; the strings are CP1250 escapes so the
+  scripts stay ASCII, and the dialog grows by a row). Asked for by NerrVoVy
+  (15 September).
+- **Seban's 1.54.1 carries his backups and an unused icon set.**
+  `static/bak-*`, `static/maps/bak-*`, `templates/bak-*`, `icons.bak-*`,
+  `*.orig`, `*.before-*` and `static/icons_new` (1 915 files nothing reads)
+  travel in his zip; `scratchpad/merge_seban1541.py` is the shape of the
+  merge (three-way against his 1.48.0, our guards re-asserted). His
+  `updater/` is a host-side systemd service for a VPS and nothing in our
+  images runs it; the panel only shows its state. His `web_admin.quest` has
+  a `NOTICE` command ours lacks, gated off in public builds.
+- **A stack's ceiling is the item's, and two of the fragments' loops were
+  measured against the wrong one.** mt2009 keeps `dwMaxStack` per proto -
+  twenty for Medal Konny (50050) and the Blessing Scroll, a thousand for
+  arrows, two hundred for most - and `CItem::SetCount` clamps to it silently.
+  `MergePlayerBotStacks` compared with `PLAYERBOT_STACK_MAX` (200), so ten full
+  stacks of twenty medals were "merged" four at a time every five seconds for
+  ever: MoveItem into a full stack moves nothing and answers true, the pass
+  counted four merges, used its budget and came straight back - 110 bots and
+  14 321 `PLAYERBOT_BAG: merged` lines in ten minutes, every medal dropper
+  among them. `PlayerBotMaxStack` (economy.h) is the item's own limit on both
+  engines, a merge counts only when the destination grew, and the safebox
+  top-up and merge measure with it too: a pour of twenty into a box stack of
+  twenty measured against two hundred would have removed the bag stack and
+  kept nothing of it. Medal Konny came only in stacks of twenty for the same
+  reason: that is the engine's pickup, not a split.
+- **A dropper with its stock in the bag was sent back for more.** The
+  dungeon's exit rule sends a medal dropper out at
+  `PLAYERBOT_MEDAL_DROPPER_MEDAL_STOCK` medals (`DecideMonkeyExit`,
+  MEDAL_READY) and `ShouldPlayerBotPursueHorseExpedition` sent it straight
+  back, because its dropper branch asked only for a free cell: 703 of 854
+  dungeon visits under ten seconds in an hour on the test world, one bot
+  every fifty seconds, `horse_to_monkey_medium` and `monkey_medal_found_direct`
+  by turns. The pursue rule asks for the stock too; a full dropper hunts on
+  its village's ground until a counter line sells (they sell slowly: 1 704
+  medals stood on 42 counters in lines of twenty). Two rules that decide one
+  errand from two sides have to read the same number.
+- **The travel status named a frontier the traveller was refused.** The
+  `BOT_ACTION_TRAVEL` fallback printed `GetPlayerBotFrontierMapForLevel`, so
+  eleven medal droppers of thirty-three read "Ide na Pustynie Yongbi (cel:
+  rozwoj konia)" in Bokjung while riding to the Monkey Dungeon - the same
+  three bots the `ShouldPlayerBotLeaveForFrontier` comment describes, seen
+  again from the panel. The status asks that rule first now.
+- **The basic shot refused a bow whose quiver had just emptied.**
+  `ExecutePlayerBotBasicAttack` asked `GetArrowAndBow` and gave up; only the
+  skill path nocked arrows from the bag. Seven of 127 archers of the test
+  world stood with a bow, nothing in the arrow slot and a thousand arrows in
+  the bag (16 September). It nocks first now. No bot shoots without arrows -
+  the engine's `GetArrowAndBow` is the rule for a bot as for a player, and
+  the one archer with none anywhere was walking to the weapon merchant; a
+  report of "shooting without arrows" is worth checking against the arrow
+  slot (`EQUIPMENT` position 9), which a bag view does not show.
+- **A keep is a count of scrolls, not of cells before this one.** The
+  scroll rule in `ScorePlayerBotShopStock` held a stack back while fewer
+  than `PLAYERBOT_REFINE_SCROLL_KEEP` scrolls lay in the cells *ahead* of
+  it - written for the classic stall, which split singles off first so the
+  base stack always had cut lines behind it. The offline stand's service
+  visit splits nothing before it scores, so a bot's one stack was kept whole
+  whatever it held: 294 bots with 1 405 scrolls, 289 of them in a single
+  stack, 116 of those over the keep, and 5 on the counters of the whole
+  world ("A bodzi jak nie bylo tak nie ma", 16 September - and the 2.0.55
+  cut into fives could never run, because the scorer never handed it a
+  stack). A stack is goods when it and the scrolls ahead of it exceed the
+  keep (`GetPlayerBotRefineScrollKeep`, three, one for a resource trader,
+  none without scroll work); `GetPlayerBotStallBaseKeep` leaves the keep in
+  the base stack, and both cuts - `BotOfflinePrepareLine` and
+  `SplitPlayerBotStallSingles` - take what is over it up to the line, so a
+  stack of five with a keep of three is a line of two, never a line of five
+  that leaves the anvil nothing. And the base keep has to ask the scroll rule
+  *before* the material rule: the Blessing Scroll is what recipe 501 consumes,
+  so `IsPlayerBotTradeableMaterial` is true of it and
+  `GetPlayerBotStallBaseKeep` answered with the anvil's reserve - twice the
+  recipe count of every piece under scroll work, larger than most stacks -
+  and the first deploy of the count rule still cut nothing: a bot with
+  twenty-six scrolls put a marble up instead. Any rule that keeps "the first
+  N" of a kind has to be re-read for the path that never splits, and any
+  item that is two things at once for the one that answers first.
+- **A service visit could never cut a line, because the board was already
+  open.** `MoveItem` asks `CanHandleItem`, which is false while `IsBusy` -
+  looking at a shop, its safebox open, edit mode - and the visit set all of
+  that before the add loop asked `BotOfflinePrepareLine` to cut. Every cut
+  since 2.0.26 failed silently and the loop moved to the next item: the diag
+  lines of 16 September read score 800, a slot, a keep of three and
+  `lineCell=-1` for every scroll, and `cut a line` had never once been
+  logged that morning for a hoard or a chest either - what the notes above
+  call "packs cut here" were whole stacks going up. `BotOfflinePrepareVisitLine`
+  collects, chooses and cuts before `SetLookingShopOwner(true)`, keeps the
+  line by item id and cell in `playerbot_offline::State`, and the add loop
+  takes it first; a line left behind by a visit that ended early is a split
+  stack the merge pass pours back. The scroll cut measures its keep over the
+  whole kind (`CountSpecifyItem`), so the cut line itself goes up whole.
+  Anything the engine refuses while "busy" - a move, an equip, a use - has to
+  happen before the board opens, never between its packets.
+- **The stable keeper's waits live in four stock quests, not in ours.**
+  `pony_levelup` (ours since 2.0.12) has no wait for levels 1-10, but the
+  package's `quest/systems/horse/` still made a player wait: `pony_buy` and
+  the two `horse_upgrade` quests set `make_time` twelve hours ahead in their
+  `report` state and left a `wait` state for the next login, and
+  `horse_levelup` kept twenty-one hours (`next_time`) between two trainings
+  of levels 11-19 ("Zniesienie czasu oczekiwania na 1lv konia", greess;
+  "niezaleznie od poziomu konia", Tieru, 16 September). The four ship as our
+  copies in `linux-port-mt2009/docker/game/quest/` - report goes straight to
+  `buy`, the training's clock is an `elseif false` like pony_levelup's - and
+  compile in the Dockerfile loop beside pony_levelup, their objects landing
+  over the stock ones. Two things the first build taught: the loop's
+  `[ -f ... ] || continue` skips a quest the build context lacks without a
+  word, so a deploy that copies the Dockerfile and not the new files builds
+  the old objects (check `object/20349/chat/pony_buy.report.1.script` for
+  `setstate ( "buy" )`); and the `gameforge.horse_levelup.*` names in qc's
+  output for pony_levelup are translate keys, not a second quest of that name.
+- **The chest switch is a side file of the panel, not a weights key.** The
+  weights file is re-read every five seconds and an unknown key costs the
+  core a log line each time, so "Wylacz drop Szkatulek Blasku Ksiezyca" on
+  the AI page (`CHEST_OFF`, Tieru, 16 September) writes CHEST 0 and
+  CHEST_STONE 0 into the weights file and keeps the sliders' own values in
+  `playerbot_chest_switch.tsv` beside it; unticking writes them back. Tried
+  on the test world through the page's own form: off wrote the zeros and the
+  core reloaded within the five seconds, on put 10 and 300 back.
+- **The world's difficulty is three event flags the migrator writes and one
+  Lua file the quests ask.** `M2_DIFFICULTY` (easy, medium, hard, custom with
+  `M2_BIOLOGIST_WAIT_HOURS` and `M2_HORSE_WAIT_HOURS`) goes to the migrate
+  service; `apply.sh` turns it into `player.quest` rows with dwPID 0 in seconds
+  (`m2_biologist_wait`, `m2_horse_buy_wait`, `_upgrade_`, `_train_` 1-10,
+  `_train2_` 11-19), written before the seed because the seed may exit early
+  on a foreign cohort. The db core loads those at boot (`LoadEventFlag`) and
+  pushes them to every game core, which is the package's own idiom for a
+  world-wide switch (`beta_server` in the same quests) - so a change is a
+  restart, and the panel could read the numbers. `quest/m2_difficulty.lua`,
+  copied into `libs/other/` and dofile'd from `_otherModuleLoader.lua` (CRLF,
+  stripped first) after `collect_data.lua`, overrides
+  `collect_data.is_research_in_progress` and `set_wait_time` - the 2.0.55 sed
+  that made the first answer false is gone, that is what "easy" is now - and
+  defines `m2_horse_wait(kind)`, a plain global because qc admits only the
+  dotted calls it knows. The four horse quests and pony_levelup ask it where
+  the package wrote 12, 18 and 21 hours; a wait of zero goes straight to
+  `buy`, because the package's `wait` state hands the horse over only at the
+  next talk or login. Presets scale the package's numbers: hard is what it
+  shipped with, medium a third. The launcher has a button and a text-menu
+  entry (`SetDifficulty`, `-Difficulty -BiologistHours -HorseHours`), and
+  `Set-DotEnvValue` is the generic .env writer it needed. Tried on the test
+  world in hard: the flags arrived at the core (`QUEST eventflag m2_difficulty
+  2`), the compiled objects carry the calls, questlib loaded without a Lua
+  error; no player dialog was driven. The bots' Biologist and stable keeper
+  are the AI's own code and never waited (Drip's "z harda na easy nieeee",
+  Tieru, 16 September).
+- **A timed event is a file the panel writes and one core acts on.**
+  `playerbot_event_rules.h` (pure, unit-tested) reads
+  `/opt/m2spool/playerbot_events.tsv` - weekly windows by kind (chest, exp,
+  drop, yang), days 1-7, HH:MM-HH:MM past midnight allowed, a percent over
+  the world's rate, `#off` rows the panel keeps, and `now` lines the
+  "Aktywuj teraz" button writes with an epoch - and `Evaluate` says per kind:
+  active, until, next start. `playerbot_events.h` runs it once a second.
+  Two things are per core and one is not: the chest gate is local (every
+  core's `CreateDropItem` rolls on its own `g_iMoonlightChestPermille`), so
+  every core holds the two figures at zero while a chest window is written
+  and not open, keeping the sliders' values captured on each weights
+  generation (`GetPlayerBotChestWantedPermille`, which the F9 report asks
+  through a forward declaration in config.h); the rate flags and the notices
+  are the leader's alone - the core hosting Joan, map 21, which is game1
+  under both layouts - because `BroadcastNotice` goes to every core by P2P
+  and three cores each adding fifty percent to `mob_exp` would compound it.
+  The base rate lives in a flag of its own (`m2_event_exp_base`, and
+  `_buyer`), so a core restarted inside an event computes the same boosted
+  number again, and a rate the operator moved during the event is left where
+  they put it. The core answers with `playerbot_events_status.tsv` beside
+  `playerbot_status.tsv`; the panel's `/events` page reads the newest of the
+  three cores' and shows "active until / next at" with the schedule editor
+  (two empty rows after the saved ones, no script) and the activate-now
+  forms. Log tag `PLAYERBOT_EVENT`, in the bundle's list.
+- **The guild-mark connection logs in twice, and the second was an error
+  line.** The client's mark downloader sends `HEADER_CG_MARK_LOGIN` (100)
+  once the handshake has put its connection in PHASE_LOGIN;
+  `CInputHandshake` answers that header only inside the handshake, so
+  `CInputLogin::Analyze` fell to its default branch: "login phase does not
+  handle this packet! header 100" on every mark download, 202 in two days on
+  sizowski's world and 92 on ours, read by him (and by the Claude he asked)
+  as the cause of a login problem it had nothing to do with - the branch
+  already returned 0 with `SetPhase(PHASE_CLOSE)` commented out.
+  `apply_mark_login_quiet` (playerbotify.py) gives the header a silent case;
+  input_login.cpp already shipped staged.
+- **A stone is broken together, not claimed.** `IsTargetClaimedByAnotherBot`
+  kept every bot off a target another bot had, and that included a Metin: one
+  bot on the only stone in sight and the rest walking past ("jak jest jeden
+  metek to jeden bije a reszta sie nie dolacza", Kiciamol, 16 September;
+  Tieru: "to bug"). For a stone the claim is a headcount now -
+  `PLAYERBOT_STONE_MAX_ATTACKERS` on it - and `CCountPlayerBotStoneAttackers`
+  tells bots from players. Every bot scores a stone in its band above the
+  sweet-spot monster (`PLAYERBOT_STONE_BASE_SCORE`; the hunter's 1.5M is
+  untouched) and a stone another bot is already on gets
+  `PLAYERBOT_STONE_JOIN_BONUS` on top; `IsPlayerBotStoneJoinable` admits a
+  stone up to `PLAYERBOT_STONE_JOIN_LEVEL_DELTA` over the bot while others
+  break it, in the collector, in the party's target and in the manager's
+  "obsolete stone" check, which would otherwise drop the joined stone on the
+  next tick. A stone only a player is hitting is left to the player
+  (`PLAYERBOT_STONE_JOIN_PLAYERS`), because the drop goes to whoever dealt the
+  most damage. `PLAYERBOT_METIN: joined a stone` says who joined whom.
+- **A boss's fall opens the loot window a broken stone gets.** The raid's next
+  step after a kill is "boss down, going back to work", and the killer walked
+  off with the Umarly Rozpruwacz's casket (50082, a giftbox of level-75
+  weapons; nothing in the loot rules refuses it) lying on the snow (Ciapek,
+  16 September). `bFightProgressBoss` rides with the fight-progress clock; when
+  that monster is dead or gone, `dwStoneBrokenTime` is stamped and
+  `HandleLoot` dashes for what lies within `PLAYERBOT_METIN_LOOT_DASH_RANGE`
+  for `PLAYERBOT_METIN_LOOT_DASH_TIME`, ahead of the threat scan and the
+  wander. The killer owns the drops for the engine's ten seconds; a party
+  member's are picked up for the owner, as before.
+- **Sztuka Combo and the Leadership books are not ITEM_SKILLBOOK.** 50301-50303
+  (Sun Zi, Wu Zi, WeiLiao Zi: Leadership by twenty levels each, 35% a read
+  through the class-book branch of `LearnSkillByBook`) and 50304-50306 (Combo
+  at 20/70/100 percent, from level 30 for Combo 1 and 50 for Combo 2) are
+  ITEM_USE, USE_SPECIAL, with cases of their own in `char_item.cpp`; the
+  skill-book pass never saw them and the junk rule's default sold them for a
+  thousand yang ("Mistrz. Sztuka Combo" sold to the merchant in a gear
+  history, sizowski, 16 September). `IsPlayerBotGeneralSkillBook` and
+  `CanPlayerBotReadGeneralSkillBookNow` (consumables.h, the engine's own
+  tests) drive `ReadPlayerBotGeneralSkillBook`, asked from the class-book
+  pass when no class book is due and waving the engine's day away like it;
+  the junk rule never vendors one; the counter lists what the bot cannot
+  read or holds beyond `PLAYERBOT_GENERAL_BOOK_KEEP`, at Iwakura's ordinary
+  book times two (Leadership) or four (Combo). Combo is worth having: a
+  swing's `GetShootMaxTargetCount` is 3 + the Combo level, so Combo 2 hits
+  five monsters where Combo 0 hits three.
+- **A mod in an engine file survives an update and breaks the next build.**
+  The package replaces our files and leaves everything else, so a fork's
+  edit in `guild.cpp` or `messenger_manager.cpp` calling a manager method we
+  never had (`GetCompanionOwner`, maxziomeknw1, 15 September) fails the
+  build after every update, one file at a time. The answer is a search over
+  `game/src` for the symbol and the stock file from the full package for
+  each hit; a launcher that named the files itself would be the real fix.
+- **A rule written for bot parties was asked of a player's.** `ManagePlayerBotParty`
+  put every party it checked back on `PARTY_EXP_DISTRIBUTION_PARITY`, the
+  player's included, on every check ("boty dodane do PT zawsze same zmieniaja
+  podzial na rowny nawet gdy to nie one sa liderem", Dearminder, 15 September).
+  A human-led party's split is the leader's, so the pass returns before it for
+  `IsPlayerBotHumanLedParty`; the three `SetParameter` calls left all stand on
+  bot-led parties. Compiled and deployed, not watched: the test world has no
+  person in a party. Grep every `SetParameter(PARTY_EXP_DISTRIBUTION` before
+  writing a rule about a party's split, the way `->Quit(` is grepped for who
+  stays.
+- **A purchase every bot wants is a market emptied in an hour.**
+  `WantsPlayerBotMoonlightChest` (2.0.53) made every non-trader short of chests
+  a buyer, and a thousand buyers took every chest off every counter ("boty
+  wykupuja doslownie WSZYSTKIE szkatulki bez opamietania", sizowski, 16
+  September). Two brakes now: `PLAYERBOT_CHEST_MARKET_RESERVE` - no bot buys
+  while the ledger counts thirty or fewer on the counters of the whole world -
+  and `PLAYERBOT_CHEST_BUY_COOLDOWN` per bot (`s_mapPlayerBotChestBoughtAt`,
+  stamped by the offline and the classic purchase path both). The ledger is
+  refreshed once a minute, so a minute's purchases can still dip under the
+  reserve; that is the size of the overshoot, not a hole. Anything else the
+  whole population wants off the counters at once needs the same two.
+- **A second village is entered at one end, and the bots stayed at that end.**
+  "Boty z Shinsoo omijaja gorna czesc Jayang, z Jinno dolna czesc Bakra - moze
+  mosty albo granice mapy sa zle okreslone?" (blasty, 16 September). Not the
+  map: `tools/analyse_map_bridges.py` on each map's own server_attr (mt2009's,
+  in docker with python-lzo) reaches 99.9% of the ground and every spawn group
+  of a3 and c3 from the town point under the BLOCK|OBJECT rule. What kept the
+  bots off was that Jayang's gate from Yongan opens in its south and Bakra's
+  from Pyongmoo in its north, each onto the tigers of 18-20 and the Black Wind
+  of 26-30, and a bot chain-kills outward from where it stands: the wander
+  pass runs only on a tick nothing was worth attacking, the outgrown-prey rule
+  stopped at the first villages, and `PLAYERBOT_GROUND_HUBS_3/43` were twelve
+  hubs by pid with `mobLevel` 0 - so the 501-504 ground of 29-36 that fills
+  the far half of each map had nobody on it. Measured on m2zip before the
+  change: every bot south of y 280 000 on map 43 was passing through ("Ide do
+  Biologa", "Ide do Doliny Orkow"), and the map's richest cell,
+  (848000,291200) at 78 monsters a look, had 793 looks and not one fight.
+  Every M2 hub carries its band now (`tools/generate_wander_hubs.py <map>
+  --count 24 --band --spacing 4500`; its first twelve rows for 3 and 43 are
+  the 2.0.8 tables to the unit, which says those came from it with `--count
+  12`), the M2 branch of `ManagePlayerBotWandering` takes
+  `CollectPlayerBotM1HubsForLevel` like the first villages, and `outgrownPrey`
+  in `BuildPlayerBotCombatContext` is set on `IsPlayerBotM2Map` too. Bokjung's
+  twelve hand-placed hubs went with it: measured against regen.txt
+  (`scratchpad/measure_hub_bands.py` is the shape), three stood two to four
+  kilometres from the nearest spawn rectangle and two beside fewer than
+  fifteen points. The bands come out as 27, 29-30 and 35 - the tigers are
+  nowhere a majority, so a bot under 26 takes the nearest band and kills them
+  on the way - and Jayang has one hub of band 27, so
+  `CollectPlayerBotM2HubsForLevel` fills the choice set up to
+  `PLAYERBOT_M2_HUB_CHOICES_MIN` from the nearest bands. Measure it as bots
+  in `BOT_ACTION_FIGHT` per 10 000-unit band of y in `playerbot_status.tsv`
+  on maps 3 and 43 **by level**, never as the count of bots there. Fifteen
+  minutes after the deploy on m2zip: every fighter under 26 on both maps
+  stood on the low ground by its gate (Jayang 850-870k, Bakra 220-270k),
+  the 33-35s on the middle ground, and the far halves held 66 and 102 bots
+  of 36+ standing between errands and not fighting - on a unified world a
+  bot past the M2 ceiling is SERVICE_ONLY, and the band choice now parks
+  them on the band-35 hubs instead of anywhere. The far-half hunting
+  itself needs a split world, where a Shinsoo or Jinno bot of 36+ has
+  nowhere else to go; m2zip cannot show it.
+- **The cohort's window is the operator's, and so is the second cohort.**
+  `SpawnRegistered` drained its queue over `PLAYERBOT_SPAWN_WINDOW` (a minute)
+  and that was the whole plan: a player who started two thousand at once had
+  the square "jak w szpitalu" (Ciapek, 16 September; "nie trzeba ich pchac
+  2k na serwer", seban). `PLAYERBOT_SPAWN_WINDOW_MINUTES`,
+  `PLAYERBOT_LATE_JOINERS` and `PLAYERBOT_LATE_JOIN_HOURS` come from `.env`
+  through both compose files into the bootstrap in `input_db.cpp`
+  (playerbotify.py): `CPlayerBotManager::SetSpawnWindow` stretches the
+  cohort's batches, `ScheduleLateJoiners` takes the next identities of each
+  kingdom after the scheduled ones (`SplitPopulation` over what the cohort
+  leaves each kingdom) and gives each its moment spread evenly over the
+  hours, `SpawnLateJoiners` spawns them from the tick. A late joiner is in
+  `m_setScheduledBots` only from its moment on, so `TopUpMissingBots` neither
+  counts nor hurries it; a kingdom whose cohort share is zero gets no late
+  joiners either. The launcher's LICZBA BOTOW asks for the three beside the
+  count (text menu: Enter keeps the value; GUI: three boxes under the
+  slider, passed as `-SpawnMinutes -LateJoiners -LateHours`).
+- **"Boty graja jak zywi ludzie" is a switch, off, and a rest is a ban the
+  top-up honours.** The `LIFE` key of the weights file (the classic panel's
+  AI page, experimental, default 0; `IsPlayerBotLifeScheduleEnabled`) runs
+  `CPlayerBotManager::ManageLifeSchedule` once a minute: every live bot gets a
+  session end (`PLAYERBOT_LIFE_SESSION_MIN..MAX`, the first after a start from
+  `PLAYERBOT_LIFE_FIRST_SESSION_MIN_MS` so the log-outs spread), at its end it
+  is `Despawn`ed and put in `m_mapLifeRestEnd` for `PLAYERBOT_LIFE_REST_MIN..MAX`,
+  and `IsRestingBot` keeps it out of `SpawnPendingBatch`, `TopUpMissingBots`
+  and `SpawnLateJoiners` exactly as the ban set does. When the rest ends the
+  pid goes to `m_setLifeReturning` (a whole session next time, not a first
+  one) and the top-up is asked at once. A bot in a player's party is
+  postponed `PLAYERBOT_LIFE_POSTPONE_MS`; its offline shop stands on, being
+  an entity of its own. Switching off clears both maps and the top-up fills
+  the world within its window. Measure it as `PLAYERBOT_LIFE: census
+  online= resting=` every ten minutes, never as the panel's bot count, which
+  is meant to fall. Tieru's brief (16 September): "graja np kilka godzin
+  dziennie, wyloguja sie i graja znow po odpoczynku", experimental, off for
+  everybody. The whole cycle was run on m2zip through the panel's own form:
+  on at 14:40, the first log-outs at 15:13 (fourteen by 15:15, rests of 184
+  to 500 minutes), not one "topping up" line while they rested, off at 15:15
+  and "schedule off, 14 resting come back" with `topping up ... missing=14`
+  on the next minute, all fourteen back. A restart forgets the rest map, so
+  everybody returns at a start whatever the switch says. And the spawn plan
+  the same afternoon: a window of three minutes took the 1099 in 180 s
+  against 64, and sixty late joiners over an hour came one every minute
+  (`late joiner pid= ... left=`), the top-up counting each from its moment.
+- **A stone's band is sixteen levels either way, and a tower stone is a
+  floor's objective, not a Metin.** `PLAYERBOT_STONE_JOIN_LEVEL_DELTA` was
+  thirty from 2.0.57 (a bot joined a stone thirty levels over itself) and the
+  outgrown side ten; both are sixteen now, in `IsPlayerBotMetinWorthFighting`
+  and `IsPlayerBotStoneJoinable` ("przedzial postaci bijacych metina niech
+  wynosi maksymalnie 16 poziomow", Tieru, 16 September) - the drop curve is
+  1% at fifteen over, so past that nothing comes out of a stone; alone a bot
+  still starts one only up to nine over itself. The Demon Tower's 8015-8019
+  are refused everywhere for a bot on its own (breaking one warps every PC
+  on the map), and `IsPlayerBotDungeonStoneObjective` - the bot in a
+  player's party with the player on the same map, `IsPlayerBotClimbingWithPlayer`
+  in `playerbot_movement.h` - lifts that refusal, the join rule, the sweep's
+  and the splash's avoidance, with no band at all: "takie metiny sie zbija by
+  zaliczyc kolejne pietra". Compiled and read, not watched: the test world
+  has no player climbing with bots.
+- **A quest's wait state remembers the wait it was entered under.** The
+  difficulty flags (2.0.57) reach `m2_horse_wait` at once, but a character
+  already in `pony_buy`'s `wait` carries the `make_time` set on entry - twelve
+  hours under hard - and the state only tested `get_time() >= make_time`, so
+  switching to easy changed nothing for anybody already waiting ("dalej
+  trzeba czekac", Hiob, 16 September, with the wait state's own dialog in
+  the screenshot), while 2.0.57's changelog had promised the opposite. The
+  five horse quests cap the stored deadline at `now + m2_horse_wait(kind)`
+  on login and on every talk (`make_time` in the three wait states,
+  `next_time` at the top of the two training talk handlers), so the wait
+  can never be longer than the setting says now and zero means at once.
+  `reload q` recompiles nothing here and reads no flag: the flags are the
+  migrator's, at a start. `horse_levelup.quest` is LF where the other four
+  are CRLF - a patch has to take each file's own ending, and `grep -c
+  $'\r$'` under the Bash tool's sh does not say which is which. Compiled
+  in the image (the objects carry `m2_horse_wait`), not driven in a client.
 
 ## Engine facts worth not re-deriving
 

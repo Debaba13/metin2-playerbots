@@ -207,13 +207,19 @@ RUN set -eux; \
     # pony_levelup is the package's own stable-keeper quest with the 18-hour
     # wait between two medals taken out (2.0.12); compiled here under its own
     # name, its object files land over the stock ones in the runtime copy.
-    # horse_levelup carries the same medal over the grade-2 stretch (levels
-    # 11-19), where a 21-hour wait had been left in place; horse_upgrade2's
-    # pony_buy is the medal's very first use, buying the horse itself, which
-    # still had its own ~12h wait -- both get the same treatment here.
     # gm_profile brings the admin account's game masters to one profile
     # through the engine (2.0.13).
-    for q in web_admin speed_boost starter_chest pony_levelup horse_levelup pony_buy gm_profile; do \
+    # new_quest_lv19 is the package's level-19 quest with its bear group
+    # completed: the stock group names 140 and 141 only, so the Cursed Bear
+    # (139) and the Cursed Brown Bear (142) never counted towards the five
+    # bear skins (Pabloo, from Dixdros' report, 2.0.47).
+    # teleport_ring answers the use of Pierscien Teleportacji (70058), which the
+    # package drops and no stock quest handled (2.0.48).
+    # pony_buy, horse_upgrade, horse_upgrade2 and horse_levelup are the
+    # package's stable-keeper quests with the wait for the horse taken out:
+    # twelve hours for the pony and each upgrade, twenty-one between two
+    # trainings (Tieru, 16 September, 2.0.56).
+    for q in web_admin speed_boost starter_chest pony_levelup gm_profile new_quest_lv19 teleport_ring pony_buy horse_upgrade horse_upgrade2 horse_levelup; do \
       [ -f "/quest-add/$q.quest" ] || continue; \
       sed 's/\r$//' "/quest-add/$q.quest" > "/tmp/qc-work/$q.quest"; \
       ( cd /tmp/qc-work && /src/Server/game/src/quest/qc "$q.quest" ); \
@@ -285,11 +291,48 @@ RUN set -eu; L=/opt/metin2/share/locale/turkey \
  && for f in /tmp/share-add/*.txt; do sed -i 's/\r$//; s/$/\r/' "$f"; done \
  && cat /tmp/share-add/mob_drop_item.m3.append.txt >> "$L/mob_drop_item.txt" \
  && f="$L/special_item_group.txt" \
- && awk 'BEGIN{keep=1} /^Group/{blk=""; keep=1} {blk=blk $0 "\n"} /Vnum[ \t]+(50011|50187|50212|50213|50188|50189|50190|50191|50192|50193)([^0-9]|$)/{keep=0} /^}/{ if (keep) printf "%s", blk; blk=""; keep=1 }' "$f" > "$f.new" \
+ && awk 'BEGIN{keep=1} /^Group/{blk=""; keep=1} {blk=blk $0 "\n"} /Vnum[ \t]+(50011|50187|50212|50213|50188|50189|50190|50191|50192|50193|50194|50195|50196)([^0-9]|$)/{keep=0} /^}/{ if (keep) printf "%s", blk; blk=""; keep=1 }' "$f" > "$f.new" \
  && cat /tmp/share-add/special_item_group.moonlight.txt /tmp/share-add/special_item_group.starter.txt >> "$f.new" \
  && mv "$f.new" "$f" \
  && rm -rf /tmp/share-add \
  && echo "share: moonlight + starter chests, M3 drops appended"
+
+# Maska Sabaha goes with the Hwang curse (playerbotify apply_hwang_curse_removed,
+# port/shareify.py renders this step): its drop lines and the Hwang loot box roll
+# it at nothing - a group stops reading at the first index it lacks, so a line is
+# zeroed, not deleted - and the temple's introduction hands none out.
+RUN set -eu; L=/opt/metin2/share/locale/poland \
+ && sed -i -E 's/^([[:blank:]]*[0-9]+[[:blank:]]+7273[15][[:blank:]]+[0-9]+[[:blank:]]+)[0-9.]+/\10/' "$L/mob_drop_item.txt" \
+ && sed -i -E '/^Group[[:blank:]]+LootBox_Hwang/,/^}/ s/^([[:blank:]]*[0-9]+[[:blank:]]+7273[15][[:blank:]]+[0-9]+[[:blank:]]+)[0-9.]+/\10/' "$L/special_item_group.txt" \
+ && sed -i '/^reward_data\.hwang_introduction/,/^}/ { /{72731, 1},/d }' "$L/quest/libs/other/reward_data.lua" \
+ && ! grep -E '^[[:blank:]]*[0-9]+[[:blank:]]+7273[15][[:blank:]]+[0-9]+[[:blank:]]+[1-9]' "$L/mob_drop_item.txt" \
+ && ! grep -q '{72731, 1}' "$L/quest/libs/other/reward_data.lua" \
+ && echo "share: Maska Sabaha removed"
+
+# The quest texts name this world, not Metin2009 (port/shareify.py renders this
+# step): the substitution l0st3k's translate.lua of 15 September makes, on both
+# copies of the file.
+RUN set -eu; L=/opt/metin2/share/locale/poland \
+ && for f in "$L/translate.lua" "$L/quest/libs/translate/translate.lua"; do \
+      [ -f "$f" ] || continue; \
+      LC_ALL=C sed -i 's/Metin2009/Metin2 SinglePlayer/g' "$f"; \
+      if LC_ALL=C grep -q 'Metin2009' "$f"; then echo "share: Metin2009 left in $f" >&2; exit 1; fi; \
+    done \
+ && echo "share: Metin2 SinglePlayer in the quest texts"
+
+# The world's difficulty (port/shareify.py renders this step): m2_difficulty.lua
+# is dofile'd after the quest libraries and puts the Biologist's wait and the
+# stable keeper's waits on event flags the migrator writes from M2_DIFFICULTY.
+# It replaces the 2.0.55 sed that made collect_data.is_research_in_progress
+# answer false for everybody (namiot_, 15 September): that is what "easy" is.
+COPY quest/m2_difficulty.lua /opt/metin2/share/locale/poland/quest/libs/other/m2_difficulty.lua
+RUN set -eu; L=/opt/metin2/share/locale/poland/quest/libs/other/_otherModuleLoader.lua \
+ && LC_ALL=C grep -q 'other/collect_data.lua' "$L" \
+ && LC_ALL=C sed -i 's/\r$//' "$L" \
+ && printf '\ndofile( LIBDIR .. "other/m2_difficulty.lua")\n' >> "$L" \
+ && LC_ALL=C grep -q 'other/m2_difficulty.lua' "$L" \
+ && test -s /opt/metin2/share/locale/poland/quest/libs/other/m2_difficulty.lua \
+ && echo "share: difficulty hooked into the quest libraries"
 
 # The cores run unprivileged and read this tree by path; a directory only root
 # can enter costs every quest below it, silently. Repair, then assert.

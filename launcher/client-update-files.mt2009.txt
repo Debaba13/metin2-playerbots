@@ -2,3 +2,4 @@ pack/root.index
 pack/root.data
 pack/locale.index
 pack/locale.data
+metin2client.exe

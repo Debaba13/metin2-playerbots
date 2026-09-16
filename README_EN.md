@@ -135,5 +135,9 @@ Detailed guides separated into dedicated documentation modules:
 ## 🤝 Credits & Acknowledgements
 
 - **AzzlackSyndicate** — author of the original Linux port foundation, installers, and panel. The source repository is now private; its Git history and attribution are retained.
+- **OskarPWA** — the bot depot window and the skill icons on the site come from a panel he built and shared for merging back.
+- **seban latino** — author of the Metin2 Singleplayer Panel (`linux-port/docker/seban-panel`), the second panel in this install: live map, profiles, rankings, economy, telemetry and bulk grants.
+- **Iwakura** — help with the price and shop name systems, the bots' nicknames and the item value algorithms.
+- **ĹŌŞƬĒĶ** — the client's new login screen (since 2.0.6): the animated background, the logo and Discord Rich Presence.
 - [DadsMmoLab/dads-mmo-lab](https://github.com/DadsMmoLab/dads-mmo-lab) — Research inspiration for autonomous MMO agent design.
 - The Metin2 emulation and research community.

@@ -529,7 +529,125 @@ def main(root):
          '\t}\n'
          '}\n'
          '\n'
-         'void CInputDB::P2P(const char * c_pData)\n')
+         'void CInputDB::P2P(const char * c_pData)\n',
+         # A later edit writes into this block (the medal droppers below), so it
+         # is found by one sentence of its own rather than by all of it.
+         marker='\t// MapLocations is the first point at which this core knows which maps it\n')
+    # The operator's medal droppers on top of the population, scheduled per
+    # kingdom before the ordinary cohort (CPlayerBotManager::SpawnMedalDropperCohort).
+    edit(p,
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\n'
+         '\t\tfor (int empire = playerbot_empire_rules::EMPIRE_SHINSOO;\n'
+         '\t\t\t\tempire <= playerbot_empire_rules::EMPIRE_JINNO; ++empire)\n'
+         '\t\t{\n'
+         '\t\t\tconst long lVillage = playerbot_empire_rules::GetHomeMap(\n'
+         '\t\t\t\t\tempire, playerbot_empire_rules::MAP_ROLE_M1);\n'
+         '\t\t\tif (lVillage == 0 || !map_allow_find(lVillage) || want[empire] <= 0)\n'
+         '\t\t\t\tcontinue;\n',
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\t\t// The operator\'s medal droppers, on top of the population: this many in\n'
+         '\t\t// each kingdom, their experience stopped at the level they farm\n'
+         '\t\t// (CPlayerBotManager::SpawnMedalDropperCohort). Zero by default.\n'
+         '\t\tint medalDroppers = 0;\n'
+         '\t\tint medalDropperLevel = 25;\n'
+         '\t\tconst char* configuredDroppers = std::getenv("PLAYERBOT_MEDAL_DROPPERS");\n'
+         '\t\tif (configuredDroppers && *configuredDroppers)\n'
+         '\t\t\tmedalDroppers = std::atoi(configuredDroppers);\n'
+         '\t\tif (medalDroppers < 0)\n'
+         '\t\t\tmedalDroppers = 0;\n'
+         '\t\telse if (medalDroppers > 200)\n'
+         '\t\t\tmedalDroppers = 200;\n'
+         '\t\tconst char* configuredDropperLevel = std::getenv("PLAYERBOT_MEDAL_DROPPER_LEVEL");\n'
+         '\t\tif (configuredDropperLevel && *configuredDropperLevel)\n'
+         '\t\t\tmedalDropperLevel = std::atoi(configuredDropperLevel);\n'
+         '\t\t// Under eighteen no Monkey Dungeon takes a bot at all.\n'
+         '\t\tif (medalDropperLevel < 18)\n'
+         '\t\t\tmedalDropperLevel = 18;\n'
+         '\t\telse if (medalDropperLevel > 120)\n'
+         '\t\t\tmedalDropperLevel = 120;\n'
+         '\n'
+         '\t\tfor (int empire = playerbot_empire_rules::EMPIRE_SHINSOO;\n'
+         '\t\t\t\tempire <= playerbot_empire_rules::EMPIRE_JINNO; ++empire)\n'
+         '\t\t{\n'
+         '\t\t\tconst long lVillage = playerbot_empire_rules::GetHomeMap(\n'
+         '\t\t\t\t\tempire, playerbot_empire_rules::MAP_ROLE_M1);\n'
+         '\t\t\tif (lVillage == 0 || !map_allow_find(lVillage))\n'
+         '\t\t\t\tcontinue;\n'
+         '\t\t\tif (medalDroppers > 0 && registered[empire] > 0)\n'
+         '\t\t\t\tCPlayerBotManager::instance().SpawnMedalDropperCohort(\n'
+         '\t\t\t\t\t\t(size_t)medalDroppers, (BYTE)empire, (BYTE)medalDropperLevel);\n'
+         '\t\t\tif (want[empire] <= 0)\n'
+         '\t\t\t\tcontinue;\n',
+         marker='(CPlayerBotManager::SpawnMedalDropperCohort). Zero by default.')
+    # The spawn plan: the window the cohort arrives over, and a second cohort
+    # joining one at a time over hours (CPlayerBotManager::SetSpawnWindow,
+    # ScheduleLateJoiners). Read beside the medal droppers, scheduled after
+    # the cohort of each kingdom, because the late ones are "the next
+    # identities after the scheduled".
+    edit(p,
+         '\t\telse if (medalDropperLevel > 120)\n'
+         '\t\t\tmedalDropperLevel = 120;\n'
+         '\n'
+         '\t\tfor (int empire = playerbot_empire_rules::EMPIRE_SHINSOO;\n',
+         '\t\telse if (medalDropperLevel > 120)\n'
+         '\t\t\tmedalDropperLevel = 120;\n'
+         '\t\t// The spawn plan: the window the cohort arrives over, and a second\n'
+         '\t\t// cohort joining one at a time over hours (CPlayerBotManager::\n'
+         '\t\t// SetSpawnWindow, ScheduleLateJoiners). A minute and nobody by default.\n'
+         '\t\tint spawnWindowMinutes = 1;\n'
+         '\t\tconst char* configuredWindow = std::getenv("PLAYERBOT_SPAWN_WINDOW_MINUTES");\n'
+         '\t\tif (configuredWindow && *configuredWindow)\n'
+         '\t\t\tspawnWindowMinutes = std::atoi(configuredWindow);\n'
+         '\t\tif (spawnWindowMinutes < 1)\n'
+         '\t\t\tspawnWindowMinutes = 1;\n'
+         '\t\telse if (spawnWindowMinutes > 180)\n'
+         '\t\t\tspawnWindowMinutes = 180;\n'
+         '\t\tCPlayerBotManager::instance().SetSpawnWindow((DWORD)spawnWindowMinutes * 60U * 1000U);\n'
+         '\t\tint lateJoiners = 0;\n'
+         '\t\tconst char* configuredLate = std::getenv("PLAYERBOT_LATE_JOINERS");\n'
+         '\t\tif (configuredLate && *configuredLate)\n'
+         '\t\t\tlateJoiners = std::atoi(configuredLate);\n'
+         '\t\tif (lateJoiners < 0)\n'
+         '\t\t\tlateJoiners = 0;\n'
+         '\t\telse if (lateJoiners > autoSpawnCeiling)\n'
+         '\t\t\tlateJoiners = autoSpawnCeiling;\n'
+         '\t\tint lateJoinHours = 24;\n'
+         '\t\tconst char* configuredLateHours = std::getenv("PLAYERBOT_LATE_JOIN_HOURS");\n'
+         '\t\tif (configuredLateHours && *configuredLateHours)\n'
+         '\t\t\tlateJoinHours = std::atoi(configuredLateHours);\n'
+         '\t\tif (lateJoinHours < 1)\n'
+         '\t\t\tlateJoinHours = 1;\n'
+         '\t\telse if (lateJoinHours > 168)\n'
+         '\t\t\tlateJoinHours = 168;\n'
+         '\t\t// Split between the kingdoms like the cohort, over the identities\n'
+         '\t\t// the cohort leaves them.\n'
+         '\t\tint registeredLeft[playerbot_empire_rules::EMPIRE_COUNT];\n'
+         '\t\tint lateWant[playerbot_empire_rules::EMPIRE_COUNT];\n'
+         '\t\tfor (int e = 0; e < playerbot_empire_rules::EMPIRE_COUNT; ++e)\n'
+         '\t\t\tregisteredLeft[e] = registered[e] > want[e] ? registered[e] - want[e] : 0;\n'
+         '\t\tplayerbot_empire_rules::SplitPopulation(lateJoiners, registeredLeft, lateWant);\n'
+         '\n'
+         '\t\tfor (int empire = playerbot_empire_rules::EMPIRE_SHINSOO;\n',
+         marker='CPlayerBotManager::instance().SetSpawnWindow(')
+    edit(p,
+         '\t\t\tsys_log(0, "PLAYERBOT: autospawn empire=%d village=%ld requested=%d registered=%d started=%u",\n'
+         '\t\t\t\t\tempire, lVillage, want[empire], registered[empire],\n'
+         '\t\t\t\t\t(unsigned int)spawned);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '}\n',
+         '\t\t\tsys_log(0, "PLAYERBOT: autospawn empire=%d village=%ld requested=%d registered=%d started=%u",\n'
+         '\t\t\t\t\tempire, lVillage, want[empire], registered[empire],\n'
+         '\t\t\t\t\t(unsigned int)spawned);\n'
+         '\t\t\tif (lateWant[empire] > 0)\n'
+         '\t\t\t\tCPlayerBotManager::instance().ScheduleLateJoiners(\n'
+         '\t\t\t\t\t\t(size_t)lateWant[empire], (BYTE)empire,\n'
+         '\t\t\t\t\t\t(DWORD)lateJoinHours * 60U * 60U * 1000U);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '}\n',
+         marker='CPlayerBotManager::instance().ScheduleLateJoiners(')
     edit(p,
          '\tcase HEADER_DG_PLAYER_LOAD_FAILED:\n'
          '\t\t//sys_log(0, "PLAYER_LOAD_FAILED");\n'
@@ -670,7 +788,22 @@ def main(root):
          '\tif (GetDesc() && GetDesc()->IsBot())\n'
          '\t\treturn true;\n'
          '\treturn GetLevel() >= 15 && GetSpecialFlag(PLAYER_STATS_MONSTER_FLAG) >= 800;\n'
-         '}\n')
+         '}\n',
+         # apply_gm_gameplay puts the GM's lines above these, so the whole
+         # block is no longer there on a second run; this sentence still is.
+         marker='A playerbot trades from the start')
+    # 2.0.55 a player's counter opens at level fifteen too. The eight hundred
+    # kills were the public server's gate for a private shop, and on a world
+    # of one player they only kept a new character from trading ("jezeli
+    # chcemy edytowac otwarcie tobolka i nie zabijac 800 mobow ... Liczbe 800
+    # na 0", gregoszky, 14 September). The line sits below the bot's and the
+    # GM's early returns, so both still read as they did.
+    edit(os.path.join(game, 'char_shop.cpp'),
+         '\treturn GetLevel() >= 15 && GetSpecialFlag(PLAYER_STATS_MONSTER_FLAG) >= 800;\n',
+         '\t// playerbot: no kill count for a player either - the eight hundred\n'
+         '\t// kills were the public server\'s gate (gregoszky, 14 September).\n'
+         '\treturn GetLevel() >= 15;\n',
+         marker='no kill count for a player either')
 
     # ======================================================================
     # 2.0.16 the Metin stone's skill book stops fifteen levels above it.
@@ -1217,8 +1350,510 @@ def main(root):
     apply_playerbot_party_invites(game)
     apply_playerbot_pvp_challenges(game)
     apply_playerbot_monkey_doors(game)
+    apply_party_pickup_to_owner(game)
+    apply_gm_gameplay(game)
     apply_gm_panel(game)
+    apply_costume_block(game)
+    apply_costume_hair_allowed(game)
+    apply_mark_login_quiet(game)
+    apply_horse_rider_links(game)
+    apply_gm_transfer_bots(game)
+    apply_refine_log_way(game)
+    apply_auto_hunt(game)
+    apply_auto_hunt_offsets(game)
+    apply_hwang_curse_removed(game)
     print('playerbotify: done')
+
+
+def apply_hwang_curse_removed(game):
+    # The Hwang Temple's curse, and with it the only reason for Maska Sabaha.
+    # CHARACTER::Damage turned every blow at a monster on map 65 into a DODGE
+    # unless a roll beat 50 plus POINT_BREAK_TEMPLE_CURSE, which the mask's
+    # apply 146 lifts by 100 - so a player without the mask missed half his
+    # blows there ("bedziemy musieli usunac wymog i ten item", Tieru, 15
+    # September, after NerrVoVy's report). The mask's sources go too: the drop
+    # lines and the loot box in the share step shareify.py renders, the
+    # introduction quest's reward there as well, and the shop line in apply.sh.
+    edit(os.path.join(game, 'char_battle.cpp'),
+         '\tif (pAttacker && IsNPC() && GetMapIndex() == 65) // only hwang temple\n'
+         '\t{\n'
+         '\t\tint chance_to_break = (IsRaceFlag(RACE_FLAG_ATT_TEMPLE) ? 0 : 50) + pAttacker->GetPoint(POINT_BREAK_TEMPLE_CURSE);\n'
+         '\t\tif (number(1, 100) > chance_to_break)\n'
+         '\t\t{\n'
+         '\t\t\tif (test_server)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tpAttacker->ChatDebug("temple curse break chance %d", chance_to_break);\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tSendDamagePacket(pAttacker, 0, DAMAGE_DODGE);\n'
+         '\t\t\treturn false;\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n',
+         '\t// Playerbot: the Hwang Temple has no curse and so no Maska Sabaha - its\n'
+         '\t// monsters are hit like any others (playerbotify apply_hwang_curse_removed).\n'
+         '\n',
+         marker='\t// Playerbot: the Hwang Temple has no curse and so no Maska Sabaha')
+
+
+def apply_auto_hunt(game):
+    # Auto Lowy dla gracza (Tieru, 15 wrzesnia: "autolowy dla gracza, dla
+    # botow niepotrzebne ... dla kazdego za darmo bez wymagan"). Okno klienta
+    # (client-root/uiautohunt.py) samo chodzi, bije i pije mikstury, ale nie ma
+    # w Pythonie zadnej listy potworow wokol postaci - skrypty z sieci skanuja
+    # po milion VID-ow na klatke. Serwer zna sektor, wiec odpowiada jednym VID-em:
+    # "/autohunt_target <zasieg> <metiny 0/1> <x> <y>" -> "AutoHuntTarget <vid>".
+    # Limit komend (ENABLE_ANTI_CMD_FLOOD, 5 na 500 ms) ogranicza tempo pytan.
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         '#include "log.h"\n',
+         '#include "log.h"\n'
+         '#include "sectree_manager.h"\n'
+         '#include "battle.h"\n',
+         marker='#include "battle.h"\n')
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         AUTO_HUNT_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_autohunt_target)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_check_mob);\n',
+         'ACMD(do_check_mob);\n'
+         'ACMD(do_autohunt_target);\n',
+         marker='ACMD(do_autohunt_target);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "check_mob", do_check_mob, \t0, POS_DEAD,\t\tGM_IMPLEMENTOR },\n',
+         '\t{ "check_mob", do_check_mob, \t0, POS_DEAD,\t\tGM_IMPLEMENTOR },\n'
+         '\t{ "autohunt_target",\tdo_autohunt_target,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "autohunt_target",')
+    # The pick-up by kind ("nie podnos broni, zbroi", Tieru, 15 wrzesnia):
+    # "/autohunt_loot <zasieg> <rodzaje> <x> <y>" -> "AutoHuntLoot <vid> <x> <y>".
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         AUTO_HUNT_LOOT_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_autohunt_loot)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_autohunt_target);\n',
+         'ACMD(do_autohunt_target);\n'
+         'ACMD(do_autohunt_loot);\n',
+         marker='ACMD(do_autohunt_loot);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "autohunt_target",\tdo_autohunt_target,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "autohunt_target",\tdo_autohunt_target,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "autohunt_loot",\tdo_autohunt_loot,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "autohunt_loot",')
+
+
+def apply_auto_hunt_offsets(game):
+    # Auto Lowy nic nie podnosily, jakkolwiek ustawione (Tieru, 15 wrzesnia,
+    # 23:10, klient 2.0.9). Klient liczy pozycje od rogu swojej mapy - jego
+    # strumien sieciowy odejmuje baze mapy od kazdej pozycji z serwera, minimapa
+    # pokazuje "334, 857" w Bokjung o bazie 102400, 204800 - a "AutoHuntLoot"
+    # niosl GetX()/GetY() swiata, wiec przedmiot stal dla klienta zawsze o baze
+    # mapy od postaci i nigdy nie byl w zasiegu podniesienia. Punkt startu szedl
+    # w druga strone tak samo i serwer odrzucal go jako dalszy niz 10000, wiec
+    # zasieg lowow liczyl sie od postaci, nie od startu. Oba ida teraz jako
+    # przesuniecie od postaci.
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         '\t\t// A point further than the sectrees round the character reach is a\n'
+         '\t\t// stale hunt from another place: hunt round the character instead.\n'
+         '\t\tif (DISTANCE_APPROX(x - anchorX, y - anchorY) <= 10000)\n'
+         '\t\t{\n'
+         '\t\t\tanchorX = x;\n'
+         '\t\t\tanchorY = y;\n'
+         '\t\t}\n',
+         '\t\t// The client counts a position from its own map\'s corner and the\n'
+         '\t\t// server from the world\'s (the client\'s network stream takes the\n'
+         '\t\t// map\'s base off every position it receives), so the start point\n'
+         '\t\t// comes as an offset from where the character stands. One further\n'
+         '\t\t// than the sectrees round the character reach is a stale hunt from\n'
+         '\t\t// another place: hunt round the character instead.\n'
+         '\t\tif (DISTANCE_APPROX(x, y) <= 10000)\n'
+         '\t\t{\n'
+         '\t\t\tanchorX += x;\n'
+         '\t\t\tanchorY += y;\n'
+         '\t\t}\n',
+         marker='// comes as an offset from where the character stands. One further\n')
+    edit(path,
+         '\t\t// The same rule as the target: a stale point hunts round the character.\n'
+         '\t\tif (DISTANCE_APPROX(x - anchorX, y - anchorY) <= 10000)\n'
+         '\t\t{\n'
+         '\t\t\tanchorX = x;\n'
+         '\t\t\tanchorY = y;\n'
+         '\t\t}\n',
+         '\t\t// The same rule as the target: an offset from the character, and a\n'
+         '\t\t// stale one hunts round the character.\n'
+         '\t\tif (DISTANCE_APPROX(x, y) <= 10000)\n'
+         '\t\t{\n'
+         '\t\t\tanchorX += x;\n'
+         '\t\t\tanchorY += y;\n'
+         '\t\t}\n',
+         marker='// The same rule as the target: an offset from the character, and a\n')
+    edit(path,
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntLoot %u %ld %ld",\n'
+         '\t\t\t(unsigned int) (DWORD) f.m_pkBest->GetVID(), (long) f.m_pkBest->GetX(), (long) f.m_pkBest->GetY());\n',
+         '\t// The item\'s place as an offset from the character, which the client adds\n'
+         '\t// to its own position: in the world\'s coordinates every item stood a\n'
+         '\t// map\'s base away from a client that counts from its map\'s corner, and\n'
+         '\t// the pick-up never came within reach (Tieru, 15 September).\n'
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntLoot %u %ld %ld",\n'
+         '\t\t\t(unsigned int) (DWORD) f.m_pkBest->GetVID(),\n'
+         '\t\t\t(long) (f.m_pkBest->GetX() - ch->GetX()), (long) (f.m_pkBest->GetY() - ch->GetY()));\n',
+         marker='// The item\'s place as an offset from the character, which the client adds\n')
+
+
+AUTO_HUNT_COMMAND = r'''// The player's auto-hunt (client-root/uiautohunt.py) asks which monster to go
+// for. The client has no list of the characters round it - the scripts that
+// do this without the server scan a million VIDs a frame - and the sectree
+// has one. Monsters, and Metin stones when the window asks for them; only what
+// battle_is_attackable lets this character hit; within the range of the point
+// the hunt started from. What is already hitting the hunter comes first, then
+// the nearest. The answer is "AutoHuntTarget <vid>", zero for nothing.
+struct FAutoHuntTarget
+{
+	LPCHARACTER	m_ch;
+	int		m_iAnchorX;
+	int		m_iAnchorY;
+	int		m_iRange;
+	bool		m_bStones;
+	LPCHARACTER	m_pkBest;
+	int		m_iBestScore;
+
+	FAutoHuntTarget(LPCHARACTER ch, int anchorX, int anchorY, int range, bool stones)
+		: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_bStones(stones),
+		m_pkBest(NULL), m_iBestScore(0x7fffffff)
+	{
+	}
+
+	void operator () (LPENTITY ent)
+	{
+		if (!ent->IsType(ENTITY_CHARACTER))
+			return;
+
+		LPCHARACTER victim = (LPCHARACTER) ent;
+		if (victim == m_ch || victim->IsDead())
+			return;
+		if (!victim->IsMonster() && !(m_bStones && victim->IsStone()))
+			return;
+		if (DISTANCE_APPROX(victim->GetX() - m_iAnchorX, victim->GetY() - m_iAnchorY) > m_iRange)
+			return;
+		if (!battle_is_attackable(m_ch, victim))
+			return;
+
+		int score = DISTANCE_APPROX(victim->GetX() - m_ch->GetX(), victim->GetY() - m_ch->GetY());
+		if (victim->GetVictim() == m_ch)
+			score /= 4;
+		if (score < m_iBestScore)
+		{
+			m_iBestScore = score;
+			m_pkBest = victim;
+		}
+	}
+};
+
+ACMD(do_autohunt_target)
+{
+	char arg1[256], arg2[256], arg3[256], arg4[256];
+	const char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));
+	two_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));
+
+	if (!ch->GetSectree() || ch->IsDead())
+	{
+		ch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget 0");
+		return;
+	}
+
+	int range = 2000;
+	int stones = 0;
+	str_to_number(range, arg1);
+	str_to_number(stones, arg2);
+	range = MAX(300, MIN(range, 5000));
+
+	int anchorX = ch->GetX();
+	int anchorY = ch->GetY();
+	if (*arg3 && *arg4)
+	{
+		int x = 0;
+		int y = 0;
+		str_to_number(x, arg3);
+		str_to_number(y, arg4);
+		// A point further than the sectrees round the character reach is a
+		// stale hunt from another place: hunt round the character instead.
+		if (DISTANCE_APPROX(x - anchorX, y - anchorY) <= 10000)
+		{
+			anchorX = x;
+			anchorY = y;
+		}
+	}
+
+	FAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0);
+	ch->GetSectree()->ForEachAround(f);
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget %u",
+			f.m_pkBest ? (unsigned int) (DWORD) f.m_pkBest->GetVID() : 0);
+}
+'''
+
+
+AUTO_HUNT_LOOT_COMMAND = r'''// The auto-hunt's pick-up by kind (client-root/uiautohunt.py). The client's
+// own PickCloseItem takes whatever lies nearest and cannot tell a sword from a
+// potion, and the window offers "do not pick up weapons, armour, ..." (Tieru,
+// 15 September). So the client asks "/autohunt_loot <range> <kinds> <x> <y>"
+// and is answered "AutoHuntLoot <vid> <x> <y>": the nearest item on the ground
+// this character may take, of a kind the window keeps, within the range of
+// the point the hunt started from - zero for nothing. The client walks there
+// and sends the ordinary pick-up packet, which CHARACTER::PickupItem judges as
+// it judges anybody's. Yang goes with every kind.
+enum
+{
+	AUTOHUNT_LOOT_WEAPON = 1 << 0,
+	AUTOHUNT_LOOT_ARMOUR = 1 << 1,
+	AUTOHUNT_LOOT_JEWELLERY = 1 << 2,
+	AUTOHUNT_LOOT_POTION = 1 << 3,
+	AUTOHUNT_LOOT_BOOK = 1 << 4,
+	AUTOHUNT_LOOT_STONE = 1 << 5,
+	AUTOHUNT_LOOT_OTHER = 1 << 6,
+};
+
+static int AutoHuntLootKind(LPITEM item)
+{
+	switch (item->GetType())
+	{
+		case ITEM_WEAPON:
+			return item->GetSubType() == WEAPON_ARROW ? AUTOHUNT_LOOT_OTHER : AUTOHUNT_LOOT_WEAPON;
+		case ITEM_ARMOR:
+			switch (item->GetSubType())
+			{
+				case ARMOR_BODY:
+				case ARMOR_HEAD:
+				case ARMOR_SHIELD:
+					return AUTOHUNT_LOOT_ARMOUR;
+				default:
+					return AUTOHUNT_LOOT_JEWELLERY;
+			}
+		case ITEM_RING:
+		case ITEM_BELT:
+			return AUTOHUNT_LOOT_JEWELLERY;
+		case ITEM_USE:
+			switch (item->GetSubType())
+			{
+				case USE_POTION:
+				case USE_POTION_NODELAY:
+				case USE_ABILITY_UP:
+					return AUTOHUNT_LOOT_POTION;
+				default:
+					return AUTOHUNT_LOOT_OTHER;
+			}
+		case ITEM_SKILLBOOK:
+		case ITEM_SKILLFORGET:
+			return AUTOHUNT_LOOT_BOOK;
+		case ITEM_METIN:
+			return AUTOHUNT_LOOT_STONE;
+		default:
+			return AUTOHUNT_LOOT_OTHER;
+	}
+}
+
+struct FAutoHuntLoot
+{
+	LPCHARACTER m_ch;
+	int m_iAnchorX;
+	int m_iAnchorY;
+	int m_iRange;
+	int m_iKinds;
+	LPITEM m_pkBest;
+	int m_iBestDistance;
+
+	FAutoHuntLoot(LPCHARACTER ch, int anchorX, int anchorY, int range, int kinds)
+		: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_iKinds(kinds),
+		m_pkBest(NULL), m_iBestDistance(0x7fffffff)
+	{
+	}
+
+	void operator () (LPENTITY ent)
+	{
+		if (!ent->IsType(ENTITY_ITEM))
+			return;
+
+		LPITEM item = (LPITEM) ent;
+		if (item->GetOwner() || !item->GetSectree())
+			return;
+		if (item->GetType() != ITEM_ELK && !(AutoHuntLootKind(item) & m_iKinds))
+			return;
+		if (DISTANCE_APPROX(item->GetX() - m_iAnchorX, item->GetY() - m_iAnchorY) > m_iRange)
+			return;
+		if (!item->IsOwnership(m_ch))
+			return;
+
+		const int distance = DISTANCE_APPROX(item->GetX() - m_ch->GetX(), item->GetY() - m_ch->GetY());
+		if (distance < m_iBestDistance)
+		{
+			m_iBestDistance = distance;
+			m_pkBest = item;
+		}
+	}
+};
+
+ACMD(do_autohunt_loot)
+{
+	char arg1[256], arg2[256], arg3[256], arg4[256];
+	const char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));
+	two_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));
+
+	int range = 2000;
+	int kinds = 0;
+	str_to_number(range, arg1);
+	str_to_number(kinds, arg2);
+	range = MAX(300, MIN(range, 5000));
+
+	if (!ch->GetSectree() || ch->IsDead() || kinds <= 0)
+	{
+		ch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntLoot 0 0 0");
+		return;
+	}
+
+	int anchorX = ch->GetX();
+	int anchorY = ch->GetY();
+	if (*arg3 && *arg4)
+	{
+		int x = 0;
+		int y = 0;
+		str_to_number(x, arg3);
+		str_to_number(y, arg4);
+		// The same rule as the target: a stale point hunts round the character.
+		if (DISTANCE_APPROX(x - anchorX, y - anchorY) <= 10000)
+		{
+			anchorX = x;
+			anchorY = y;
+		}
+	}
+
+	FAutoHuntLoot f(ch, anchorX, anchorY, range, kinds);
+	ch->GetSectree()->ForEachAround(f);
+	if (!f.m_pkBest)
+	{
+		ch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntLoot 0 0 0");
+		return;
+	}
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntLoot %u %ld %ld",
+			(unsigned int) (DWORD) f.m_pkBest->GetVID(), (long) f.m_pkBest->GetX(), (long) f.m_pkBest->GetY());
+}
+'''
+
+
+def apply_refine_log_way(game):
+    # Jak zrobiono ulepszenie - do nawiasu w historii ekwipunku panelu
+    # ("Ulepszenie udane (Kowal)", "(Zwoj Blogoslawienstwa)", "(Kowal w Wiezy
+    # Demonow)", Tieru 15.09). DoRefine zapisywal w log.refinelog "POWER" i dla
+    # zwyklego kowala, i dla kowala z Wiezy Demonow (bMoneyOnly, sciezka
+    # REFINE_TYPE_MONEY_ONLY w CInputMain::Refine), a DoRefineWithScroll
+    # "SCROLL" dla kazdego zwoju - kolumna setType to SET, ktory trzy dluzsze
+    # nazwy tego silnika po prostu gubil - wiec Zwoj Blogoslawienstwa i Zwoj
+    # Boga Smokow wygladaly tak samo. Kowal z Wiezy pisze DEVILTOWER, zwoj
+    # SCROLL:<vnum> (vnum brany, zanim SetCount zniszczy ostatni zwoj);
+    # logschemify zamienia kolumne na varchar.
+    path = os.path.join(game, 'char_item.cpp')
+    data = read(path)
+    old = b'IsRefineThroughGuild() ? "GUILD" : "POWER"'
+    new = b'IsRefineThroughGuild() ? "GUILD" : (bMoneyOnly ? "DEVILTOWER" : "POWER")'
+    if new in data:
+        print('  already: %s' % os.path.relpath(path))
+    else:
+        n = data.count(old)
+        if n != 3:
+            raise SystemExit('playerbotify: expected 3 refine ways in %s, found %d' % (path, n))
+        write(path, data.replace(old, new))
+        print('  edited:  %s' % os.path.relpath(path))
+    edit(path,
+         '\tsuccess_prob += pkItemScroll->GetValue(1);\n',
+         '\t// The scroll by its vnum for the refine log, taken while it exists:\n'
+         '\t// SetCount below destroys the last one.\n'
+         '\tchar szRefineWay[48];\n'
+         '\tsnprintf(szRefineWay, sizeof(szRefineWay), "SCROLL:%u", pkItemScroll->GetVnum());\n'
+         '\tszRefineType = szRefineWay;\n'
+         '\n'
+         '\tsuccess_prob += pkItemScroll->GetValue(1);\n',
+         marker='snprintf(szRefineWay, sizeof(szRefineWay), "SCROLL:%u"')
+
+
+def apply_costume_hair_allowed(game):
+    """A hairstyle is a costume the operator wants worn.
+
+    apply_costume_block refuses every ITEM_COSTUME at the top of CanEquipNow, and
+    a hairstyle from the ItemShop is one (COSTUME_HAIR, 395 vnums in
+    world.item_proto): "po aktualizacji ktora wylaczyla mozliwosc zakladania
+    kostiumow, wylaczona zostala tez mozliwosc zakladania fryzur z IS" (hunmar,
+    15 September). The block stays for every other kind of costume.
+    """
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\tif (item && item->GetType() == ITEM_COSTUME)\n'
+         '\t{\n'
+         '\t\tChatPacket(CHAT_TYPE_INFO, "Kostiumy sa na tym serwerze wylaczone.");\n',
+         '\t// A hairstyle passes (playerbotify.py, apply_costume_hair_allowed).\n'
+         '\tif (item && item->GetType() == ITEM_COSTUME && item->GetSubType() != COSTUME_HAIR)\n'
+         '\t{\n'
+         '\t\tChatPacket(CHAT_TYPE_INFO, "Kostiumy sa na tym serwerze wylaczone.");\n',
+         marker='playerbotify.py, apply_costume_hair_allowed).')
+
+
+def apply_mark_login_quiet(game):
+    """The guild-mark connection's login is not an unknown packet.
+
+    The client opens a second connection for the guild marks and, once the
+    handshake has put it in PHASE_LOGIN, sends HEADER_CG_MARK_LOGIN (100)
+    before its MARK_IDXLIST. CInputHandshake answers that header only while the
+    connection is still in the handshake, so in the login phase it fell through
+    to the default branch: "login phase does not handle this packet! header
+    100" in syserr on every mark download - 92 lines on the test world, 202 in
+    two days on sizowski's, and a report that read them as the cause of his
+    login trouble (16 September). The branch already did nothing but log
+    (SetPhase(PHASE_CLOSE) is commented out), so this only takes the line away;
+    the MARK_IDXLIST that follows is handled as before.
+    """
+    edit(os.path.join(game, 'input_login.cpp'),
+         '\t\t// @fixme120\n'
+         '\t\tcase HEADER_CG_ITEM_USE:\n'
+         '\t\tcase HEADER_CG_TARGET:\n'
+         '\t\t\tbreak;\n'
+         '\n'
+         '\t\tdefault:\n'
+         '\t\t\tsys_err("login phase does not handle this packet! header %d", bHeader);\n',
+         '\t\t// @fixme120\n'
+         '\t\tcase HEADER_CG_ITEM_USE:\n'
+         '\t\tcase HEADER_CG_TARGET:\n'
+         '\t\t\tbreak;\n'
+         '\n'
+         '\t\t// The guild-mark connection\'s login, sent once the handshake has put it\n'
+         '\t\t// here (playerbotify.py, apply_mark_login_quiet): nothing to do, and\n'
+         '\t\t// nothing worth a syserr line on every mark download.\n'
+         '\t\tcase HEADER_CG_MARK_LOGIN:\n'
+         '\t\t\tbreak;\n'
+         '\n'
+         '\t\tdefault:\n'
+         '\t\t\tsys_err("login phase does not handle this packet! header %d", bHeader);\n',
+         marker='playerbotify.py, apply_mark_login_quiet)')
+
+
+def apply_costume_block(game):
+    """No costume goes on a character on this line.
+
+    Players handed one through the panels put it on and could not take it off
+    again, and the character showed as a bare weapon (reported to Tieru,
+    14 September); the operator's call was to switch costumes off rather than
+    delete them. EquipItem, a drag onto the costume slot and the item's own
+    use all pass through CanEquipNow, so the refusal sits at its top. A costume
+    already worn stays where it is, and nothing is deleted.
+    """
+    edit(os.path.join(game, 'char_item.cpp'),
+         'bool CHARACTER::CanEquipNow(const LPITEM item, const TItemPos& srcCell, const TItemPos& destCell) /*const*/\n'
+         '{\n',
+         'bool CHARACTER::CanEquipNow(const LPITEM item, const TItemPos& srcCell, const TItemPos& destCell) /*const*/\n'
+         '{\n'
+         '\t// playerbot: costumes are off on this line (playerbotify.py, apply_costume_block).\n'
+         '\tif (item && item->GetType() == ITEM_COSTUME)\n'
+         '\t{\n'
+         '\t\tChatPacket(CHAT_TYPE_INFO, "Kostiumy sa na tym serwerze wylaczone.");\n'
+         '\t\treturn false;\n'
+         '\t}\n',
+         marker='playerbotify.py, apply_costume_block).')
 
 
 BOT_COMMANDS = r'''ACMD(do_playerbot_spawn)
@@ -1671,11 +2306,13 @@ def apply_fishing_min_level(game):
     # prog przez PLAYERBOT_FISHING_MIN_LEVEL w dwoch miejscach (activities.h,
     # travel.h), zeby bot ponizej progu nie szedl nad wode, ktora i tak by go
     # odprawila; te dwie liczby musza sie zgadzac.
+    # The staged char.cpp carries this comment in English, as the engine edits
+    # all do; the Polish one here no longer matched it and stopped the script.
     edit(os.path.join(game, 'char.cpp'),
          '\tif (GetLevel() < 50)\n\t\treturn;\n',
-         '\t// Lowienie od 30 poziomu - patrz PLAYERBOT_FISHING_MIN_LEVEL.\n'
+         '\t// Fishing from thirty - see PLAYERBOT_FISHING_MIN_LEVEL.\n'
          '\tif (GetLevel() < 30)\n\t\treturn;\n',
-         marker='\t// Lowienie od 30 poziomu - patrz PLAYERBOT_FISHING_MIN_LEVEL.\n')
+         marker='\t// Fishing from thirty - see PLAYERBOT_FISHING_MIN_LEVEL.\n')
 
 
 def apply_playerbot_monkey_doors(game):
@@ -1772,6 +2409,104 @@ def apply_playerbot_party_invites(game):
          '\t\t\t\tGetParty() ? 1 : 0, pchInvitee->GetParty() ? 1 : 0,\n'
          '\t\t\t\t(int) GetLevel(), (int) pchInvitee->GetLevel());\n',
          marker='PLAYERBOT_PARTY: invite pid=')
+
+
+def apply_gm_gameplay(game):
+    """A GM character on this line is its owner playing the game.
+
+    The engine treats a GM as staff: Ikarus refuses every shop operation to
+    anybody above GM_PLAYER (CheckGMLevel), IsLevelViewable hides the level,
+    and both SetLevel and the login block force PK_MODE_PROTECT. On a
+    single-player world the GM characters of the admin account are the
+    player's own characters, so a GM could look at a bot's shop and not buy
+    from it, and nobody saw its level. The badge (AFF_YMIR) stays, and so does
+    every other check - money, room, anti-flags, the level protection below
+    PK_PROTECT_LEVEL. CanOpenShop waives the kill count for a GM as it does
+    for a bot. From the audit of 14 September (gm_gameplayify.py).
+    """
+    edit(os.path.join(game, 'ikarus_shop_manager.cpp'),
+         '#define ENABLE_IKASHOP_GM_PROTECTION\n'
+         'static bool CheckGMLevel(LPCHARACTER ch) \n'
+         '{\n'
+         '\treturn\n'
+         '#ifdef ENABLE_IKASHOP_GM_PROTECTION\n'
+         '\t\tch->GetGMLevel() == GM_PLAYER || test_server;\n'
+         '#else\n'
+         '\t\ttrue;\n'
+         '#endif\n'
+         '}',
+         '// playerbot: a GM plays the single-player world, and Ikarus serves it\n'
+         '// like anybody (playerbotify.py, apply_gm_gameplay).\n'
+         'static bool CheckGMLevel(LPCHARACTER ch)\n'
+         '{\n'
+         '\treturn ch != nullptr;\n'
+         '}')
+    edit(os.path.join(game, 'char.cpp'),
+         '\t\tif (!test_server && IsGM())\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\treturn true;',
+         '\t\t// playerbot: a GM\'s level shows like anybody\'s.\n'
+         '\t\treturn true;')
+    edit(os.path.join(game, 'char.cpp'),
+         '\t\telse if (GetGMLevel() != GM_PLAYER)\n'
+         '\t\t\tSetPKMode(PK_MODE_PROTECT);\n',
+         '\t\t// playerbot: a GM is protected by its level like anybody, not by rank.\n')
+    edit(os.path.join(game, 'char.cpp'),
+         '\t\t\tm_afAffectFlag.Set(AFF_YMIR);\n'
+         '\t\t\tm_bPKMode = PK_MODE_PROTECT;',
+         '\t\t\tm_afAffectFlag.Set(AFF_YMIR);\n'
+         '\t\t\t// playerbot: the GM badge stays, the forced protection does not.')
+    edit(os.path.join(game, 'char_shop.cpp'),
+         'bool CHARACTER::CanOpenShop()\n'
+         '{\n',
+         'bool CHARACTER::CanOpenShop()\n'
+         '{\n'
+         '\t// playerbot: a GM opens a stall without the kill count.\n'
+         '\tif (GetGMLevel() > GM_PLAYER)\n'
+         '\t\treturn true;\n',
+         marker='a GM opens a stall without the kill count')
+
+
+def apply_party_pickup_to_owner(game):
+    # CHARACTER::PickupItem's party branch - a party member picking up an item
+    # another member owns - put the item into the owner's bag with two faults
+    # of its own (Kenny, 2.0.47; reported by mkls6649). It went straight to an
+    # empty cell, where the owner's own pickup first calls AutoStackItem, so
+    # every potion a party member picked up for somebody took a slot of its
+    # own. And it told the owner that the member who picked it up "receives"
+    # it: GetName() there is the picker's, and with bots in a player's party
+    # the picker is nearly always a bot. The stack goes first now, exactly as
+    # in the owner's own branch, and whatever a full stack cannot take goes on
+    # to the empty cell as before; both messages name the owner.
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\t\tint iEmptyCell = -1;\n'
+         '\t\tif (!(owner && (iEmptyCell = owner->GetEmptyInventoryEx(item)) != -1))\n',
+         '\t\t// A stackable the owner already carries joins that stack first, as the\n'
+         "\t\t// owner's own pickup above does: straight to an empty cell, every potion\n"
+         '\t\t// a party member picked up for somebody took a slot of its own. What a\n'
+         '\t\t// full stack cannot take goes on to the empty cell below.\n'
+         '\t\tauto finalItem = owner->AutoStackItem(item);\n'
+         '\t\tif (finalItem)\n'
+         '\t\t{\n'
+         '\t\t\tif (owner == this)\n'
+         '\t\t\t\tChatPacketRecieveItem(this, finalItem, 1);\n'
+         '\t\t\telse\n'
+         '\t\t\t{\n'
+         '\t\t\t\towner->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("%s receives %s."), owner->GetName(), finalItem->GetName());\n'
+         '\t\t\t\tChatPacket(CHAT_TYPE_INFO, LC_TEXT("Item Trade: %s, %s"), owner->GetName(), finalItem->GetName());\n'
+         '\t\t\t}\n'
+         '\t\t\tif (finalItem->GetType() == ITEM_QUEST)\n'
+         '\t\t\t\tquest::CQuestManager::instance().PickupItem(owner->GetPlayerID(), finalItem);\n'
+         '\t\t\treturn true;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tint iEmptyCell = -1;\n'
+         '\t\tif (!(owner && (iEmptyCell = owner->GetEmptyInventoryEx(item)) != -1))\n',
+         marker='\t\tauto finalItem = owner->AutoStackItem(item);\n')
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\t\t\towner->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("%s receives %s."), GetName(), item->GetName());\n',
+         '\t\t\towner->ChatPacket(CHAT_TYPE_INFO, LC_TEXT("%s receives %s."), owner->GetName(), item->GetName());\n')
 
 
 def apply_gm_panel(game):
@@ -1905,6 +2640,145 @@ def apply_gm_panel(game):
          '\t\t}\n'
          '\t}\n',
          marker='EVENTFUNC(gmpanel_flag_event)\n')
+
+    # Klient pyta /gmpanel_check_gm przy kazdym wejsciu do gry (game.py,
+    # OnUpdate po ~300 klatkach), a F9 i F10 wysylaja /gmpanel_open i
+    # /botadmin. Z progiem HIGH_WIZARD/IMPLEMENTOR w cmd_info[] zwykly gracz
+    # dostawal po kazdym teleporcie i logowaniu "Ta komenda nie istnieje." -
+    # to samo, co po nacisnieciu F9 (NerrVoVy, 15.09). Te trzy komendy tylko
+    # otwieraja okno albo zapalaja flage, wiec cmd_info[] wpuszcza je od
+    # GM_PLAYER, a prog sprawdza sama komenda i zwyklemu graczowi nie
+    # odpowiada nic. Kazda akcja panelu dalej sprawdza swoj prog w cmd_info[].
+    for name, level in (('gmpanel_open', 'GM_HIGH_WIZARD'),
+                        ('gmpanel_check_gm', 'GM_HIGH_WIZARD'),
+                        ('botadmin', 'GM_IMPLEMENTOR')):
+        edit(os.path.join(game, 'cmd.cpp'),
+             '\t{ "%s",\tdo_%s,\t0,\t\t\tPOS_DEAD,\t%s\t},\n' % (name, name, level),
+             '\t{ "%s",\tdo_%s,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n' % (name, name))
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         'ACMD(do_gmpanel_open)\n\n{\n\n\tch->ChatPacket(CHAT_TYPE_COMMAND, "OpenGMPanelWindow");\n',
+         'ACMD(do_gmpanel_open)\n\n{\n\n'
+         '\t// Registered for GM_PLAYER, so a player pressing F9 hears nothing\n'
+         '\t// instead of "no such command"; the threshold is kept here.\n'
+         '\tif (ch->GetGMLevel() < GM_HIGH_WIZARD)\n'
+         '\t\treturn;\n'
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "OpenGMPanelWindow");\n',
+         marker='a player pressing F9 hears nothing')
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         'ACMD(do_gmpanel_check_gm)\n\n{\n\n\tch->ChatPacket(CHAT_TYPE_COMMAND, "SetGMFlag");\n',
+         'ACMD(do_gmpanel_check_gm)\n\n{\n\n'
+         '\t// The client asks this on every entry into the game, GM or not.\n'
+         '\tif (ch->GetGMLevel() < GM_HIGH_WIZARD)\n'
+         '\t\treturn;\n'
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "SetGMFlag");\n',
+         marker='The client asks this on every entry into the game')
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         'ACMD(do_botadmin)\n{\n\tch->ChatPacket(CHAT_TYPE_COMMAND, "OpenPlayerbotAdminWindow");\n',
+         'ACMD(do_botadmin)\n{\n'
+         '\t// F10 from a player: silence, the same as F9 (do_gmpanel_open).\n'
+         '\tif (ch->GetGMLevel() < GM_IMPLEMENTOR)\n'
+         '\t\treturn;\n'
+         '\tch->ChatPacket(CHAT_TYPE_COMMAND, "OpenPlayerbotAdminWindow");\n',
+         marker='F10 from a player: silence')
+
+
+def apply_horse_rider_links(game):
+    # Crash rdzenia w CHARACTER::HorseSummon (sizowski, 15.09: dwa w szesc
+    # godzin przy ~2000 botow, oba z tym samym stosem CPlayerBotManager::Update
+    # -> CHARACTER::StartRiding -> CHARACTER::HorseSummon+0x6e).
+    #
+    # Kon i jezdziec trzymaja wskazniki na siebie nawzajem: m_chHorse u
+    # jezdzca, m_chRider u konia. Destroy() konia mial je rozlaczyc, ale mt2009
+    # pyta tam "IsPC() && GetRider()", a jezdzca ma tylko kon (NPC) - warunek
+    # nie jest prawdziwy nigdy. Kon zniszczony czymkolwiek innym niz
+    # HorseSummon(false) wlasnego jezdzca zostawia mu wiszace m_chHorse, a
+    # najblizsze StartRiding() wola HorseSummon(false), ktore siega do
+    # zwolnionej pamieci.
+    #
+    # Co takiego konia niszczy: obszarowka. battle_is_attackable konczy sie na
+    # CPVPManager::CanAttack, a ten odmawia tylko CHAR_TYPE_NPC/WARP/GOTO i
+    # kazdemu innemu NPC odpowiada "tak" - wiec umiejetnosc z rozpryskiem bije
+    # konia, ktory idzie za botem po zsiadnieciu na mapie lowieckiej
+    # (SetPlayerBotRidingForTravel odsyla go tylko w strefie bezpiecznej).
+    #
+    # Dwie zmiany: Destroy rozlacza konia od jezdzca, ktory wciaz go trzyma -
+    # to zamyka crash bez wzgledu na to, co konia zniszczylo - a przywolany kon
+    # (taki, ktory ma jezdzca) nie jest celem niczyjego ciosu.
+    edit(os.path.join(game, 'char.cpp'),
+         '\tHorseSummon(false);\n'
+         '\n'
+         '\tif (IsPC() && GetRider())\n'
+         '\t\tGetRider()->ClearHorseInfo();\n',
+         '\tHorseSummon(false);\n'
+         '\n'
+         '\t// Playerbot: a horse destroyed by anything but its own rider\'s\n'
+         '\t// HorseSummon(false) - a splash skill, most often - left the rider\n'
+         '\t// holding m_chHorse, and the rider\'s next StartRiding() called\n'
+         '\t// HorseSummon(false) on freed memory. "IsPC() && GetRider()" was never\n'
+         '\t// true: only a horse has a rider.\n'
+         '\tif (GetRider() && GetRider()->GetHorse() == this)\n'
+         '\t\tGetRider()->ClearHorseInfo();\n',
+         marker='true: only a horse has a rider.')
+    edit(os.path.join(game, 'pvp.cpp'),
+         '\tswitch (pkVictim->GetCharType())\n'
+         '\t{\n'
+         '\t\tcase CHAR_TYPE_NPC:\n'
+         '\t\tcase CHAR_TYPE_WARP:\n'
+         '\t\tcase CHAR_TYPE_GOTO:\n'
+         '\t\t\treturn false;\n'
+         '\t}\n',
+         '\tswitch (pkVictim->GetCharType())\n'
+         '\t{\n'
+         '\t\tcase CHAR_TYPE_NPC:\n'
+         '\t\tcase CHAR_TYPE_WARP:\n'
+         '\t\tcase CHAR_TYPE_GOTO:\n'
+         '\t\t\treturn false;\n'
+         '\t}\n'
+         '\n'
+         '\t// Playerbot: a summoned horse is its rider\'s and nobody\'s target. The\n'
+         '\t// switch above lets every other NPC through, so a splash skill beside\n'
+         '\t// a dismounted rider killed the horse following it - and a horse\n'
+         '\t// destroyed that way is what CHARACTER::Destroy failed to unlink.\n'
+         '\tif (pkVictim->GetRider())\n'
+         '\t\treturn false;\n',
+         marker='a summoned horse is its rider')
+
+
+def apply_gm_transfer_bots(game):
+    # /transfer <bot> (Mat, RetroGracz38, NerrVoVy, 14.09): silnik robi
+    # tch->WarpSet(), czyli kaze klientowi przelaczyc sie na rdzen mapy
+    # docelowej i zdejmuje postac z sektora. Bot nie ma klienta, wiec zostawal
+    # poza mapa, az ratunek stawial go w punkcie startowym jego wlasnej mapy -
+    # "robi tp, ale jakby na start mapy". Bot na tym rdzeniu zmienia teraz mape
+    # ta sama droga co AI (CPlayerBotManager::TransferBot), a o bocie na innym
+    # rdzeniu GM dostaje odpowiedz zamiast "Transfer requested." - na mape
+    # rdzenia, ktory go nie hostuje, bot nie przejdzie nigdy.
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         '\t\t\tTPacketGGTransfer pgg;\n',
+         '\t\t\t// Playerbot: a bot on another core stays there - it cannot stand\n'
+         '\t\t\t// on a map its own core does not host, and a WarpSet only takes it\n'
+         '\t\t\t// off its sectree.\n'
+         '\t\t\tif (CPlayerBotManager::instance().IsRegisteredBotPID(pkCCI->dwPID))\n'
+         '\t\t\t{\n'
+         '\t\t\t\tch->ChatPacket(CHAT_TYPE_INFO, "Bot %s jest na innym rdzeniu (mapa %ld) i nie przejdzie na mape tego rdzenia.", arg1, pkCCI->lMapIndex);\n'
+         '\t\t\t\treturn;\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tTPacketGGTransfer pgg;\n',
+         marker='a bot on another core stays there')
+    edit(os.path.join(game, 'cmd_gm.cpp'),
+         '\t//tch->Show(ch->GetMapIndex(), ch->GetX(), ch->GetY(), ch->GetZ());\n'
+         '\ttch->WarpSet(ch->GetX(), ch->GetY(), ch->GetMapIndex());\n',
+         '\t//tch->Show(ch->GetMapIndex(), ch->GetX(), ch->GetY(), ch->GetZ());\n'
+         '\t// Playerbot: a bot has no client to reconnect, so it changes map the\n'
+         '\t// way its own AI changes every other one.\n'
+         '\tif (tch->GetDesc() && tch->GetDesc()->IsBot())\n'
+         '\t{\n'
+         '\t\tCPlayerBotManager::instance().TransferBot(tch, ch);\n'
+         '\t\treturn;\n'
+         '\t}\n'
+         '\ttch->WarpSet(ch->GetX(), ch->GetY(), ch->GetMapIndex());\n',
+         marker='CPlayerBotManager::instance().TransferBot(tch, ch);')
 
 
 if __name__ == '__main__':

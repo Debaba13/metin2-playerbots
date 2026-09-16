@@ -225,6 +225,8 @@ $script:Strings = @{
         ready        = 'Gotowy.'
         footer       = '"Zatrzymaj i zapisz" nie usuwa postaci ani postepu botow. Nigdy nie uzywa docker compose down -v.'
         botDialog    = 'Liczba grajacych botow'
+        difficulty   = 'POZIOM TRUDNOSCI'
+        difficultyDialog = 'Poziom trudnosci swiata'
         apply        = 'Zastosuj'
         cancel       = 'Anuluj'
         panelDialog  = 'Ktory panel otworzyc?'
@@ -278,6 +280,8 @@ $script:Strings = @{
         ready        = 'Ready.'
         footer       = '"Stop and save" never deletes characters or bot progress. It never uses docker compose down -v.'
         botDialog    = 'Number of playing bots'
+        difficulty   = 'DIFFICULTY'
+        difficultyDialog = 'World difficulty'
         apply        = 'Apply'
         cancel       = 'Cancel'
         panelDialog  = 'Which panel should open?'
@@ -671,6 +675,160 @@ function Get-BotCountFromEnv {
     return 350
 }
 
+function Get-SpawnPlanFromEnv {
+    # The spawn plan as .env has it; 1 / 0 / 24 when the keys are not there yet.
+    $envPath = Join-Path $root 'linux-port\docker\.env'
+    $plan = @{ Minutes = 1; Late = 0; Hours = 24 }
+    if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+        $content = [IO.File]::ReadAllText($envPath)
+        $m = [Regex]::Match($content, '(?m)^PLAYERBOT_SPAWN_WINDOW_MINUTES=(\d+)\s*$')
+        if ($m.Success) { $plan.Minutes = [int]$m.Groups[1].Value }
+        $m = [Regex]::Match($content, '(?m)^PLAYERBOT_LATE_JOINERS=(\d+)\s*$')
+        if ($m.Success) { $plan.Late = [int]$m.Groups[1].Value }
+        $m = [Regex]::Match($content, '(?m)^PLAYERBOT_LATE_JOIN_HOURS=(\d+)\s*$')
+        if ($m.Success) { $plan.Hours = [int]$m.Groups[1].Value }
+    }
+    return $plan
+}
+
+function Get-DifficultyFromEnv {
+    # M2_DIFFICULTY and the two hour counts, as .env has them; easy/0/0 when the
+    # keys are not there yet (an older .env, which start-server.ps1 fills in).
+    $envPath = Join-Path $root 'linux-port\docker\.env'
+    $level = 'easy'; $bio = '0'; $horse = '0'
+    if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+        $content = [IO.File]::ReadAllText($envPath)
+        $m = [Regex]::Match($content, '(?m)^M2_DIFFICULTY=(\S+)\s*$')
+        if ($m.Success) { $level = $m.Groups[1].Value.Trim().ToLowerInvariant() }
+        $m = [Regex]::Match($content, '(?m)^M2_BIOLOGIST_WAIT_HOURS=(\S+)\s*$')
+        if ($m.Success) { $bio = $m.Groups[1].Value.Trim() }
+        $m = [Regex]::Match($content, '(?m)^M2_HORSE_WAIT_HOURS=(\S+)\s*$')
+        if ($m.Success) { $horse = $m.Groups[1].Value.Trim() }
+    }
+    if ($level -notin @('easy', 'medium', 'hard', 'custom')) { $level = 'easy' }
+    return @{ Level = $level; Biologist = $bio; Horse = $horse }
+}
+
+function Show-DifficultyDialog {
+    # Four presets as radio buttons and the two hour counts custom reads; the
+    # numbers are what the migrate service turns into the quests' event flags
+    # at the next start (quest/m2_difficulty.lua), so the dialog says a restart
+    # is needed. Returns @{ Level; Biologist; Horse } or $null.
+    param([hashtable]$Current)
+    $dialog = [Windows.Forms.Form]::new()
+    $dialog.Text = (T 'difficultyDialog')
+    $dialog.Size = [Drawing.Size]::new(560, 400)
+    $dialog.StartPosition = 'CenterParent'
+    $dialog.FormBorderStyle = 'FixedDialog'
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+
+    $info = [Windows.Forms.Label]::new()
+    $info.Text = "Ile gracz czeka u Biologa między oddaniami i u Stajennego (kucyk, Księgi Konia, treningi medalami)?`r`nBotów to nie dotyczy. Zmiana wymaga restartu serwera."
+    $info.Location = [Drawing.Point]::new(14, 12)
+    $info.Size = [Drawing.Size]::new(520, 44)
+    $dialog.Controls.Add($info)
+
+    $labels = @{
+        easy   = 'Łatwy - bez czekania u Biologa i Stajennego (tak jak dotąd)'
+        medium = 'Średni - Biolog 8 h; kucyk i Księgi Konia 4 h; treningi konia 6 h (1-10) i 7 h (11-19)'
+        hard   = 'Trudny - jak w oryginale: Biolog 24 h; kucyk i Księgi 12 h; treningi 18 h i 21 h'
+        custom = 'Własny - godziny poniżej (Biolog, i jedna liczba na każde czekanie u Stajennego)'
+    }
+    $radios = @{}
+    $y = 64
+    foreach ($level in @('easy', 'medium', 'hard', 'custom')) {
+        $radio = [Windows.Forms.RadioButton]::new()
+        $radio.Name = "level_$level"
+        $radio.Text = $labels[$level]
+        $radio.Location = [Drawing.Point]::new(18, $y)
+        $radio.Size = [Drawing.Size]::new(516, 26)
+        $radio.Checked = ($Current.Level -eq $level)
+        $dialog.Controls.Add($radio)
+        $radios[$level] = $radio
+        $y += 30
+    }
+
+    $bioLabel = [Windows.Forms.Label]::new()
+    $bioLabel.Text = 'Biolog: godzin między oddaniami'
+    $bioLabel.Location = [Drawing.Point]::new(40, $y + 8)
+    $bioLabel.Size = [Drawing.Size]::new(260, 22)
+    $dialog.Controls.Add($bioLabel)
+    $bioBox = [Windows.Forms.NumericUpDown]::new()
+    $bioBox.Name = 'bioHours'
+    $bioBox.DecimalPlaces = 1
+    $bioBox.Increment = 0.5
+    $bioBox.Minimum = 0
+    $bioBox.Maximum = 720
+    $bioBox.Location = [Drawing.Point]::new(310, $y + 5)
+    $bioBox.Size = [Drawing.Size]::new(90, 24)
+    $dialog.Controls.Add($bioBox)
+
+    $horseLabel = [Windows.Forms.Label]::new()
+    $horseLabel.Text = 'Stajenny: godzin na kucyka, Księgę i trening'
+    $horseLabel.Location = [Drawing.Point]::new(40, $y + 38)
+    $horseLabel.Size = [Drawing.Size]::new(260, 22)
+    $dialog.Controls.Add($horseLabel)
+    $horseBox = [Windows.Forms.NumericUpDown]::new()
+    $horseBox.Name = 'horseHours'
+    $horseBox.DecimalPlaces = 1
+    $horseBox.Increment = 0.5
+    $horseBox.Minimum = 0
+    $horseBox.Maximum = 720
+    $horseBox.Location = [Drawing.Point]::new(310, $y + 35)
+    $horseBox.Size = [Drawing.Size]::new(90, 24)
+    $dialog.Controls.Add($horseBox)
+
+    $toDecimal = {
+        param([string]$Text)
+        $n = 0.0
+        if ([double]::TryParse("$Text".Trim().Replace(',', '.'), [Globalization.NumberStyles]::Float,
+                [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) {
+            return [decimal][Math]::Max(0, [Math]::Min(720, $n))
+        }
+        return [decimal]0
+    }
+    $bioBox.Value = & $toDecimal $Current.Biologist
+    $horseBox.Value = & $toDecimal $Current.Horse
+
+    # The hour boxes belong to "custom"; the presets say their numbers themselves.
+    $sync = {
+        $form = $this.FindForm()
+        if (-not $form) { return }
+        $custom = $form.Controls['level_custom'].Checked
+        $form.Controls['bioHours'].Enabled = $custom
+        $form.Controls['horseHours'].Enabled = $custom
+    }
+    foreach ($radio in $radios.Values) { $radio.Add_CheckedChanged($sync) }
+    $bioBox.Enabled = $radios['custom'].Checked
+    $horseBox.Enabled = $radios['custom'].Checked
+
+    $okButton = [Windows.Forms.Button]::new()
+    $okButton.Text = (T 'apply')
+    $okButton.Location = [Drawing.Point]::new(332, $y + 82)
+    $okButton.Size = [Drawing.Size]::new(100, 32)
+    $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
+    $dialog.Controls.Add($okButton)
+
+    $cancelButton = [Windows.Forms.Button]::new()
+    $cancelButton.Text = (T 'cancel')
+    $cancelButton.Location = [Drawing.Point]::new(438, $y + 82)
+    $cancelButton.Size = [Drawing.Size]::new(96, 32)
+    $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($cancelButton)
+    $dialog.AcceptButton = $okButton
+    $dialog.CancelButton = $cancelButton
+
+    $result = $dialog.ShowDialog()
+    $chosen = 'easy'
+    foreach ($level in $radios.Keys) { if ($radios[$level].Checked) { $chosen = $level } }
+    $bio = $bioBox.Value.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $horse = $horseBox.Value.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $dialog.Dispose()
+    if ($result -ne [Windows.Forms.DialogResult]::OK) { return $null }
+    return @{ Level = $chosen; Biologist = $bio; Horse = $horse }
+}
+
 function Get-LauncherFingerprint {
     # An update replaces the launcher's own files, but this process already read
     # them - the new buttons cannot appear until it restarts.
@@ -842,10 +1000,13 @@ function Show-BotCountDialog {
     # thousand seeded bots could not be asked for from here at all. Asking for
     # more than a world holds is safe and always was: the core spawns what its
     # registry has and logs requested/registered/started.
-    param([int]$Current = 350)
+    # Under the slider, the spawn plan: the window the cohort arrives over and
+    # the second cohort with its hours - "1000 w 15 minut, a dodatkowe 500 w
+    # ciagu 24 godzin". Returns @{ Count; Minutes; Late; Hours } or $null.
+    param([int]$Current = 350, [hashtable]$Plan = @{ Minutes = 1; Late = 0; Hours = 24 })
     $dialog = [Windows.Forms.Form]::new()
     $dialog.Text = (T 'botDialog')
-    $dialog.Size = [Drawing.Size]::new(480, 260)
+    $dialog.Size = [Drawing.Size]::new(480, 396)
     $dialog.StartPosition = 'CenterParent'
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
@@ -885,16 +1046,43 @@ function Show-BotCountDialog {
             }
         })
 
+    $planInfo = [Windows.Forms.Label]::new()
+    $planInfo.Text = "Wejście stopniowe: tylu botów wchodzi w ciągu podanych minut od startu,`r`na dodatkowe dołączają pojedynczo w ciągu podanych godzin (0 = bez dodatkowych)."
+    $planInfo.Location = [Drawing.Point]::new(14, 150)
+    $planInfo.Size = [Drawing.Size]::new(440, 34)
+    $dialog.Controls.Add($planInfo)
+
+    $rows = @(
+        @{ Name = 'minutesBox'; Text = 'Wejście w ciągu (min, 1-180):'; Min = 1; Max = 180; Value = [int]$Plan.Minutes; Y = 188 },
+        @{ Name = 'lateBox';    Text = 'Dodatkowych botów później (0-2500):'; Min = 0; Max = 2500; Value = [int]$Plan.Late; Y = 218 },
+        @{ Name = 'hoursBox';   Text = 'dołączających w ciągu (h, 1-168):'; Min = 1; Max = 168; Value = [int]$Plan.Hours; Y = 248 }
+    )
+    foreach ($row in $rows) {
+        $label = [Windows.Forms.Label]::new()
+        $label.Text = $row.Text
+        $label.Location = [Drawing.Point]::new(14, $row.Y + 3)
+        $label.Size = [Drawing.Size]::new(280, 22)
+        $dialog.Controls.Add($label)
+        $box = [Windows.Forms.NumericUpDown]::new()
+        $box.Name = $row.Name
+        $box.Minimum = $row.Min
+        $box.Maximum = $row.Max
+        $box.Value = [Math]::Max($row.Min, [Math]::Min($row.Max, $row.Value))
+        $box.Location = [Drawing.Point]::new(300, $row.Y)
+        $box.Size = [Drawing.Size]::new(90, 24)
+        $dialog.Controls.Add($box)
+    }
+
     $okButton = [Windows.Forms.Button]::new()
     $okButton.Text = (T 'apply')
-    $okButton.Location = [Drawing.Point]::new(252, 168)
+    $okButton.Location = [Drawing.Point]::new(252, 300)
     $okButton.Size = [Drawing.Size]::new(100, 32)
     $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
     $dialog.Controls.Add($okButton)
 
     $cancelButton = [Windows.Forms.Button]::new()
     $cancelButton.Text = (T 'cancel')
-    $cancelButton.Location = [Drawing.Point]::new(358, 168)
+    $cancelButton.Location = [Drawing.Point]::new(358, 300)
     $cancelButton.Size = [Drawing.Size]::new(96, 32)
     $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $dialog.Controls.Add($cancelButton)
@@ -902,10 +1090,15 @@ function Show-BotCountDialog {
     $dialog.CancelButton = $cancelButton
 
     $result = $dialog.ShowDialog()
-    $chosen = $bar.Value
+    $chosen = @{
+        Count   = [int]$bar.Value
+        Minutes = [int]$dialog.Controls['minutesBox'].Value
+        Late    = [int]$dialog.Controls['lateBox'].Value
+        Hours   = [int]$dialog.Controls['hoursBox'].Value
+    }
     $dialog.Dispose()
     if ($result -ne [Windows.Forms.DialogResult]::OK) { return $null }
-    return [int]$chosen
+    return $chosen
 }
 
 function Get-GuiTargetVolume {
@@ -1137,31 +1330,34 @@ if ($script:clientUpdateIsPlain) { $gmPanelButton.Text = (T 'updateClient') }
 # Discord as "the launcher can import a database but nothing says how to
 # export one", together with a wish to get back to a fresh install.
 $worldBackupButton = New-Button (T 'worldBackup') 496 418 230 32 ([Drawing.Color]::FromArgb(70, 120, 90))
+# The world's difficulty - the waits at the Biologist and the stable keeper -
+# chosen here and applied at the next start (M2_DIFFICULTY in .env).
+$difficultyButton = New-Button (T 'difficulty') 28 456 218 32 ([Drawing.Color]::FromArgb(120, 95, 40))
 
 # The language switch sits with the other small buttons rather than in a menu:
 # somebody who cannot read the window needs to find it without reading anything.
 $languageButton = New-Button (T 'language') 508 702 218 28 ([Drawing.Color]::FromArgb(60, 70, 95))
 $languageButton.Add_Click({ Switch-LauncherLanguage })
 
-foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $gmPanelButton, $worldBackupButton, $languageButton)) {
+foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $gmPanelButton, $worldBackupButton, $difficultyButton, $languageButton)) {
     $script:form.Controls.Add($button)
 }
 
 $script:actionStatus = [Windows.Forms.Label]::new()
 $script:actionStatus.Text = (T 'ready')
-$script:actionStatus.Location = [Drawing.Point]::new(28, 462)
+$script:actionStatus.Location = [Drawing.Point]::new(28, 500)
 $script:actionStatus.Size = [Drawing.Size]::new(690, 24)
 $script:actionStatus.Font = [Drawing.Font]::new('Segoe UI Semibold', 9)
 $script:form.Controls.Add($script:actionStatus)
 
 $script:progress = [Windows.Forms.ProgressBar]::new()
-$script:progress.Location = [Drawing.Point]::new(28, 490)
+$script:progress.Location = [Drawing.Point]::new(28, 528)
 $script:progress.Size = [Drawing.Size]::new(698, 12)
 $script:form.Controls.Add($script:progress)
 
 $script:logBox = [Windows.Forms.TextBox]::new()
-$script:logBox.Location = [Drawing.Point]::new(28, 518)
-$script:logBox.Size = [Drawing.Size]::new(698, 122)
+$script:logBox.Location = [Drawing.Point]::new(28, 550)
+$script:logBox.Size = [Drawing.Size]::new(698, 104)
 $script:logBox.Multiline = $true
 $script:logBox.ReadOnly = $true
 $script:logBox.ScrollBars = 'Vertical'
@@ -1172,7 +1368,7 @@ $script:form.Controls.Add($script:logBox)
 
 $footer = [Windows.Forms.Label]::new()
 $footer.Text = (T 'footer')
-$footer.Location = [Drawing.Point]::new(28, 640)
+$footer.Location = [Drawing.Point]::new(28, 660)
 $footer.Size = [Drawing.Size]::new(700, 25)
 $footer.ForeColor = [Drawing.Color]::DarkGray
 $script:form.Controls.Add($footer)
@@ -1180,7 +1376,9 @@ $script:form.Controls.Add($footer)
 
 $script:versionLabel = [Windows.Forms.Label]::new()
 $script:versionLabel.Location = [Drawing.Point]::new(28, 666)
-$script:versionLabel.Size = [Drawing.Size]::new(700, 54)
+# Four lines when an update is waiting: the "!! NOWA WERSJA" notice goes above
+# the three version lines, and at 54 pixels the client line was cut off.
+$script:versionLabel.Size = [Drawing.Size]::new(700, 74)
 $script:versionLabel.ForeColor = [Drawing.Color]::Silver
 $script:versionLabel.Font = [Drawing.Font]::new('Segoe UI Semibold', 9)
 $script:form.Controls.Add($script:versionLabel)
@@ -1570,17 +1768,42 @@ $folderButton.Add_Click({
 })
 $botCountButton.Add_Click({
     $current = Get-BotCountFromEnv
-    $count = Show-BotCountDialog -Current $current
-    if ($null -eq $count) { return }
+    $plan = Get-SpawnPlanFromEnv
+    $chosen = Show-BotCountDialog -Current $current -Plan $plan
+    if ($null -eq $chosen) { return }
+    $count = [int]$chosen.Count
+    $extra = @('-BotCount', "$count", '-SpawnMinutes', "$($chosen.Minutes)", '-LateJoiners', "$($chosen.Late)", '-LateHours', "$($chosen.Hours)")
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Ustawić $count grających botów i zrestartować serwer teraz, aby zastosować? Baza i postęp botów pozostaną bez zmian.",
+        "Ustawić $count grających botów (wejście w $($chosen.Minutes) min, $($chosen.Late) dodatkowych w ciągu $($chosen.Hours) h) i zrestartować serwer teraz, aby zastosować? Baza i postęp botów pozostaną bez zmian.",
         'Liczba botów', 'YesNoCancel', 'Question')
     if ($answer -eq [Windows.Forms.DialogResult]::Cancel) { return }
     if ($answer -eq [Windows.Forms.DialogResult]::Yes) {
-        Start-LauncherAction -Action 'SetBots' -Yes -ExtraArgs @('-BotCount', "$count")
+        Start-LauncherAction -Action 'SetBots' -Yes -ExtraArgs $extra
     }
     else {
-        Start-LauncherAction -Action 'SetBots' -ExtraArgs @('-BotCount', "$count")
+        Start-LauncherAction -Action 'SetBots' -ExtraArgs $extra
+    }
+})
+$difficultyButton.Add_Click({
+    $current = Get-DifficultyFromEnv
+    $chosen = Show-DifficultyDialog -Current $current
+    if ($null -eq $chosen) { return }
+    $what = switch ($chosen.Level) {
+        'easy' { 'łatwy (bez czekania)' }
+        'medium' { 'średni (Biolog 8 h, koń 4-7 h)' }
+        'hard' { 'trudny (Biolog 24 h, koń 12-21 h)' }
+        default { "własny (Biolog $($chosen.Biologist) h, Stajenny $($chosen.Horse) h)" }
+    }
+    $answer = [Windows.Forms.MessageBox]::Show(
+        "Ustawić poziom trudności: $what i zrestartować serwer teraz, aby zastosować? Baza i postęp botów pozostaną bez zmian.",
+        'Poziom trudności', 'YesNoCancel', 'Question')
+    if ($answer -eq [Windows.Forms.DialogResult]::Cancel) { return }
+    $extra = @('-Difficulty', $chosen.Level, '-BiologistHours', "$($chosen.Biologist)", '-HorseHours', "$($chosen.Horse)")
+    if ($answer -eq [Windows.Forms.DialogResult]::Yes) {
+        Start-LauncherAction -Action 'SetDifficulty' -Yes -ExtraArgs $extra
+    }
+    else {
+        Start-LauncherAction -Action 'SetDifficulty' -ExtraArgs $extra
     }
 })
 $importDbButton.Add_Click({

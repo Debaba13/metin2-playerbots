@@ -1,9 +1,17 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword', 'FreePorts')]
+    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'SetDifficulty', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword', 'FreePorts')]
     [string]$Action = 'Menu',
     [string]$Manifest = '',
     [int]$BotCount = -1,
+    # The spawn plan beside the count (SetBots): -1 leaves .env as it is.
+    [int]$SpawnMinutes = -1,
+    [int]$LateJoiners = -1,
+    [int]$LateHours = -1,
+    # SetDifficulty: easy | medium | hard | custom, and the hours custom reads.
+    [string]$Difficulty = '',
+    [string]$BiologistHours = '',
+    [string]$HorseHours = '',
     [string]$ImportSource = '',
     [string]$RestoreSource = '',
     # ResetWorld only: bring the server up on the fresh world right away, so
@@ -542,17 +550,53 @@ function Set-PlayerbotCount {
     return $Count
 }
 
+function Get-SpawnPlanFromEnv {
+    # PLAYERBOT_SPAWN_WINDOW_MINUTES / PLAYERBOT_LATE_JOINERS / PLAYERBOT_LATE_JOIN_HOURS
+    # as .env has them; 1 / 0 / 24 when the keys are not there yet.
+    return @{
+        Minutes = Get-DotEnvValue -Key 'PLAYERBOT_SPAWN_WINDOW_MINUTES' -Default '1'
+        Late    = Get-DotEnvValue -Key 'PLAYERBOT_LATE_JOINERS' -Default '0'
+        Hours   = Get-DotEnvValue -Key 'PLAYERBOT_LATE_JOIN_HOURS' -Default '24'
+    }
+}
+
+function Set-SpawnPlan {
+    # The core reads the three at startup (input_db.cpp): the window the
+    # cohort arrives over, the second cohort and its hours. Clamped to what
+    # the core accepts, so .env never carries a number it would refuse.
+    param([int]$Minutes, [int]$Late, [int]$Hours)
+    if ($Minutes -lt 1) { $Minutes = 1 }
+    if ($Minutes -gt 180) { $Minutes = 180 }
+    if ($Late -lt 0) { $Late = 0 }
+    if ($Late -gt 2500) { $Late = 2500 }
+    if ($Hours -lt 1) { $Hours = 1 }
+    if ($Hours -gt 168) { $Hours = 168 }
+    Set-DotEnvValue -Key 'PLAYERBOT_SPAWN_WINDOW_MINUTES' -Value "$Minutes"
+    Set-DotEnvValue -Key 'PLAYERBOT_LATE_JOINERS' -Value "$Late"
+    Set-DotEnvValue -Key 'PLAYERBOT_LATE_JOIN_HOURS' -Value "$Hours"
+    return @{ Minutes = $Minutes; Late = $Late; Hours = $Hours }
+}
+
 function Set-BotCountAction {
     $current = Get-PlayerbotCount
+    $plan = Get-SpawnPlanFromEnv
     Write-Host "Aktualnie gra: $current botów (efektywny limit = liczba botów w Twoim świecie; kanoniczna paczka ma 350)." -ForegroundColor Gray
+    Write-Host "Wchodzą w ciągu $($plan.Minutes) min od startu; dodatkowych botów dołączających stopniowo: $($plan.Late) w ciągu $($plan.Hours) h." -ForegroundColor Gray
 
     # -BotCount passed (from the GUI or scripting) is non-interactive: never call
     # Read-Host, because the GUI runs this in a hidden, non-interactive console.
     # Restart only when -Yes is also given. Without -BotCount we are in the text
-    # menu and can prompt for both the number and the restart.
+    # menu and can prompt for the numbers and the restart.
     if ($BotCount -ge 0) {
         $applied = Set-PlayerbotCount -Count $BotCount
         Write-Host "Zapisano: $applied grających botów." -ForegroundColor Green
+        if ($SpawnMinutes -ge 0 -or $LateJoiners -ge 0 -or $LateHours -ge 0) {
+            $m = if ($SpawnMinutes -ge 0) { $SpawnMinutes } else { [int]$plan.Minutes }
+            $l = if ($LateJoiners -ge 0) { $LateJoiners } else { [int]$plan.Late }
+            $h = if ($LateHours -ge 0) { $LateHours } else { [int]$plan.Hours }
+            $p = Set-SpawnPlan -Minutes $m -Late $l -Hours $h
+            Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+        }
         if ($Yes) {
             Start-Server
             Write-Host "Serwer zrestartowany z liczbą botów: $applied." -ForegroundColor Green
@@ -567,6 +611,19 @@ function Set-BotCountAction {
     if ($answer -notmatch '^\d+$') { Write-Host 'Anulowano: to nie jest liczba.' -ForegroundColor Yellow; return }
     $applied = Set-PlayerbotCount -Count ([int]$answer)
     Write-Host "Zapisano: $applied grających botów." -ForegroundColor Green
+    $m = Read-Host "W ciągu ilu minut od startu mają wejść (1-180, Enter = $($plan.Minutes))"
+    $l = Read-Host "Ilu dodatkowych botów ma dołączać stopniowo później (0-2500, Enter = $($plan.Late))"
+    $h = Read-Host "W ciągu ilu godzin mają dołączać (1-168, Enter = $($plan.Hours))"
+    if (-not "$m".Trim()) { $m = $plan.Minutes }
+    if (-not "$l".Trim()) { $l = $plan.Late }
+    if (-not "$h".Trim()) { $h = $plan.Hours }
+    if ("$m" -notmatch '^\d+$' -or "$l" -notmatch '^\d+$' -or "$h" -notmatch '^\d+$') {
+        Write-Host 'Plan wejścia bez zmian: to nie są liczby.' -ForegroundColor Yellow
+    }
+    else {
+        $p = Set-SpawnPlan -Minutes ([int]$m) -Late ([int]$l) -Hours ([int]$h)
+        Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+    }
     if (Confirm-Operation 'Zrestartować serwer teraz, aby zastosować zmianę? Baza i postęp botów pozostają bez zmian') {
         Start-Server
         Write-Host "Serwer zrestartowany z liczbą botów: $applied." -ForegroundColor Green
@@ -574,6 +631,111 @@ function Set-BotCountAction {
     else {
         Write-Host 'Zmiana zostanie zastosowana przy następnym starcie serwera.' -ForegroundColor Yellow
     }
+}
+
+# The world's difficulty: how long a player waits at the Biologist between two
+# hand-ins and at the stable keeper (the pony, each Horse Book, the medal
+# trainings). M2_DIFFICULTY in .env - easy, medium, hard or custom with the two
+# hour counts - is turned into event flags by the migrate service at every
+# start and read by the quests (linux-port-mt2009/docker/game/quest/
+# m2_difficulty.lua), so a change needs a restart. The bots never waited.
+$script:DifficultyPresets = @{
+    easy   = @{ Biologist = '0';  Horse = '0' }
+    medium = @{ Biologist = '8';  Horse = '4' }
+    hard   = @{ Biologist = '24'; Horse = '12' }
+}
+
+function Get-DotEnvValue {
+    param([Parameter(Mandatory = $true)][string]$Key, [string]$Default = '')
+    $envPath = Get-PlayerbotEnvPath
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return $Default }
+    $match = [Regex]::Match([IO.File]::ReadAllText($envPath), '(?m)^' + [Regex]::Escape($Key) + '=(.*?)\s*$')
+    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    return $Default
+}
+
+function Set-DotEnvValue {
+    # One key of .env replaced in place or appended; nothing else in the file -
+    # the player's own passwords included - is touched. Same shape as
+    # Set-PlayerbotCount. The value is a literal: a $ in it must not become a
+    # group reference for Regex.Replace.
+    param([Parameter(Mandatory = $true)][string]$Key, [Parameter(Mandatory = $true)][string]$Value)
+    $envPath = Get-PlayerbotEnvPath
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
+        throw "Brak pliku .env: $envPath. Uruchom najpierw serwer (GRAJ), aby go utworzyć."
+    }
+    $content = [IO.File]::ReadAllText($envPath)
+    $pattern = '(?m)^' + [Regex]::Escape($Key) + '=.*$'
+    $line = "$Key=$Value"
+    if ([Regex]::IsMatch($content, $pattern)) {
+        $content = [Regex]::Replace($content, $pattern, $line.Replace('$', '$$'))
+    }
+    else {
+        if ($content -and -not $content.EndsWith("`n")) { $content += [Environment]::NewLine }
+        $content += $line + [Environment]::NewLine
+    }
+    [IO.File]::WriteAllText($envPath, $content, [Text.UTF8Encoding]::new($false))
+}
+
+function Test-DifficultyHours {
+    param([string]$Text)
+    $n = 0.0
+    $ok = [double]::TryParse("$Text".Trim().Replace(',', '.'), [Globalization.NumberStyles]::Float,
+        [Globalization.CultureInfo]::InvariantCulture, [ref]$n)
+    return ($ok -and $n -ge 0 -and $n -le 720)
+}
+
+function Set-DifficultyAction {
+    $current = Get-DotEnvValue -Key 'M2_DIFFICULTY' -Default 'easy'
+    $currentBio = Get-DotEnvValue -Key 'M2_BIOLOGIST_WAIT_HOURS' -Default '0'
+    $currentHorse = Get-DotEnvValue -Key 'M2_HORSE_WAIT_HOURS' -Default '0'
+    Write-Host "Aktualny poziom trudności: $current (przy 'custom': Biolog $currentBio h, Stajenny $currentHorse h)." -ForegroundColor Gray
+
+    # -Difficulty passed (from the GUI or scripting) is non-interactive, like
+    # -BotCount: never Read-Host, restart only with -Yes.
+    $level = "$Difficulty".Trim().ToLowerInvariant()
+    $bio = "$BiologistHours"
+    $horse = "$HorseHours"
+    $interactive = (-not $level)
+    if ($interactive) {
+        Write-Host ' 1. easy   - bez czekania u Biologa i Stajennego (tak jak dotąd)'
+        Write-Host ' 2. medium - Biolog 8 h; kucyk i Księgi Konia 4 h; treningi konia 6 h (1-10) i 7 h (11-19)'
+        Write-Host ' 3. hard   - jak w oryginale: Biolog 24 h; kucyk i Księgi 12 h; treningi 18 h i 21 h'
+        Write-Host ' 4. custom - własne godziny (Biolog i osobno każde czekanie u Stajennego)'
+        $answer = Read-Host 'Wybierz poziom (1-4)'
+        $level = switch ($answer) { '1' { 'easy' } '2' { 'medium' } '3' { 'hard' } '4' { 'custom' } default { '' } }
+        if (-not $level) { Write-Host 'Anulowano.' -ForegroundColor Yellow; return }
+        if ($level -eq 'custom') {
+            $bio = Read-Host 'Ile godzin czeka się u Biologa między oddaniami (0 = bez czekania, ułamki dozwolone)'
+            $horse = Read-Host 'Ile godzin czeka się u Stajennego na kucyka, Księgę Konia i trening (0 = bez czekania)'
+        }
+    }
+    if ($level -notin @('easy', 'medium', 'hard', 'custom')) {
+        throw "Nieznany poziom trudności: '$level'. Dozwolone: easy, medium, hard, custom."
+    }
+    if ($level -ne 'custom') {
+        $bio = $script:DifficultyPresets[$level].Biologist
+        $horse = $script:DifficultyPresets[$level].Horse
+    }
+    if (-not (Test-DifficultyHours $bio)) { throw "Godziny u Biologa: podaj liczbę od 0 do 720 (np. 12 albo 0.5), nie '$bio'." }
+    if (-not (Test-DifficultyHours $horse)) { throw "Godziny u Stajennego: podaj liczbę od 0 do 720 (np. 12 albo 0.5), nie '$horse'." }
+    $bio = "$bio".Trim().Replace(',', '.')
+    $horse = "$horse".Trim().Replace(',', '.')
+    Set-DotEnvValue -Key 'M2_DIFFICULTY' -Value $level
+    Set-DotEnvValue -Key 'M2_BIOLOGIST_WAIT_HOURS' -Value $bio
+    Set-DotEnvValue -Key 'M2_HORSE_WAIT_HOURS' -Value $horse
+    Write-Host "Zapisano: poziom trudności $level (Biolog $bio h, Stajenny $horse h)." -ForegroundColor Green
+    if ($Yes) {
+        Start-Server
+        Write-Host "Serwer zrestartowany z poziomem trudności: $level." -ForegroundColor Green
+        return
+    }
+    if ($interactive -and (Confirm-Operation 'Zrestartować serwer teraz, aby zastosować zmianę? Baza i postęp botów pozostają bez zmian')) {
+        Start-Server
+        Write-Host "Serwer zrestartowany z poziomem trudności: $level." -ForegroundColor Green
+        return
+    }
+    Write-Host 'Zmiana zostanie zastosowana przy następnym starcie serwera.' -ForegroundColor Yellow
 }
 
 function Get-CurrentInstallTargetVolume {
@@ -1025,6 +1187,7 @@ function Invoke-Action {
         'SendLogs' { Send-Logs }
         'Configure' { Configure-Launcher }
         'SetBots' { Set-BotCountAction }
+        'SetDifficulty' { Set-DifficultyAction }
         'ImportDb' { Import-DatabaseAction }
         'BackupDb' { Backup-DatabaseAction }
         'RestoreDb' { Restore-DatabaseAction }
@@ -1060,6 +1223,7 @@ function Show-Menu {
         Write-Host ' 19. Dane do połączenia z bazą (Navicat, HeidiSQL)'
         Write-Host ' 20. Hasło do panelu WWW (pokaż / zresetuj)'
         Write-Host ' 21. Zwolnij porty (gdy „port jest już zajęty” blokuje start lub aktualizację)'
+        Write-Host ' 22. Poziom trudności (czekanie u Biologa i Stajennego: easy / medium / hard / własne godziny)'
         Write-Host '  0. Wyjście'
         Write-Host ''
         $choice = Read-Host 'Wybierz opcję'
@@ -1076,6 +1240,7 @@ function Show-Menu {
             '19' { 'DbAccess' }
             '20' { 'PanelPassword' }
             '21' { 'FreePorts' }
+            '22' { 'SetDifficulty' }
             '0' { return }
             default { '' }
         }

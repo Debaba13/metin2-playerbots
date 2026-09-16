@@ -50,42 +50,76 @@
 --     affect.add_collect, a different affect type, so the two
 --     never touch each other.
 --
+-- ── THE 2.x LINE (mt2009) ───────────────────────────────────
+--
+-- Here affect.add takes a POINT_* number and refuses a second
+-- quest affect on the same point, while the locale's
+-- apply.MOV_SPEED is still the APPLY_* number 8 - and point 8
+-- is POINT_MAX_SP. Until 2.0.53 this file passed that, so every
+-- character on the 2.x line got twenty SP and no speed at all
+-- (58 characters carried the affect on point 8 on the test
+-- world, 15 September). It passes POINT_MOV_SPEED now
+-- (libs/enum/enum_point.lua), and the flag holds a version, the
+-- percentage and the point together, so the SP affect of the old
+-- version is taken off at the next check. That check never runs
+-- from the login event: the core calls Login when the quest flags
+-- arrive and the affects come after them, so a login that looked
+-- found nothing, and the old affect loaded in beside the new one
+-- (1021 of 1082 characters on the test world kept it). The potions
+-- are not in the way: potion_system.lua keeps them on affect types
+-- of its own.
+--
 -- This file assumes it is the only quest using plain affect.add
 -- on this server. If you add another one, key it differently.
 -- =============================================================
 quest speed_boost begin
 	state start begin
 		when login begin
+			-- Nothing here looks at the affects: the core raises this event
+			-- as soon as the quest flags arrive (QuestLoad), and the affects
+			-- come after them (AffectLoad). The first check waits a few
+			-- seconds; the rest run once a minute, because death clears it.
+			timer("speed_boost_first", 10)
+			loop_timer("speed_boost_recheck", 60)
+		end
+
+		when speed_boost_first.timer begin
 			local want = 20
-			local mov = 8 -- APPLY_MOV_SPEED; apply.MOV_SPEED where the locale defines it
-			if apply ~= nil and apply.MOV_SPEED ~= nil then
-				mov = apply.MOV_SPEED
+			-- A point, not an apply: see the note above the quest.
+			local mov = 19
+			if POINT_MOV_SPEED ~= nil then
+				mov = POINT_MOV_SPEED
 			end
-			if pc.getqf("applied") ~= want then
+			-- Version, percentage and point: a change to any of them takes
+			-- every quest affect off once and puts this one back.
+			local stamp = 1000000 + want * 100 + mov
+			if pc.getqf("applied") ~= stamp then
 				affect.remove(1000)
 				pc.setqf("applied", 0)
 			end
 			if affect.get_apply_on(1000) == nil then
 				affect.add(mov, want, 60*60*24*365)
-				pc.setqf("applied", want)
+				pc.setqf("applied", stamp)
 			end
-			-- Re-applied every minute, because death clears it.
-			loop_timer("speed_boost_recheck", 60)
 		end
 
 		when speed_boost_recheck.timer begin
 			local want = 20
-			local mov = 8
-			if apply ~= nil and apply.MOV_SPEED ~= nil then
-				mov = apply.MOV_SPEED
+			-- A point, not an apply: see the note above the quest.
+			local mov = 19
+			if POINT_MOV_SPEED ~= nil then
+				mov = POINT_MOV_SPEED
 			end
-			if pc.getqf("applied") ~= want then
+			-- Version, percentage and point: a change to any of them takes
+			-- every quest affect off once and puts this one back.
+			local stamp = 1000000 + want * 100 + mov
+			if pc.getqf("applied") ~= stamp then
 				affect.remove(1000)
 				pc.setqf("applied", 0)
 			end
 			if affect.get_apply_on(1000) == nil then
 				affect.add(mov, want, 60*60*24*365)
-				pc.setqf("applied", want)
+				pc.setqf("applied", stamp)
 			end
 		end
 	end
