@@ -2969,6 +2969,16 @@ namespace
 	// a stand lasts eight hours.
 	const DWORD PLAYERBOT_DROPPER_SHOP_SERVICE_MIN_MS = 2400000;
 	const DWORD PLAYERBOT_DROPPER_SHOP_SERVICE_MAX_MS = 3600000;
+	// A shop on another map than its keeper is served on a long round too:
+	// each such visit is two map changes, and on m2zip on 17 September they
+	// were 3405 of 7951 map changes in 95 minutes - the bots of the valley in
+	// and out of the first villages every ten to fifteen minutes, which the
+	// players read at the gates as bots going round in circles ("kreca sie
+	// ciagle pomiedzy tp", gregoszky). On its own map a keeper still serves
+	// every ten to fifteen minutes; elsewhere it waits this long since its
+	// last service and asks again every PLAYERBOT_OFFLINE_FAR_SERVICE_RETRY_MS.
+	const DWORD PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS = 45 * 60 * 1000;
+	const DWORD PLAYERBOT_OFFLINE_FAR_SERVICE_RETRY_MS = 5 * 60 * 1000;
 	// A dropper opens its stall on a third of its town visits, against one in
 	// ten for an adventurer and every visit for a merchant: it hunts for a
 	// living and sells what the hunt brought, not the other way round.

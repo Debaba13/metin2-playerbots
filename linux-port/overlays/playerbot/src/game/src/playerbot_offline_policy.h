@@ -86,6 +86,9 @@ struct State {
     // The line cut out of its stack before the shop board opened, for the
     // add of the same visit (BotOfflinePrepareVisitLine): item id and cell.
     uint32_t preparedItem = 0, preparedCell = 0;
+    // When the keeper last stood at its shop and served it: a shop on
+    // another map waits PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS from here.
+    uint32_t lastServedAt = 0;
     std::map<uint32_t, ListedLine> listed;
     bool visiting = false;
 };

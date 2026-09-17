@@ -559,6 +559,16 @@ namespace {
             BotOfflineFinishVisit(ch, state, now);
             return false;
         }
+        // A shop on another map waits for the long round
+        // (PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS): two map changes a visit for
+        // every keeper out on the frontier was most of the gates' traffic. An
+        // empty hand with a weapon on its own counter does not wait (the
+        // reclaim probe above), nor does the first visit after a start.
+        if (!o.visiting && ch->GetMapIndex() != spawn.map && ch->GetWear(WEAR_WEAPON) &&
+                o.lastServedAt != 0 && !Due(now, o.lastServedAt + PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS)) {
+            o.nextService = now + PLAYERBOT_OFFLINE_FAR_SERVICE_RETRY_MS;
+            return false;
+        }
         if (!o.visiting) {
             o.visiting = true;
             o.visitUntil = now + 90000; // absolute upper bound, including travel
@@ -578,6 +588,7 @@ namespace {
         if (!Due(now, o.nextStep)) return true;
         o.nextStep = now + 3000;
         if (!BotOfflineBudget(now)) return true;
+        o.lastServedAt = now;
         BotOfflinePrepareVisitLine(ch, state, shop);
         ch->SetLookingShopOwner(true);
         manager.RecvShopSafeboxOpenClientPacket(ch);
