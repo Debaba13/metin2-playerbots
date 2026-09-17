@@ -5405,6 +5405,13 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   noticed because `EnsurePlayerBotFishingPass` makes theirs.
   `fishing_pass_shop.quest` is the Fisherman's button for it, compiled in the
   Dockerfile loop with `pc.open_special_shop` added to qc's function list.
+  The shop's own limit said level fifty while the rods here are thirty
+  (`apply.sh`, the line above it), so a player of thirty to forty-nine wore
+  a rod and could not buy the pass: `apply.sh` lowers the LEVEL limit of
+  27620 in `world.shop_special_proto` to thirty - the db core reads that
+  table at boot, so it is live on the next start - and the quest's own check
+  says thirty too (Tieru, 17 September). Two gates that name one level have
+  to name the same number.
   Before telling a player an item cannot be had, look for it in
   `world.shop_special_proto` and then for the quest that opens that shop.
   The same day's "Wzmocnienie Przedmiotu from the chests does not count for
