@@ -89,6 +89,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_consumables.h"
 #include "playerbot_activities.h"
 #include "playerbot_mining.h"
+#include "playerbot_herbalism.h"
 #include "playerbot_unique_slots.h"
 #include "playerbot_missions.h"
 #include "playerbot_skills.h"
@@ -3377,6 +3378,9 @@ void CPlayerBotManager::Update()
 			continue;
 
 		ManagePlayerBotSkillBooks(ch, state, dwNow);
+		// The crafting recipes, on a clock of their own: a bot with skill
+		// books in the bag never reaches the tail of the pass above.
+		ManagePlayerBotCraftRecipes(ch, dwNow);
 		ManagePlayerBotSoulStones(ch, state, dwNow);
 		ManagePlayerBotGrandMasterTraining(ch, state, dwNow);
 		// The vouchers cashed and the shop's goods bought (playerbot_itemshop.h).
@@ -3595,6 +3599,12 @@ void CPlayerBotManager::Update()
 				ManagePlayerBotBiologist(ch, state, dwNow))
 			continue;
 
+		// Baek-Go stands in the same three villages, so his board is the same
+		// kind of local errand as the hand-in above and is gated the same way.
+		if (!bHumanLedParty && !state.bMultiPullActive && !bFightingMetin &&
+				ManagePlayerBotHerbalist(ch, state, dwNow))
+			continue;
+
 		// Missing/progression gear starts the first visit immediately because the
 		// shop timer is zero after login.  Once a visit finishes, however, respect
 		// its 5-10 minute retry cooldown.  Otherwise a bot that cannot yet afford
@@ -3789,6 +3799,10 @@ void CPlayerBotManager::Update()
 		// attack code used to emit a second skill packet in the very same tick.
 		// A player's Shaman buffs the player before itself.
 		if (ManagePlayerBotBuffHumanLeader(ch, state, dwNow))
+			continue;
+		// A crafted potion before the buffs: ten minutes of attack value or
+		// defence, spent only on a boss or a Metin stone (playerbot_herbalism.h).
+		if (DrinkPlayerBotCraftedPotion(ch, curTarget, dwNow))
 			continue;
 		if (ManagePlayerBotCombatBuffs(ch, state, dwNow))
 			continue;

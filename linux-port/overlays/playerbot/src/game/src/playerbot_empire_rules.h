@@ -386,6 +386,30 @@ namespace playerbot_empire_rules
 		return false;
 	}
 
+	// Baek-Go, mob 20018 - the herbalist, who is NOT the Biologist above: two
+	// NPCs, both in every first village and nowhere else. His crafting board is
+	// what turns the herbs a bot picks up into potions, so herbalism is an M1
+	// errand exactly like the Biologist's hand-in, and a bot that walks to one
+	// is already standing beside the other. Read off each map's npc.txt through
+	// its own BasePosition (cell * 100 + base), the way the Biologist's row was.
+	inline bool GetHerbalist(long mapIndex, TPoint& out)
+	{
+		static const TTownPitchRow rows[] = {
+			{ 1,  { 479100, 961700 } },
+			{ 21, { 67400, 161400 } },
+			{ 41, { 968100, 266000 } },
+		};
+		for (unsigned int i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
+		{
+			if (rows[i].mapIndex == mapIndex)
+			{
+				out = rows[i].pitch;
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// The warp NPCs that join a kingdom's own four maps, both ends. `gate` is
 	// where the NPC stands (the bot walks to it), `arrival` is where the engine
 	// puts the character down, read from the NPC's own name.
