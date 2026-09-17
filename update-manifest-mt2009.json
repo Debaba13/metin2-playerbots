@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-17T16:27:31Z",
-  "statusMessage": "2.0.68 (serwer): zioła na ladzie paczkami po 50, ulepszacze po 5; Biolog nie ściąga botów do Doliny Orków; bot z innej mapy obsługuje swój sklep raz na 45 minut; Rybak sprzedaje Kartę Wędkarską. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-17T17:34:01Z",
+  "statusMessage": "2.0.69 (serwer): Karta Wędkarska u Rybaka od 30 poziomu, tak jak wędka. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.68",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.68/metin2-server-update-2.0.68.zip",
-    "sha256": "93E3DE857E73590AFC41414D91E8F60E9C0009650DBFA41CA676DE80156CCEAF"
+    "version": "2.0.69",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.69/metin2-server-update-2.0.69.zip",
+    "sha256": "F3A0577C967E2E612FDDE18F0A7B2613BDD593DC4CB962BAE49D905D226D72DC"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
