@@ -5485,6 +5485,81 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `tools/eterpack.py --profile mt2009 extract` and diff against the published
   one before shipping; a script that calls a new engine function tests for it
   with `hasattr` so an older exe draws nothing instead of failing.
+- **The herbalism system was shipped, compiled and entirely unused.** Baek-Go
+  (mob 20018, one in every first village and NOT the Biologist, who is 20084)
+  carries `herbalism_onboarding` and `herbalism` hooked to his chat, a special
+  shop (14) selling the Herbalist's Knife and the three empty bottles, and 77
+  rows of `world.crafting_proto` behind eight levels of recipe knowledge -
+  Iwakura's write-up of 17 September matches the shipped tables to the yang.
+  Nothing in this world had ever touched it: the recipes (29 Metin stone groups
+  at 12.5-18%) went to the merchant as an unknown ITEM_USE and the herbs went on
+  the counters as bulk goods. `playerbot_herbalism.h` is the AI's half of it.
+  Five things that decide its shape, all measured on the running server:
+  **the board is a client window** - `crafting.open` sends `craft_open` down the
+  chat channel and `crafting.create` refuses anything the window did not report
+  open - so a bot can never press a button on it and the craft is re-implemented
+  against `CCraftingManager`, on the quest's own rows, odds, price and progress
+  flags (`crafting.progress_<recipe>`, so a bot and a player share one ledger);
+  **a craft spends the materials before it rolls**, so a 60% row is a real loss;
+  **a potion is ITEM_POTION (type 36)**, a type of its own here whose use goes
+  through the compiled hook `object/36/use_type` and not through any case in
+  `char_item.cpp` - `value0` is the duration, `value1` the group, and the engine
+  allows 5 boost, 3 offensive and 2 defensive affects at once; **the plants are
+  not the supply** - sixteen bushes exist (20602-20644, the knife in WEAR_WEAPON
+  like a pickaxe, three seconds a pick, 30% plus the knife plus
+  `pc.get_mining_skill_bonus()`) and this world spawns four of them, in
+  `stone.txt` rather than `regen.txt`: the Alpine Rose on a3/b3/c3, the Thistle
+  on Sohan, the Amber Petal and the Nettle on the two Trent maps, and **not** the
+  Peach Blossom the onboarding asks ten of. The herbs come from the drop tables
+  instead, where all sixteen are. And the fifth, which is what made the first
+  deploy do nothing at all: **`PLAYERBOT_PICKUP_GOODS_VNUMS` named two herbs**,
+  the Gango Root and the Tue Mushroom, because those are what the Biologist's
+  rows want - so the bags held 86 496 roots and 14 515 mushrooms against ELEVEN
+  Peach Blossoms in the whole world. A system fed by a drop table needs the loot
+  rule to admit every item it consumes, or it starves with the bags full.
+  Two more things the first hour on m2zip taught, both the shape of traps
+  already in this file. **A herb and a specimen are different items with the
+  same name**: the Biologist's are ITEM_QUEST 50701-50706, which drop only
+  while his mission is open and go straight to the bag, and the herbalist's are
+  ITEM_MATERIAL 50721-50736, which drop on the ground like anything else
+  (Tieru, 17 September, before a single line of the AI could confuse them).
+  Every crafting row consumes the second range; nothing the bots do for
+  herbalism may touch the first. And **a pass hung on somebody else's early
+  return never runs**: reading a recipe was put at the tail of
+  `ManagePlayerBotSkillBooks`, in the branch that fires only when no class book
+  is due, and MordercaBezSerca3 finished the onboarding with the recipe in its
+  bag, 55 skill books beside it, and read nothing for half an hour. It is a
+  pass of its own with its own clock now - the same lesson as "a silent
+  `continue` in the tick is a bot that stands for good", from the other side.
+
+- **A getter that reserves is a getter the panel must not call.**
+  `GetActivePlayerBotBiologistMission` took and gave back places on the two
+  errand queues on every call, and `BuildPlayerBotStatusText` is one of its
+  callers - so reading the line over a bot's head could hand it a trip or end
+  one, and the panel changed the world by being looked at (audit of
+  17 September). It takes `mayReserve` now and only the three passes that
+  actually decide to travel pass true: the trip to a first village
+  (`NeedsPlayerBotM1OnlyServices`), the frontier draw that sends a bot at a
+  collect row, and the Biologist visit that gives the place back. Everything
+  else - the status, the planner, the target picker, the kill note, the
+  village hunt level - reads without touching the queue. Two rules that came
+  with it: **handing in is not travelling**, so a bot carrying a row's
+  specimens keeps that row whatever the share says (the gates used to stand in
+  front of the `carrying` test, so a bot without a place walked past the
+  Biologist holding his specimens); and **a spent quantum goes to the back of
+  the queue** (`PLAYERBOT_BIOLOGIST_ERRAND_COOLDOWN_MS`), because the map is
+  keyed by pid with no waiting list and whoever asks most often would
+  otherwise reclaim the place the sweep just freed. A finished row still
+  releases the place with no wait - the cooldown is for a quantum that ran
+  out, not for work that is done.
+- **A refine tier is not a finished weapon.** `PlayerBotCouldUseLevel30Weapon`
+  refused the whole market to any bot already wearing a special level-30 weapon
+  at `PLAYERBOT_LEVEL30_PROJECT_PLUS`, whatever was rolled on it, so a Full
+  Moon Sword +7 with nothing on its lines stopped its owner from ever looking
+  for a better one. The comparison below that test is the real answer and is
+  stricter where it matters: `toBeat` counts a worn level-30 weapon at ITS
+  POTENTIAL, so a good +7 still refuses every offer and only a poor one lets
+  the search continue.
 
 ## Engine facts worth not re-deriving
 
