@@ -17,6 +17,59 @@ every version here.
 
 ---
 
+## 2.0.70 — 2026-09-17
+
+Serwer 2.0.70, klient 2.0.13.
+
+### Boty nadrabiają misje Biologa (Tieru)
+
+Bot z wysokiego poziomu, któremu zostały pierwsze wiersze Biologa (zioła z
+pierwszej wioski), czekał na nie godzinami: wyjazd po zioła ma limit, żeby nie
+powtórzyła się sytuacja z 2.0.60, gdy pół świata ruszyło naraz do M1. Teraz:
+
+- bot, który **i tak jest w pierwszej wiosce** (zapasy, targ, oddawanie okazów),
+  zbiera zioła z otwartego wiersza przy okazji, przez 10 minut od przyjścia i bez
+  zajmowania miejsca w limicie — to nie dokłada ani jednego przejścia między
+  mapami;
+- na osobny wyjazd po zioła jedzie naraz 7% botów zamiast 2,5%, a wyprawa trwa
+  do 2 godzin zamiast godziny;
+- wyprawa nie wygasa, póki bot niesie zebrane okazy — wcześniej zegar potrafił
+  skończyć wyprawę tuż przed oddaniem i cała podróż szła na marne.
+
+Reguła „żaden wiersz nie jest za niski” i pierwszeństwo próby konia zostają bez
+zmian.
+
+### Koniec krążenia materiałów do magazynu i z powrotem (Tieru)
+
+Bot wkładał do magazynu **cały stos** materiału razem z rezerwą, którą trzyma na
+własne ulepszanie, a sekundę później — już z pustą torbą — wyjmował go z
+powrotem, bo „brakuje mu na kowala”. I tak co kilka minut. Na naszym serwerze
+3574 z 4698 wyjęć z magazynu w godzinę to były rzeczy włożone w tej samej
+wizycie, a przy okazji sypało to do logu błędy `ITEM_ID_DUP` (650 dziennie u 26
+botów), bo baza nie nadążała zapisać, że przedmiot jest już w torbie. Teraz do
+magazynu idzie tylko nadwyżka ponad rezerwę kowala, a wyjmowanie nie rusza tego,
+co ta sama wizyta włożyła.
+
+### Sklep bota widoczny w panelu (Tieru)
+
+W oknie ekwipunku bota, obok magazynu, jest ikona sklepu: otwiera okno z nazwą
+lady, mapą i pozycją oraz listą wystawionych rzeczy z cenami. Wcześniej widać
+było tylko torbę i magazyn, a to, co bot sprzedaje, leży w jego sklepie
+offline. Obok jest też przycisk odświeżania.
+
+### Ekwipunek w panelu bez opóźnienia (Tieru)
+
+Panel czyta bazę, a rdzeń trzymał zmianę przedmiotu w pamięci nawet siedem
+minut — dlatego zaraz po założeniu tarczy slot potrafił świecić pustką. Teraz
+założony i zdjęty element zapisuje się od razu.
+
+### Klient 2.0.13: osobowość bota w osobnym wierszu (ĹŌŞƬĒĶ)
+
+Osobowość bota ma własny wiersz nad głową, między nickiem a nazwą gildii, więc
+ranga jest znowu zawsze widoczna i nic się nie bije o to samo miejsce.
+Przełącznik w opcjach gry („Osobowość / Wyłączone”) działa od razu, bez
+ponownego logowania. Cała zmiana po stronie klienta jest autorstwa ĹŌŞƬĒĶ.
+
 ## 2.0.69 — 2026-09-17
 
 Serwer 2.0.69; klient bez zmian (2.0.12).
