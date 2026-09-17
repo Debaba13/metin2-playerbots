@@ -17,6 +17,23 @@
 
 namespace
 {
+	// "Write this item's row now." The db core keeps a changed item in its
+	// cache for PLAYER_CACHE_FLUSH_SECONDS - seven minutes by default, which
+	// is what this world runs - before MariaDB sees it, so anything reading
+	// player.item (both panels) is that far behind a bot's bag. The engine's
+	// own answer is HEADER_GD_ITEM_FLUSH, which CInputMain sends after a shop
+	// deal; it costs one write, so it is for the rare, visible changes - what
+	// a bot wears - and never for a bag that turns over every few seconds.
+	void FlushPlayerBotItemRow(LPITEM item)
+	{
+		if (!item || item->GetID() == 0 || !db_clientdesc)
+			return;
+		ITEM_MANAGER::instance().FlushDelayedSave(item);
+		const DWORD dwID = item->GetID();
+		db_clientdesc->DBPacketHeader(HEADER_GD_ITEM_FLUSH, 0, sizeof(DWORD));
+		db_clientdesc->Packet(&dwID, sizeof(DWORD));
+	}
+
 	// Defined with the town code. Buying anything means standing at an NPC
 	// first, and where exactly is a town concern, not a gear one.
 	void GetPlayerBotNpcApproach(DWORD playerID, long npcX, long npcY, DWORD salt,
@@ -1047,6 +1064,15 @@ namespace
 			char szHint[64];
 			snprintf(szHint, sizeof(szHint), "slot %d zamiast %u", bestWearCell, oldVnum);
 			LogManager::instance().ItemLog(ch, bestItem, "PLAYERBOT_EQUIP", szHint);
+			// And the row is written now, not in seven minutes. The panel reads
+			// player.item, while the db core keeps a changed item in its cache
+			// for PLAYER_CACHE_FLUSH_SECONDS - so a bot that had just put a
+			// shield on showed an empty shield slot in the panel for minutes
+			// ("chyba na www klasycznym jest bug synchronizacji eq", Tieru,
+			// 17 September; the row was there five minutes later). Both pieces:
+			// the one worn and the one taken off.
+			FlushPlayerBotItemRow(bestItem);
+			FlushPlayerBotItemRow(bestOldItem);
 			// What came off stays in the bag: a bot trades its spares, it does
 			// not give them away.
 			return true;
