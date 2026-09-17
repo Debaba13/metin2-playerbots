@@ -5561,6 +5561,22 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   POTENTIAL, so a good +7 still refuses every offer and only a poor one lets
   the search continue.
 
+- **A package built from the worktree is not the package that was released.**
+  `server-update-files.mt2009.txt` names sources, and `PathMap` renames them on
+  the way out - so the row `linux-port/docker/panel/app/admin_panel.py` is read
+  **literally from the 1.x tree**, which is gitignored (`linux-port/docker/
+  .gitignore`) and on this machine holds whatever `start-server.ps1` last staged
+  there for the other line. Building 2.0.71 again from the worktree on
+  18 September put a panel of 971 769 bytes into the package where the release
+  carries 1 040 779 - the one `files/admin_panel.py` holds - because the release
+  was packed from a clean HEAD export, where that path does not exist at all and
+  the packager falls back to the `files/` copy. Git's CRLF checkout is the other
+  half: 42 more text files (the five horse quests, seban-panel's css/js/py, the
+  itemshop's php) came out a percent larger than the published ones. So a full
+  package is assembled by unpacking the **published** update zip over the deploy
+  tree, never by trusting a rebuild to reproduce it; compare the two file by
+  file before shipping, the way `scratchpad/player_zip_2071.py` does.
+
 ## Engine facts worth not re-deriving
 
 - Item types/subtypes live in `common/item_length.h`; map attributes and
