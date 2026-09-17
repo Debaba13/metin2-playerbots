@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-17T18:52:36Z",
-  "statusMessage": "2.0.70 (serwer 2.0.70, klient 2.0.13): boty nadrabiają misje Biologa przy okazji wizyt w wiosce, materiały nie krążą już do magazynu i z powrotem, w panelu widać sklep bota, a nad głową bota osobowość ma własny wiersz i nie zasłania rangi. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-17T22:11:48Z",
+  "statusMessage": "2.0.71: boty uczą się zielarstwa u Baek-Go i wytwarzają mikstury, bot z małym HP nie ucieka już w nieskończoność, a broń 30 poziomu ulepszają u kowala tylko do progu zależnego od średniej. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.70",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.70/metin2-server-update-2.0.70.zip",
-    "sha256": "0C76EA31088601AD33ED8C41967DA8E03DDD3D2A98E5DDEDF7A1C27866B161B2"
+    "version": "2.0.71",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.71/metin2-server-update-2.0.71.zip",
+    "sha256": "F874202A3D1F8F3F773A8345269E7EFE7AB44D33059DFD4EB01BB96D0216B5DA"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
