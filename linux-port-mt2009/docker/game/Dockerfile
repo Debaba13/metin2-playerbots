@@ -201,7 +201,8 @@ RUN set -eux; \
     # Functions the engine has and the package's list forgot, which qc would
     # otherwise refuse (gm_profile.quest: equipping, bonus lines, stack size,
     # the item's use path).
-    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use; do \
+    # pc.open_special_shop for fishing_pass_shop (2.0.68).
+    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use pc.open_special_shop; do \
       grep -qx "$fn" /tmp/qc-work/quest_functions || echo "$fn" >> /tmp/qc-work/quest_functions; \
     done; \
     # pony_levelup is the package's own stable-keeper quest with the 18-hour
@@ -219,7 +220,9 @@ RUN set -eux; \
     # package's stable-keeper quests with the wait for the horse taken out:
     # twelve hours for the pony and each upgrade, twenty-one between two
     # trainings (Tieru, 16 September, 2.0.56).
-    for q in web_admin speed_boost starter_chest pony_levelup gm_profile new_quest_lv19 teleport_ring pony_buy horse_upgrade horse_upgrade2 horse_levelup deviltower_zone; do \
+    # fishing_pass_shop opens the Fisherman's special shop, the only seller
+    # of Karta Wedkarska, which no stock quest ever opened (2.0.68).
+    for q in web_admin speed_boost starter_chest pony_levelup gm_profile new_quest_lv19 teleport_ring pony_buy horse_upgrade horse_upgrade2 horse_levelup deviltower_zone fishing_pass_shop; do \
       [ -f "/quest-add/$q.quest" ] || continue; \
       sed 's/\r$//' "/quest-add/$q.quest" > "/tmp/qc-work/$q.quest"; \
       ( cd /tmp/qc-work && /src/Server/game/src/quest/qc "$q.quest" ); \
