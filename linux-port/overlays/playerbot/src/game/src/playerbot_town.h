@@ -206,7 +206,8 @@ namespace
 	// not one weapon, so the case does not arise. Materials are the whole of
 	// what is down there, which is also why "it fills up and is never freed"
 	// was the right complaint.
-	int WithdrawPlayerBotSafebox(LPCHARACTER ch, CSafebox* box)
+	int WithdrawPlayerBotSafebox(LPCHARACTER ch, CSafebox* box,
+			const std::set<DWORD>* pJustDeposited = NULL)
 	{
 		if (!ch || !box)
 			return 0;
@@ -218,6 +219,16 @@ namespace
 				continue;
 			LPITEM item = box->Get(pos);
 			if (!item)
+				continue;
+			// Never the kind this visit's deposit just put down. The deposit
+			// runs first and the withdrawal asked its questions of the bag as
+			// the deposit had left it, so a material the anvil was owed went
+			// down with the whole stack and came straight back up: on m2zip on
+			// 17 September 3574 of 4698 withdrawals in an hour were items the
+			// same visit had deposited, one bot doing it every four minutes,
+			// and the pairs of CreateItem: ITEM_ID_DUP / LoadSafebox lines in
+			// syserr are that round trip seen from the database (Tieru).
+			if (pJustDeposited && pJustDeposited->find(item->GetVnum()) != pJustDeposited->end())
 				continue;
 
 			bool wanted = false;
@@ -248,7 +259,12 @@ namespace
 				// fifteen minutes on the test world, 15 September.
 				if (PlayerBotNeedsRefineMaterial(ch, item->GetVnum()))
 				{
-					wanted = true;
+					// Into a bag that stays clear of the pressure the deposit
+					// waits for, exactly as the ledger's half below: a material
+					// taken back into a full bag is sent down again on the next
+					// visit, and that is the other half of the round trip.
+					const int freeAfter = CountPlayerBotFreeInventoryCells(ch) - (int)item->GetSize();
+					wanted = freeAfter > PLAYERBOT_BAG_PRESSURE_FREE_CELLS;
 					why = "anvil";
 				}
 				else if (GetPlayerBotLedgerDemand(item->GetVnum()) > 0 && PlayerBotCanOpenShop(ch))
@@ -385,7 +401,7 @@ namespace
 	// character, onto the first empty slot of the grid. Returns how many books
 	// went in; the rest stay in the bag as goods when the page is full.
 	int DepositPlayerBotSafeboxBooks(LPCHARACTER ch, TPlayerBotAIState& state, CSafebox* box,
-			int* pToppedUp = NULL)
+			int* pToppedUp = NULL, std::set<DWORD>* pDeposited = NULL)
 	{
 		std::vector<WORD> cells;
 		CollectPlayerBotSafeboxBooks(ch, cells);
@@ -406,6 +422,32 @@ namespace
 			LPITEM item = ch->GetInventoryItem(cells[i]);
 			if (!item)
 				continue;
+			// The anvil's reserve stays in the bag, and only what is over it
+			// goes down - the stack is cut here the way a counter line is cut
+			// (BotOfflinePrepareLine). The whole stack used to go, reserve and
+			// all, so the withdrawal below found the bot short of the very
+			// material the deposit had just stored and took it straight back:
+			// that round trip was three quarters of all safebox traffic on
+			// m2zip and the source of the ITEM_ID_DUP lines in syserr.
+			if (IsPlayerBotTradeableMaterial(item) && !IsPlayerBotSafeRefineScroll(item->GetVnum()))
+			{
+				const int keep = GetPlayerBotRefineMaterialReserve(ch, item->GetVnum());
+				const int spare = (int)ch->CountSpecifyItem(item->GetVnum()) - keep;
+				if (spare <= 0)
+					continue;
+				if (spare < (int)item->GetCount())
+				{
+					const int to = ch->GetEmptyInventory(item->GetSize());
+					if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, cells[i]),
+							TItemPos(INVENTORY, (WORD)to), spare))
+						continue;
+					item = ch->GetInventoryItem(to);
+					if (!item)
+						continue;
+				}
+			}
+			if (pDeposited)
+				pDeposited->insert(item->GetVnum());
 			const int before = (int)item->GetCount();
 			if (TopUpPlayerBotSafeboxStacks(ch, box, item))
 			{
@@ -3775,12 +3817,15 @@ namespace
 			if (box)
 			{
 				int toppedUp = 0;
-				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box, &toppedUp);
+				// What went down in this visit, so the withdrawal below cannot
+				// ask for it back in the same breath.
+				std::set<DWORD> justDeposited;
+				const int deposited = DepositPlayerBotSafeboxBooks(ch, state, box, &toppedUp, &justDeposited);
 				// And then back the other way, on the same open box. The deposit
 				// runs first on purpose: it is what frees the bag cells the
 				// withdrawal then needs, so a bot under pressure can still take
 				// back the one material it came for.
-				const int taken = WithdrawPlayerBotSafebox(ch, box);
+				const int taken = WithdrawPlayerBotSafebox(ch, box, &justDeposited);
 				const int stacked = MergePlayerBotSafeboxStacks(box, PLAYERBOT_SAFEBOX_STACK_MERGES_PER_VISIT);
 				ch->CloseSafebox();
 				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d topped_up=%d stacked=%d",
