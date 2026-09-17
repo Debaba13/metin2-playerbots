@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-17T12:08:45Z",
-  "statusMessage": "2.0.67 (serwer): bot z próbą konia bojowego zostaje na pustyni od pierwszego do setnego zabójstwa — nie wraca po wolną kolumnę w torbie ani po wygaśnięciu czasu wizyty, łucznik bierze pełny kołczan. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-17T16:27:31Z",
+  "statusMessage": "2.0.68 (serwer): zioła na ladzie paczkami po 50, ulepszacze po 5; Biolog nie ściąga botów do Doliny Orków; bot z innej mapy obsługuje swój sklep raz na 45 minut; Rybak sprzedaje Kartę Wędkarską. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.67",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.67/metin2-server-update-2.0.67.zip",
-    "sha256": "B4F6B483EC520023CEC3A1D511FD882B806C015D535AE5A046F184A79E0D5848"
+    "version": "2.0.68",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.68/metin2-server-update-2.0.68.zip",
+    "sha256": "93E3DE857E73590AFC41414D91E8F60E9C0009650DBFA41CA676DE80156CCEAF"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
