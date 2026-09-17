@@ -197,6 +197,13 @@ db -e "ALTER TABLE account.account ADD COLUMN IF NOT EXISTS jackpot INT NOT NULL
 # of world.item_proto here (PROTO_FROM_DB = 1), which is why this sticks;
 # idempotent, and it touches only rods still carrying the old fifty.
 db -e "UPDATE world.item_proto SET limitvalue0 = 30 WHERE type = 13 AND limittype0 = 1 AND limitvalue0 = 50;"
+# And the pass the rod needs. Karta Wedkarska (27620), which CHARACTER::fishing()
+# wants worn, is sold in one place, the Fisherman's special shop (9009, opened
+# by fishing_pass_shop.quest), and the package asks level fifty for it - so a
+# player of thirty to forty-nine could wear the rod the line above allows and
+# never fish (Tieru, 17 September). The db core reads shop_special_proto at
+# boot, so this is live on the next start; idempotent, and only a fifty moves.
+db -e "UPDATE world.shop_special_proto SET limitvalue0 = 30 WHERE item_vnum = 27620 AND limittype0 = 'LEVEL' AND limitvalue0 = 50; UPDATE world.shop_special_proto SET limitvalue1 = 30 WHERE item_vnum = 27620 AND limittype1 = 'LEVEL' AND limitvalue1 = 50;"
 # Pierscien Teleportacji (70058) carries ITEM_FLAG_APPLICABLE (8192) in this
 # package, and under ENABLE_QUEST_DND_EVENT that flag makes UseItemEx treat an
 # ITEM_QUEST as "drop it onto another item": a plain use finds no target cell
