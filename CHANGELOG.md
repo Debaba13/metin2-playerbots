@@ -17,6 +17,89 @@ every version here.
 
 ---
 
+## 2.0.71 — 2026-09-18
+
+Serwer 2.0.71, klient bez zmian (2.0.13).
+
+### Boty uczą się zielarstwa (Iwakura)
+
+Paczka od zawsze zawierała cały system zielarstwa u Baek-Go — misję startową,
+jego sklep z Nożykiem Zielarza i pustymi butelkami oraz 77 receptur w tabeli
+wytwarzania — i nikt go nigdy nie użył. Receptury wypadające z metinów boty
+sprzedawały handlarzowi jako nieznany przedmiot, a zioła szły na lady jako
+zwykły towar.
+
+Teraz bot przechodzi misję startową u Baek-Go na tych samych warunkach co
+gracz (dziesięć Kwiatów Brzoskwini), czyta zdobyte receptury z tą samą szansą
+i tym samym licznikiem wiedzy co człowiek, a przy warsztacie kupuje butelki po
+cenie z jego sklepu, zużywa zioła, płaci i rzuca na szansę — dokładnie w
+kolejności, jakiej używa okno wytwarzania, łącznie z tym, że **nieudana próba
+zużywa materiały**. Gotowe wzmocnienia bot pije przed bossem i metinem, a
+nadwyżkę wystawia na ladzie: do tej pory mikstur zielarskich nie dało się
+kupić w tym świecie nigdzie.
+
+Po drodze okazało się, że boty podnosiły z ziemi tylko dwa z szesnastu ziół —
+Korzeń Gango i Grzyb Tue, bo tych chcą misje Biologa. W bagażach leżało 86 496
+korzeni i 14 515 grzybów, a Kwiatu Brzoskwini, którego wymaga misja startowa,
+było w całym świecie **jedenaście sztuk**. Teraz boty zbierają wszystkie zioła
+zielarskie i zostawiają sobie zapas, zanim reszta trafi na ladę.
+
+Uwaga dla zbierających: zioła Biologa i zioła na mikstury to osobne przedmioty
+mimo identycznych nazw. Pierwsze wypadają tylko przy aktywnej misji i idą
+prosto do torby, drugie lecą na ziemię jak każdy inny łup — boty pracują
+wyłącznie na tych drugich.
+
+### Bot z małym HP nie ucieka już bez końca (Urtopy)
+
+Bot, który zaczął taktyczną ucieczkę, mógł z niej nigdy nie wyjść: warunkiem
+było, żeby potwór przestał go ścigać, a potwór, który nie może dojść — bo bot
+stoi za ścianą na skraju mapy — nie przestaje nigdy. Do tego ucieczka nie
+miała żadnego limitu czasu, a strażnik bezczynności jej nie łapał, bo bot cały
+czas biegał. Efekt: zdrowa postać dreptająca po tym samym skrawku pustyni
+godzinami.
+
+Ucieczka kończy się teraz po oddaleniu się na bezpieczny dystans albo po
+minucie, niezależnie od tego, co potwór o tym sądzi. Powód trafia do logu.
+
+### Broń 30 poziomu: kowal do progu, dalej zwoje (Tieru)
+
+Ile stopni bot wywalczy u kowala, zależy teraz od średnich obrażeń broni — im
+lepsza broń, tym wcześniej przestaje ryzykować:
+
+- do 14% — kowal do +7, a powyżej i tak czasem spróbuje;
+- 15–21% — kowal do +7;
+- 22–29% — kowal do +6;
+- 30–36% — kowal do +4;
+- od 37% — wyłącznie zwoje, od +0.
+
+Bez zwoju powyżej swojego progu bot czeka, zamiast spalić dobrą broń.
+(Sprawdzone w tabeli ulepszeń: dla broni 30 lv kowal nigdy nie daje stu
+procent — szanse spadają od 80% na +1 do 10% na +8.)
+
+Zmieniło się też, co bot z taką bronią robi: dwie trzecie sztuk zatrzymuje dla
+siebie i ulepsza, resztę wystawia. Wcześniej praktycznie wszystkie lądowały na
+ladach nieulepszone — w dniu wydania stało ich tam 2603 na +0, a nosiło je 28
+botów.
+
+### Biolog: kolejka wypraw posprzątana
+
+Trzy poprawki z audytu:
+
+- odczyt misji Biologa przydzielał i zwalniał miejsca na wyprawy przy każdym
+  wywołaniu — a robi to również panel, więc samo zaglądanie do bota zmieniało
+  grę. Teraz miejsca przydzielają tylko te przebiegi, które faktycznie
+  decydują o podróży;
+- bot, który niósł już okazy, mijał własną misję, gdy nie dostał miejsca w
+  kolejce. Oddawanie okazu nie jest wyprawą i nie wymaga już miejsca;
+- po wyczerpaniu czasu wyprawy bot wraca na koniec kolejki, zamiast zajmować
+  zwolnione miejsce od razu z powrotem.
+
+### Broń 30 poziomu przestała blokować szukanie lepszej
+
+Bot noszący taką broń na +7 odrzucał każdą ofertę z rynku niezależnie od tego,
+co miał na niej wyrolowane. Teraz decyduje porównanie potencjału: dobra broń
+dalej odrzuca oferty, słaba pozwala szukać lepszej.
+
 ## 2.0.70 — 2026-09-17
 
 Serwer 2.0.70, klient 2.0.13.
