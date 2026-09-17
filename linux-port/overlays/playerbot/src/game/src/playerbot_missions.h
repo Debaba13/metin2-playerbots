@@ -231,20 +231,67 @@ namespace
 		std::map<DWORD, DWORD>::iterator it = s_mapPlayerBotHerbErrand.find(pid);
 		if (it != s_mapPlayerBotHerbErrand.end())
 		{
-			if (dwNow - it->second < PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS)
+			// A trip with specimens already in the bag is finished rather than
+			// cut off at the hour: it was collected for a hand-in that has not
+			// happened yet, and the place going back before it means the trip
+			// was spent for nothing.
+			int required = 0;
+			const DWORD wanted = GetPlayerBotBiologistWantedItem(ch, missionIndex, &required);
+			const DWORD limit = (wanted != 0 && ch->CountSpecifyItem(wanted) > 0)
+					? PLAYERBOT_BIOLOGIST_HERB_ERRAND_CARRY_MAX_MS
+					: PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS;
+			if (dwNow - it->second < limit)
 				return true;
 			s_mapPlayerBotHerbErrand.erase(it);
 		}
+		// The sweep cannot ask another bot's bag, so it uses the longer of the
+		// two limits; a place held a little longer is what the cap is for.
 		for (std::map<DWORD, DWORD>::iterator old = s_mapPlayerBotHerbErrand.begin();
 				old != s_mapPlayerBotHerbErrand.end();)
 		{
-			if (dwNow - old->second >= PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS)
+			if (dwNow - old->second >= PLAYERBOT_BIOLOGIST_HERB_ERRAND_CARRY_MAX_MS)
 				s_mapPlayerBotHerbErrand.erase(old++);
 			else
 				++old;
 		}
 		const size_t cap = std::max<size_t>(1, (size_t)GetPlayerBotsAlive() * PLAYERBOT_BIOLOGIST_HERB_TRIP_PER_MILLE / 1000);
 		return s_mapPlayerBotHerbErrand.size() < cap;
+	}
+
+	// Where a bot started its stay in a first village (pid -> map, since), for
+	// the catch-up that costs the world nothing: a bot that is in a first
+	// village anyway - services, the market, a hand-in - may work an outgrown
+	// herb row while it is there, without taking a place on the errand, since
+	// it adds no map change at all. The share above is what bounds the travel
+	// to M1; this is what fills the rows in ("jak mozna bezpiecznie zrobic by
+	// boty nadrabialy sobie biologa", Tieru, 17 September).
+	std::map<DWORD, std::pair<long, DWORD> > s_mapPlayerBotHerbVillageStay;
+
+	// True while that window is open. It is bounded per arrival -
+	// PLAYERBOT_BIOLOGIST_HERB_VILLAGE_MS from the first ask on that map - and
+	// opens again only after the bot has been somewhere else: without the
+	// bound, the bots an update draws into the villages stay for all six rows,
+	// which is exactly what the errand share was written for. Called once per
+	// mission choice, never inside the row loop: it starts the window, and a
+	// gate consulted inside a loop must not have a side effect.
+	bool PlayerBotMayWorkHerbRowHere(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (!ch)
+			return false;
+		const DWORD pid = ch->GetPlayerID();
+		if (!IsPlayerBotM1Map(ch->GetMapIndex()))
+		{
+			s_mapPlayerBotHerbVillageStay.erase(pid);
+			return false;
+		}
+		std::map<DWORD, std::pair<long, DWORD> >::iterator it =
+				s_mapPlayerBotHerbVillageStay.find(pid);
+		if (it == s_mapPlayerBotHerbVillageStay.end() || it->second.first != ch->GetMapIndex())
+		{
+			s_mapPlayerBotHerbVillageStay[pid] = std::make_pair(ch->GetMapIndex(), dwNow);
+			return true;
+		}
+		return dwNow - it->second.second < PLAYERBOT_BIOLOGIST_HERB_VILLAGE_MS;
 	}
 
 	// Who is away on an outgrown collect row (pid -> since): the valley and the
@@ -341,6 +388,10 @@ namespace
 		// quests, not one chain, so an outgrown row is stepped over rather than
 		// blocking the ones behind it.
 		int carrying = -1, here = -1, first = -1, last = -1;
+		// Asked once, before the loop: it opens the village window, and a gate
+		// consulted inside a loop must not have a side effect.
+		const DWORD dwNowHerb = get_dword_time();
+		const bool herbHere = PlayerBotMayWorkHerbRowHere(ch, dwNowHerb);
 		for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
 		{
 			const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[i];
@@ -368,9 +419,11 @@ namespace
 			// stayed for all six rows. A bot without a place steps over the row,
 			// in every pass, and takes what stands next in order - which sends a
 			// bot of fifty out of Joan the way it always left; a hand-in it
-			// already holds waits for the place too.
-			if (PlayerBotHerbErrandOutgrown(ch, i) &&
-					!PlayerBotMayTakeHerbErrand(ch, i, get_dword_time()))
+			// already holds waits for the place too. A bot standing in a first
+			// village works the row without a place (herbHere): that is the
+			// catch-up, and it costs no map change.
+			if (PlayerBotHerbErrandOutgrown(ch, i) && !herbHere &&
+					!PlayerBotMayTakeHerbErrand(ch, i, dwNowHerb))
 				continue;
 			// And an outgrown collect row is a stay in the valley or the tower,
 			// PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE of the world at a time.
@@ -421,9 +474,11 @@ namespace
 					ch->GetPlayerID(), ch->GetName(), (unsigned int)s_mapPlayerBotCollectErrand.size());
 		if (pick < 0)
 			return NULL;
-		// The place is taken for the row picked, and only then.
-		if (PlayerBotHerbErrandOutgrown(ch, (size_t)pick))
-			PlayerBotTakeHerbErrand(ch, (size_t)pick, get_dword_time());
+		// The place is taken for the row picked, and only then - and never by a
+		// bot that is only working the row because it stands in the village
+		// anyway, or the share would be spent on trips nobody makes.
+		if (PlayerBotHerbErrandOutgrown(ch, (size_t)pick) && !herbHere)
+			PlayerBotTakeHerbErrand(ch, (size_t)pick, dwNowHerb);
 		if (PlayerBotCollectErrandOutgrown(ch, (size_t)pick))
 			PlayerBotTakeCollectErrand(ch, (size_t)pick, get_dword_time());
 		if (outIndex)

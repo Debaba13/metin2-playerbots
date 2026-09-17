@@ -3826,8 +3826,27 @@ namespace
 	// wherever it stands, or the bots already in the villages stay for all
 	// six rows - and a place is held for at most
 	// PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS.
-	const int PLAYERBOT_BIOLOGIST_HERB_TRIP_PER_MILLE = 25;
-	const DWORD PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS = 60 * 60 * 1000;
+	// Seventy per mille since 2.0.70: at 2.5% a bot of seventy-five with four
+	// rows left waited hours for a place and the rows were never caught up
+	// ("jak mozna bezpiecznie zrobic by boty nadrabialy sobie biologa", Tieru,
+	// 17 September). The crowd is still bounded by construction - a share of
+	// the live population, which is what 2.0.60 was missing - so this is 70-80
+	// bots in the first villages at a time on a world of eleven hundred, not
+	// the 580 that filled them then.
+	const int PLAYERBOT_BIOLOGIST_HERB_TRIP_PER_MILLE = 70;
+	const DWORD PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS = 2 * 60 * 60 * 1000;
+	// A trip that has already collected something finishes: the hour used to
+	// run out with specimens in the bag and the place went back before the
+	// hand-in, which is a trip spent for nothing. While the bag holds any of
+	// the row's specimens the place is kept this long instead.
+	const DWORD PLAYERBOT_BIOLOGIST_HERB_ERRAND_CARRY_MAX_MS = 3 * 60 * 60 * 1000;
+	// And the cheapest catch-up of all: a bot that is in a first village
+	// anyway - services, the market, a hand-in - works an outgrown herb row
+	// while it is there, without taking a place on the errand, because that
+	// adds no map change to the world at all. Bounded per arrival: this long
+	// from the first ask on that map, and only again once the bot has been
+	// somewhere else (PlayerBotMayWorkHerbRowHere).
+	const DWORD PLAYERBOT_BIOLOGIST_HERB_VILLAGE_MS = 10 * 60 * 1000;
 	// The same for an outgrown collect row, whose monsters stand in Orc Valley
 	// and the Demon Tower: the frontier draw sent every bot with the row open
 	// there at once - 997 of 1621 bots in the valley on SIZOWSKI's world and
