@@ -977,6 +977,16 @@ namespace
 		if (item->GetType() == ITEM_COSTUME)
 			return false;
 
+		// Baek-Go's board (playerbot_herbalism.h) gave two kinds of item a
+		// worth this rule had no branch for, so its default sold both. A recipe
+		// is knowledge - and the only source of it in this world is the Metin
+		// stones the bots break all day, so the whole system was being fed to
+		// the merchant a few hundred yang at a time - and a potion is what the
+		// herbs finally turn into. Neither is ever merchant scrap; the surplus
+		// of both goes on a counter, where a player can reach it at last.
+		if (IsPlayerBotCraftRecipeItem(item) || IsPlayerBotCraftedPotion(item))
+			return false;
+
 		// A specimen of a Biologist row already handed in is scrap, not goods:
 		// "niech ich nie wystawiaja, sprzedaja u handlarza albo wyrzucaja".
 		// Before the anti-sell test on purpose - the quest items carry it, and
@@ -1660,7 +1670,10 @@ namespace
 			return item->GetRefineLevel() < GetPlayerBotRefineTarget(ch, item);
 		// And the level-30 weapon it is grinding: not worn yet because it is not
 		// yet better, and not better until it is refined.
-		if (IsPlayerBotLevel30Project(ch, item))
+		// The project, and every other level-30 weapon this bot keeps for the
+		// anvil: it is not worn yet because it is not better yet, and it will
+		// not be better until it is refined.
+		if (PlayerBotKeepsLevel30ForAnvil(ch, item))
 			return item->GetRefineLevel() < GetPlayerBotRefineTarget(ch, item);
 		return IsPlayerBotHigherTierSpare(ch, item) ||
 				IsPlayerBotWearableUpgrade(ch, item, item->GetCell());
@@ -1912,15 +1925,31 @@ namespace
 				scrollCell = FindPlayerBotRefineScrollCell(ch, plusLevel, stepProb);
 			else if (level30Grind)
 			{
+				// The operator's table (GetPlayerBotLevel30AnvilCeiling): below
+				// the ceiling the bot grinds at the anvil and takes the burn
+				// risk, at or above it the step is a scroll's. The better the
+				// average, the lower the ceiling - what is being protected is
+				// the roll, not the plus.
 				const long average = SumPlayerBotItemLines(item, APPLY_NORMAL_HIT_DAMAGE_BONUS);
-				const bool riskyStep = scrollStepAllowed && stepProb <= PLAYERBOT_WORN_SCROLL_MAX_PROB;
-				if (riskyStep && (average >= PLAYERBOT_LEVEL30_SCROLL_LOW_AVERAGE ||
-						plusLevel >= PLAYERBOT_LEVEL30_LOW_AVERAGE_SCROLL_FROM_PLUS))
+				const int anvilCeiling = GetPlayerBotLevel30AnvilCeiling(average);
+				const bool aboveCeiling = (int)plusLevel >= anvilCeiling;
+				// A common roll is worth a gamble even above its ceiling: the
+				// weapon is everywhere and the scroll is not.
+				const bool cheapGamble = aboveCeiling &&
+						average <= PLAYERBOT_LEVEL30_ANVIL_AVG_CHEAP &&
+						number(1, 100) <= PLAYERBOT_LEVEL30_CHEAP_ANVIL_PERCENT;
+				if (aboveCeiling && !cheapGamble && scrollStepAllowed)
 					scrollCell = FindPlayerBotRefineScrollCell(ch, plusLevel, stepProb);
-				else if (riskyStep && FindPlayerBotRefineScrollCell(ch, plusLevel, stepProb) >= 0)
-					PlayerBotLogThrottled("refine_l30_low_average", dwNow,
-							"PLAYERBOT_AI: level-30 weapon to the anvil, scroll kept for +5 pid=%u name=%s vnum=%u plus=%u avg=%ld prob=%d",
-							ch->GetPlayerID(), ch->GetName(), oldVnum, (unsigned int)plusLevel, average, stepProb);
+				if (aboveCeiling && !cheapGamble && scrollCell < 0)
+				{
+					// Waiting for a scroll is the point of the ceiling: the
+					// anvil here is how a good roll is lost.
+					PlayerBotLogThrottled("refine_l30_ceiling", dwNow,
+							"PLAYERBOT_AI: level-30 weapon waits for a scroll pid=%u name=%s vnum=%u plus=%u avg=%ld ceiling=%d prob=%d",
+							ch->GetPlayerID(), ch->GetName(), oldVnum,
+							(unsigned int)plusLevel, average, anvilCeiling, stepProb);
+					continue;
+				}
 			}
 			else if (scrollStepAllowed &&
 					(plusLevel >= PLAYERBOT_SCROLL_REFINE_MIN_PLUS || IsPlayerBotPrizeItem(item) ||

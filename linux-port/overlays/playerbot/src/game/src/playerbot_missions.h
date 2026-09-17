@@ -202,6 +202,27 @@ namespace
 	// a place, a place expires after PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS
 	// and is given back when the bot's herb rows are done.
 	std::map<DWORD, DWORD> s_mapPlayerBotHerbErrand;
+	// When a bot's last trip ended, so the place it gives back does not come
+	// straight back to it (PLAYERBOT_BIOLOGIST_ERRAND_COOLDOWN_MS).
+	std::map<DWORD, DWORD> s_mapPlayerBotHerbErrandDone;
+	std::map<DWORD, DWORD> s_mapPlayerBotCollectErrandDone;
+
+	// A place given back is remembered, and the bot waits its turn before it
+	// may take one again. Called from every path that frees a place.
+	void NotePlayerBotErrandOver(std::map<DWORD, DWORD>& done, DWORD pid, DWORD dwNow)
+	{
+		done[pid] = dwNow;
+		// The map would otherwise grow with every bot that ever travelled.
+		if (done.size() > 4096)
+			done.clear();
+	}
+
+	bool IsPlayerBotErrandOnCooldown(const std::map<DWORD, DWORD>& done, DWORD pid, DWORD dwNow)
+	{
+		std::map<DWORD, DWORD>::const_iterator it = done.find(pid);
+		return it != done.end() &&
+				dwNow - it->second < PLAYERBOT_BIOLOGIST_ERRAND_COOLDOWN_MS;
+	}
 
 	bool PlayerBotHerbErrandOutgrown(LPCHARACTER ch, size_t missionIndex)
 	{
@@ -243,14 +264,23 @@ namespace
 			if (dwNow - it->second < limit)
 				return true;
 			s_mapPlayerBotHerbErrand.erase(it);
+			NotePlayerBotErrandOver(s_mapPlayerBotHerbErrandDone, pid, dwNow);
 		}
+		// Back of the queue: a bot whose quantum has just run out waits before
+		// it may take another place, so the share rotates instead of sticking
+		// to whoever asks most often.
+		if (IsPlayerBotErrandOnCooldown(s_mapPlayerBotHerbErrandDone, pid, dwNow))
+			return false;
 		// The sweep cannot ask another bot's bag, so it uses the longer of the
 		// two limits; a place held a little longer is what the cap is for.
 		for (std::map<DWORD, DWORD>::iterator old = s_mapPlayerBotHerbErrand.begin();
 				old != s_mapPlayerBotHerbErrand.end();)
 		{
 			if (dwNow - old->second >= PLAYERBOT_BIOLOGIST_HERB_ERRAND_CARRY_MAX_MS)
+			{
+				NotePlayerBotErrandOver(s_mapPlayerBotHerbErrandDone, old->first, dwNow);
 				s_mapPlayerBotHerbErrand.erase(old++);
+			}
 			else
 				++old;
 		}
@@ -323,12 +353,18 @@ namespace
 			if (dwNow - it->second < PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS)
 				return true;
 			s_mapPlayerBotCollectErrand.erase(it);
+			NotePlayerBotErrandOver(s_mapPlayerBotCollectErrandDone, pid, dwNow);
 		}
+		if (IsPlayerBotErrandOnCooldown(s_mapPlayerBotCollectErrandDone, pid, dwNow))
+			return false;
 		for (std::map<DWORD, DWORD>::iterator old = s_mapPlayerBotCollectErrand.begin();
 				old != s_mapPlayerBotCollectErrand.end();)
 		{
 			if (dwNow - old->second >= PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS)
+			{
+				NotePlayerBotErrandOver(s_mapPlayerBotCollectErrandDone, old->first, dwNow);
 				s_mapPlayerBotCollectErrand.erase(old++);
+			}
 			else
 				++old;
 		}
@@ -361,8 +397,17 @@ namespace
 				(unsigned int)s_mapPlayerBotHerbErrand.size(), (unsigned int)cap);
 	}
 
+	// `mayReserve` is what separates reading the plan from changing it. The
+	// errand places below are a queue over the live population, and this
+	// function used to take them and give them back on EVERY call - including
+	// the ones the panel makes, because BuildPlayerBotStatusText asks it for
+	// the line over a bot's head. Looking at a bot could hand it a trip or end
+	// one ("GetActive... nie jest czystym odczytem", audit of 17 September).
+	// Only the passes that actually decide to travel pass true; every reader -
+	// the status, the planner, the target picker, the kill note - leaves the
+	// queue exactly as it found it.
 	const TPlayerBotBiologistMission* GetActivePlayerBotBiologistMission(
-			LPCHARACTER ch, size_t* outIndex = NULL)
+			LPCHARACTER ch, size_t* outIndex = NULL, bool mayReserve = false)
 	{
 		if (!ch)
 			return NULL;
@@ -422,12 +467,24 @@ namespace
 			// already holds waits for the place too. A bot standing in a first
 			// village works the row without a place (herbHere): that is the
 			// catch-up, and it costs no map change.
-			if (PlayerBotHerbErrandOutgrown(ch, i) && !herbHere &&
+			//
+			// Carrying outranks the queue, because handing in what the bag
+			// already holds is NOT a trip: the share limits who travels for a
+			// row, and a bot that walks past the Biologist with five of his
+			// specimens helps nobody. The gates below used to stand in front of
+			// the `carrying` test further down, so a bot without a place
+			// stepped over its own half-finished row and kept the specimens
+			// (audit of 17 September, A.3).
+			int heldRequired = 0;
+			const DWORD heldWanted = GetPlayerBotBiologistWantedItem(ch, i, &heldRequired);
+			const bool holdsSpecimens = heldWanted != 0 &&
+					ch->CountSpecifyItem(heldWanted) > 0;
+			if (!holdsSpecimens && PlayerBotHerbErrandOutgrown(ch, i) && !herbHere &&
 					!PlayerBotMayTakeHerbErrand(ch, i, dwNowHerb))
 				continue;
 			// And an outgrown collect row is a stay in the valley or the tower,
 			// PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE of the world at a time.
-			if (PlayerBotCollectErrandOutgrown(ch, i) &&
+			if (!holdsSpecimens && PlayerBotCollectErrandOutgrown(ch, i) &&
 					!PlayerBotMayTakeCollectErrand(ch, get_dword_time()))
 				continue;
 			last = (int)i;
@@ -461,14 +518,14 @@ namespace
 				: (here >= 0 ? here : (first >= 0 ? first : last));
 		// A place on the herb errand is given back the moment the bot's
 		// active row is not a first-village one any more.
-		if ((pick < 0 || PLAYERBOT_BIOLOGIST_MISSIONS[pick].mobVnum >= 500) &&
+		if (mayReserve && (pick < 0 || PLAYERBOT_BIOLOGIST_MISSIONS[pick].mobVnum >= 500) &&
 				s_mapPlayerBotHerbErrand.erase(ch->GetPlayerID()) != 0)
 			sys_log(0, "PLAYERBOT_BIOLOGIST: herb errand over pid=%u name=%s away=%u",
 					ch->GetPlayerID(), ch->GetName(), (unsigned int)s_mapPlayerBotHerbErrand.size());
 		// A collect place is given back when the row picked is no longer an
 		// outgrown collect row - the Orc Tooth handed in and the Curse Book
 		// next keeps it, the whole chain done gives it back.
-		if ((pick < 0 || !PlayerBotCollectErrandOutgrown(ch, (size_t)pick)) &&
+		if (mayReserve && (pick < 0 || !PlayerBotCollectErrandOutgrown(ch, (size_t)pick)) &&
 				s_mapPlayerBotCollectErrand.erase(ch->GetPlayerID()) != 0)
 			sys_log(0, "PLAYERBOT_BIOLOGIST: collect errand over pid=%u name=%s away=%u",
 					ch->GetPlayerID(), ch->GetName(), (unsigned int)s_mapPlayerBotCollectErrand.size());
@@ -477,9 +534,9 @@ namespace
 		// The place is taken for the row picked, and only then - and never by a
 		// bot that is only working the row because it stands in the village
 		// anyway, or the share would be spent on trips nobody makes.
-		if (PlayerBotHerbErrandOutgrown(ch, (size_t)pick) && !herbHere)
+		if (mayReserve && PlayerBotHerbErrandOutgrown(ch, (size_t)pick) && !herbHere)
 			PlayerBotTakeHerbErrand(ch, (size_t)pick, dwNowHerb);
-		if (PlayerBotCollectErrandOutgrown(ch, (size_t)pick))
+		if (mayReserve && PlayerBotCollectErrandOutgrown(ch, (size_t)pick))
 			PlayerBotTakeCollectErrand(ch, (size_t)pick, get_dword_time());
 		if (outIndex)
 			*outIndex = (size_t)pick;
@@ -517,7 +574,11 @@ namespace
 	// The monster the active row still wants killed, or zero: the row's own
 	// while specimens are short, the key's monster in the key phase, nothing
 	// while the bag already holds the hand-in.
-	DWORD GetPlayerBotBiologistHuntMob(LPCHARACTER ch)
+	// `mayReserve` is passed straight through to the mission read: the
+	// frontier draw is the third place a trip is decided (the collect rows
+	// live in Orc Valley and the Demon Tower), and it must be able to take a
+	// place or the share those rows are limited to would stop being a limit.
+	DWORD GetPlayerBotBiologistHuntMob(LPCHARACTER ch, bool mayReserve = false)
 	{
 		// The horse trial comes first. A bot of seventy-seven with its horse
 		// at ten read "Zdobywam konia bojowego na pustyni (0/100)" in Jayang
@@ -530,7 +591,8 @@ namespace
 		if (IsPlayerBotOnBattleHorseTrial(ch) || IsPlayerBotOnMilitaryHorseTrial(ch))
 			return 0;
 		size_t missionIndex = 0;
-		const TPlayerBotBiologistMission* mission = GetActivePlayerBotBiologistMission(ch, &missionIndex);
+		const TPlayerBotBiologistMission* mission =
+				GetActivePlayerBotBiologistMission(ch, &missionIndex, mayReserve);
 		if (!mission || PlayerBotBiologistHoldsHandIn(ch, mission, missionIndex))
 			return 0;
 		return IsPlayerBotBiologistKeyPhase(ch, missionIndex) ? mission->keyMobVnum : mission->mobVnum;

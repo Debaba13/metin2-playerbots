@@ -203,6 +203,17 @@ namespace
 		if (ch->GetLevel() >= 5 && ch->GetSkillGroup() == 0 &&
 				ch->GetJob() <= JOB_SHAMAN)
 			return true;
+		// Baek-Go stands in the first villages too, and a bot that already has
+		// everything a row needs is the cheapest possible traveller: it knows
+		// the recipe, the bag holds the herbs and the purse the fee, and the
+		// only thing missing is the counter. Measured on 17 September, this is
+		// why the board stayed idle - PiratTanaka and MordercaBezSerca3 each
+		// stood in Bokjung with eleven Peach Blossoms and the recipe learnt,
+		// and the visit only ever fires for a bot already standing in M1. The
+		// gate is deliberately the whole shopping list, so this can never
+		// become the crowd at the gates that 2.0.60 was.
+		if (PlayerBotHasReadyCraftRow(ch))
+			return true;
 		// Her too: a skill stuck at seventeen with no points left to try
 		// anything else is worth a trip to Joan while the character is still
 		// young enough for her to serve it.
@@ -210,8 +221,10 @@ namespace
 			return true;
 
 		size_t missionIndex = 0;
+		// One of the two owners of the errand queue: this is where a trip is
+		// actually decided, so this is where a place may be taken.
 		const TPlayerBotBiologistMission* mission =
-				GetActivePlayerBotBiologistMission(ch, &missionIndex);
+				GetActivePlayerBotBiologistMission(ch, &missionIndex, true);
 		if (!mission)
 			return false;
 		// The hand-in: same threshold as the hand-in itself, or the trip would
@@ -425,7 +438,7 @@ namespace
 		// 16 September); the specimen comes from the quest's own kill hook,
 		// which asks nothing about the level gap.
 		{
-			const long rowHome = GetPlayerBotHuntingMobHome(GetPlayerBotBiologistHuntMob(ch));
+			const long rowHome = GetPlayerBotHuntingMobHome(GetPlayerBotBiologistHuntMob(ch, true));
 			if (rowHome != 0 && IsPlayerBotFrontierMapIndex(rowHome) && IsPlayerBotMapHostedHere(rowHome))
 				return rowHome;
 		}

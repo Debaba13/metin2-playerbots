@@ -72,11 +72,19 @@ namespace
 	// herbalist's 50724 and 50726; the Biologist's 50704 and 50706 are quest
 	// items and were never left behind.
 	const DWORD PLAYERBOT_PICKUP_GOODS_VNUMS[] = {
-		50724,    // Korzen Gango
-		50726,    // Grzyb Tue
 		70014,    // Pigulka Krwi
 		70102,    // Fasolka Zen
 	};
+	// The herbalist's sixteen herbs, 50721-50736: every one of them is a
+	// material of some row on Baek-Go's board (playerbot_herbalism.h), so all
+	// of them are worth bending down for. This used to name two - the Gango
+	// Root and the Tue Mushroom - and the measurement on 17 September is what
+	// two costs: 86 496 roots and 14 515 mushrooms in the bots' bags against
+	// ELEVEN Peach Blossoms in the whole world, which is the one herb the
+	// onboarding quest asks ten of. The bots were not short of herbs; they were
+	// short of the herbs nothing had told them to pick up.
+	const DWORD PLAYERBOT_HERB_VNUM_FIRST = 50721;
+	const DWORD PLAYERBOT_HERB_VNUM_LAST = 50736;
 	const DWORD PLAYERBOT_PICKUP_EARRING_FIRST = 17160;    // Krysztalowe Kolczyki+0..+9
 	const DWORD PLAYERBOT_PICKUP_ARMOUR_FIRST = 11670;     // Zbroja Twarzy Ducha+0..+9
 	const int PLAYERBOT_PICKUP_WEAPON_LEVEL = 65;
@@ -122,6 +130,16 @@ namespace
 	const int PLAYERBOT_STONE_FINISH_STONE_HP_PERCENT = 15;
 	const int PLAYERBOT_STONE_FINISH_OWN_HP_PERCENT = 10;
 	const int PLAYERBOT_RETREAT_END_HP_PERCENT = 65;
+	// A retreat ends on its own, whatever the monster still thinks. Ending it
+	// needed the threat to drop its aggro, and a monster that cannot reach the
+	// bot keeps GetVictim() pointing at it for ever - so a bot at full health
+	// ran the eight escape directions at a canyon wall for five hours, moving
+	// the whole time, which is also why the inactivity watchdog never saw it
+	// (MORDEGAPOTEGA on the desert, Urtopy, 17 September).
+	const DWORD PLAYERBOT_RETREAT_MAX_MS = 60 * 1000;
+	// And distance is what a retreat is for: once this far from the threat the
+	// bot has escaped, whether or not the monster has noticed.
+	const int PLAYERBOT_RETREAT_SAFE_DISTANCE = 3000;
 	const DWORD PLAYERBOT_RETREAT_MOVE_INTERVAL = 1800;
 	const DWORD PLAYERBOT_ATTACK_INTERVAL = 1200;
 	const DWORD PLAYERBOT_POTION_INTERVAL = 1000;
@@ -427,6 +445,40 @@ namespace
 	// of twelve scrolls in twenty minutes on those two steps of an Ostrze z
 	// Czerwonej Stali of one percent.
 	const long PLAYERBOT_LEVEL30_SCROLL_LOW_AVERAGE = 30;
+	// How far a level-30 weapon may be pushed at the plain anvil before the
+	// scrolls take over, by the average-damage line it carries. The operator's
+	// table of 17 September, in his own words: a weak average is ground boldly
+	// to +7, and the better the roll the earlier the risk stops being worth it,
+	// because what is being protected is the roll, not the plus.
+	//
+	//   avg <= 14%      anvil to +7, and still a gamble above it
+	//   avg 15..21%     anvil to +7
+	//   avg 22..29%     anvil to +6
+	//   avg 30..36%     anvil to +4
+	//   avg >= 37%      scrolls from +0 (PLAYERBOT_WEAPON_SCROLL_ONLY_AVERAGE)
+	//
+	// Measured on this world's own refine_proto, because the table's last line
+	// says "unless the anvil is certain": the level-30 family runs
+	// 80/70/60/50/40/30/20/10 percent from +0 to +8, so it never is - a weapon
+	// over 37% average has no anvil step worth taking at all.
+	const long PLAYERBOT_LEVEL30_ANVIL_AVG_CHEAP = 14;
+	const long PLAYERBOT_LEVEL30_ANVIL_AVG_GOOD = 21;
+	const long PLAYERBOT_LEVEL30_ANVIL_AVG_BETTER = 29;
+	const long PLAYERBOT_LEVEL30_ANVIL_AVG_HIGH = 36;
+	const int PLAYERBOT_LEVEL30_ANVIL_PLUS_CHEAP = 7;
+	const int PLAYERBOT_LEVEL30_ANVIL_PLUS_GOOD = 7;
+	const int PLAYERBOT_LEVEL30_ANVIL_PLUS_BETTER = 6;
+	const int PLAYERBOT_LEVEL30_ANVIL_PLUS_HIGH = 4;
+	// Above its ceiling a cheap roll is still worth a gamble now and then: the
+	// weapon is common and the scroll is not ("ewentualnie szansa na to ze bot
+	// pojdzie do kowala ulepszyc (40% zamiast bodziem)").
+	const int PLAYERBOT_LEVEL30_CHEAP_ANVIL_PERCENT = 40;
+	// And what a bot does with such a weapon at all: most of them are worth
+	// working on rather than listing. A share by pid, so a keeper does not
+	// change its mind about the same weapon every ten minutes.
+	const int PLAYERBOT_LEVEL30_KEEP_PERCENT = 65;
+	// How many such weapons one bag works on at a time; the rest are goods.
+	const int PLAYERBOT_LEVEL30_KEEP_MAX = 3;
 	const BYTE PLAYERBOT_LEVEL30_LOW_AVERAGE_SCROLL_FROM_PLUS = 4;
 	// A level-30 weapon is judged at what it will be, not at what it is: its
 	// blow at this plus (the family adds 48 attack by +7, nothing at +0)
@@ -3852,6 +3904,13 @@ namespace
 	// there at once - 997 of 1621 bots in the valley on SIZOWSKI's world and
 	// 277 of 1098 on m2zip on 17 September, every other map empty. A row is
 	// hours long, so the place is held longer than a herb trip.
+	// When a trip ends - its quantum spent or its row finished - the bot goes
+	// to the BACK of the queue rather than straight back to the front. The
+	// places are a share of the live population and the map that holds them is
+	// keyed by pid with no waiting list, so without this the same bots reclaim
+	// a place the moment the sweep frees one and everyone else starves
+	// ("Ryzyko glodzenia pozostalych", audit of 17 September, A.4/A.6).
+	const DWORD PLAYERBOT_BIOLOGIST_ERRAND_COOLDOWN_MS = 30 * 60 * 1000;
 	const int PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE = 100;
 	const DWORD PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS = 2 * 60 * 60 * 1000;
 	// From this row up a specimen is a refine material too - the Orc Tooth,
@@ -3870,6 +3929,50 @@ namespace
 	// second half and nothing has to be told about it twice.
 	const size_t PLAYERBOT_BIOLOGIST_MISSION_COUNT =
 			sizeof(PLAYERBOT_BIOLOGIST_MISSIONS) / sizeof(PLAYERBOT_BIOLOGIST_MISSIONS[0]);
+
+	// Herbalism at Baek-Go (playerbot_herbalism.h). The package carries the
+	// whole system - the onboarding quest, his special shop 14, 77 rows in
+	// world.crafting_proto behind eight levels of recipe knowledge - and until
+	// now nothing in this world used any of it: the recipes dropped from Metin
+	// stones went to the merchant as an unknown item and the herbs went on the
+	// counters as bulk goods. These are the numbers the quest itself uses,
+	// read off the shipped files on 17 September.
+	const BYTE PLAYERBOT_HERBALISM_MIN_LEVEL = 15;          // herbalism_onboarding
+	const DWORD PLAYERBOT_HERBALISM_ONBOARD_FLOWER = 50721;  // Kwiat Brzoskwini
+	const int PLAYERBOT_HERBALISM_ONBOARD_COUNT = 10;
+	const DWORD PLAYERBOT_HERBALISM_FIRST_RECIPE = 50909;    // Fioletowa Mikstura
+	// His shop, bought the way the fishing pass and the Forgetting Scroll are:
+	// the counter is a quest window a bot cannot open, so the bottle is created
+	// for the price the shop asks (world.shop_special, shop 14).
+	// What a bot keeps of each herb for its own board before the rest goes on a
+	// counter. A row takes five to fifteen of one herb, so this is a few
+	// crafts' worth and no more: the bags hold tens of thousands of the two
+	// common ones and the counters are where a player buys the rest.
+	const int PLAYERBOT_HERBALISM_HERB_KEEP = 20;
+	const DWORD PLAYERBOT_HERBALISM_BOTTLE_M = 50901;
+	const DWORD PLAYERBOT_HERBALISM_BOTTLE_S = 50902;
+	const DWORD PLAYERBOT_HERBALISM_BOTTLE_D = 50903;
+	const int PLAYERBOT_HERBALISM_BOTTLE_PACK = 10;
+	const long long PLAYERBOT_HERBALISM_BOTTLE_M_PRICE = 5000;
+	const long long PLAYERBOT_HERBALISM_BOTTLE_S_PRICE = 25000;
+	const long long PLAYERBOT_HERBALISM_BOTTLE_D_PRICE = 50000;
+	// A craft spends the materials whether it succeeds or not (crafting.lua
+	// removes them before the roll), so a bot keeps a reserve rather than
+	// grinding its purse to nothing on 60% rows.
+	const long long PLAYERBOT_HERBALISM_GOLD_RESERVE = 2000000;
+	const int PLAYERBOT_HERBALISM_FREE_CELLS = 6;
+	// One board visit is one craft and one recipe read: the interval is what
+	// keeps a bot from standing at Baek-Go instead of playing.
+	const DWORD PLAYERBOT_HERBALISM_VISIT_MIN_MS = 20 * 60 * 1000;
+	const DWORD PLAYERBOT_HERBALISM_VISIT_MAX_MS = 35 * 60 * 1000;
+	const DWORD PLAYERBOT_HERBALISM_CRAFTS_PER_VISIT = 3;
+	// What a bot keeps for itself before a line goes on the counter. A buff
+	// lasts ten minutes and a boss is rarer than that, so a few of each is
+	// plenty and the rest is what players have never been able to buy.
+	const int PLAYERBOT_HERBALISM_POTION_KEEP = 5;
+	// Drinking: only where it pays for the ten minutes it lasts - a boss, a
+	// Metin stone, a Demon Tower floor - and never twice inside one fight.
+	const DWORD PLAYERBOT_HERBALISM_DRINK_RETRY_MS = 60 * 1000;
 
 	// What a row's hunt vnum means: every monster its item comes from on this
 	// world, not the one the quest names. The quest's own hooks and the etc
@@ -4629,6 +4732,8 @@ namespace
 			dwLastStatusTargetVID(0),
 			dwNextBiologistCheckTime(0),
 			dwNextBiologistActionTime(0),
+			dwNextHerbalistCheckTime(0),
+			dwNextHerbalistActionTime(0),
 			dwNextHorseCheckTime(0),
 			dwNextHorseActionTime(0),
 			dwNextHorseRideCheckTime(0),
@@ -4727,6 +4832,7 @@ namespace
 			bTownNeedSkillReset(false),
 			bTownNeedSafebox(false),
 			bVisitingBiologist(false),
+			bVisitingHerbalist(false),
 			bVisitingStable(false),
 			bFishingSession(false),
 			bIsFishing(false),
@@ -4893,6 +4999,10 @@ namespace
 		DWORD dwLastStatusTargetVID;
 		DWORD dwNextBiologistCheckTime;
 		DWORD dwNextBiologistActionTime;
+		// Baek-Go's board, the same shape as the Biologist's visit above: both
+		// NPCs stand in every first village and neither is the other.
+		DWORD dwNextHerbalistCheckTime;
+		DWORD dwNextHerbalistActionTime;
 		DWORD dwNextHorseCheckTime;
 		DWORD dwNextHorseActionTime;
 		DWORD dwNextHorseRideCheckTime;
@@ -5044,6 +5154,7 @@ namespace
 		bool bTownNeedSkillReset;
 		bool bTownNeedSafebox;
 		bool bVisitingBiologist;
+		bool bVisitingHerbalist;
 		bool bVisitingStable;
 		// The bot has committed to a fishing trip: it carries a rod in the weapon
 		// slot and skips combat and gear swaps until the session ends.

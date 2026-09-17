@@ -1572,6 +1572,10 @@ namespace
 		for (size_t i = 0; i < sizeof(PLAYERBOT_PICKUP_GOODS_VNUMS) / sizeof(PLAYERBOT_PICKUP_GOODS_VNUMS[0]); ++i)
 			if (PLAYERBOT_PICKUP_GOODS_VNUMS[i] == vnum)
 				return true;
+		// Every herb of the herbalist's range, not the two the Biologist's rows
+		// happen to want: they are the materials Baek-Go's board runs on.
+		if (vnum >= PLAYERBOT_HERB_VNUM_FIRST && vnum <= PLAYERBOT_HERB_VNUM_LAST)
+			return true;
 		if ((vnum >= PLAYERBOT_PICKUP_EARRING_FIRST && vnum <= PLAYERBOT_PICKUP_EARRING_FIRST + 9) ||
 				(vnum >= PLAYERBOT_PICKUP_ARMOUR_FIRST && vnum <= PLAYERBOT_PICKUP_ARMOUR_FIRST + 9))
 			return true;
@@ -1635,6 +1639,23 @@ namespace
 				skill += item->GetAttributeValue(i);
 		}
 		return avg >= PLAYERBOT_WEAPON_SCROLL_ONLY_AVERAGE || skill >= PLAYERBOT_WEAPON_SCROLL_ONLY_SKILL;
+	}
+
+	// The operator's anvil ceiling for a level-30 weapon, by its average line.
+	// Below it the bot grinds at the blacksmith and takes the risk; at or above
+	// it the step belongs to a scroll. A weapon over the scroll-only line never
+	// reaches this at all - IsPlayerBotScrollOnlyWeapon answers first.
+	int GetPlayerBotLevel30AnvilCeiling(long average)
+	{
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_CHEAP)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_CHEAP;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_GOOD)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_GOOD;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_BETTER)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_BETTER;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_HIGH)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_HIGH;
+		return 0;
 	}
 
 	// What a level-30 weapon will hit for once ground to
@@ -1714,6 +1735,38 @@ namespace
 		return view.project == item;
 	}
 
+	// Whether this bot works THIS level-30 weapon at the anvil rather than
+	// listing it. "Niech botom zalezy na takich broniach ... 65% do kowala,
+	// reszta na rynek" - so the draw is per weapon, not per bot, and it is a
+	// hash of the pair rather than a roll: a keeper that changed its mind would
+	// put the same weapon up and take it back every service visit. The bag
+	// still has a ceiling, because the bots hold 276 of these at +0 between
+	// them and grinding all of them would be a purse emptied for nothing.
+	bool PlayerBotKeepsLevel30ForAnvil(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !IsPlayerBotSpecialLevel30Weapon(item))
+			return false;
+		if (IsPlayerBotLevel30Project(ch, item))
+			return true;   // the project is kept whatever the draw says
+		const DWORD salt = ch->GetPlayerID() ^ (item->GetID() * 2654435761U);
+		if ((int)(PlayerBotNavHash(salt) % 100U) >= PLAYERBOT_LEVEL30_KEEP_PERCENT)
+			return false;
+		// Count what the bag already works on, so a bot keeps a few and lists
+		// the rest instead of hoarding every one it picks up.
+		int kept = 0;
+		for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM other = ch->GetInventoryItem(cell);
+			if (!other || other == item || !IsPlayerBotSpecialLevel30Weapon(other))
+				continue;
+			const DWORD otherSalt = ch->GetPlayerID() ^ (other->GetID() * 2654435761U);
+			if ((int)(PlayerBotNavHash(otherSalt) % 100U) < PLAYERBOT_LEVEL30_KEEP_PERCENT)
+				++kept;
+		}
+		return kept < PLAYERBOT_LEVEL30_KEEP_MAX;
+	}
+
+
 	// A level-30 weapon on somebody's counter is worth buying when its
 	// potential beats both the best blow the bot has and its own project.
 	bool IsPlayerBotBetterLevel30Offer(LPCHARACTER ch, LPITEM offer)
@@ -1740,8 +1793,14 @@ namespace
 		LPITEM worn = ch->GetWear(WEAR_WEAPON);
 		if (worn && !IsPlayerBotWeapon(ch, worn))
 			return false;
-		if (IsPlayerBotSpecialLevel30Weapon(worn) && worn->GetRefineLevel() >= PLAYERBOT_LEVEL30_PROJECT_PLUS)
-			return false;
+		// A finished refine is not a finished weapon. This used to answer "no
+		// thank you" to the whole market for any bot already wearing a special
+		// level-30 weapon at +7, whatever was rolled on it - so a Full Moon
+		// Sword +7 with nothing on it stopped its owner from ever looking at a
+		// better one (audit of 17 September). The comparison below is the real
+		// test and it is the stricter one where it should be: toBeat counts a
+		// worn level-30 weapon AT ITS POTENTIAL, so a good +7 still refuses
+		// every offer, and only a poor one lets the search go on.
 		TPlayerBotLevel30View view;
 		ReadPlayerBotLevel30View(ch, view);
 		if (view.project)

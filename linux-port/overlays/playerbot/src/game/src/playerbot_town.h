@@ -713,8 +713,10 @@ namespace
 			state.dwNextBiologistCheckTime = dwNow + 2000;
 
 		size_t missionIndex = 0;
+		// The other owner: the visit that finishes an errand gives the place
+		// back, so it asks with the queue unlocked.
 		const TPlayerBotBiologistMission* mission =
-				GetActivePlayerBotBiologistMission(ch, &missionIndex);
+				GetActivePlayerBotBiologistMission(ch, &missionIndex, true);
 		if (!mission)
 		{
 			state.bVisitingBiologist = false;
@@ -896,6 +898,133 @@ namespace
 		state.dwNextBiologistActionTime = dwNow + number(2500, 5000);
 		return true;
 	}
+
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	// Baek-Go's crafting board (playerbot_herbalism.h), worked the way the
+	// Biologist's hand-in above is: the bot walks to the NPC, stands there and
+	// spends one visit on it. The walk is not decoration - crafting.create asks
+	// npc.is_near(10) before it does anything, so a craft made across the town
+	// would be a craft no player could have made, and the whole point of doing
+	// this server-side is that a bot and a player pay the same price for the
+	// same row.
+	bool ManagePlayerBotHerbalist(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch || state.bVisitingShop || state.bVisitingBiologist)
+			return false;
+		if (ch->GetLevel() < PLAYERBOT_HERBALISM_MIN_LEVEL)
+			return false;
+		// A bot in somebody's party is theirs, and the board is an errand.
+		if (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty()))
+			return false;
+		if (!state.bVisitingHerbalist && dwNow < state.dwNextHerbalistCheckTime)
+			return false;
+
+		playerbot_empire_rules::TPoint herbalistPos;
+		if (!playerbot_empire_rules::GetHerbalist(ch->GetMapIndex(), herbalistPos))
+		{
+			state.bVisitingHerbalist = false;
+			return false;
+		}
+
+		// Is there anything to go there for? Asked before the walk, so nobody
+		// crosses a village for an empty board: either the onboarding the quest
+		// wants (ten Peach Blossoms) or a row the bag and the purse already
+		// cover. The bottles are not counted here - they are bought at the
+		// counter itself - so a row short of only those still brings the bot.
+		const bool unlocked = IsPlayerBotHerbalismUnlocked(ch);
+		const bool wantsOnboarding = !unlocked &&
+				(int) ch->CountSpecifyItem(PLAYERBOT_HERBALISM_ONBOARD_FLOWER) >=
+						PLAYERBOT_HERBALISM_ONBOARD_COUNT;
+		const TCraftingItem* row = unlocked ? ChoosePlayerBotCraftRow(ch) : NULL;
+		if (!wantsOnboarding && !row)
+		{
+			state.bVisitingHerbalist = false;
+			state.dwNextHerbalistCheckTime = dwNow + number(
+					PLAYERBOT_HERBALISM_VISIT_MIN_MS, PLAYERBOT_HERBALISM_VISIT_MAX_MS);
+			return false;
+		}
+		if (CountPlayerBotFreeInventoryCells(ch) < PLAYERBOT_HERBALISM_FREE_CELLS)
+		{
+			state.bVisitingHerbalist = false;
+			state.dwNextHerbalistCheckTime = dwNow + number(
+					PLAYERBOT_HERBALISM_VISIT_MIN_MS, PLAYERBOT_HERBALISM_VISIT_MAX_MS);
+			return false;
+		}
+
+		if (!state.bVisitingHerbalist)
+		{
+			state.bVisitingHerbalist = true;
+			state.dwNextHerbalistActionTime = 0;
+			state.dwTargetVID = 0;
+			ch->SetVictim(NULL);
+			ch->Stop();
+			ClearPlayerBotRoute(state, true);
+			sys_log(0, "PLAYERBOT_HERB: going to Baek-Go pid=%u name=%s onboarding=%d row=%u",
+					ch->GetPlayerID(), ch->GetName(), wantsOnboarding ? 1 : 0,
+					row ? row->vnum : 0);
+		}
+
+		SetPlayerBotAction(state, BOT_ACTION_SHOP, dwNow);
+		state.dwTargetVID = 0;
+		ch->SetVictim(NULL);
+
+		long approachX = 0, approachY = 0;
+		GetPlayerBotNpcApproach(ch->GetPlayerID(), herbalistPos.x, herbalistPos.y,
+				0x48455242U, approachX, approachY);
+		if (DISTANCE_APPROX(ch->GetX() - approachX, ch->GetY() - approachY) > 650)
+		{
+			if (!MovePlayerBot(ch, approachX, approachY, dwNow, 20, true, true, false, true) &&
+					state.bStuckCounter >= 6)
+			{
+				state.bVisitingHerbalist = false;
+				state.dwNextHerbalistCheckTime = dwNow + 30000;
+				ClearPlayerBotRoute(state, true);
+				sys_err("PLAYERBOT_HERB: route failed pid=%u name=%s from=(%ld,%ld)",
+						ch->GetPlayerID(), ch->GetName(), ch->GetX(), ch->GetY());
+				return false;
+			}
+			return true;
+		}
+
+		ch->Stop();
+		ch->SetPosition(POS_STANDING);
+		if (state.dwNextHerbalistActionTime == 0)
+		{
+			state.dwNextHerbalistActionTime = dwNow + number(3000, 8000);
+			return true;
+		}
+		if (dwNow < state.dwNextHerbalistActionTime)
+			return true;
+
+		// At the board at last. The onboarding first - it is what opens it -
+		// and then a few crafts, because walking here for one is a walk wasted.
+		int made = 0;
+		if (!IsPlayerBotHerbalismUnlocked(ch))
+			EnsurePlayerBotHerbalismStarted(ch);
+		if (IsPlayerBotHerbalismUnlocked(ch))
+		{
+			for (DWORD i = 0; i < PLAYERBOT_HERBALISM_CRAFTS_PER_VISIT; ++i)
+			{
+				const TCraftingItem* next = ChoosePlayerBotCraftRow(ch);
+				if (!next || !CraftPlayerBotPotion(ch, next))
+					break;
+				++made;
+			}
+		}
+
+		state.bVisitingHerbalist = false;
+		state.dwNextHerbalistActionTime = 0;
+		state.dwNextHerbalistCheckTime = dwNow + number(
+				PLAYERBOT_HERBALISM_VISIT_MIN_MS, PLAYERBOT_HERBALISM_VISIT_MAX_MS);
+		ClearPlayerBotRoute(state, true);
+		sys_log(0, "PLAYERBOT_HERB: visit over pid=%u name=%s crafted=%d gold=%lld",
+				ch->GetPlayerID(), ch->GetName(), made, (long long) ch->GetGold());
+		return made > 0;
+	}
+#else
+	// r40250 has no crafting board and no Baek-Go to walk to.
+	bool ManagePlayerBotHerbalist(LPCHARACTER, TPlayerBotAIState&, DWORD) { return false; }
+#endif
 
 	void FinishPlayerBotTownVisit(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow,
 			bool completed)
@@ -1907,8 +2036,12 @@ namespace
 		// A weapon from the level-30 set is the prize of this whole market. It is
 		// worth a counter slot at any refine at all, unrefined included - except
 		// the one its keeper is grinding towards +9 itself.
+		// A level-30 weapon the bot means to grind is not goods: the operator's
+		// share (PLAYERBOT_LEVEL30_KEEP_PERCENT) keeps most of them for the
+		// anvil and lists the rest, which is why 2603 of them stood on the
+		// counters at +0 on 17 September while 28 bots wore one.
 		if (IsPlayerBotSpecialLevel30Weapon(item))
-			return IsPlayerBotLevel30Project(ch, item) ? -1 : 2000;
+			return PlayerBotKeepsLevel30ForAnvil(ch, item) ? -1 : 2000;
 		// Gear under level thirty goes up at +6 or better and ranks under the
 		// materials whatever is rolled on it, and one counter carries only
 		// PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES of it (CollectPlayerBotShopItems).
@@ -2000,8 +2133,23 @@ namespace
 		if (IsPlayerBotBulkGoods(item) &&
 				(int)ch->CountSpecifyItem(item->GetVnum()) < PLAYERBOT_SHOP_BULK_MIN_UNITS)
 			return -1;
+		// A herb is Baek-Go's material now, so a few stay home. Without this a
+		// keeper listed the lot and then stood at the board with nothing to
+		// craft - the counters already held 12 506 Tue Mushrooms on 17 September.
+		if (IsPlayerBotHerbalismHerb(item->GetVnum()) &&
+				(int) ch->CountSpecifyItem(item->GetVnum()) <= PLAYERBOT_HERBALISM_HERB_KEEP)
+			return -1;
 		if (IsPlayerBotPickupGoods(item))
 			return PLAYERBOT_SHOP_PICKUP_GOODS_SCORE + item->GetRefineLevel();
+		// What Baek-Go's board made. A bot keeps a few for the fights that are
+		// worth a ten-minute buff and the rest is stock - and it is stock worth
+		// listing high, because this is the only place in the world a player can
+		// buy one: nothing else crafts, and the potions have no drop table.
+		// A recipe the bot has read to its ceiling is goods for the same reason.
+		if (IsPlayerBotSurplusPotion(ch, item))
+			return 950;
+		if (IsPlayerBotSurplusRecipe(ch, item))
+			return 900;
 		// Hair dye: the one the bot is wearing is spent, the rest are stock.
 		// Ranked above ordinary spare gear because there is nowhere else in this
 		// world to buy one.
