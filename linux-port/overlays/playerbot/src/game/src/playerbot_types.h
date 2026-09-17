@@ -1587,6 +1587,11 @@ namespace
 	// it in the same tick after a restart - measured at 99.9% of a core.
 	const int PLAYERBOT_MATERIAL_SCANS_PER_TICK = 6;
 	const int PLAYERBOT_MATERIAL_HUNT_RANGE = 40000;
+	// How long the frontier wander keeps walking to the collect-row monster
+	// the last scan found, ahead of any hub (StartPlayerBotMaterialHunt,
+	// ManagePlayerBotWandering), and how near counts as there.
+	const DWORD PLAYERBOT_BIOLOGIST_WALK_STICK_MS = 4 * 60 * 1000;
+	const int PLAYERBOT_BIOLOGIST_WALK_ARRIVED = 1400;
 	// What a monster carrying a wanted material adds to its target score. Above
 	// the sweet-spot level bonus of a fair fight and below the party-objective
 	// one, so it wins among equals and loses to an errand somebody is waiting on.
@@ -3772,8 +3777,11 @@ namespace
 		// (30221) comes from the same quest's hook on 701-707 in the valley
 		// and 731-737 in Milgyo, both hosted. A bot of forty reaches a monster
 		// of forty-nine: PLAYERBOT_MAX_TARGET_LEVEL_DELTA is fifteen.
+		// The key names 701, not 706: a row's hunt vnum stands for a family
+		// (IsPlayerBotBiologistHuntRace), and the Curse Book's specimen and its
+		// key are two different families on the same Tormentor.
 		{ 40, "collect_quest_lv40", 30047, 706, 15, 60, 0, 0, "Ksiega Klatw",
-				30221, 706, POINT_ATT_SPEED, 5, 50110 },
+				30221, 701, POINT_ATT_SPEED, 5, 50110 },
 		// The Demon Souvenir is the row this world cannot finish, and it is
 		// here so that it starts working by itself the day that changes. Its
 		// specimen (30015) drops from the Demon Soldier (1001) and its key
@@ -3784,8 +3792,10 @@ namespace
 		// PLAYERBOT_HUNTING_MOB_HOMES, and GetActivePlayerBotBiologistMission
 		// steps over a row whose monster stands nowhere hosted; give 1001 a
 		// row there if the map is ever moved and this one comes alive.
+		// The key names 1002 for the same reason: 1001 alone carries the
+		// souvenir, 1001-1004 the key.
 		{ 50, "collect_quest_lv50", 30015, 1001, 15, 60, 0, 0, "Pamiatka Po Demonie",
-				30222, 1001, POINT_DEF_GRADE_BONUS, 60, 50111 }
+				30222, 1002, POINT_DEF_GRADE_BONUS, 60, 50111 }
 	};
 	const DWORD PLAYERBOT_ORC_TOOTH_VNUM = 30006;
 	// How many specimens are worth a walk to Joan.
@@ -3818,6 +3828,13 @@ namespace
 	// PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS.
 	const int PLAYERBOT_BIOLOGIST_HERB_TRIP_PER_MILLE = 25;
 	const DWORD PLAYERBOT_BIOLOGIST_HERB_ERRAND_MAX_MS = 60 * 60 * 1000;
+	// The same for an outgrown collect row, whose monsters stand in Orc Valley
+	// and the Demon Tower: the frontier draw sent every bot with the row open
+	// there at once - 997 of 1621 bots in the valley on SIZOWSKI's world and
+	// 277 of 1098 on m2zip on 17 September, every other map empty. A row is
+	// hours long, so the place is held longer than a herb trip.
+	const int PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE = 100;
+	const DWORD PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS = 2 * 60 * 60 * 1000;
 	// From this row up a specimen is a refine material too - the Orc Tooth,
 	// the Curse Book, the Demon Souvenir - and a bot of any level may carry
 	// one. Such a row is taken for a hand-in whatever the bot has outgrown,
@@ -3834,6 +3851,47 @@ namespace
 	// second half and nothing has to be told about it twice.
 	const size_t PLAYERBOT_BIOLOGIST_MISSION_COUNT =
 			sizeof(PLAYERBOT_BIOLOGIST_MISSIONS) / sizeof(PLAYERBOT_BIOLOGIST_MISSIONS[0]);
+
+	// What a row's hunt vnum means: every monster its item comes from on this
+	// world, not the one the quest names. The quest's own hooks and the etc
+	// table, read off the files on 17 September: the Orc Tooth from 601 (the
+	// hook, 5%) and the Black Orcs 636/656 (etc, 1.17) - 601 stands in the
+	// valley on two points, both in boss groups; its key from the hook on
+	// 631-637; the Curse Book from the Tormentors 706/756 (etc, 2.70, no hook);
+	// its key from the hook on 701-707 and 731-737; the Demon Souvenir from
+	// 1001 (etc, 1.26) and its key from the hook on 1001-1004. Naming one vnum
+	// made every other carrier worthless experience to a bot past its level,
+	// and 129 bots stood in the valley in parties looking for a target. Any
+	// other hunt means the monster it names.
+	bool IsPlayerBotBiologistHuntRace(DWORD huntMob, DWORD race)
+	{
+		if (huntMob == 0)
+			return false;
+		if (race == huntMob)
+			return true;
+		switch (huntMob)
+		{
+			case 601: return race == 636 || race == 656;
+			case 631: return race >= 632 && race <= 637;
+			case 706: return race == 756;
+			case 701: return (race >= 702 && race <= 707) || (race >= 731 && race <= 737);
+			case 1002: return race == 1001 || race == 1003 || race == 1004;
+		}
+		return false;
+	}
+
+	// The specimens this world gives only through the etc table, by carrier,
+	// with the probability ITEM_MANAGER keeps (etc_drop_item.txt times ten
+	// thousand, against a range of four million). That roll fades with the
+	// level gap - one percent at fifteen levels - and a bot of seventy on the
+	// Orc Tooth row had one tooth in about seventeen thousand kills at the
+	// world's rate; NotePlayerBotBiologistCarrierKill rolls what the gap took.
+	struct TPlayerBotSpecimenCarrier { DWORD itemVnum; DWORD mobVnum; DWORD dropProb; };
+	const TPlayerBotSpecimenCarrier PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[] = {
+		{ 30006, 636, 11700 }, { 30006, 656, 11700 },
+		{ 30047, 706, 27000 }, { 30047, 756, 27000 },
+		{ 30015, 1001, 12600 }
+	};
 
 	// Canonical ``special.levelup_quest`` entries from questlib.lua.  These are
 	// the ordinary Hunting Missions shown to a human player after each level;
@@ -3916,6 +3974,8 @@ namespace
 		// island, measured at 68 spawn points each through the valley's own
 		// group_group 306. 756 is already listed above for the hunting rows.
 		{ 706, 64, 0 },
+		// The Curse Book's key family, named by 701 (IsPlayerBotBiologistHuntRace).
+		{ 701, 64, 0 },
 		// The Demon Tower, now that game1 hosts it. These four are the whole of
 		// the Biologist's level-50 row: 1001 carries the Demon Souvenir and all
 		// four carry the key (30222) through the quest's own kill hook. They
@@ -4711,6 +4771,10 @@ namespace
 			dwNextItemShopBalanceTime(0),
 			dwNextMaterialScanTime(0),
 			dwMaterialHuntVnum(0),
+			lBiologistWalkMap(0),
+			lBiologistWalkX(0),
+			lBiologistWalkY(0),
+			dwBiologistWalkUntil(0),
 			dwShopSignClearUntil(0),
 			dwNextShopSignClearTime(0),
 			dwPortalWalkSince(0),
@@ -5080,6 +5144,12 @@ namespace
 		// set off after. See StartPlayerBotMaterialHunt.
 		DWORD dwNextMaterialScanTime;
 		DWORD dwMaterialHuntVnum;
+		// Where the collect row's scan last found the row's monsters, and until
+		// when the frontier wander walks there first.
+		long lBiologistWalkMap;
+		long lBiologistWalkX;
+		long lBiologistWalkY;
+		DWORD dwBiologistWalkUntil;
 		DWORD dwShopSignClearUntil;
 		DWORD dwNextShopSignClearTime;
 		DWORD dwPortalWalkSince;

@@ -734,7 +734,7 @@ namespace
 		}
 
 		if ((desiredMobVnum != 0 && candidate->IsMonster() &&
-				candidate->GetRaceNum() == desiredMobVnum) ||
+				IsPlayerBotBiologistHuntRace(desiredMobVnum, candidate->GetRaceNum())) ||
 				IsPlayerBotHorseTrialTarget(ch, candidate) ||
 				IsPlayerBotDemonTowerTarget(ch, candidate))
 			context.activeQuestTarget = true;
@@ -1028,7 +1028,7 @@ namespace
 				const int mobLevel = candidate->GetLevel();
 				const int levelDelta = mobLevel - botLevel;
 				const bool isQuestTarget = (candidate->IsMonster() &&
-						m_desiredMobVnum != 0 && candidate->GetRaceNum() == m_desiredMobVnum) ||
+						IsPlayerBotBiologistHuntRace(m_desiredMobVnum, candidate->GetRaceNum())) ||
 						IsPlayerBotHorseTrialTarget(m_owner, candidate);
 				const bool isBestialWeaponTarget = candidate->IsMonster() &&
 						m_huntM2Bestials &&
@@ -1221,14 +1221,17 @@ namespace
 
 	// The nearest living monster on the map whose DROP_ITEM is one of the
 	// wanted materials. Runs over a snapshot of every entity on the map, which
-	// is why the caller rations it.
+	// is why the caller rations it. The same pass keeps the nearest of the
+	// bot's collect-row family (huntMob, IsPlayerBotBiologistHuntRace), which
+	// the caller walks to first.
 	class CFindPlayerBotWantedDrop
 	{
 		public:
 			CFindPlayerBotWantedDrop(LPCHARACTER seeker, const std::set<DWORD>& wanted,
-					int maxDistance)
+					int maxDistance, DWORD huntMob = 0)
 				: m_seeker(seeker), m_wanted(wanted), m_maxDistance(maxDistance),
-				  m_best(NULL), m_bestDistance(INT_MAX), m_dropVnum(0)
+				  m_best(NULL), m_bestDistance(INT_MAX), m_dropVnum(0),
+				  m_huntMob(huntMob), m_bestHunt(NULL), m_bestHuntDistance(INT_MAX)
 			{
 			}
 
@@ -1239,6 +1242,16 @@ namespace
 				LPCHARACTER mob = static_cast<LPCHARACTER>(entity);
 				if (!mob->IsMonster() || mob->IsDead() || mob->IsStone())
 					return;
+				if (m_huntMob != 0 && IsPlayerBotBiologistHuntRace(m_huntMob, mob->GetRaceNum()))
+				{
+					const int huntDistance = DISTANCE_APPROX(m_seeker->GetX() - mob->GetX(),
+							m_seeker->GetY() - mob->GetY());
+					if (huntDistance <= m_maxDistance && huntDistance < m_bestHuntDistance)
+					{
+						m_bestHunt = mob;
+						m_bestHuntDistance = huntDistance;
+					}
+				}
 				const DWORD drop = mob->GetMobDropItemVnum();
 				if (drop == 0 || m_wanted.find(drop) == m_wanted.end())
 					return;
@@ -1257,6 +1270,9 @@ namespace
 			LPCHARACTER m_best;
 			int m_bestDistance;
 			DWORD m_dropVnum;
+			DWORD m_huntMob;
+			LPCHARACTER m_bestHunt;
+			int m_bestHuntDistance;
 	};
 
 	// The material errand's second half. Preferring the right monster among the
@@ -1304,7 +1320,15 @@ namespace
 		// over the map, so it is settled before the tick's scan budget is asked.
 		std::set<DWORD> wanted;
 		CollectPlayerBotWantedMaterials(ch, wanted);
-		if (wanted.empty())
+		// A collect row's monsters are wanted the same way (the valley's and
+		// the tower's; a herb row's hubs are already chosen for its level).
+		// Bots of seventy on the Orc Tooth row chose a band hub every thirty
+		// seconds and found nothing in reach: 51 of 86 bots in the valley read
+		// "Szukam celu dla grupy" (m2zip, 17 September).
+		DWORD huntMob = GetPlayerBotDesiredQuestMobVnum(ch, state, dwNow);
+		if (huntMob < 500)
+			huntMob = 0;
+		if (wanted.empty() && huntMob == 0)
 		{
 			state.dwNextMaterialScanTime = dwNow + PLAYERBOT_MATERIAL_SCAN_INTERVAL;
 			return false;
@@ -1325,8 +1349,30 @@ namespace
 		if (!map)
 			return false;
 
-		CFindPlayerBotWantedDrop finder(ch, wanted, PLAYERBOT_MATERIAL_HUNT_RANGE);
+		CFindPlayerBotWantedDrop finder(ch, wanted, PLAYERBOT_MATERIAL_HUNT_RANGE, huntMob);
 		map->for_each(finder);
+		// The row's family first. "In the scan" is the target search's own
+		// radius, which for a bot in a party is the cohesion radius.
+		const int inScan = ch->GetParty() ? PLAYERBOT_PARTY_COHESION_RADIUS : PLAYERBOT_SEARCH_RANGE;
+		if (finder.m_bestHunt && finder.m_bestHuntDistance > inScan)
+		{
+			// "Zbieram dla Biologa", not a party looking for something to do.
+			SetPlayerBotAction(state, BOT_ACTION_BIOLOGIST, dwNow);
+			sys_log(0, "PLAYERBOT_HUNT: biologist errand pid=%u name=%s map=%ld hunt=%u mob=%s distance=%d pos=(%ld,%ld)",
+					ch->GetPlayerID(), ch->GetName(), ch->GetMapIndex(), huntMob,
+					finder.m_bestHunt->GetName(), finder.m_bestHuntDistance,
+					finder.m_bestHunt->GetX(), finder.m_bestHunt->GetY());
+			MovePlayerBot(ch, finder.m_bestHunt->GetX(), finder.m_bestHunt->GetY(), dwNow, 24, true, true);
+			state.dwNextWanderTime = dwNow + 8000;
+			// Kept past the next fight on the way (ManagePlayerBotWandering).
+			state.lBiologistWalkMap = ch->GetMapIndex();
+			state.lBiologistWalkX = finder.m_bestHunt->GetX();
+			state.lBiologistWalkY = finder.m_bestHunt->GetY();
+			state.dwBiologistWalkUntil = dwNow + PLAYERBOT_BIOLOGIST_WALK_STICK_MS;
+			return true;
+		}
+		if (finder.m_bestHunt)
+			return false; // one is in reach: the target search takes it
 		if (!finder.m_best || finder.m_bestDistance <= PLAYERBOT_SEARCH_RANGE)
 			return false; // nothing carries it here, or it is already in the scan
 

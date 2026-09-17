@@ -139,6 +139,10 @@ namespace
 		return false;
 	}
 
+	// The Biologist's share of a kill (playerbot_missions.h, later in the
+	// include order).
+	void NotePlayerBotBiologistCarrierKill(LPCHARACTER ch, LPCHARACTER target);
+
 	// Called wherever a bot has just swung at something. The engine has no hook
 	// that says "you killed this", so the kill is read off the target the tick
 	// after the blow: still the bot's pointer, now dead. The VID is remembered
@@ -152,6 +156,8 @@ namespace
 		if (state.dwLastKillCreditedVID == vid)
 			return;
 		state.dwLastKillCreditedVID = vid;
+		// Under the same guard, so a corpse is one roll.
+		NotePlayerBotBiologistCarrierKill(ch, target);
 
 		// The military trial is credited from the same place and under the same
 		// VID guard. A second hook of its own would have had to share

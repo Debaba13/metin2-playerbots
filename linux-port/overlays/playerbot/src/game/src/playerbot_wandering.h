@@ -475,7 +475,14 @@ namespace
 	{
 		if (!ch)
 			return;
-		SetPlayerBotAction(state, ch->GetParty() ? BOT_ACTION_PARTY_ASSEMBLE : BOT_ACTION_TRAVEL, dwNow);
+		// A kept walk to the collect row's monsters is the Biologist's errand for
+		// its whole length, the route continuation below included - stamped only
+		// where the walk is taken up, it read "Szukam celu dla grupy" or "Ide do
+		// Biologa" on most of the way.
+		SetPlayerBotAction(state, state.dwBiologistWalkUntil != 0 && dwNow < state.dwBiologistWalkUntil &&
+					state.lBiologistWalkMap == ch->GetMapIndex()
+				? BOT_ACTION_BIOLOGIST
+				: (ch->GetParty() ? BOT_ACTION_PARTY_ASSEMBLE : BOT_ACTION_TRAVEL), dwNow);
 
 		// Party following is an active movement intent, not a new wander decision.
 		// Refresh it on every AI update so followers do not stop for 8-12 seconds
@@ -1026,6 +1033,36 @@ namespace
 							state.bStuckCounter >= 3)
 					{
 						s_mapKnownPlayerBotMetins.erase(knownMetin->GetVID());
+						ClearPlayerBotRoute(state, true);
+					}
+					return;
+				}
+			}
+			// The collect row's monsters the last scan found come before any hub
+			// too (StartPlayerBotMaterialHunt). A fight on the way parked the
+			// route and the hub choice after it walked the bot off by level: on
+			// m2zip 43 of 91 bots in Orc Valley stood in parties reading "Szukam
+			// celu dla grupy" with a collect place each, a walk to the Black Orcs
+			// and a band hub by turns (17 September).
+			if (state.dwBiologistWalkUntil != 0)
+			{
+				const DWORD huntMob = GetPlayerBotBiologistHuntMob(ch);
+				const bool arrived = DISTANCE_APPROX(ch->GetX() - state.lBiologistWalkX,
+						ch->GetY() - state.lBiologistWalkY) <= PLAYERBOT_BIOLOGIST_WALK_ARRIVED;
+				if (dwNow >= state.dwBiologistWalkUntil || arrived || huntMob < 500 ||
+						state.lBiologistWalkMap != ch->GetMapIndex())
+					state.dwBiologistWalkUntil = 0;
+				else
+				{
+					// The top of this function stamped PARTY_ASSEMBLE on a party
+					// bot: 56 of 90 bots in the valley read "Szukam celu dla grupy"
+					// while walking here.
+					SetPlayerBotAction(state, BOT_ACTION_BIOLOGIST, dwNow);
+					state.dwNextWanderTime = dwNow + 1200;
+					if (!MovePlayerBot(ch, state.lBiologistWalkX, state.lBiologistWalkY, dwNow, 24, true, true) &&
+							state.bStuckCounter >= 3)
+					{
+						state.dwBiologistWalkUntil = 0;
 						ClearPlayerBotRoute(state, true);
 					}
 					return;

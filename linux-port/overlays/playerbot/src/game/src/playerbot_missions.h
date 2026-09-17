@@ -247,6 +247,60 @@ namespace
 		return s_mapPlayerBotHerbErrand.size() < cap;
 	}
 
+	// Who is away on an outgrown collect row (pid -> since): the valley and the
+	// tower, PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE of the live bots at a
+	// time. The frontier draw sends a bot with such a row open where its
+	// monster stands whatever its level (GetPlayerBotFrontierMapForLevelRaw),
+	// and on 17 September that was 997 of 1621 bots in Orc Valley on
+	// SIZOWSKI's world, 277 of 1098 on m2zip, every other map empty.
+	std::map<DWORD, DWORD> s_mapPlayerBotCollectErrand;
+
+	bool PlayerBotCollectErrandOutgrown(LPCHARACTER ch, size_t missionIndex)
+	{
+		const TPlayerBotBiologistMission& mission = PLAYERBOT_BIOLOGIST_MISSIONS[missionIndex];
+		return mission.mobVnum >= 500 &&
+				mission.requiredLevel >= PLAYERBOT_BIOLOGIST_COLLECT_QUEST_LEVEL &&
+				(int)ch->GetLevel() > mission.requiredLevel + PLAYERBOT_BIOLOGIST_OUTGROWN_LEVELS;
+	}
+
+	// A place held, or a free one - nothing taken, the same shape as the herb
+	// errand's question above and for the same reason.
+	bool PlayerBotMayTakeCollectErrand(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (IsPlayerBotOnBattleHorseTrial(ch) || IsPlayerBotOnMilitaryHorseTrial(ch))
+			return false;
+		const DWORD pid = ch->GetPlayerID();
+		std::map<DWORD, DWORD>::iterator it = s_mapPlayerBotCollectErrand.find(pid);
+		if (it != s_mapPlayerBotCollectErrand.end())
+		{
+			if (dwNow - it->second < PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS)
+				return true;
+			s_mapPlayerBotCollectErrand.erase(it);
+		}
+		for (std::map<DWORD, DWORD>::iterator old = s_mapPlayerBotCollectErrand.begin();
+				old != s_mapPlayerBotCollectErrand.end();)
+		{
+			if (dwNow - old->second >= PLAYERBOT_BIOLOGIST_COLLECT_ERRAND_MAX_MS)
+				s_mapPlayerBotCollectErrand.erase(old++);
+			else
+				++old;
+		}
+		const size_t cap = std::max<size_t>(1, (size_t)GetPlayerBotsAlive() * PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE / 1000);
+		return s_mapPlayerBotCollectErrand.size() < cap;
+	}
+
+	void PlayerBotTakeCollectErrand(LPCHARACTER ch, size_t missionIndex, DWORD dwNow)
+	{
+		const DWORD pid = ch->GetPlayerID();
+		if (s_mapPlayerBotCollectErrand.count(pid))
+			return;
+		s_mapPlayerBotCollectErrand[pid] = dwNow;
+		const size_t cap = std::max<size_t>(1, (size_t)GetPlayerBotsAlive() * PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE / 1000);
+		sys_log(0, "PLAYERBOT_BIOLOGIST: collect errand pid=%u name=%s level=%d row=%u map=%ld away=%u/%u",
+				pid, ch->GetName(), (int)ch->GetLevel(), (unsigned int)missionIndex, ch->GetMapIndex(),
+				(unsigned int)s_mapPlayerBotCollectErrand.size(), (unsigned int)cap);
+	}
+
 	// The place itself, taken once the pick is an outgrown herb row.
 	void PlayerBotTakeHerbErrand(LPCHARACTER ch, size_t missionIndex, DWORD dwNow)
 	{
@@ -318,6 +372,11 @@ namespace
 			if (PlayerBotHerbErrandOutgrown(ch, i) &&
 					!PlayerBotMayTakeHerbErrand(ch, i, get_dword_time()))
 				continue;
+			// And an outgrown collect row is a stay in the valley or the tower,
+			// PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE of the world at a time.
+			if (PlayerBotCollectErrandOutgrown(ch, i) &&
+					!PlayerBotMayTakeCollectErrand(ch, get_dword_time()))
+				continue;
 			last = (int)i;
 			// No row is ever "too low": rows are done in order, whatever the
 			// bot's level, and a bot of seventy-eight with the Gango Root undone
@@ -353,11 +412,20 @@ namespace
 				s_mapPlayerBotHerbErrand.erase(ch->GetPlayerID()) != 0)
 			sys_log(0, "PLAYERBOT_BIOLOGIST: herb errand over pid=%u name=%s away=%u",
 					ch->GetPlayerID(), ch->GetName(), (unsigned int)s_mapPlayerBotHerbErrand.size());
+		// A collect place is given back when the row picked is no longer an
+		// outgrown collect row - the Orc Tooth handed in and the Curse Book
+		// next keeps it, the whole chain done gives it back.
+		if ((pick < 0 || !PlayerBotCollectErrandOutgrown(ch, (size_t)pick)) &&
+				s_mapPlayerBotCollectErrand.erase(ch->GetPlayerID()) != 0)
+			sys_log(0, "PLAYERBOT_BIOLOGIST: collect errand over pid=%u name=%s away=%u",
+					ch->GetPlayerID(), ch->GetName(), (unsigned int)s_mapPlayerBotCollectErrand.size());
 		if (pick < 0)
 			return NULL;
 		// The place is taken for the row picked, and only then.
 		if (PlayerBotHerbErrandOutgrown(ch, (size_t)pick))
 			PlayerBotTakeHerbErrand(ch, (size_t)pick, get_dword_time());
+		if (PlayerBotCollectErrandOutgrown(ch, (size_t)pick))
+			PlayerBotTakeCollectErrand(ch, (size_t)pick, get_dword_time());
 		if (outIndex)
 			*outIndex = (size_t)pick;
 		return &PLAYERBOT_BIOLOGIST_MISSIONS[pick];
@@ -411,6 +479,61 @@ namespace
 		if (!mission || PlayerBotBiologistHoldsHandIn(ch, mission, missionIndex))
 			return 0;
 		return IsPlayerBotBiologistKeyPhase(ch, missionIndex) ? mission->keyMobVnum : mission->mobVnum;
+	}
+
+	// A carrier of the active row's specimen died to this bot (the kill note in
+	// playerbot_battle_horse.h). The engine has already rolled its etc drop
+	// with the level gap in it - one percent of the chance at fifteen levels
+	// over the monster - and a row is done at any level ("nie ma czegos
+	// takiego jak za niskie dla bota", Tieru, 16 September), so the part the
+	// gap took is rolled here: GetDropPct's own percent, which carries the
+	// world's rate and the premium, times (100 - fade) / fade. A bot at its
+	// row's level gets nothing extra and a bot of seventy what a player of the
+	// monster's level gets. Only while the Biologist is still owed the item
+	// (GetPlayerBotBiologistReserve), and never onto the ground.
+	void NotePlayerBotBiologistCarrierKill(LPCHARACTER ch, LPCHARACTER target)
+	{
+		if (!ch || !target || !target->IsMonster())
+			return;
+		const DWORD race = target->GetRaceNum();
+		bool carrier = false;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS) /
+				sizeof(PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[0]) && !carrier; ++i)
+			carrier = PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[i].mobVnum == race;
+		if (!carrier)
+			return;
+		size_t missionIndex = 0;
+		const TPlayerBotBiologistMission* mission = GetActivePlayerBotBiologistMission(ch, &missionIndex);
+		if (!mission || IsPlayerBotBiologistKeyPhase(ch, missionIndex))
+			return;
+		DWORD prob = 0;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS) /
+				sizeof(PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[0]); ++i)
+			if (PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[i].mobVnum == race &&
+					PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[i].itemVnum == mission->itemVnum)
+				prob = PLAYERBOT_BIOLOGIST_SPECIMEN_CARRIERS[i].dropProb;
+		if (prob == 0)
+			return;
+		const int fade = PERCENT_LVDELTA(ch->GetLevel(), target->GetLevel());
+		if (fade >= 100 || fade <= 0)
+			return;
+		if ((int)ch->CountSpecifyItem(mission->itemVnum) >=
+				GetPlayerBotBiologistReserve(ch, mission->itemVnum))
+			return;
+		int deltaPercent = 0, randRange = 0;
+		if (!ITEM_MANAGER::instance().GetDropPct(target, ch, deltaPercent, randRange) || randRange <= 0)
+			return;
+		const long long gapPercent = (long long)deltaPercent * (100 - fade) / fade;
+		const long long chance = (long long)prob * gapPercent / 100;
+		if (chance < number(1, randRange))
+			return;
+		if (ch->GetEmptyInventory(1) < 0)
+			return;
+		ch->AutoGiveItem(mission->itemVnum, 1, -1, false);
+		PlayerBotLogThrottled("biologist_level_gap", get_dword_time(),
+				"PLAYERBOT_BIOLOGIST: specimen past the level gap pid=%u name=%s level=%d item=%u mob=%u mob_level=%d fade=%d",
+				ch->GetPlayerID(), ch->GetName(), (int)ch->GetLevel(), mission->itemVnum,
+				race, (int)target->GetLevel(), fade);
 	}
 
 	// A first-village herb row is being hunted: the reason to go to a first

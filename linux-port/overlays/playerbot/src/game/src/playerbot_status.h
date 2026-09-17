@@ -545,7 +545,20 @@ namespace
 				else if (state.bLongTermGoal == BOT_GOAL_REFINE)
 					snprintf(status, statusSize, "%sIde do kowala ulepszyc ekwipunek", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_BIOLOGIST)
-					snprintf(status, statusSize, "%sIde do Biologa", prefix);
+				{
+					// The Biologist only for a bot carrying the hand-in or visiting
+					// him: 27 of 68 bots in Orc Valley read "Ide do Biologa" with no
+					// tooth in the bag, hunting the row's monsters (m2zip, 17
+					// September) - the Biologist stands in the first village.
+					size_t missionIndex = 0;
+					const TPlayerBotBiologistMission* mission =
+							GetActivePlayerBotBiologistMission(ch, &missionIndex);
+					if (mission && !state.bVisitingBiologist &&
+							!PlayerBotBiologistHoldsHandIn(ch, mission, missionIndex))
+						snprintf(status, statusSize, "%sZbieram dla Biologa: %s", prefix, mission->itemLabel);
+					else
+						snprintf(status, statusSize, "%sIde do Biologa", prefix);
+				}
 				else if (state.bLongTermGoal == BOT_GOAL_FISHING)
 					snprintf(status, statusSize, "%sIde nad rzeke lowic ryby", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_GET_EQUIPMENT)
