@@ -5418,6 +5418,74 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   the marble" was the package's design, not a bug: `world.crafting_proto` 102
   wants 71285, the craftable copy (recipe 101), and chests drop 71085.
 
+- **A deposit that takes the whole stack is a withdrawal on the next line.**
+  `CollectPlayerBotSafeboxMaterials` skips a material the anvil is short of,
+  but the deposit then moved the **entire** stack - the reserve included - so
+  one line later `WithdrawPlayerBotSafebox` asked the same question of a bag
+  holding none, found the bot short, and took all of it back. Every visit, for
+  ever: on m2zip 3574 of 4698 withdrawals in an hour were kinds the same visit
+  had just deposited, Maud doing it every four minutes with the same eleven
+  Kawalek Klejnotu. The syserr pairs this produced -
+  `CreateItem: ITEM_ID_DUP` and `LoadSafebox: cannot create item`, 650 a day
+  across 26 bots since 15 September - are that round trip seen from the
+  database: `QUERY_SAFEBOX_LOAD` reads `player.item` directly, the db core had
+  not yet written "in the bag now" (`PLAYER_CACHE_FLUSH_SECONDS`, seven
+  minutes), so the load hands back an item the bot is holding and
+  `ITEM_MANAGER::CreateItem` refuses the duplicate id. Nothing is duplicated;
+  what it costs is the item's grid cell, which stays free for the visit, so a
+  later deposit can put another item where a row already claims a place and
+  that row never loads again (one such pair in the safeboxes on 17 September,
+  71 in the bags). The deposit cuts the stack now - only what is over
+  `GetPlayerBotRefineMaterialReserve`, the way a counter line is cut - the
+  withdrawal skips every vnum the same visit deposited, and its anvil branch
+  honours the bag pressure its market branch always did. Measure it as
+  `PLAYERBOT_STOCK: to safebox` and `safebox withdraw` of one vnum for one pid
+  in the same second.
+- **A catch-up belongs where the bot already stands.** The herb rows are a
+  trip to a first village and that trip is rationed
+  (`PLAYERBOT_BIOLOGIST_HERB_TRIP_PER_MILLE`, the answer to 2.0.60's flood), so
+  a bot of seventy-five with four rows left never got a place and never caught
+  up. `PlayerBotMayWorkHerbRowHere` gives a bot that is in a first village
+  anyway - services, the market, a hand-in - `PLAYERBOT_BIOLOGIST_HERB_VILLAGE_MS`
+  of work on an outgrown herb row without taking a place, because that adds no
+  map change to the world at all; the window is per arrival and opens again
+  only after the bot has been somewhere else, or the bots an update draws into
+  the villages stay for all six rows. Beside it the share went to 70 per mille
+  for two hours, and a trip whose bag already holds specimens keeps its place
+  to the hand-in (`_CARRY_MAX_MS`) instead of expiring with the row half done.
+  The gate is asked once, above the row loop: it starts the window, and a gate
+  consulted inside a loop must not have a side effect.
+- **The panel is the database, and the database is seven minutes behind.**
+  `g_iPlayerCacheFlushSeconds` (db core, `PLAYER_CACHE_FLUSH_SECONDS`) is
+  `60*7` and `CItemCache` expires with it, so a bot that had just put a shield
+  on showed an empty shield slot in the classic panel for minutes and read as
+  a sync bug (Tieru, 17 September). `HEADER_GD_ITEM_FLUSH` is the engine's own
+  "write this row now" - `CInputMain` sends it after a shop deal - and
+  `FlushPlayerBotItemRow` (playerbot_gear.h) sends it for the piece worn and
+  the piece taken off. One write per equip; the bag, which turns over every few
+  seconds, is left to the cache. Anything else the panels show late is the same
+  seven minutes, not a panel bug.
+- **A bot's stall is in neither its bag nor its depot.** On this line it is a
+  real IkarusShop offline shop: `player.ikashop_offlineshop` is the stand (map,
+  position, banner, premium flag) and `player.item` with window
+  `IKASHOP_OFFLINESHOP` is the counter, each line's asking price inside that
+  item's own `ikashop_data` JSON (`{"yang":...}`). That is what seban's panel
+  reads for /economy/shops and what `/api/bot_shop` reads for the classic
+  panel's stall window. The banner is cp1250 like every other name column.
+- **The client's personality row is l0st3k's, and his serverinfo is his own.**
+  Client 2.0.13 (16 September) moves a bot's personality off the alignment
+  title onto a `CPythonTextTail` row of its own
+  (`AttachPersonality`/`DetachPersonality` in his exe), so the rank is visible
+  again and the options switch takes effect without a relog. Two things to
+  check in any client anybody sends: his `serverinfo.py` carried his LAN
+  address (192.168.0.70) - the package ships `127.0.0.1` - and the root must
+  still hold our own scripts (`playerbot_status_tail.py`, `uiautohunt.py`,
+  `autostackpump.py`, the rendered `uigameoption.py` and
+  `uiscript/gameoptiondialog.py`). Extract both packs with
+  `tools/eterpack.py --profile mt2009 extract` and diff against the published
+  one before shipping; a script that calls a new engine function tests for it
+  with `hasattr` so an older exe draws nothing instead of failing.
+
 ## Engine facts worth not re-deriving
 
 - Item types/subtypes live in `common/item_length.h`; map attributes and
