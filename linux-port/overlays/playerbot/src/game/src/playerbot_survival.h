@@ -71,8 +71,23 @@ namespace
 				threat->GetMapIndex() == ch->GetMapIndex() && threat->GetVictim() == ch;
 		const int hpPercent = ch->GetMaxHP() > 0 ? ch->GetHP() * 100 / ch->GetMaxHP() : 100;
 
-		if (!bThreatHasAggro && hpPercent >= PLAYERBOT_RETREAT_END_HP_PERCENT)
+		// Two ways out that do not depend on the monster changing its mind: the
+		// bot is far enough away, or it has been running long enough. Without
+		// them the only exit was the threat dropping aggro, and a monster that
+		// cannot reach the bot never does.
+		const int threatDistance = threat
+				? DISTANCE_APPROX(ch->GetX() - threat->GetX(), ch->GetY() - threat->GetY())
+				: PLAYERBOT_RETREAT_SAFE_DISTANCE;
+		const bool escaped = threatDistance >= PLAYERBOT_RETREAT_SAFE_DISTANCE;
+		const bool ranLongEnough = state.dwRetreatStartedTime != 0 &&
+				dwNow - state.dwRetreatStartedTime >= PLAYERBOT_RETREAT_MAX_MS;
+		if ((!bThreatHasAggro && hpPercent >= PLAYERBOT_RETREAT_END_HP_PERCENT) ||
+				escaped || ranLongEnough)
 		{
+			if (escaped || ranLongEnough)
+				sys_log(0, "PLAYERBOT_AI: tactical retreat over pid=%u name=%s hp=%d/%d dist=%d reason=%s",
+						ch->GetPlayerID(), ch->GetName(), ch->GetHP(), ch->GetMaxHP(),
+						threatDistance, escaped ? "escaped" : "timeout");
 			state.bTacticalRetreat = false;
 			state.dwRetreatStartedTime = 0;
 			state.dwRetreatThreatVID = 0;
