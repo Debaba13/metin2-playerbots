@@ -17,6 +17,78 @@ every version here.
 
 ---
 
+## 2.0.68 — 2026-09-17
+
+Serwer 2.0.68; klient bez zmian (2.0.12).
+
+### Zioła na ladzie w dużych paczkach, ulepszacze w małych (Tieru, Hiob, uxietoszef)
+
+Sklep offline bota wystawiał przy każdej wizycie jedną linię — taki stos, jaki
+akurat leżał w komórce torby. Korzenie Gango i Grzyby Tue szły więc po 1–2
+sztuki (na naszym serwerze 3343 linie ziół, z tego 1171 pojedynczych, jeden
+sklep z 34 liniami ziół), a ulepszacz, który nie był „zapasem”, szedł całym
+stosem razem z rezerwą na własne ulepszanie (1084 linie ponad 10 sztuk, np.
+25 Kawałków Lodu za 19,7 mln w jednej linii). Teraz:
+
+- tanie towary (według cennika Iwakury do 5000 yang przed przelicznikiem stawek,
+  czyli zioła i rudy) idą paczkami po 50, nigdy poniżej 10 sztuk, najwyżej dwie
+  linie jednego rodzaju;
+- ulepszacz idzie paczkami po 5 (zapas ponad 50 sztuk — po 10), najwyżej trzy
+  linie jednego rodzaju, i nigdy z rezerwy, którą bot trzyma na swoje ulepszanie;
+- stojące już linie ziół poniżej 10 sztuk i linie ulepszaczy ponad 10 sztuk bot
+  zdejmuje przy kolejnych wizytach przy sklepie, żeby wystawić je od nowa.
+
+Po wdrożeniu u nas linii ziół było już 1955 (pojedynczych 545), a linii
+ulepszaczy ponad 10 sztuk 657 — i dalej ubywa, bo bot zdejmuje jedną linię na
+wizytę.
+
+### Biolog nie ściąga całego świata do Doliny Orków (SIZOWSKI)
+
+U SIZOWSKIEGO 997 z 1621 botów stało w Dolinie Orków, u nas 277 z 1098 — prawie
+wszystkie na Zębach Orka, a 129 w drużynach „Szukam celu dla grupy”. Przyczyny
+z plików tego świata: skrypt misji daje ząb tylko z „Orka” (601), który w Dolinie
+stoi w dwóch punktach przy bossach; zęby spadają naprawdę z Czarnych Orków
+(46 lvl), a silnik tnie taki drop do 1% przy 15+ poziomach różnicy — bot 70 lvl
+miał ząb raz na ok. 17 000 zabójstw. Bot polował tylko na potwora z nazwy misji,
+więc resztę orków odrzucał jako bezwartościowe. Teraz:
+
+- cel misji to cała rodzina potworów, z których przedmiot faktycznie spada
+  (Zęby: Ork i Czarne Orki; klucz: Elitarne Orki 631–637; Księgi Klątw: oba
+  Dręczyciele; klucz: 701–707 i 731–737; Pamiątka i jej klucz: demony wieży);
+- bot ponad poziomem potwora dostaje brakującą część szansy, którą zabrała
+  różnica poziomów — dokładnie tyle, ile dostałby gracz na poziomie potwora,
+  z uwzględnieniem stawek świata; tylko dopóki Biolog jeszcze czegoś potrzebuje;
+- bot z misją, który nie widzi takiego potwora, skanuje mapę i idzie do
+  najbliższego, a walka po drodze nie odsyła go już do obozu wybranego po
+  poziomie (wcześniej 51 z 86 botów w Dolinie stało w drużynach „Szukam celu
+  dla grupy”);
+- na przerośnięte misje zbierackie (Zęby, Księgi, Pamiątka) naraz jedzie
+  najwyżej 10% botów, każdy na 2 godziny; reszta gra normalnie na swoich mapach;
+- status mówi, co bot robi: „Zbieram dla Biologa: Zab Orka” w drodze do potworów,
+  a „Ide do Biologa” tylko wtedy, gdy niesie okazy do oddania.
+
+Po wdrożeniu u nas: w Dolinie 46 botów zamiast 277, „Szukam celu dla grupy”
+u 8 zamiast 129, a w kwadrans po restarcie 10 botów oddało komplet zębów
+i przeszło do drugiej części misji.
+
+### Mniej teleportów do sklepów offline (gregoszky)
+
+W 95 minut na naszym serwerze było 7951 przejść między mapami: 3405 to przeskoki
+botów do własnego sklepu, a większość reszty — powroty (250 razy tam i z
+powrotem w niecałe 30 sekund). To jest ten ruch przy teleporterach. Bot, który
+stoi na innej mapie niż jego sklep, obsługuje go teraz raz na 45 minut; na mapie
+sklepu nadal co 10–15 minut. Po pierwszej fali wizyt takich przeskoków było
+2–12 na minutę zamiast 36.
+
+### Karta Wędkarska do kupienia u Rybaka (Greess, SIZOWSKI)
+
+Paczka sprzedaje Kartę Wędkarską tylko w specjalnym sklepie Rybaka (25 000 yang
+i 5× Materiały Rzemieślnicze, od 50 lvl, raz na 22 godziny), ale żaden skrypt
+tego sklepu nie otwierał, więc gracz nie mógł łowić. Rybak ma teraz opcję
+„Karta Wedkarska”. Do łowienia nadal trzeba ukończyć jego misję wprowadzającą.
+Quest jest skompilowany i wgrany na nasz serwer, ale opcji nie klikaliśmy
+jeszcze w kliencie — jeśli sklep się nie otworzy, dajcie znać.
+
 ## 2.0.67 — 2026-09-17
 
 Serwer 2.0.67; klient bez zmian (2.0.12).
