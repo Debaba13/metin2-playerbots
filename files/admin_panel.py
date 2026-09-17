@@ -5559,7 +5559,7 @@ MAP_I18N = {
   "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","ambition":"Ambicja","current_goal":"Aktualny cel",
   "coordinates":"Koordynaty","open_inventory":"Kliknij, aby otworzyć ekwipunek i EQ","loading_character":"Ładowanie ekwipunku i statystyk postaci","error":"Błąd","not_found":"Nie znaleziono danych",
   "teleport_me":"Teleportuj moją postać w grze (1 klik)","position":"Pozycja","horse":"Koń","biologist":"Biolog","bio_stage":"Etap Biologa","hunting":"Polowanie","no_data":"Brak danych",
-  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.",
+  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.","shop":"Sklep","shop_none":"Ten bot nie ma otwartego sklepu.","shop_empty":"Lada jest pusta.","shop_price":"Cena","shop_premium":"premium","refresh":"Odśwież (dane z bazy)",
   "unspent_skills":"Nierozdane: {n} pkt umiejętności","equipped":"Założony ekwipunek (EQ)","weapon":"Broń","armor":"Zbroja","helmet":"Hełm","shield":"Tarcza","bracelet":"Bransoleta",
   "boots":"Buty","necklace":"Naszyjnik","earrings":"Kolczyki","empty":"Puste","inventory":"Zawartość ekwipunku","items_count":"przedmiotów","inventory_empty":"Ekwipunek jest pusty.","quantity":"Ilość",
   "gear_history":"Historia ekwipunku","gear_history_hint":"Ulepszenia, spalenia, założenia, prezenty, sprzedaż, magazyn — z log.log","gear_history_loading":"Ładowanie historii...","gear_history_empty":"Brak wpisów o ekwipunku tej postaci.","gear_history_more":"Pokaż starsze",
@@ -5580,7 +5580,7 @@ MAP_I18N = {
   "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","ambition":"Ambition","current_goal":"Current goal",
   "coordinates":"Coordinates","open_inventory":"Click to open inventory and equipment","loading_character":"Loading character equipment and statistics","error":"Error","not_found":"No data found",
   "teleport_me":"Teleport my in-game character (one click)","position":"Position","horse":"Horse","biologist":"Biologist","bio_stage":"Biologist stage","hunting":"Hunting","no_data":"No data",
-  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.",
+  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.","shop":"Shop","shop_none":"This bot has no stall open.","shop_empty":"The counter is empty.","shop_price":"Price","shop_premium":"premium","refresh":"Refresh (from the database)",
   "unspent_skills":"Unspent: {n} skill points","equipped":"Equipped items","weapon":"Weapon","armor":"Armour","helmet":"Helmet","shield":"Shield","bracelet":"Bracelet",
   "boots":"Boots","necklace":"Necklace","earrings":"Earrings","empty":"Empty","inventory":"Inventory contents","items_count":"items","inventory_empty":"The inventory is empty.","quantity":"Quantity",
   "gear_history":"Equipment history","gear_history_hint":"Refines, burns, equips, gifts, sales, safebox — from log.log","gear_history_loading":"Loading history...","gear_history_empty":"No equipment entries for this character.","gear_history_more":"Show older",
@@ -6118,6 +6118,28 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
   text-align: center;
   padding: 10px 0;
 }
+/* The stall window is the depot window one size up: the counter's lines carry
+   a price, so they are a list rather than a grid. Same chrome, same drag. */
+.m2-shop-window { width: 272px; }
+.m2-shop-where {
+  color: #8a7b5c;
+  font-size: 10px;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.m2-shop-list { max-height: 320px; overflow-y: auto; }
+.m2-shop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  border-bottom: 1px solid #2a2114;
+}
+.m2-shop-row:last-child { border-bottom: none; }
+.m2-shop-row img { width: 24px; height: 24px; image-rendering: pixelated; }
+.m2-shop-name { flex: 1; color: #d8c9a3; font-size: 11px; line-height: 1.2; }
+.m2-shop-count { color: #8a7b5c; font-size: 10px; }
+.m2-shop-price { color: var(--gold); font-size: 11px; white-space: nowrap; }
 .m2-grid-frame {
   position: relative;
   width: 170px;
@@ -6302,6 +6324,17 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
     <div id="m2SafeboxItemOverlay" class="m2-item-overlay"></div>
   </div>
   <div id="m2SafeboxEmpty" class="m2-safebox-empty" style="display:none">{{m.depot_empty}}</div>
+</div>
+
+<!-- The bot's own offline stall (IkarusShop), floating like the depot above. -->
+<div id="m2ShopWindow" class="m2-safebox-window m2-shop-window">
+  <div class="m2-safebox-header" id="m2ShopHeader">
+    <span>🏪 <span id="m2ShopTitle">{{m.shop}}</span></span>
+    <button type="button" class="m2-safebox-close" onclick="closeShopWindow()">&times;</button>
+  </div>
+  <div id="m2ShopWhere" class="m2-shop-where"></div>
+  <div id="m2ShopList" class="m2-shop-list"></div>
+  <div id="m2ShopEmpty" class="m2-safebox-empty" style="display:none">{{m.shop_none}}</div>
 </div>
 
 <div id="botModal" class="modal-overlay" onclick="if(event.target===this)closeBotModal()">
@@ -6917,6 +6950,127 @@ function toggleBotSafeboxFromEl(el) {
   toggleBotSafebox(pid, el.getAttribute('data-botname'));
 }
 
+// The stall. What a bot sells stands in its own offline shop, not in its bag,
+// so the depot and the equipment windows never showed it: player.item with
+// window IKASHOP_OFFLINESHOP is the counter and each line's price is in that
+// item's ikashop_data (see /api/bot_shop).
+var g_currentShopPid = null;
+
+function toggleBotShopFromEl(el) {
+  var pid = parseInt(el.getAttribute('data-botpid'), 10);
+  toggleBotShop(pid, el.getAttribute('data-botname'));
+}
+
+function closeShopWindow() {
+  var win = document.getElementById('m2ShopWindow');
+  if (win) win.style.display = 'none';
+  g_currentShopPid = null;
+}
+
+function renderShopWindow(shop) {
+  var list = document.getElementById('m2ShopList');
+  var where = document.getElementById('m2ShopWhere');
+  var empty = document.getElementById('m2ShopEmpty');
+  if (!list || !where || !empty) return;
+  if (!shop) {
+    list.innerHTML = '';
+    where.textContent = '';
+    empty.textContent = I18N.shop_none || 'Ten bot nie ma otwartego sklepu.';
+    empty.style.display = 'block';
+    return;
+  }
+  var offers = shop.offers || [];
+  where.textContent = (shop.name || '') +
+      ' · ' + (I18N.map || 'Mapa') + ' ' + shop.map_index +
+      ' (' + shop.x + ', ' + shop.y + ')' +
+      (shop.is_premium ? ' · ' + (I18N.shop_premium || 'premium') : '');
+  if (!offers.length) {
+    list.innerHTML = '';
+    empty.textContent = I18N.shop_empty || 'Lada jest pusta.';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  var html = '';
+  offers.forEach(function(offer) {
+    html += '<div class="m2-shop-row">' +
+            '<img src="' + getItemIconUrl(offer.vnum) + '" onerror="' + ICON_ONERROR + '" draggable="false">' +
+            '<span class="m2-shop-name">' + escapeHtml(offer.name) +
+            (offer.count > 1 ? ' <span class="m2-shop-count">x' + offer.count + '</span>' : '') +
+            '</span>' +
+            '<span class="m2-shop-price">' + (offer.price || 0).toLocaleString() + '</span>' +
+            '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function toggleBotShop(pid, name) {
+  var win = document.getElementById('m2ShopWindow');
+  if (!win) return;
+
+  if (win.style.display !== 'none' && win.style.display !== '' && g_currentShopPid === pid) {
+    closeShopWindow();
+    return;
+  }
+
+  win.style.display = 'block';
+  g_currentShopPid = pid;
+  var titleEl = document.getElementById('m2ShopTitle');
+  if (titleEl) titleEl.textContent = (I18N.shop || 'Sklep') + (name ? ' — ' + name : '');
+  renderShopWindow(null);
+
+  fetch('/api/bot_shop/' + pid)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      // Another bot may have been clicked while this was in flight.
+      if (g_currentShopPid !== pid) return;
+      if (!data || !data.ok) return;
+      renderShopWindow(data.shop);
+    })
+    .catch(function() {});
+}
+
+// The depot window's drag, asked for by id so the stall can have it too.
+function initFloatingWindowDrag(winId, headerId) {
+  var header = document.getElementById(headerId);
+  if (!header) return;
+  var win = null, dragging = false, offsetX = 0, offsetY = 0;
+
+  function onPointerDown(ev) {
+    win = document.getElementById(winId);
+    if (!win) return;
+    dragging = true;
+    var rect = win.getBoundingClientRect();
+    var point = ev.touches ? ev.touches[0] : ev;
+    offsetX = point.clientX - rect.left;
+    offsetY = point.clientY - rect.top;
+    win.style.left = rect.left + 'px';
+    win.style.top = rect.top + 'px';
+    win.style.right = 'auto';
+    ev.preventDefault();
+  }
+
+  function onPointerMove(ev) {
+    if (!dragging || !win) return;
+    var point = ev.touches ? ev.touches[0] : ev;
+    var maxLeft = window.innerWidth - win.offsetWidth;
+    var maxTop = window.innerHeight - win.offsetHeight;
+    win.style.left = Math.min(Math.max(0, point.clientX - offsetX), Math.max(0, maxLeft)) + 'px';
+    win.style.top = Math.min(Math.max(0, point.clientY - offsetY), Math.max(0, maxTop)) + 'px';
+  }
+
+  function onPointerUp() { dragging = false; }
+
+  header.addEventListener('mousedown', onPointerDown);
+  header.addEventListener('touchstart', onPointerDown, {passive: false});
+  document.addEventListener('mousemove', onPointerMove);
+  document.addEventListener('touchmove', onPointerMove, {passive: false});
+  document.addEventListener('mouseup', onPointerUp);
+  document.addEventListener('touchend', onPointerUp);
+}
+
+initFloatingWindowDrag('m2ShopWindow', 'm2ShopHeader');
+
 function closeSafeboxWindow() {
   var win = document.getElementById('m2SafeboxWindow');
   if (win) win.style.display = 'none';
@@ -7404,6 +7558,24 @@ function openBotModal(pid) {
               'display:flex;align-items:center;justify-content:center;font-size:19px"' +
               ' data-botpid="' + p.id + '" data-botname="' + p.name + '"' +
               ' onclick="toggleBotSafeboxFromEl(this)">\U0001F4E6</div>';
+
+      // And the stall beside it: what the bot sells lives in its offline shop,
+      // which is neither the bag nor the depot (Tieru, 17 September).
+      html += '<div class="m2-equip-slot" title="' + (I18N.shop || 'Sklep') +
+              '" style="left:150px;top:46px;width:34px;height:34px;cursor:pointer;' +
+              'display:flex;align-items:center;justify-content:center;font-size:19px"' +
+              ' data-botpid="' + p.id + '" data-botname="' + p.name + '"' +
+              ' onclick="toggleBotShopFromEl(this)">\U0001F3EA</div>';
+
+      // Read again, for the impatient: this window is the database, and the
+      // game core writes a bot's items with a delay of its own, so a swap made
+      // seconds ago can still be missing (Tieru, 17 September). An equip is
+      // written at once since 2.0.70; everything else still waits for the
+      // core's own cache.
+      html += '<div class="m2-equip-slot" title="' + (I18N.refresh || 'Odswiez') +
+              '" style="left:150px;top:86px;width:34px;height:34px;cursor:pointer;' +
+              'display:flex;align-items:center;justify-content:center;font-size:19px"' +
+              ' onclick="openBotModal(' + p.id + ')">↻</div>';
 
       html += '</div>'; // End Equipment Section
 
@@ -12058,6 +12230,62 @@ def api_bot_safebox(pid):
                     "attrs": attrs,
                 })
             return jsonify({"ok": True, "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/bot_shop/<int:pid>")
+def api_bot_shop(pid):
+    # What a bot sells is in neither the bag nor the depot: on the 2.x line its
+    # stall is a real IkarusShop offline shop. player.ikashop_offlineshop is the
+    # stand itself (map, position, banner) and player.item with window
+    # IKASHOP_OFFLINESHOP is what stands on the counter, each line's asking
+    # price in that item's own ikashop_data JSON - the same three places seban's
+    # panel reads for its shop feed. The stall belongs to the character, so the
+    # owner here is the pid, unlike the depot, which belongs to the account.
+    language = lang()
+    try:
+        with db() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT `map`, x, y, is_premium, CAST(`name` AS BINARY) AS name
+                  FROM player.ikashop_offlineshop
+                 WHERE owner = %s
+                """,
+                (pid,),
+            )
+            shop = cur.fetchone()
+            if not shop:
+                return jsonify({"ok": True, "shop": None})
+            cur.execute(
+                """
+                SELECT id, pos, `count`, vnum, socket0,
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(ikashop_data, '$.yang')) AS UNSIGNED) AS price
+                  FROM player.item
+                 WHERE owner_id = %s AND `window` = 'IKASHOP_OFFLINESHOP'
+                 ORDER BY pos ASC
+                """,
+                (pid,),
+            )
+            offers = []
+            for it in cur.fetchall():
+                vnum = it.get("vnum") or 0
+                offers.append({
+                    "id": it.get("id"),
+                    "vnum": vnum,
+                    "name": item_full_name(vnum, it.get("socket0"), language),
+                    "count": it.get("count") or 1,
+                    "pos": it.get("pos") or 0,
+                    "price": int(it.get("price") or 0),
+                })
+            return jsonify({"ok": True, "shop": {
+                # The banner is cp1250 like every other name column here.
+                "name": log_text(shop.get("name")),
+                "map_index": int(shop.get("map") or 0),
+                "x": int(shop.get("x") or 0),
+                "y": int(shop.get("y") or 0),
+                "is_premium": bool(shop.get("is_premium")),
+                "offers": offers,
+            }})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
