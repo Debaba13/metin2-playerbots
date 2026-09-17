@@ -17,6 +17,19 @@ every version here.
 
 ---
 
+## 2.0.69 — 2026-09-17
+
+Serwer 2.0.69; klient bez zmian (2.0.12).
+
+### Karta Wędkarska od 30 poziomu (Hiob, Tieru)
+
+Wędkę na tym serwerze zakłada się od 30 poziomu i od 30 można łowić, ale sklep
+Rybaka sprzedawał Kartę Wędkarską dopiero od 50 — gracz między 30 a 49 poziomem
+miał wędkę i nie mógł łowić. Próg karty w sklepie Rybaka jest teraz 30, tak samo
+jak w opcji „Karta Wedkarska”. Cena i limit (25 000 yang, 5× Materiały
+Rzemieślnicze, raz na 22 godziny) bez zmian; do łowienia nadal trzeba ukończyć
+misję wprowadzającą Rybaka.
+
 ## 2.0.68 — 2026-09-17
 
 Serwer 2.0.68; klient bez zmian (2.0.12).
