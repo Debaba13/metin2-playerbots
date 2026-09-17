@@ -254,6 +254,19 @@ namespace {
                 M2_DELETE(preview);
                 continue;
             }
+            // A herb line under a heap and a material line over a hoard's
+            // pack went up before 2.0.68 - the stand put up whatever stack a
+            // cell held: 1171 single roots and 1084 material lines of more
+            // than ten on m2zip. They come home to be merged or cut.
+            if (GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
+                    ((IsPlayerBotBulkGoods(preview) &&
+                      (int)preview->GetCount() < PLAYERBOT_SHOP_BULK_MIN_UNITS) ||
+                     (IsPlayerBotTradeableMaterial(preview) &&
+                      (int)preview->GetCount() > PLAYERBOT_SHOP_HOARD_PACK_UNITS))) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
             if (IsPlayerBotLowLevelGear(preview) &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
                 const bool capped = CountsAgainstPlayerBotLowGearCap(preview);
@@ -357,8 +370,10 @@ namespace {
         return lines;
     }
     // The bag cell of the line to add. A hoard's pack of ten, a single key, a
-    // pack of Moonlight chests (PLAYERBOT_CHEST_LINE_UNITS) or a line of
-    // refine scrolls (PLAYERBOT_SHOP_SCROLL_LINE_UNITS)
+    // pack of Moonlight chests (PLAYERBOT_CHEST_LINE_UNITS), a line of
+    // refine scrolls (PLAYERBOT_SHOP_SCROLL_LINE_UNITS), a pack of a refine
+    // material (PLAYERBOT_SHOP_PACK_UNITS) or a heap of cheap goods
+    // (PLAYERBOT_SHOP_BULK_PACK_UNITS)
     // is cut off its stack into a free cell (GetPlayerBotStallLineUnitsFor);
     // anything else goes up as the stack it is, as it always has - a stand
     // adds one line a visit. -1 when no line can be cut without the stack's
@@ -367,6 +382,28 @@ namespace {
         LPITEM item = ch->GetInventoryItem(cell);
         if (!item) return -1;
         const int units = GetPlayerBotStallLineUnitsFor(ch, item);
+        // A material went up as the stack it was, the anvil's reserve
+        // included, and a herb as whatever a cell held. Both are cut the way
+        // a scroll is: what is over the keep, counted over every stack of the
+        // kind, up to the line - and a heap is never under its minimum.
+        const bool bulk = IsPlayerBotBulkGoods(item);
+        // A safe refine scroll is a material too (recipe 501) and keeps its
+        // own branch below, keep and all.
+        if (bulk || (IsPlayerBotTradeableMaterial(item) &&
+                !IsPlayerBotSafeRefineScroll(item->GetVnum()))) {
+            const int keep = GetPlayerBotStallBaseKeep(ch, item);
+            const int spare = (int)ch->CountSpecifyItem(item->GetVnum()) - keep;
+            const int take = std::min(units, std::min((int)item->GetCount(), spare));
+            if (take <= 0 || (bulk && take < PLAYERBOT_SHOP_BULK_MIN_UNITS)) return -1;
+            if (take >= (int)item->GetCount()) return cell;
+            if (CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS) return -1;
+            const int to = ch->GetEmptyInventory(item->GetSize());
+            if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, cell), TItemPos(INVENTORY, (WORD)to), take))
+                return -1;
+            sys_log(0, "PLAYERBOT_OFFLINE: cut a line pid=%u name=%s vnum=%u units=%d left=%u keep=%d",
+                ch->GetPlayerID(), ch->GetName(), item->GetVnum(), take, (unsigned int)item->GetCount(), keep);
+            return to;
+        }
         if (IsPlayerBotSafeRefineScroll(item->GetVnum())) {
             // A scroll line is what the bot holds over its own keep
             // (GetPlayerBotStallBaseKeep), up to the line: a stack of five
@@ -421,8 +458,10 @@ namespace {
         for (auto [score, cell] : scored) {
             LPITEM item = ch->GetInventoryItem(cell);
             if (!item || BotOfflineSlot(ch, shop, item) < 0) continue;
-            if (IsPlayerBotHoardedMaterial(ch, item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_HOARD_LINES) continue;
+            if (IsPlayerBotTradeableMaterial(item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_MATERIAL_LINES) continue;
+            if (IsPlayerBotBulkGoods(item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_BULK_LINES) continue;
             if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
             if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
@@ -642,10 +681,13 @@ namespace {
             auto item = ch->GetInventoryItem(cell);
             int pos = BotOfflineSlot(ch, shop, item);
             if (pos < 0) continue;
-            // A hoard carries PLAYERBOT_SHOP_HOARD_LINES of one kind on a
-            // counter, each a pack cut here (BotOfflinePrepareLine).
-            if (IsPlayerBotHoardedMaterial(ch, item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_HOARD_LINES) continue;
+            // A material carries PLAYERBOT_SHOP_MATERIAL_LINES of one kind on a
+            // counter and a heap of cheap goods PLAYERBOT_SHOP_BULK_LINES, each
+            // a pack cut here (BotOfflinePrepareLine).
+            if (IsPlayerBotTradeableMaterial(item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_MATERIAL_LINES) continue;
+            if (IsPlayerBotBulkGoods(item) &&
+                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_BULK_LINES) continue;
             if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
             if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&

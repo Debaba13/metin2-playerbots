@@ -466,8 +466,31 @@ namespace
 	// po 2 sztuki lub nawet sprzedawac detalicznie po 1"). Packs of this many,
 	// up to this many lines of one kind; the rest of the stack stays in the
 	// bag for the next opening. Pearls and the shell are singles.
-	const int PLAYERBOT_SHOP_PACK_UNITS = 2;
+	// Five since 2.0.68: a recipe step takes one or two, and the offline
+	// stand adds one line a service visit, so packs of two were a counter of
+	// pairs - and the stand never cut a pack at all, it put the stack up
+	// whole (25 Kawalek Lodu for 19.7 million on one line, "wystawia ulepy w
+	// stacku po 20-40 gdzie nikt tego nie kupi", uxietoszef, 17 September).
+	const int PLAYERBOT_SHOP_PACK_UNITS = 5;
 	const int PLAYERBOT_SHOP_PACK_LINES = 8;
+	// Lines of one refine material on an offline stand, a hoard's packs of ten
+	// or the ordinary packs above (BotOfflinePrepareVisitLine).
+	const int PLAYERBOT_SHOP_MATERIAL_LINES = 3;
+	// Goods worth pennies a piece go up by the heap (IsPlayerBotBulkGoods):
+	// what Iwakura's sheet prices at this or less before the yang rate - the
+	// herbs, the ores - in lines of PLAYERBOT_SHOP_BULK_PACK_UNITS, never
+	// under PLAYERBOT_SHOP_BULK_MIN_UNITS (the herbalist's recipe takes ten),
+	// PLAYERBOT_SHOP_BULK_LINES of a kind. Measured on m2zip on 17 September:
+	// 3343 lines of Korzen Gango and Grzyb Tue, 1171 of them a single root,
+	// one shop with 34 herb lines holding 89 units, while 517 bags held 62 813
+	// roots in stacks of 200 ("korzenie gango i inne ziolka sa stackowane w
+	// sklepach po 1, gdzie takie tanie przedmioty powinny byc stackowane w
+	// duzych ilosciach", Tieru). The cheapest refine material on those
+	// counters asked 240 thousand a unit, the dearest herb 67 thousand.
+	const DWORD PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE = 5000;
+	const int PLAYERBOT_SHOP_BULK_PACK_UNITS = 50;
+	const int PLAYERBOT_SHOP_BULK_MIN_UNITS = 10;
+	const int PLAYERBOT_SHOP_BULK_LINES = 2;
 	// A hoard is goods whatever the ledger reads the market as: this many
 	// units of a refine material over the anvil's reserve go on a counter in
 	// packs of PLAYERBOT_SHOP_HOARD_PACK_UNITS, up to PLAYERBOT_SHOP_HOARD_LINES

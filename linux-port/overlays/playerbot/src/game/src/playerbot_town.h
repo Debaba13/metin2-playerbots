@@ -1952,6 +1952,12 @@ namespace
 		if (item->GetVnum() == PLAYERBOT_ZEN_BEAN_VNUM &&
 				CountPlayerBotVnumUnitsAhead(ch, item) < PLAYERBOT_ZEN_BEAN_KEEP)
 			return -1;
+		// A heap is PLAYERBOT_SHOP_BULK_MIN_UNITS at least: the service visit
+		// put up whatever a cell held, and one root picked up since was a line
+		// of its own - 1171 single herbs on the counters of m2zip.
+		if (IsPlayerBotBulkGoods(item) &&
+				(int)ch->CountSpecifyItem(item->GetVnum()) < PLAYERBOT_SHOP_BULK_MIN_UNITS)
+			return -1;
 		if (IsPlayerBotPickupGoods(item))
 			return PLAYERBOT_SHOP_PICKUP_GOODS_SCORE + item->GetRefineLevel();
 		// Hair dye: the one the bot is wearing is spent, the rest are stock.
@@ -2535,6 +2541,7 @@ namespace
 			if (!scroll && (int)item->GetCount() <= units)
 				continue;
 			const int wantLines = units == 1 ? PLAYERBOT_SHOP_SINGLE_UNITS
+					: IsPlayerBotBulkGoods(item) ? PLAYERBOT_SHOP_BULK_LINES
 					: scroll ? PLAYERBOT_SHOP_SCROLL_LINES
 					: units == PLAYERBOT_SHOP_HOARD_PACK_UNITS ? PLAYERBOT_SHOP_HOARD_LINES
 					: PLAYERBOT_SHOP_PACK_LINES;

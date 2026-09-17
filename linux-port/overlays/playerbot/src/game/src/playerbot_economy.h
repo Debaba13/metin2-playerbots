@@ -345,6 +345,31 @@ namespace
 			state.dwNextStackMergeTime = dwNow + PLAYERBOT_STACK_MERGE_AFTER_SHOP_MS;
 	}
 
+	// Goods priced by the heap: Iwakura's sheet at
+	// PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE or less before the yang rate, and of
+	// a kind nobody buys one of - a material, a resource, an ore. The sheet's
+	// own number rather than the asking price, which moves with the market,
+	// the jitter and the markdown, so a line's size does not change between
+	// two visits. No refine material is priced this low; a potion, a stone
+	// or a key has a line of its own below whatever it costs.
+	bool IsPlayerBotBulkGoods(LPITEM item)
+	{
+		if (!item || !item->IsStackable() || IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK))
+			return false;
+		const BYTE type = item->GetType();
+		if (type != ITEM_MATERIAL && type != ITEM_RESOURCE && type != ITEM_SPECIAL)
+			return false;
+		const DWORD vnum = item->GetVnum();
+		for (size_t i = 0; i < sizeof(PLAYERBOT_MATERIAL_PRICES) / sizeof(PLAYERBOT_MATERIAL_PRICES[0]); ++i)
+			if (PLAYERBOT_MATERIAL_PRICES[i].dwVnum == vnum)
+				return false;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_EXTRA_MATERIAL_PRICES) / sizeof(PLAYERBOT_EXTRA_MATERIAL_PRICES[0]); ++i)
+			if (PLAYERBOT_EXTRA_MATERIAL_PRICES[i].dwVnum == vnum)
+				return PLAYERBOT_EXTRA_MATERIAL_PRICES[i].dwPrice != 0 &&
+						PLAYERBOT_EXTRA_MATERIAL_PRICES[i].dwPrice <= PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE;
+		return false;
+	}
+
 	// How many units of a stackable go on one counter line. A private shop
 	// sells a line whole, so a stack of twenty scrolls on one line is twenty
 	// scrolls or nothing: what a player buys one at a time - potions,
@@ -365,6 +390,9 @@ namespace
 			return 1;
 		if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM)
 			return PLAYERBOT_CHEST_LINE_UNITS;
+		// A root worth pennies is sold by the heap (IsPlayerBotBulkGoods).
+		if (IsPlayerBotBulkGoods(item))
+			return PLAYERBOT_SHOP_BULK_PACK_UNITS;
 		return PLAYERBOT_SHOP_PACK_UNITS;
 	}
 
@@ -664,6 +692,9 @@ namespace
 			return std::max(1, GetPlayerBotRefineMaterialReserve(ch, item->GetVnum()));
 		if (item->GetType() == ITEM_TREASURE_KEY)
 			return PLAYERBOT_TREASURE_KEY_KEEP;
+		// Nobody keeps a root back: the heap is the whole of what it is for.
+		if (IsPlayerBotBulkGoods(item))
+			return 0;
 		return 1;
 	}
 
