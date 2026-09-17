@@ -5306,6 +5306,110 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   "over" lines in two minutes. A place is taken for the row picked
   (`PlayerBotTakeHerbErrand`), and the loop only asks whether one is held
   or free. A gate consulted inside a loop must not have a side effect.
+- **A counter line is sized by what the goods are worth, and the offline
+  stand has to cut it.** The service visit added the best-scored cell as the
+  stack it was: a refine material that was not a hoard went up whole, the
+  anvil's reserve included (1084 material lines of more than ten on m2zip on
+  17 September, 25 Kawalek Lodu for 19.7 million on one line - "wystawia
+  ulepy w stacku po 20-40 gdzie nikt tego nie kupi", uxietoszef), and a herb
+  went up as whatever a cell held. The bags kept their roots in full stacks
+  of 200 at the front and the one picked up since sat further back, and equal
+  scores sort by the higher cell, so the single root went up: 3343 herb lines,
+  1171 of them one root, one shop with 34 herb lines for 89 units, and 62 813
+  roots in 517 bags ("korzenie gango ... sa stackowane w sklepach po 1",
+  Tieru). `IsPlayerBotBulkGoods` is Iwakura's sheet at
+  `PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE` or less before the yang rate (the
+  herbs and the ores; the cheapest refine material on those counters asked
+  240 thousand a unit and the dearest herb 67 thousand) and goes up in heaps
+  of `PLAYERBOT_SHOP_BULK_PACK_UNITS`, never under `_MIN_UNITS` (a
+  herbalist's recipe takes ten), two lines of a kind; a refine material in
+  packs of `PLAYERBOT_SHOP_PACK_UNITS` (five now), a hoard in tens, three
+  lines of a kind, cut from what is over the reserve counted over every
+  stack (`BotOfflinePrepareLine`); a herb line under the minimum and a
+  material line over a hoard's pack come home at the next service visit
+  (`BotOfflineUnwantedLine`). The Blessing Scroll is a refine material too
+  (recipe 501), so the new branch steps round it and the scroll keeps its own
+  keep. Measure it as lines by count bucket per kind in `player.item` with
+  window IKASHOP_OFFLINESHOP, and the price per unit out of `ikashop_data`.
+- **A Biologist row's monster is a family, and the level gap is the row's
+  real wall.** SIZOWSKI's world (17 September): 997 of 1621 bots in Orc
+  Valley, levels 53-66; m2zip the same hour: 277 of 1098, 275 of them in
+  collect_quest_lv30's go_to_disciple at 3.3 teeth of ten, 129 standing in
+  parties reading "Szukam celu dla grupy", 96 teeth accepted across 60 bots
+  in 80 minutes and no collect row finished. Read off this world's files: the
+  quest's hook gives the tooth only for 601 at 5%, and 601 stands in the
+  valley on two points, both inside boss groups; the tooth reaches the world
+  through the etc table on the Black Orcs 636/656 at 1.17 (x10000 against a
+  range of four million), which `GetDropPct` fades by `PERCENT_LVDELTA` - one
+  percent at fifteen levels over the monster - so a bot of seventy at the
+  world's rate with its premium has one tooth in about 17 000 kills. The
+  Curse Book has no hook (etc 2.70 on 706/756), the Demon Souvenir neither
+  (etc 1.26 on 1001); the keys are hooks on 631-637, 701-707 with 731-737,
+  and 1001-1004. And the hunt named one vnum, so every other carrier was
+  worthless experience to a bot past its level. Now `IsPlayerBotBiologistHuntRace`
+  turns the row's hunt vnum into its family (the lv40 key names 701 and the
+  lv50 key 1002, because a specimen and its key are different families on
+  the same monster), `NotePlayerBotBiologistCarrierKill` - under the horse
+  trial's kill note and its VID guard - rolls the part of the etc chance the
+  level gap took (GetDropPct's own percent times (100 - fade) / fade, so the
+  world's rate and the premium apply and a bot in level gets nothing extra),
+  only while the Biologist is still owed the item, and an outgrown collect
+  row takes a place in `PLAYERBOT_BIOLOGIST_COLLECT_TRIP_PER_MILLE` of the
+  live bots for `_ERRAND_MAX_MS`, the herb errand's shape. A party's members
+  each see the corpse and each roll; the reserve bounds it. With those three
+  deployed, 51 of 86 bots in the valley still read "Szukam celu dla grupy":
+  the hub choice asks the level band and not where the Black Orcs stand, so
+  bots of seventy chose a band hub every thirty seconds and found nothing
+  within the party's cohesion radius. The material errand's map scan
+  (`StartPlayerBotMaterialHunt`) now keeps the nearest of the row's family
+  as well and walks there first (`PLAYERBOT_HUNT: biologist errand`), and
+  the answer is kept for `PLAYERBOT_BIOLOGIST_WALK_STICK_MS`: a fight on the
+  way parks the route and the hub choice after it walked the bot off again -
+  329 such walks in 21 minutes and still 43 of 91 valley bots in parties with
+  nothing to hit - so the frontier wander walks to the kept point before any
+  hub, the way a known Metin comes first for a stone hunter. And the top of
+  `ManagePlayerBotWandering` stamps `BOT_ACTION_PARTY_ASSEMBLE` on any party
+  bot it walks, so that walk read "[PT] Szukam celu dla grupy" - 56 of 90
+  valley bots, every one of twelve looked at a minute later five to fifteen
+  thousand units nearer the Black Orcs or fighting one. The walk is
+  `BOT_ACTION_BIOLOGIST` ("Zbieram dla Biologa: Zab Orka"), stamped at the
+  top of the wander while the kept walk is live - stamped only where the walk
+  is taken up, the route continuation above it returned first and the next
+  measurement found the words nowhere - and TRAVEL under the Biologist goal
+  says "Ide do Biologa" only for a bot carrying the hand-in: 27 of 68 valley
+  bots said it with no tooth in the bag. A status is a
+  measurement only once the pass that sets it is known. Before believing
+  a quest's kill hook, count its monster's spawn points on the map it sends
+  the bot to (`scratchpad/count_valley_mobs.py` is the shape).
+- **A service visit to a shop on another map is two map changes.** On m2zip
+  on 17 September 3405 of 7951 map changes in 95 minutes were
+  "offline_shop_service" and most of the rest the way back
+  ("m1_direct_to_orc_valley" 2428, "level_to_orc_valley" 700): the valley's
+  bots warped to their stands in the first villages every ten to fifteen
+  minutes and straight back, 250 round trips inside thirty seconds - the
+  traffic players read at the gates as bots going round in circles ("kreca
+  sie ciagle pomiedzy tp", gregoszky). A keeper elsewhere waits
+  `PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS` since `State::lastServedAt`; on its
+  own map it still serves every ten to fifteen minutes, and an empty hand
+  with a weapon on its counter never waits. Measure round trips as A->B->A
+  pairs of `PLAYERBOT_WORLD: transitioned` per pid within thirty seconds, by
+  reason (`scratchpad/loop_pairs.py`).
+- **A package shop nothing opens is a shop that does not exist.** Karta
+  Wedkarska (27620), which `CHARACTER::fishing()` wants worn on mt2009, is
+  sold in exactly one place: `world.shop_special` 9009, the Fisherman - 25 000
+  yang and five Materialy Rzemieslnicze (30378, the storekeeper's material
+  exchange), from level fifty, once in twenty-two hours. `special_shop.quest`
+  opens 20406, 9006 and the three guards, and no quest names 9009, so no
+  player could fish ("gdzie mozna zdobyc fishing pass?" - "Nie da sie, misja
+  nie dziala poprawnie", Greess and SIZOWSKI, 17 September); the bots never
+  noticed because `EnsurePlayerBotFishingPass` makes theirs.
+  `fishing_pass_shop.quest` is the Fisherman's button for it, compiled in the
+  Dockerfile loop with `pc.open_special_shop` added to qc's function list.
+  Before telling a player an item cannot be had, look for it in
+  `world.shop_special_proto` and then for the quest that opens that shop.
+  The same day's "Wzmocnienie Przedmiotu from the chests does not count for
+  the marble" was the package's design, not a bug: `world.crafting_proto` 102
+  wants 71285, the craftable copy (recipe 101), and chests drop 71085.
 
 ## Engine facts worth not re-deriving
 
