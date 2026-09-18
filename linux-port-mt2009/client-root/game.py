@@ -611,7 +611,7 @@ class GameWindow(ui.ScriptWindow):
 		onPressKeyDict[app.DIK_PGDN]		= lambda: app.MovieZoomCamera(app.CAMERA_TO_POSITIVE)
 		onPressKeyDict[app.DIK_NUMPAD8]		= lambda: app.MoviePitchCamera(app.CAMERA_TO_NEGATIVE)
 		onPressKeyDict[app.DIK_NUMPAD2]		= lambda: app.MoviePitchCamera(app.CAMERA_TO_POSITIVE)
-		onPressKeyDict[app.DIK_GRAVE]		= lambda : self.PickUpItem()
+		onPressKeyDict[app.DIK_GRAVE]		= lambda : self.PickUpNearbyItems()
 		onPressKeyDict[app.DIK_Z]			= lambda : self.PickUpItem()
 		onPressKeyDict[app.DIK_C]			= lambda state = "STATUS": self.interface.ToggleCharacterWindow(state)
 		onPressKeyDict[app.DIK_V]			= lambda state = "SKILL": self.interface.ToggleCharacterWindow(state)
@@ -1740,6 +1740,10 @@ class GameWindow(ui.ScriptWindow):
 
 	def PickUpItem(self):
 		player.PickCloseItem()
+
+	def PickUpNearbyItems(self):
+		import pickupnearby
+		pickupnearby.Request()
 
 	###############################################################################################
 	###############################################################################################

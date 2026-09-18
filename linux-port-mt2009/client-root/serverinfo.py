@@ -53,7 +53,9 @@ SERVER_PRODUCTION = {
 	"auth_count": 1,
 	"channel_base_port": 13000,
 	"channel_port_increment": 10,
-	"channel_count": 1,
+	# The second channel is the server's to switch on (M2_PLAYERBOT_CH2, the
+	# launcher's bot dialog): intrologin lists it only while it answers.
+	"channel_count": 2,
 	"mark":13000,
 	"mark_name": "10",
 	"premium_channels": (),

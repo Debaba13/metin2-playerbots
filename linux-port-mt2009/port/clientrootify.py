@@ -12,6 +12,7 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * intrologin.py - the three buttons of the login window: the home page is
                     the project's GitHub, the Discord is ours, and the Facebook
                     button - there is no Facebook - opens the buycoffee page;
+                    a channel past the first is listed only while it answers;
   * uiitemshop.py, itemshop_subscriptionwindow.py - "Doladuj SM!" and the
                     subscription button open the buycoffee page, not mt2009.pl;
   * uisystem.py   - the system menu's support button opens our Discord.
@@ -21,7 +22,8 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
                     playerbot_status_tail.py (hand-written, beside serverinfo.py);
                     Auto Lowy: the "AutoHuntTarget" and "AutoHuntLoot" commands, the K key and the
                     hunt among the updateables (uiautohunt.py, hand-written);
-                    the "InventoryArrangeResult" command (inventoryarrange.py).
+                    the "InventoryArrangeResult" command (inventoryarrange.py);
+                    the ` key picks up every drop in range (pickupnearby.py).
   * uiinventory.py - the auto-stack button is "Scal i uporzadkuj": one
                     /inventory_arrange to the server, which pours the stacks
                     and lays the four pages out (inventoryarrange.py,
@@ -36,6 +38,8 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * uiscript/inventorywindow.py - four page tabs instead of two; uiinventory.py
                     already makes one tab per page but the horse page, reading
                     player.INVENTORY_PAGE_COUNT from the exe.
+  * utils.py      - the requirement counts (a horse-bag slot, a special
+                    shop) read all four bag pages and the horse page.
   * constinfo.py  - GAME_VERSION 1.1.0: the version the client sends before
                     logging in, and the server's server_version refuses the
                     two-page client below it (m2-render-config).
@@ -200,6 +204,24 @@ EDITS = {
          b'\t\tinventoryarrange.OnResult(code, moved, merged, units)\r\n'
          b'\r\n'
          b'\tdef __InGameShop_Show(self, url):\r\n'),
+        # "Podnies caly drop" (vanderro, 18 September; Tieru: "jedno Z niech
+        # bedzie klasycznie, a ` najwyzej jako caly drop"): ` asks the server
+        # for every drop in range (pickupnearby.py, hand-written;
+        # CHARACTER::PickupNearbyItems), Z keeps the single pickup. The key's
+        # line is replaced whole, and the method goes after PickUpItem, whose
+        # own lines are the anchor and stay as they are.
+        (b'\t\tonPressKeyDict[app.DIK_GRAVE]\t\t= lambda : self.PickUpItem()\r\n',
+         b'\t\tonPressKeyDict[app.DIK_GRAVE]\t\t= lambda : self.PickUpNearbyItems()\r\n'),
+        (b'\tdef PickUpItem(self):\r\n'
+         b'\t\tplayer.PickCloseItem()\r\n'
+         b'\r\n',
+         b'\tdef PickUpItem(self):\r\n'
+         b'\t\tplayer.PickCloseItem()\r\n'
+         b'\r\n'
+         b'\tdef PickUpNearbyItems(self):\r\n'
+         b'\t\timport pickupnearby\r\n'
+         b'\t\tpickupnearby.Request()\r\n'
+         b'\r\n'),
     ],
     # "Scal i uporzadkuj" (Tieru, 18 September; Codex's audit the same day):
     # the inventory's auto-stack button asks the server once
@@ -237,6 +259,31 @@ EDITS = {
          b'\t\tutils.open_url("https://discord.gg/pt5tvnrN6")\r\n'),
     ],
     'intrologin.py': [
+        # The second channel (serverinfo.py lists two) is the server's to
+        # switch on (M2_PLAYERBOT_CH2): a channel that does not answer is not
+        # listed, CH1 always is, and a selection left on a hidden channel
+        # falls back to CH1. The list is keyed by line, and CH1 is line 0.
+        (b'\t\tfor channelID, channelDataDict in channelDict.items():\r\n'
+         b'\t\t\tchannelName = channelDataDict["name"]\r\n'
+         b'\t\t\tchannelState = channelDataDict["state"]\r\n'
+         b'\t\t\tself.channelList.InsertItem(channelID, "%s %s" % (channelName, channelState))\r\n'
+         b'\r\n'
+         b'\t\tself.channelList.SelectItem(bakChannelID)\r\n',
+         b'\t\tshown = []\r\n'
+         b'\t\tfor channelID, channelDataDict in channelDict.items():\r\n'
+         b'\t\t\tchannelName = channelDataDict["name"]\r\n'
+         b'\t\t\tchannelState = channelDataDict["state"]\r\n'
+         b'\t\t\t# The second channel runs only when the server switches it on\r\n'
+         b'\t\t\t# (M2_PLAYERBOT_CH2): listed once it answers, never as a dead line.\r\n'
+         b'\t\t\t# CH1 is always the first line, so a line is still its channel.\r\n'
+         b'\t\t\tif channelID > 0 and channelState in (serverInfo.STATE_NONE, serverInfo.STATE_DICT[0]):\r\n'
+         b'\t\t\t\tcontinue\r\n'
+         b'\t\t\tself.channelList.InsertItem(channelID, "%s %s" % (channelName, channelState))\r\n'
+         b'\t\t\tshown.append(channelID)\r\n'
+         b'\r\n'
+         b'\t\tif bakChannelID not in shown:\r\n'
+         b'\t\t\tbakChannelID = 0\r\n'
+         b'\t\tself.channelList.SelectItem(bakChannelID)\r\n'),
         (b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://mt2009.pl/")\r\n',
          b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/TieruYT/metin2-playerbots")\r\n'),
         (b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://www.facebook.com/Metin2009PL")\r\n',
@@ -450,6 +497,25 @@ EDITS = {
         # an escape, like the options' row, so the script stays ASCII.
         (b'\t\t\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_AUTOSTACK,\r\n',
          b'\t\t\t\t\t\t\t"tooltip_text" : "Scal i uporz\\xb9dkuj",\r\n'),
+    ],
+    # The requirement counts under a locked horse-bag slot and a special
+    # shop's price ("(0 na 60)") read two bag pages and, with the horse out,
+    # the third - the horse page when the bag had two. With four pages that
+    # left pages III and IV and the horse bag uncounted (blasty, 18
+    # September). The server's own check (CountSpecifyItem) was right all
+    # along; the window only said otherwise.
+    'utils.py': [
+        (b'\tpageCount = 2\r\n'
+         b'\tif constInfo.IS_HORSE_SUMMONED:\r\n'
+         b'\t\tpageCount += 1\r\n'
+         b'\r\n'
+         b'\tfor i in xrange(player.INVENTORY_PAGE_SIZE * pageCount):\r\n',
+         b'\t# Every bag page, and the horse page while the horse is out.\r\n'
+         b'\tslotCount = player.INVENTORY_DEFAULT_MAX_NUM\r\n'
+         b'\tif constInfo.IS_HORSE_SUMMONED:\r\n'
+         b'\t\tslotCount = player.INVENTORY_MAX_NUM\r\n'
+         b'\r\n'
+         b'\tfor i in xrange(slotCount):\r\n'),
     ],
     'constinfo.py': [
         (b'\t"major" : 0,\r\n\t"minor" : 15,\r\n',
