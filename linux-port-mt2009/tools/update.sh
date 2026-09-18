@@ -247,6 +247,31 @@ add_missing_env_keys() {
     return 0
 }
 
+# The panel's build context is staged from files/ on the player's machine: the
+# Windows launcher does it before every build (Sync-M2PlayerbotOverlay), and
+# nothing did it here. The panel's Dockerfile COPYs schema/ and app/, so a
+# Linux install built from the package alone stopped at "/schema: not found"
+# and the whole compose build was cancelled with it (DUDU's VPS, 18 September).
+# The same list as the launcher's; `sh update.sh stage' runs it alone.
+stage_panel_context() {
+    _panel="$COMPOSE_DIR/panel"
+    [ -d "$_panel" ] || return 0
+    mkdir -p "$_panel/app" "$_panel/schema" || return 1
+    for _pair in "VERSION:app/VERSION" "CHANGELOG.md:app/CHANGELOG.md" \
+            "files/admin_panel.py:app/admin_panel.py" "files/items.json:app/items.json" \
+            "files/favicon.png:app/favicon.png" \
+            "files/web_admin_schema.sql:schema/web_admin_schema.sql"; do
+        _from="$ROOT/${_pair%%:*}"
+        [ -f "$_from" ] || continue
+        cp -f "$_from" "$_panel/${_pair#*:}" || return 1
+    done
+    if [ -d "$ROOT/files/static" ]; then
+        mkdir -p "$_panel/app/static" || return 1
+        cp -R "$ROOT/files/static/." "$_panel/app/static/" || return 1
+    fi
+    return 0
+}
+
 run_update() {
     STEP=0
     rm -rf "$WORK"; mkdir -p "$WORK" || { fail "cannot create $WORK"; return 1; }
@@ -271,6 +296,7 @@ run_update() {
     note "   the folder now says version $(installed_version)"
     migrate_timezone
     add_missing_env_keys
+    stage_panel_context || { fail "the panel's build context could not be staged from files/"; return 1; }
     step "building and starting the new version (docker compose up -d --build)"
     # By hand the build talks to the terminal; under the panel it goes to the
     # spool's log, which is what the panel's progress page tails.
@@ -310,5 +336,6 @@ case "${1:-run}" in
     run)   check_tree; run_update ;;
     check) check_tree; fetch_manifest > "$WORK.m" && printf 'installed %s, published %s\n' "$(installed_version)" "$(manifest_field "$WORK.m" version)"; rm -f "$WORK.m" ;;
     watch) check_tree; watch ;;
-    *) printf 'usage: sh %s [run|check|watch]\n' "$0"; exit 2 ;;
+    stage) check_tree; stage_panel_context && say "the panel's build context is staged from files/" || die "staging the panel's build context failed" ;;
+    *) printf 'usage: sh %s [run|check|watch|stage]\n' "$0"; exit 2 ;;
 esac

@@ -61,6 +61,10 @@ files/static/*
 linux-port/docker/seban-panel/*
 linux-port/docker/itemshop/*
 linux-port/docker/panel/app/admin_panel.py
+# The panel's Dockerfile COPYs schema/ too, and nothing on a Linux install
+# stages it - a build from the package alone stopped at "/schema: not found"
+# (DUDU's VPS, 18 September). update.sh stages the rest (stage_panel_context).
+linux-port/docker/panel/schema/web_admin_schema.sql
 linux-port/docker/panel/bin/*
 linux-port/docker/panel/Dockerfile
 linux-port/docker/panel/.dockerignore
@@ -125,6 +129,14 @@ def digest(path):
         return hashlib.sha256(handle.read()).hexdigest()
 
 
+def is_binary_artifact(path):
+    # A core linked against the staged tree leaves its executable in it
+    # (game/game_r41023, 78 MB, from a local compile on 13 September); it is not
+    # in the package, so it looked like a file the port added.
+    with open(path, 'rb') as handle:
+        return handle.read(4) == b'\x7fELF'
+
+
 def changed_engine_files(pristine):
     if not os.path.isdir(pristine):
         raise SystemExit('listify: no pristine engine tree at %s (pass --pristine)' % pristine)
@@ -136,6 +148,8 @@ def changed_engine_files(pristine):
             if name.endswith(SKIP_SUFFIXES):
                 continue
             staged = os.path.join(root, name)
+            if is_binary_artifact(staged):
+                continue
             rel = os.path.relpath(staged, STAGED).replace(os.sep, '/')
             if rel.startswith('game/src/playerbot_'):
                 # The Playerbot sources' build-context copies are one glob,
