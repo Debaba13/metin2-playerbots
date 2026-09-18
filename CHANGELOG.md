@@ -17,6 +17,130 @@ every version here.
 
 ---
 
+## 2.0.76 — 2026-09-18
+
+Serwer 2.0.76, klient 2.0.16. W launcherze ZAINSTALUJ AKTUALIZACJE — podnoszenie
+pod tyldą, drugi kanał i poprawione okno juków potrzebują nowego serwera
+i nowego klienta.
+
+### Cały drop pod tyldą ` (vanderro, SIZOWSKI)
+
+- **Z** działa jak dotąd — podnosi jeden przedmiot.
+- **`** (tylda, klawisz nad Tab) podnosi naraz wszystko, co leży w zasięgu
+  podnoszenia i należy do Ciebie albo do Twojej grupy, zaczynając od
+  najbliższego. Gdy plecak się zapełni, przestaje i nic nie ląduje na ziemi.
+  Przytrzymany klawisz ponawia co pół sekundy.
+
+### Liczba botów osobno dla każdego królestwa (Greess)
+
+- Launcher → **LICZBA BOTÓW** → **Indywidualne wartości dla królestw**.
+  Trzy pola: Shinsoo (czerwone), Chunjo (żółte), Jinno (niebieskie). Każde
+  królestwo uruchamia tyle botów, ile mu wpiszesz, ale nie więcej, niż ma
+  postaci. Nagłówek okna pokazuje ich sumę.
+- Bez zaznaczenia wszystko działa jak dotąd: jedna liczba dzielona po równo.
+- Menu tekstowe launchera też o to pyta. Zmiana działa po restarcie serwera.
+
+### Drugi kanał (CH2) — domyślnie wyłączony (pomysł i pomiary: SIZOWSKI)
+
+- Włączasz go w launcherze (**LICZBA BOTÓW** → **Drugi kanał (CH2) dla botów
+  i graczy**, z ustawieniem, ile procent botów gra na CH2; domyślnie 40)
+  albo w panelu WWW na stronie Stawki.
+- Serwer uruchamia wtedy trzy kolejne rdzenie gry, a boty dzielą się między
+  dwa kanały. Serwer rozkłada je więc na dwa rdzenie procesora i udźwignie
+  więcej botów naraz. Każdy bot gra zawsze na tym samym kanale.
+- Liczba botów z launchera dotyczy całego świata: najpierw dzieli się na
+  królestwa, potem każde królestwo między kanały. Tak samo liczby
+  indywidualne dla królestw.
+- **Wszystkie sklepy offline, botów i graczy, stoją tylko na CH1.** Na CH2
+  nie da się otworzyć sklepu. Bot, który kiedykolwiek miał sklep, gra na CH1
+  na stałe, żeby zawsze mógł obsłużyć swoją ladę.
+- Boty z CH2 nie handlują: nie wystawiają sklepów i nie kupują z lad, bo te
+  stoją na CH1, a bot nie przechodzi na inny kanał. Towar, którego nie
+  sprzeda, przy pełnym plecaku oddaje handlarzowi albo odkłada do magazynu.
+  Im większa część botów na CH2, tym mniej botów handluje.
+- Wojny gildii botów, rajdy Wieży Demonów, zakładanie gildii i eventy
+  czasowe prowadzi CH1. Boty z CH2 walczą w wojnach swojej gildii i oddają jej
+  doświadczenie jak dotąd.
+- Po włączeniu z launchera otwierane są porty 13010–13012. Klient 2.0.16
+  pokazuje CH2 na liście kanałów tylko wtedy, gdy serwer go uruchomił.
+- Zmiana działa po restarcie serwera. Ustawienie z panelu WWW przenosi boty
+  na CH2 przy najbliższym restarcie. Gracze wejdą na CH2, gdy launcher
+  otworzy porty, czyli po następnym GRAJ.
+- CH2 zajmuje około 1 GB pamięci więcej.
+
+### Płynny ruch przy dużej liczbie botów (SIZOWSKI)
+
+- Budżet czasu z 2.0.74 zostawiał na chwilę bez ruchu boty, do których
+  przebieg AI jeszcze nie dotarł. Przy ponad ~1100 botach na jednym rdzeniu
+  „robiły dwa kroki i stawały”.
+- Teraz każdy bot w każdym takcie idzie dalej swoją trasą i bije cel,
+  a na swoją kolej czeka tylko planowanie. Linia `PLAYERBOT_LOAD` ma nowe
+  pole `light_ms`.
+
+### Wyrzucanie z serwera przy szkoleniu konia (Dearminder)
+
+- Rdzeń padał, gdy zadanie usuwało swój własny cel w chwili dojścia do punktu
+  (szkolenie konia na Ognistej Ziemi, trzeci punkt). Po ponownym zalogowaniu
+  obok punktu padał znowu.
+- Przyczyną był błąd w silniku zdarzeń: zdarzenie anulowane w trakcie
+  działania zapisywało do zwolnionej pamięci. Po aktualizacji misja idzie
+  dalej, także z miejsca, w którym utknęła.
+
+### Szybkość biegu z panelu działa (archonek)
+
+- „Szybkość biegu” na stronie postaci dawała na tej wersji serwera punkty many
+  zamiast prędkości. Teraz daje prędkość, na 30 dni albo do wybrania
+  „Normalna”.
+- Nie rusza serwerowego bonusu biegu ani premii od Biologa.
+- Przy pierwszym użyciu zdejmuje manę dodaną wcześniej przez pomyłkę.
+
+### Okno juków konnych liczy wszystkie strony ekwipunku (blasty)
+
+- Wymagania odblokowania juków i wymagania sklepów specjalnych liczyły
+  przedmioty tylko z dwóch pierwszych stron ekwipunku. Od czterech stron okno
+  pokazywało „0 na 60”, choć przedmioty leżały na stronie III, IV albo w jukach.
+- Serwer przez cały czas liczył poprawnie, poprawione jest samo okno
+  (klient 2.0.16).
+
+### Boty nie oddają handlarzowi cennych rzeczy
+
+- Czerwone Nasiono, Zwój Kamienia Duszy, Instr. Oswajania Konia,
+  Zaaw. Ks. Polimorfii i reszta przedmiotów, które cennik Iwakury wycenia
+  na ponad 5000 yang, idą na stragan zamiast do handlarza. Handlarz dostaje je tylko
+  przy pełnym plecaku, gdy nie da się otworzyć straganu.
+- Materiały z receptur ulepszeń wyższych poziomów boty zatrzymują na własne
+  ulepszanie.
+
+### Tłum botów na jednym wzgórzu w wiosce (Remigiusz)
+
+- Bot, który przerósł wszystkie tereny wioski, szedł zawsze na te same dwa
+  miejsca. Przykład: poziom 28–35 w Joan, gdzie najsilniejsze potwory mają
+  około 21 poziomu.
+- Teraz rozchodzi się po najwyższych terenach wioski, na co najmniej sześć
+  miejsc.
+
+### Panel zaawansowany
+
+- W Zarządzaniu wróciło **🎁 Masowe nadawanie przedmiotów**. Link zniknął przy
+  aktualizacji panelu Sebana 16 września, a sama strona działała cały czas
+  (archonek, DUDU).
+- „Plan wejścia botów” jest opisany prostym językiem. Na serwerze bez
+  integracji Sebana zamiast niedziałającego formularza jest wskazówka, gdzie
+  to ustawić: launcher, LICZBA BOTÓW (Remigiusz).
+- Oba panele pokazują też boty z CH2.
+
+### Na VPS: brak ikon przedmiotów w panelu WWW (DUDU, GorącyDelfin)
+
+Serwer aktualizowany z wersji starszej niż 2.0.74 skryptem `update.sh` nie
+kopiował ikon do panelu. Skrypt z 2.0.74 robi to już sam, ale pierwszą
+aktualizację po nim wykonuje jeszcze stara wersja. Jeśli ikon nadal nie ma,
+raz w folderze serwera:
+
+```
+sh linux-port/tools/update.sh stage
+cd linux-port/docker && docker compose up -d --build panel
+```
+
 ## 2.0.75 — 2026-09-18
 
 Serwer 2.0.75, klient 2.0.15. W launcherze ZAINSTALUJ AKTUALIZACJE — przycisk
