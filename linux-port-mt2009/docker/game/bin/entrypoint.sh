@@ -87,6 +87,48 @@ case "$M2_CHANNELS" in
   *) die "M2_CHANNELS must be 1..4 (got '$M2_CHANNELS'). Channel N uses ports 13000+10*(N-1) .. +2." ;;
 esac
 
+# -----------------------------------------------------------------------------
+# 0b. The second channel for bots and players (M2_PLAYERBOT_CH2; the cores split
+#     the bots with playerbot_channel_rules.h). Two places may ask for it: .env,
+#     which the launcher writes, and the web panel, which cannot write .env and
+#     leaves its wish in the spool. The newer wins - each carries the moment it
+#     was made (M2_PLAYERBOT_CH2_SET_AT, SET_AT=). Decided here, once for every
+#     core: every core must give every bot the same channel, so nothing a core
+#     reads for itself later may differ from its neighbours'.
+# -----------------------------------------------------------------------------
+M2_PLAYERBOT_CH2="${M2_PLAYERBOT_CH2:-0}"
+PLAYERBOT_CH2_SHARE="${PLAYERBOT_CH2_SHARE:-40}"
+ch2_env_at="${M2_PLAYERBOT_CH2_SET_AT:-0}"
+case "$ch2_env_at" in ''|*[!0-9]*) ch2_env_at=0 ;; esac
+ch2_source=env
+ch2_wish="$M2_RATES_SPOOL/channels.wanted"
+if [ -f "$ch2_wish" ]; then
+  wish_on=$(sed -n 's/^CH2=\([01]\)\r\{0,1\}$/\1/p' "$ch2_wish" | head -n 1)
+  wish_share=$(sed -n 's/^SHARE=\([0-9]\{1,3\}\)\r\{0,1\}$/\1/p' "$ch2_wish" | head -n 1)
+  wish_at=$(sed -n 's/^SET_AT=\([0-9]\{1,12\}\)\r\{0,1\}$/\1/p' "$ch2_wish" | head -n 1)
+  if [ -n "$wish_on" ] && [ -n "$wish_at" ] && [ "$wish_at" -gt "$ch2_env_at" ]; then
+    M2_PLAYERBOT_CH2="$wish_on"
+    [ -n "$wish_share" ] && PLAYERBOT_CH2_SHARE="$wish_share"
+    ch2_source=panel
+  fi
+fi
+case "$M2_PLAYERBOT_CH2" in 1) : ;; *) M2_PLAYERBOT_CH2=0 ;; esac
+case "$PLAYERBOT_CH2_SHARE" in ''|*[!0-9]*) PLAYERBOT_CH2_SHARE=40 ;; esac
+if [ "$M2_PLAYERBOT_CH2" = 1 ] && [ "$M2_CHANNELS" -lt 2 ]; then
+  M2_CHANNELS=2
+fi
+[ "$M2_PLAYERBOT_CH2" = 1 ] \
+  && log "second channel ON (from $ch2_source): ${PLAYERBOT_CH2_SHARE}% of the bots on CH2, shops on CH1 only"
+export M2_PLAYERBOT_CH2 PLAYERBOT_CH2_SHARE M2_CHANNELS
+# What the server runs with, for the panel (it reads this volume, not .env).
+# The published range says whether players can reach CH2: the launcher opens
+# 13000-13012 when it switches the channel on; a wish from the panel alone
+# brings the bots over at once and the players with the launcher's next start.
+mkdir -p "$VAR_DIR"
+printf 'CH2=%s\nSHARE=%s\nCHANNELS=%s\nSOURCE=%s\nPORTS=%s\n' \
+  "$M2_PLAYERBOT_CH2" "$PLAYERBOT_CH2_SHARE" "$M2_CHANNELS" "$ch2_source" \
+  "${M2_GAME_CONTAINER_PORT_RANGE:-13000-13002}" > "$VAR_DIR/channels.effective" 2>/dev/null || true
+
 if [ -z "$M2_PUBLIC_ADDRESS" ]; then
   log "WARNING: M2_PUBLIC_ADDRESS is not set."
   log "         The cores will advertise their container-internal address, which"

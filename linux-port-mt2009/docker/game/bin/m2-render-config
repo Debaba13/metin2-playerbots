@@ -324,6 +324,19 @@ for ch in $(seq 1 "${M2_CHANNELS}"); do
   done
 done
 
+# A channel switched off leaves its cores' reports on the state volume, and the
+# panels read every channel's - a stale second channel would be counted as bots
+# and guilds that are not there. The live channels cleared their own above.
+for chdir in "$VAR_DIR"/channel*; do
+  [ -d "$chdir" ] || continue
+  n="${chdir##*/channel}"
+  case "$n" in ''|*[!0-9]*) continue ;; esac
+  if [ "$n" -gt "${M2_CHANNELS}" ]; then
+    rm -f "$chdir"/*/playerbot_status.tsv "$chdir"/*/playerbot_events_status.tsv \
+      "$chdir"/*/playerbot_guild_status.tsv 2>/dev/null || true
+  fi
+done
+
 log "rendered $(wc -l < "$PLAN") cores across ${M2_CHANNELS} channel(s)"
 log "listen=${M2_BIND_IP:-0.0.0.0} container=${CONTAINER_IP} advertised=${M2_PUBLIC_ADDRESS:-<unset>}"
 

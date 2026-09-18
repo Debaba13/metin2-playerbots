@@ -331,59 +331,31 @@ quest web_admin begin
 										pc.warp(x, y)
 									end
 								elseif cmd == "SPEED" then
-									-- +arg1% movement for arg2 seconds.
-									-- apply.MOV_SPEED is 8; fall back to
-									-- the number if that table is ever
-									-- missing.
+									-- +arg1 movement for arg2 seconds, on an affect type of the
+									-- panel's own (9910) through affect.add_new. On this engine
+									-- affect.add allows one quest affect per point, which
+									-- speed_boost already holds, and add_collect sums into the one
+									-- collect affect a point has - the Biologist's movement reward
+									-- among them - so taking a panel speed off there took the
+									-- player's reward with it. Both also take a POINT_* number, and
+									-- the apply.MOV_SPEED this used is the APPLY_* 8, POINT_MAX_SP:
+									-- until 2.0.76 "Light Speed" gave a hundred SP and no speed at
+									-- all (archonek, 18 September).
 									local bonus = tonumber(arg1)
 									local secs = tonumber(arg2) or 3600
-									local mov = 8
-									if type(apply) == "table" then
-										if apply.MOV_SPEED ~= nil then
-											mov = apply.MOV_SPEED
-										end
+									local mov = 19
+									if POINT_MOV_SPEED ~= nil then
+										mov = POINT_MOV_SPEED
 									end
-									if bonus == nil then
+									if bonus == nil or bonus < 0 then
 										result = "bad_args"
 									else
-										-- Take our own effects off first.
-										-- add_collect only ever ADDS: setting
-										-- a second speed stacked it on the
-										-- first, and "Normal (reset)" sends a
-										-- bonus of 0, which added nothing and
-										-- removed nothing. Once fast, always
-										-- fast, and only ever faster.
-										--
-										-- remove_collect matches on the VALUE,
-										-- not just the apply type, so every
-										-- value this panel can send has to be
-										-- named here. They are the four in
-										-- SPEED_LOC in admin_panel.py, plus 0,
-										-- which the old code wrote on every
-										-- reset; add a preset there and it
-										-- belongs here too. Naming them rather
-										-- than using remove_all_collect is
-										-- deliberate: that would also strip
-										-- potions, buffs and anything else the
-										-- player earned.
-										--
-										-- The loop is not belt and braces: the
-										-- C++ side stops at the FIRST matching
-										-- affect and removes that one only, so
-										-- a character carrying a stack from
-										-- before this fix needs one pass per
-										-- row. Removing something that is not
-										-- there costs a list walk and nothing
-										-- else, so this also cleans up as a
-										-- side effect of the next speed change.
-										for wa_i = 1, 8 do
-											affect.remove_collect(mov, 0)
-											affect.remove_collect(mov, 30)
-											affect.remove_collect(mov, 60)
-											affect.remove_collect(mov, 100)
-										end
+										-- What the old code left: the SP it added by mistake, on
+										-- point 8, which is all it ever touched there.
+										affect.remove_collect(8, 0)
+										affect.remove_new(9910, mov)
 										if bonus > 0 then
-											affect.add_collect(mov, bonus, secs)
+											affect.add_new(9910, mov, bonus, secs)
 										end
 									end
 								elseif cmd == "GM_RELOAD" then

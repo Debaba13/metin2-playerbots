@@ -718,7 +718,7 @@ services:
       PLAYERBOTS_GAME_HOST: game
       PLAYERBOTS_LOGIN_PORT: "11000"
       PLAYERBOTS_WORLD_PORT: "13000"
-      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel1/*/playerbot_status.tsv"
+      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel*/*/playerbot_status.tsv"
       # Opened by the visitor's browser, so the address the classic panel is
       # reachable at from outside - not a container name.
       TIERU_PANEL_URL: "${M2_SEBAN_TIERU_PANEL_URL:-http://127.0.0.1:${M2_PANEL_PUBLIC_PORT:-7788}}"

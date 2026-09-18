@@ -251,6 +251,15 @@ db -e "CREATE TABLE IF NOT EXISTS player.playerbot_migrations (name VARCHAR(64) 
 # restart, so its tier and kingdom live here; the core reads the table once
 # and writes a row when it founds or adopts a guild.
 db -e "CREATE TABLE IF NOT EXISTS player.playerbot_guild (guild_id INT UNSIGNED NOT NULL PRIMARY KEY, tier TINYINT UNSIGNED NOT NULL DEFAULT 3, empire TINYINT UNSIGNED NOT NULL DEFAULT 0, founder_pid INT UNSIGNED NOT NULL DEFAULT 0, founded_at DATETIME NOT NULL) ENGINE=InnoDB;"
+# The second channel's pins (playerbot_channel_rules.h): every bot that has
+# ever kept an offline shop lives on the first channel for good, because the
+# shops are the first channel's. The table only grows - each core adds the
+# owners it sees before it reads it - and this adds them before any core has
+# started, so the start that switches the second channel on finds every keeper
+# of the last session already pinned. Written whatever the switch says.
+db -e "CREATE TABLE IF NOT EXISTS player.playerbot_channel_pin (pid INT UNSIGNED NOT NULL PRIMARY KEY, pinned_at DATETIME NOT NULL) ENGINE=InnoDB;"
+db -e "INSERT IGNORE INTO player.playerbot_channel_pin (pid, pinned_at) SELECT owner, NOW() FROM player.ikashop_offlineshop;" 2>/dev/null \
+    || echo "playerbot-migrate: could not pin the shop keepers to the first channel" >&2
 pitch_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = 'pitch_on_guard_2052';" 2>/dev/null || echo x)
 case "$pitch_done" in
     0) pitch_near=1700; pitch_far=1700 ;;

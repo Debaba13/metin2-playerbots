@@ -149,6 +149,22 @@ services:
       PLAYERBOT_SPAWN_WINDOW_MINUTES: "${PLAYERBOT_SPAWN_WINDOW_MINUTES:-1}"
       PLAYERBOT_LATE_JOINERS: "${PLAYERBOT_LATE_JOINERS:-0}"
       PLAYERBOT_LATE_JOIN_HOURS: "${PLAYERBOT_LATE_JOIN_HOURS:-24}"
+      # The operator's own number per kingdom instead of a share of
+      # PLAYERBOT_AUTOSPAWN_COUNT (the launcher's "Indywidualne wartosci dla
+      # krolestw"); read by the bootstrap in input_db.cpp.
+      PLAYERBOT_AUTOSPAWN_PER_KINGDOM: "${PLAYERBOT_AUTOSPAWN_PER_KINGDOM:-0}"
+      PLAYERBOT_AUTOSPAWN_SHINSOO: "${PLAYERBOT_AUTOSPAWN_SHINSOO:-0}"
+      PLAYERBOT_AUTOSPAWN_CHUNJO: "${PLAYERBOT_AUTOSPAWN_CHUNJO:-0}"
+      PLAYERBOT_AUTOSPAWN_JINNO: "${PLAYERBOT_AUTOSPAWN_JINNO:-0}"
+      # The second channel: the entrypoint decides it once for every core,
+      # from here or from the web panel's wish (whichever is newer), raises
+      # M2_CHANNELS to 2 and puts PLAYERBOT_CH2_SHARE percent of the bots on
+      # it; shops stay on the first. The range tells it whether players can
+      # reach the second channel's ports.
+      M2_PLAYERBOT_CH2: "${M2_PLAYERBOT_CH2:-0}"
+      PLAYERBOT_CH2_SHARE: "${PLAYERBOT_CH2_SHARE:-40}"
+      M2_PLAYERBOT_CH2_SET_AT: "${M2_PLAYERBOT_CH2_SET_AT:-0}"
+      M2_GAME_CONTAINER_PORT_RANGE: "${M2_GAME_CONTAINER_PORT_RANGE:-13000-13002}"
       # m2-render-config writes these four into CONFIG. Without a line here the
       # value in .env never reaches the container and the defaults stand, which
       # is what every 2.x world had until 2.0.52 (the 1.x compose passes them).
@@ -171,7 +187,10 @@ services:
 
     ports:
       - "${M2_HOST_BIND_ADDRESS:-0.0.0.0}:${M2_AUTH_PORT:-11000}:11000/tcp"
-      - "${M2_HOST_BIND_ADDRESS:-0.0.0.0}:${M2_GAME_PORT_RANGE:-13000-13002}:13000-13002/tcp"
+      # The container side is a variable too: the launcher widens both to
+      # 13000-13012 when it switches the second channel on (M2_PLAYERBOT_CH2),
+      # and a world without it publishes the first channel's three as before.
+      - "${M2_HOST_BIND_ADDRESS:-0.0.0.0}:${M2_GAME_PORT_RANGE:-13000-13002}:${M2_GAME_CONTAINER_PORT_RANGE:-13000-13002}/tcp"
       # never published: 12000, 14000-14002 (p2p), 15000 (the db core).
 
     volumes:
@@ -403,7 +422,7 @@ services:
       PLAYERBOTS_ENGINE: mt2009
       PLAYERBOTS_LOGIN_PORT: "11000"
       PLAYERBOTS_WORLD_PORT: "13000"
-      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel1/*/playerbot_status.tsv"
+      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel*/*/playerbot_status.tsv"
       # Opened by the visitor's browser, so the address the classic panel is
       # reachable at from outside - not a container name.
       TIERU_PANEL_URL: "${M2_SEBAN_TIERU_PANEL_URL:-http://127.0.0.1:${M2_PANEL_PUBLIC_PORT:-7788}}"

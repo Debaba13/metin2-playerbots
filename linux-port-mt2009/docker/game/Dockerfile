@@ -201,8 +201,9 @@ RUN set -eux; \
     # Functions the engine has and the package's list forgot, which qc would
     # otherwise refuse (gm_profile.quest: equipping, bonus lines, stack size,
     # the item's use path).
-    # pc.open_special_shop for fishing_pass_shop (2.0.68).
-    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use pc.open_special_shop; do \
+    # pc.open_special_shop for fishing_pass_shop (2.0.68); affect.add_new and
+    # affect.remove_new for the panel's speed in web_admin (2.0.76).
+    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use pc.open_special_shop affect.add_new affect.remove_new; do \
       grep -qx "$fn" /tmp/qc-work/quest_functions || echo "$fn" >> /tmp/qc-work/quest_functions; \
     done; \
     # pony_levelup is the package's own stable-keeper quest with the 18-hour
