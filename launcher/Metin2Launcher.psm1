@@ -236,6 +236,58 @@ function New-M2AntivirusError {
         'zebysmy zobaczyli, o ktory plik chodzi.')
 }
 
+function Get-M2FolderProcesses {
+    # Nazwy programow uruchomionych z tego folderu (albo z jego podfolderow).
+    # Windows nie pozwala nadpisac pliku .exe dzialajacego programu, a mowi
+    # o tym dopiero przy kopiowaniu - po pobraniu calej paczki.
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $names = @()
+    try {
+        $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+        foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
+            $path = $null
+            try { $path = $process.Path } catch { }
+            if ($path -and $path.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+                $names += $process.Name
+            }
+        }
+    }
+    catch { }
+    return @($names | Select-Object -Unique)
+}
+
+function Test-M2FileInUse {
+    # "Proces nie moze uzyskac dostepu do pliku, poniewaz jest on uzywany przez
+    # inny proces": ERROR_SHARING_VIOLATION albo ERROR_LOCK_VIOLATION, jako
+    # IOException gdzies w lancuchu wyjatkow (jak przy Test-M2AccessDenied).
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($exception) {
+        if ($exception.HResult -eq -2147024864 -or $exception.HResult -eq -2147024863) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+function New-M2FileInUseError {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Root
+    )
+
+    $holders = @(Get-M2FolderProcesses -Root $Root)
+    $lines = @()
+    $lines += "Plik jest teraz uzywany przez uruchomiony program: $Path"
+    if ($holders.Count -gt 0) {
+        $lines += "Z tego folderu dziala: $($holders -join ', ')."
+    }
+    $lines += 'Zamknij gre (sprawdz tez Menedzer zadan, czy metin2client.exe nie zostal w tle) i kliknij ZAINSTALUJ AKTUALIZACJE jeszcze raz.'
+    $lines += 'Nic nie zostalo zmienione - poprzednia wersja dziala dalej.'
+    return ($lines -join [Environment]::NewLine)
+}
+
 function Test-M2AccessDenied {
     # Nie da sie tego zlapac przez `catch [UnauthorizedAccessException]`:
     # przy $ErrorActionPreference = 'Stop' PowerShell 5.1 opakowuje blad
@@ -557,6 +609,12 @@ function Invoke-M2PackageUpdate {
                 catch {
                     if (Test-M2AntivirusBlock -ErrorRecord $_) {
                         throw (New-M2AntivirusError -Path $change.Relative -ErrorRecord $_)
+                    }
+                    # The game still running from this folder: its exe cannot be
+                    # replaced, and Windows says so only here (Ratorex, 18
+                    # September - five tries, each after a 65 MB download).
+                    if (Test-M2FileInUse -ErrorRecord $_) {
+                        throw (New-M2FileInUseError -Path $change.Destination -Root $target)
                     }
                     if (-not (Test-M2AccessDenied -ErrorRecord $_)) { throw }
                     # One repair is worth trying before this is called a failure:
@@ -1100,7 +1158,7 @@ function New-M2SupportBundle {
                 $coreDir = '/opt/metin2/var/channel1/' + $core
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('playerbot-syslog-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
-                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_EVENT -e PLAYERBOT_LIFE -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e PLAYERBOT_TOWER -e PLAYERBOT_ISHOP -e PLAYERBOT_OFFLINE -e PLAYERBOT_MARKET -e PLAYERBOT_BAG -e PLAYERBOT_AI -e PLAYERBOT_ECONOMY -e PLAYERBOT_PVP -e PLAYERBOT_LOOT -e PLAYERBOT_PARTY:.accepted -e QUEST_ITEM -e GMPANEL -e GM_PROFILE -e autospawn | tail -n 40000')
+                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_EVENT -e PLAYERBOT_LIFE -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e PLAYERBOT_TOWER -e PLAYERBOT_ISHOP -e PLAYERBOT_OFFLINE -e PLAYERBOT_MARKET -e PLAYERBOT_BAG -e INVENTORY_ARRANGE -e PLAYERBOT_AI -e PLAYERBOT_ECONOMY -e PLAYERBOT_PVP -e PLAYERBOT_LOOT -e PLAYERBOT_PARTY:.accepted -e QUEST_ITEM -e GMPANEL -e GM_PROFILE -e autospawn | tail -n 40000')
                 }
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('syserr-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
@@ -1793,7 +1851,16 @@ function New-M2DatabaseBackup {
 
         $zip = Join-Path $BackupRoot ($name + '.zip')
         if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-        Compress-Archive -Path (Join-Path $dir '*') -DestinationPath $zip -CompressionLevel Optimal
+        # Not Compress-Archive: in Windows PowerShell 5.1 it holds every entry
+        # in a MemoryStream, which stops at 2 GB, and a world whose log.sql had
+        # grown past that failed its backup with "Stream was too long". The
+        # backup comes before anything is deleted, so every reset of such a
+        # world was refused - three tries in a day for uxietoszef (18
+        # September), the world untouched each time. CreateFromDirectory
+        # writes each file straight into the zip, the same layout as before.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($dir, $zip,
+            [System.IO.Compression.CompressionLevel]::Optimal, $false)
         return [pscustomobject]@{
             Folder   = $dir
             Zip      = $zip
@@ -1987,5 +2054,6 @@ Export-ModuleMember -Function @(
     'Test-M2DockerRunning',
     'Sync-M2PlayerbotOverlay',
     'Set-M2PlayerbotsVersionEnvironment',
-    'Invoke-M2EnginePatches'
+    'Invoke-M2EnginePatches',
+    'Get-M2FolderProcesses'
 )

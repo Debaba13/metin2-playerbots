@@ -458,6 +458,22 @@ function Update-Server {
     Write-Host "Serwer działa w wersji $($result.Version)." -ForegroundColor Green
 }
 
+function Assert-ClientNotRunning {
+    # The client's exe cannot be replaced while the game runs, and Windows
+    # says so only when the file is copied - after the whole download.
+    # Ratorex (18 September) tried five times in a quarter of an hour, each
+    # time 65 MB and the same "used by another process". Asked first now,
+    # and before the server as well, so an "update everything" does not
+    # leave a new server beside a client that cannot log in to it.
+    param($Config)
+    $clientRoot = [string]$Config.clientRoot
+    if (-not $clientRoot -or -not (Test-Path -LiteralPath $clientRoot -PathType Container)) { return }
+    $running = @(Get-M2FolderProcesses -Root $clientRoot)
+    if ($running.Count -gt 0) {
+        throw ("Klient gry jest uruchomiony ({0}). Zamknij gre - sprawdz tez Menedzer zadan, czy metin2client.exe nie zostal w tle - i kliknij ZAINSTALUJ AKTUALIZACJE jeszcze raz." -f ($running -join ', '))
+    }
+}
+
 function Update-Client {
     param($RemoteManifest, $Config)
     $component = Get-ManifestComponent -RemoteManifest $RemoteManifest -Name 'client'
@@ -477,6 +493,7 @@ function Update-Client {
     if (-not (Test-Path -LiteralPath $clientRoot -PathType Container)) {
         throw "Nie znaleziono folderu klienta: $clientRoot"
     }
+    Assert-ClientNotRunning -Config $Config
     if (-not (Confirm-Operation "Zaktualizować klienta w $clientRoot?")) {
         Write-Host 'Anulowano.' -ForegroundColor Yellow
         return
@@ -1179,6 +1196,10 @@ function Invoke-Action {
         'UpdateAll' {
             $remote = Get-M2UpdateManifest -Source (Get-ManifestSource $config)
             Show-UpdateStatus -RemoteManifest $remote
+            $clientComponent = Get-ManifestComponent -RemoteManifest $remote -Name 'client'
+            if ($clientComponent -and -not (Test-InstalledVersion -Installed ([string](Read-State).client) -Available ([string]$clientComponent.version))) {
+                Assert-ClientNotRunning -Config $config
+            }
             Update-Server -RemoteManifest $remote
             Update-Client -RemoteManifest $remote -Config $config
         }
