@@ -5681,6 +5681,114 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   of the measurement: a snapshot of `player.skill_level`, the Biologist's
   `__status` (557528158 complete, -1726153001 the key) and the goods by window,
   diffed over hours, beside the syslog of the same window.
+- **The client's exe is built here now, from the package's source.** The
+  package ships its client C++ (`Downloads/Metin2 Singleplayer/Source`: a
+  VS 2022 solution, "Source Client" and 1.1 GB of "Extern"), and
+  `linux-port-mt2009/tools/build-client.ps1` builds it with our edits,
+  `port/clientify.py` - exact-string, idempotent, both line ends tried because
+  the client's files mix CRLF and LF. Three things the first build taught:
+  MSBuild cannot open `..\UserInterface\Locale_inc.h` once a path passes 260
+  characters, so the copy goes to `%TEMP%\m2cb`, never to a scratchpad; the
+  client compiles against the *server's* `common/*.h` (`../../Server/common`),
+  which is where `INVENTORY_PAGE_COUNT` and `ENABLE_EXTEND_INVEN_SYSTEM` live -
+  so the script links our staged server tree there, and a constant changed in
+  `common` changes both ends of the wire; and the links are junctions, which
+  Windows PowerShell 5.1's `Remove-Item -Recurse` follows and empties - delete
+  one with `[System.IO.Directory]::Delete(link, $false)` or Explorer. Built
+  unchanged, the source gives the package's own exe to a kilobyte; client 2.0.13
+  (l0st3k's build) differed from it only by `textTail.AttachPersonality` and
+  `DetachPersonality`, which clientify.py now adds on AttachTitle's model - a
+  row between the name and the guild, the guild a row higher. Compare two
+  client builds by the identifiers in them, not by size: a Python sweep of the
+  printable runs names every module function one has and the other lacks.
+- **Four inventory pages on the 2.x line, and the database moves with them.**
+  `INVENTORY_DEFAULT_PAGE_COUNT` is 4 in `common/length.h`
+  (`apply_four_inventory_pages` in playerbotify.py), and everything after the
+  bag moves with it: the horse's page to 180-224, the worn slots to 225 (their
+  EQUIPMENT rows are relative and stay), the dragon soul slots, and the belt's
+  cells to 287-302, which this line keeps in the INVENTORY window
+  (`ENABLE_BELT_INVENTORY_EX` is off). A world saved under two pages therefore
+  has every INVENTORY row from 90 up in the wrong place, and its quickslot
+  blob holds BYTE positions that cannot name a cell past 255. The db core
+  migrates both before any game core connects (`__MigrateInventoryFourPages`
+  in `db/src/ClientManager.cpp`: rows from 90 up move by 90 in `ORDER BY pos
+  DESC`, so no row lands on one not moved yet; the 80-byte blob becomes 120
+  with every position a WORD; one InnoDB transaction with the marker
+  `playerbot_migrations('inventory_four_pages')`) and refuses to start when it
+  fails. There is no way back: a downgrade across 2.0.74 needs the backup from
+  before it. The client compiles against the same `length.h`, and the wire
+  changes with it (a quickslot's position and a shop sale's cell are WORDs), so
+  an old client on a new server is a desync, not an old window. The auth core
+  refuses one by version - `server_version: 1010100` in the auth CONFIG only,
+  because a game core that sees a version of a million or more takes itself
+  for a production server and turns `/reload p/q` and `beta_server` off - with
+  "UPDATE", which the locale words as "Wymagana aktualizacja klienta gry przez
+  Patcher."; the root's `constinfo.py` says 1.1.0. The client needed one edit
+  the compiler found and nothing else would have: `AbstractPlayer.h` declares
+  `AddQuickSlot` pure virtual with a `char` position, so widening only the
+  implementation made `CPythonPlayer` abstract. Bots have the four pages too,
+  by the operator's choice: in two hours on m2zip 295 bots put 4 376 items on
+  pages III and IV, a full bag (80%) now means 144 items rather than 72, and
+  the tick rose by about a tenth. Both panels drew two pages - the classic one
+  hid III and IV, Seban's drew them over page II with `pos % 45` - and draw
+  four on mt2009 now (`INVENTORY_PAGES`, and his tab art cut to a quarter,
+  `quad-*.png`).
+- **A core with no bot never ran the bots' clock.** `CPlayerBotManager`'s
+  Update event is created when the first bot loads (`OnPlayerLoaded`), so a
+  core hosting none - first and game2 under `unified`, and every core before
+  its first spawn - never re-read the weights file nor ran the timed events.
+  The chest gate is per core (each core's `CreateDropItem` rolls on its own
+  permille), so there it stayed open for good, and with no schedule written it
+  was open everywhere: "dropia tez poza konkursem" (NerrVoVy).
+  `StartWorldClock`, called from the bootstrap in `input_db.cpp`
+  (`apply_world_clock`), runs the weights and the events once a second until
+  the Update event exists and then stands down. The operator's rule since
+  2.0.74: a Moonlight chest drops only while a chest event runs, so no
+  schedule means no chests. On m2zip, 39 chests picked up in six minutes an
+  hour before, none in the seventeen minutes after, beside 1 994 other pickups.
+- **The bots' pass has a time budget.** The game core is one thread, so a
+  pass over the bots is time in which no login packet is answered - 700 ms
+  and more while a cohort spawns, which is SIZOWSKI's hanging login on a big
+  world. `PLAYERBOT_TICK_BUDGET_MS_DEFAULT` (120 ms; weights key `TICK_MS`, 0
+  for none) ends the pass when it runs out and the next one, a quarter of a
+  second later, resumes at the next pid; a sweep counter replaced the tick
+  counter in the heavy/light parity, so a bot that is often cut off does not
+  always land on the same half. `sliced=` in `PLAYERBOT_LOAD` counts the cut
+  passes. At 1 099 bots with a budget of 20 ms: 150-205 cut passes a minute,
+  the longest pass 34 ms against 343.
+- **Green bonus stones are what a bot under forty may use.** 71151/76023
+  change and 71152/76024 add, only on a weapon or a body armour of level forty
+  or less (the engine's own rule), and the reroll pass returned below
+  `PLAYERBOT_BONUS_MIN_LEVEL` for everybody, so 628 of them lay in the bags of
+  bots under forty (Sammy). Under that level the pass takes green stones only
+  and no marble; above it a green stone goes first on a piece that takes one.
+  Fifteen minutes after the deploy a bot of twenty-five had added lines to a
+  Gilotynowe Ostrze+7 and a Tiger plate +6.
+- **Hay, carrots and the mission books are pickup goods** (50054, 50055,
+  50307-50310): a player uses them and no bot does, and the merchant paid five
+  hundred yang for a book (Greess). The mission books were picked up three
+  times as often in the first seventeen minutes.
+- **Auto Lowy asks for stones first and names what it cannot reach.** With
+  Metiny on, a stone outranks every monster in `/autohunt_target`
+  (`apply_auto_hunt_stone_priority`), and a fifth argument names the VID the
+  client gave up on after `STUCK_SECONDS`, which the server skips for
+  `STUCK_SKIP_SECONDS` (a minute) - it used to name the same unreachable
+  monster straight back (blasty).
+- **A Linux update stages the panel's build context itself.** Only the
+  Windows launcher's `Sync-M2PlayerbotOverlay` ever copied VERSION, the
+  changelog, `admin_panel.py`, items.json, the favicon, the schema and
+  `files/static` into `linux-port/docker/panel/`; a VPS updated with
+  `update.sh` built from what the package held and stopped at "/schema: not
+  found" (DUDU). `stage_panel_context` does it before compose, the package
+  ships the schema, and `check-update-covers-build.py --context` checks the
+  shared build contexts with no prefix assumed staged. listify.py skips an ELF
+  in the staged tree - a local compile left the 78 MB game binary there, and
+  it looked like a file the port had added.
+- **The presence on Discord is ours.** `apply_discord_presence` in clientify:
+  application 1548716643541065798 ("Metin2 SinglePlayer") and the button to
+  the YouTube channel instead of mt2009.pl. Discord does not show a profile's
+  owner the buttons of their own presence, so "Dolacz do gry" is checked from
+  another account.
 
 ## Engine facts worth not re-deriving
 
