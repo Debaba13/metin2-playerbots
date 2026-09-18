@@ -20,10 +20,14 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * game.py       - the "PlayerBotStatus" server command, handed to
                     playerbot_status_tail.py (hand-written, beside serverinfo.py);
                     Auto Lowy: the "AutoHuntTarget" and "AutoHuntLoot" commands, the K key and the
-                    hunt among the updateables (uiautohunt.py, hand-written).
-  * uiinventory.py - the auto-stack button queues its moves for
-                    autostackpump.py (hand-written) instead of sending them all
-                    in one frame, which the server's flood limit closed on.
+                    hunt among the updateables (uiautohunt.py, hand-written);
+                    the "InventoryArrangeResult" command (inventoryarrange.py).
+  * uiinventory.py - the auto-stack button is "Scal i uporzadkuj": one
+                    /inventory_arrange to the server, which pours the stacks
+                    and lays the four pages out (inventoryarrange.py,
+                    hand-written; playerbot_arrange.cpp on the server). The
+                    method the button used to call stays under another name
+                    and is never called.
   * offlineshopmanage.py - a click on an empty slot of the shop's edit grid
                     removes nothing instead of raising KeyError.
   * uigameoption.py, uiscript/gameoptiondialog.py - the "Tytuly botow" row of
@@ -181,29 +185,39 @@ EDITS = {
          b'\t\t\tself.RegisterUpdatable(self.playerbotTitleKeeper)\r\n'
          b'\r\n'
          b'\tdef __PlayerbotAdmin_AchievementsEnd(self):\r\n'),
+        # "Scal i uporzadkuj" answers "InventoryArrangeResult <code> <moved>
+        # <merged> <units>" (playerbot_arrange.cpp) and inventoryarrange.py says
+        # what happened. The entry follows the fishing block and the handler
+        # precedes the ItemShop's: text no other edit here reads or writes.
+        (b'\t\t\t"FishingGameEvent": self.FishingGameEvent,\r\n',
+         b'\t\t\t"FishingGameEvent": self.FishingGameEvent,\r\n'
+         b'\r\n'
+         b'\t\t\t# "Scal i uporzadkuj" (inventoryarrange.py)\r\n'
+         b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n'),
+        (b'\tdef __InGameShop_Show(self, url):\r\n',
+         b'\tdef __InventoryArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):\r\n'
+         b'\t\timport inventoryarrange\r\n'
+         b'\t\tinventoryarrange.OnResult(code, moved, merged, units)\r\n'
+         b'\r\n'
+         b'\tdef __InGameShop_Show(self, url):\r\n'),
     ],
-    # The inventory's auto-stack button sent a move for every pair of stacks of
-    # one item in a single frame - 300 moves for 25 stacks - and 300 packets in
-    # a second is the server's flood limit (CInputMain::Analyze logs
-    # FLOOD_HEADER_13 and closes the connection): "loga postac do ekranu
-    # logowania" (l0st3k, 15 September). The same moves now leave a few at a
-    # time through autostackpump.py (hand-written beside this file).
+    # "Scal i uporzadkuj" (Tieru, 18 September; Codex's audit the same day):
+    # the inventory's auto-stack button asks the server once
+    # (inventoryarrange.py) instead of sending a move for every pair of stacks.
+    # Those moves were three hundred in a frame - the flood limit closed the
+    # connection on them ("loga postac do ekranu logowania", l0st3k, 15
+    # September) - and spread out a few at a time (autostackpump.py) they
+    # could still only pour stacks, never lay a page out. Only the method's
+    # first line is the anchor, and the old body stays under another name,
+    # never called: the same edit applies to the stock root, to a published
+    # root that carries the pump, and to one that carries this.
     'uiinventory.py': [
-        (b'\tdef __OnAutoStackButton(self):\r\n'
-         b'\t\tTOTAL_SLOTS = player.INVENTORY_MAX_NUM\r\n',
+        (b'\tdef __OnAutoStackButton(self):\r\n',
          b'\tdef __OnAutoStackButton(self):\r\n'
-         b'\t\timport autostackpump\r\n'
-         b'\t\tmoves = []\r\n'
-         b'\t\tTOTAL_SLOTS = player.INVENTORY_MAX_NUM\r\n'),
-        (b'\t\t\t\t\tif destItemVnum == srcItemVnum:\r\n'
-         b'\t\t\t\t\t\tself.__SendMoveItemPacket(destSlot, sourceSlot, 0)\r\n'
+         b'\t\timport inventoryarrange\r\n'
+         b'\t\tinventoryarrange.Request()\r\n'
          b'\r\n'
-         b'\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.AUTOSTACK_INVENTORY)\r\n',
-         b'\t\t\t\t\tif destItemVnum == srcItemVnum:\r\n'
-         b'\t\t\t\t\t\tmoves.append((destSlot, sourceSlot))\r\n'
-         b'\r\n'
-         b'\t\tautostackpump.Queue(moves)\r\n'
-         b'\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.AUTOSTACK_INVENTORY)\r\n'),
+         b'\tdef __OnAutoStackButtonByMoves(self):\r\n'),
     ],
     # The offline shop's edit grid removes an item on a left click and never
     # asked whether the slot held one: a click on an empty slot was a KeyError
@@ -432,6 +446,10 @@ EDITS = {
          + b'\r\n'
          b'\t\t\t\t# {\r\n'
          b'\t\t\t\t# \t"name" : "Inventory_Tab_03",\r\n'),
+        # The auto-stack button's tooltip: it pours and orders now. CP1250 as
+        # an escape, like the options' row, so the script stays ASCII.
+        (b'\t\t\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_AUTOSTACK,\r\n',
+         b'\t\t\t\t\t\t\t"tooltip_text" : "Scal i uporz\\xb9dkuj",\r\n'),
     ],
     'constinfo.py': [
         (b'\t"major" : 0,\r\n\t"minor" : 15,\r\n',

@@ -2619,6 +2619,9 @@ class GameWindow(ui.ScriptWindow):
 			"FishingGameCooldown": self.FishingGameCooldown,
 			"FishingGameEvent": self.FishingGameEvent,
 
+			# "Scal i uporzadkuj" (inventoryarrange.py)
+			"InventoryArrangeResult"	: self.__InventoryArrangeResult,
+
 			# WEDDING
 			"lover_login"			: self.__LoginLover,
 			"lover_logout"			: self.__LogoutLover,
@@ -3390,6 +3393,10 @@ class GameWindow(ui.ScriptWindow):
 	def __OnTop1Badge(self, vid):
 		if self.interface.wndTop1Badge:
 			self.interface.wndTop1Badge.Refresh(vid)
+
+	def __InventoryArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):
+		import inventoryarrange
+		inventoryarrange.OnResult(code, moved, merged, units)
 
 	def __InGameShop_Show(self, url):
 		if constInfo.IN_GAME_SHOP_ENABLE:

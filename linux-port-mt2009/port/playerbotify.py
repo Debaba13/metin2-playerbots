@@ -1426,6 +1426,9 @@ def main(root):
     apply_four_inventory_pages(common, game, db)
     apply_world_clock(game)
     apply_auto_hunt_stone_priority(game)
+    apply_inventory_arrange(game)
+    apply_quickslot_chain_word(game)
+    apply_regen_spawn_count(game)
     print('playerbotify: done')
 
 
@@ -3533,6 +3536,237 @@ def apply_auto_hunt_stone_priority(game):
          '\n'
          '\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n',
          marker='\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n')
+
+
+
+INVENTORY_ARRANGE_COMMAND = r"""// "Scal i uporzadkuj" - the inventory's button (client-root/inventoryarrange.py).
+// One request instead of a move for every pair of stacks: the old button sent
+// three hundred in a frame and the flood limit closed the connection, and a
+// queue of moves could only pour stacks, never lay the pages out. The server
+// does both at once (playerbot_arrange.cpp) and answers with what it did.
+// No option is known yet, and one that is not is refused rather than guessed.
+ACMD(do_inventory_arrange)
+{
+	char arg1[256];
+	one_argument(argument, arg1, sizeof(arg1));
+	playerbot_arrange::TResult result;
+	if (*arg1)
+		result.code = playerbot_arrange::RESULT_BAD_REQUEST;
+	else
+		result = playerbot_arrange::ArrangeInventory(ch, true);
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "InventoryArrangeResult %d %d %d %u",
+			result.code, result.moved, result.merged, result.units);
+}
+"""
+
+
+def apply_inventory_arrange(game):
+    # "Scal i uporzadkuj" dla graczy i botow (Tieru, 18 wrzesnia; audyt Codexa
+    # tego samego dnia): przycisk ekwipunku wysyla jedno polecenie, a serwer
+    # scala stosy i uklada cztery strony od nowa. Wykonanie jest w
+    # playerbot_arrange.cpp (Makefile bierze kazdy *.cpp z game/src), tu tylko
+    # polecenie i jego wpis w tabeli.
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         '#include "battle.h"\n',
+         '#include "battle.h"\n'
+         '#include "playerbot_arrange.h"\n',
+         marker='#include "playerbot_arrange.h"\n')
+    edit(path,
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         INVENTORY_ARRANGE_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_inventory_arrange)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_autohunt_loot);\n',
+         'ACMD(do_autohunt_loot);\n'
+         'ACMD(do_inventory_arrange);\n',
+         marker='ACMD(do_inventory_arrange);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "autohunt_loot",\tdo_autohunt_loot,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "autohunt_loot",\tdo_autohunt_loot,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "inventory_arrange",')
+
+
+def apply_quickslot_chain_word(game):
+    # Cztery strony przesunely pas na pola 287-302, a ChainQuickslotItem wciaz
+    # bral stara pozycje jako BYTE: gdy konczyl sie stos mikstur w pasie,
+    # CItem::SetCount przekazywal 290 jako 34 i przepinal skrot, ktory wskazywal
+    # pole 34 w torbie, a skrot pasa zostawal na pustym polu. SyncQuickslot i
+    # TQuickslot.pos sa WORD od 2.0.74; to byl ostatni BYTE po drodze.
+    edit(os.path.join(game, 'char.h'),
+         '\t\tvoid\t\t\tChainQuickslotItem(LPITEM pItem, BYTE bType, BYTE bOldPos);\n',
+         '\t\tvoid\t\t\tChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos);\n',
+         marker='ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos);\n')
+    edit(os.path.join(game, 'char_quickslot.cpp'),
+         'void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, BYTE bOldPos)\n',
+         'void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos)\n',
+         marker='void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos)\n')
+
+
+def apply_regen_spawn_count(game):
+    # Liczba potworow w respie (Kiciamol, 18 wrzesnia: "chodzilo mi o
+    # podwajanie/potrajanie mobow/metkow", zrobione u siebie w regen.cpp i
+    # wlasnie dlatego - przepada z kazda aktualizacja). regen_spawn dosypuje
+    # do max_count linii regenu; teraz do max_count razy procent z flag
+    # m2_mob_count / m2_boss_count, ktore pisze strona /rates panelu.
+    # The groups a group of groups may draw: the manager keeps them private
+    # and hands out one at a time, at random.
+    edit(os.path.join(game, 'mob_manager.h'),
+         '\t\tDWORD\t\tGetGroupFromGroupGroup(DWORD dwVnum);\n',
+         '\t\tDWORD\t\tGetGroupFromGroupGroup(DWORD dwVnum);\n'
+         '\t\t// playerbot: every group a group of groups may draw. regen.cpp asks\n'
+         '\t\t// what a respawn line can put on the map - a boss, a Metin stone, an\n'
+         '\t\t// ore vein - and GetGroupFromGroupGroup answers with one group, at\n'
+         '\t\t// random.\n'
+         '\t\tconst std::vector<DWORD>* GetGroupGroupMembers(DWORD dwVnum)\n'
+         '\t\t{\n'
+         '\t\t\tauto it = m_map_pkMobGroupGroup.find(dwVnum);\n'
+         '\t\t\treturn it == m_map_pkMobGroupGroup.end() ? NULL : &it->second->m_vec_dwMemberVnum;\n'
+         '\t\t}\n',
+         marker='const std::vector<DWORD>* GetGroupGroupMembers(DWORD dwVnum)\n')
+    path = os.path.join(game, 'regen.cpp')
+    edit(path,
+         'static bool read_line(FILE *fp, LPREGEN regen)\n',
+         '// playerbot: every monster a respawn line can put on the map - the vnum\n'
+         '// of a single line, every member of a group (its leader too), every\n'
+         '// member of every group a group of groups may draw. The boss test below\n'
+         '// asked a group and never a group of groups, and stone.txt writes its ore\n'
+         '// veins and herbs that way, as a few maps write their Metin stones.\n'
+         'static void regen_member_vnums(LPREGEN regen, std::vector<DWORD>& vnums)\n'
+         '{\n'
+         '\tvnums.clear();\n'
+         '\tif (regen->type == REGEN_TYPE_GROUP)\n'
+         '\t{\n'
+         '\t\tCMobGroup* pkGroup = CMobManager::instance().GetGroup(regen->vnum);\n'
+         '\t\tif (pkGroup)\n'
+         '\t\t\tvnums = pkGroup->GetMemberVector();\n'
+         '\t}\n'
+         '\telse if (regen->type == REGEN_TYPE_GROUP_GROUP)\n'
+         '\t{\n'
+         '\t\tconst std::vector<DWORD>* groups = CMobManager::instance().GetGroupGroupMembers(regen->vnum);\n'
+         '\t\tif (!groups)\n'
+         '\t\t\treturn;\n'
+         '\t\tfor (DWORD dwGroup : *groups)\n'
+         '\t\t{\n'
+         '\t\t\tCMobGroup* pkGroup = CMobManager::instance().GetGroup(dwGroup);\n'
+         '\t\t\tif (pkGroup)\n'
+         '\t\t\t\tvnums.insert(vnums.end(), pkGroup->GetMemberVector().begin(), pkGroup->GetMemberVector().end());\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\telse if (regen->type == REGEN_TYPE_MOB || regen->type == REGEN_TYPE_ANYWHERE)\n'
+         '\t\tvnums.push_back(regen->vnum);\n'
+         '}\n'
+         '\n'
+         'static bool read_line(FILE *fp, LPREGEN regen)\n',
+         marker='static void regen_member_vnums(LPREGEN regen, std::vector<DWORD>& vnums)\n')
+    edit(path,
+         '\t\t\tcase MODE_VNUM:\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif (regen->type == REGEN_TYPE_GROUP)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tCMobGroup* pkGroup = CMobManager::Instance().GetGroup(regen->vnum);\n'
+         '\t\t\t\t\tif (pkGroup)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tfor (auto mobVnum : pkGroup->GetMemberVector())\n'
+         '\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\tauto pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\t\t\t\t\t\tif (pkMob)\n'
+         '\t\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\t\tif (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(mobVnum))\n'
+         '\t\t\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t\t\t\t\tbreak;\n'
+         '\t\t\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\telse\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tauto pkMob = CMobManager::instance().Get(regen->vnum);\n'
+         '\t\t\t\t\tif (pkMob)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tif (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(regen->vnum))\n'
+         '\t\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\tstr_to_number(regen->vnum, szTmp);\n'
+         '\t\t\t\t++mode;\n',
+         '\t\t\tcase MODE_VNUM:\n'
+         '\t\t\t{\n'
+         '\t\t\t\t// playerbot: the vnum is read before it is asked about. The boss\n'
+         '\t\t\t\t// test looked at the zero of a fresh REGEN, so no line was ever a\n'
+         '\t\t\t\t// boss or a stone and fastBossSpawn (the /rates page\'s "Metiny i\n'
+         '\t\t\t\t// bossowie") reached nothing; and a group of groups is asked the\n'
+         '\t\t\t\t// way a group is - a boss or a stone among what it may put down.\n'
+         '\t\t\t\tstr_to_number(regen->vnum, szTmp);\n'
+         '\t\t\t\tstd::vector<DWORD> vnums;\n'
+         '\t\t\t\tregen_member_vnums(regen, vnums);\n'
+         '\t\t\t\tfor (DWORD mobVnum : vnums)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tconst CMob* pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\t\t\t\tif (pkMob && (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(mobVnum)))\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t\tbreak;\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\t++mode;\n',
+         marker='// playerbot: the vnum is read before it is asked about. The boss\n')
+    edit(path,
+         'static void regen_spawn(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tDWORD\tnum;\n'
+         '\tDWORD\ti;\n'
+         '\n'
+         '\tnum = (regen->max_count - regen->count);\n'
+         '\n'
+         '\tif (!num)\n'
+         '\t\treturn;\n',
+         '// playerbot: how many a respawn line keeps standing - its own count times\n'
+         '// the operator\'s multiplier (m2_boss_count for the lines of bosses and\n'
+         '// Metin stones, m2_mob_count for the rest; a percent, 100 or unset being\n'
+         '// the line as written, 400 the most). Only a line all of whose monsters\n'
+         '// are monsters or stones is multiplied: an NPC, a portal or a shop keeper\n'
+         '// stays as written, and so do the groups of ore veins, herbs and horses\n'
+         '// that stone.txt and npc.txt carry. Nor is a spawn a quest asks for once;\n'
+         '// the dungeons keep their own regen_spawn_dungeon and are not touched.\n'
+         'static DWORD regen_target_count(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tif (regen->max_count <= 0)\n'
+         '\t\treturn 0;\n'
+         '\tif (bOnce)\n'
+         '\t\treturn regen->max_count;\n'
+         '\tconst int percent = quest::CQuestManager::instance().GetEventFlag(regen->is_boss_or_stone ? "m2_boss_count" : "m2_mob_count");\n'
+         '\tif (percent <= 100)\n'
+         '\t\treturn regen->max_count;\n'
+         '\tstd::vector<DWORD> vnums;\n'
+         '\tregen_member_vnums(regen, vnums);\n'
+         '\tif (vnums.empty())\n'
+         '\t\treturn regen->max_count;\n'
+         '\tfor (DWORD mobVnum : vnums)\n'
+         '\t{\n'
+         '\t\tconst CMob* pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\tif (!pkMob || (pkMob->m_table.bType != CHAR_TYPE_MONSTER && pkMob->m_table.bType != CHAR_TYPE_STONE))\n'
+         '\t\t\treturn regen->max_count;\n'
+         '\t}\n'
+         '\treturn (DWORD)regen->max_count * (DWORD)MIN(percent, 400) / 100;\n'
+         '}\n'
+         '\n'
+         'static void regen_spawn(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tDWORD\tnum;\n'
+         '\tDWORD\ti;\n'
+         '\n'
+         '\t// playerbot: up to the target; a count above it (the multiplier was\n'
+         '\t// lowered while the extra ones still stand) spawns nothing, where\n'
+         '\t// max_count - count would have wrapped round to four billion.\n'
+         '\tconst DWORD target = regen_target_count(regen, bOnce);\n'
+         '\tif (regen->count < 0 || (DWORD)regen->count >= target)\n'
+         '\t\treturn;\n'
+         '\tnum = target - (DWORD)regen->count;\n',
+         marker='// are monsters or stones is multiplied: an NPC, a portal or a shop keeper\n')
 
 
 if __name__ == '__main__':

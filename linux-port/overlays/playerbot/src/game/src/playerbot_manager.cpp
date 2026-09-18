@@ -62,6 +62,8 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "ikarus_shop_manager.h"
 #include "playerbot_offline_policy.h"
 #endif
+// "Scal i uporzadkuj", the one a player's inventory button asks for too.
+#include "playerbot_arrange.h"
 // The engine leaves two kinds of request here for the bot's tick to answer: a
 // player's party invitation and a duel challenge. Both are inline and
 // engine-free, and both belong OUTSIDE the ikashop guard above - the offline
@@ -3152,7 +3154,32 @@ void CPlayerBotManager::Update()
 		s_dwPlayerBotLoadReportTime = dwNow;
 	else if (dwNow - s_dwPlayerBotLoadReportTime >= PLAYERBOT_LOAD_REPORT_INTERVAL)
 	{
-		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums sliced=%u",
+		// The monsters and Metin stones standing on this core: the one number
+		// that shows the /rates page's respawn multipliers at work
+		// (m2_mob_count, m2_boss_count; regen.cpp's regen_target_count) - and
+		// the NPCs, which they must leave alone: the ore veins and herbs of
+		// stone.txt are NPCs spawned by groups of groups, and the first version
+		// of the multiplier doubled them. A horse following a dismounted rider
+		// is an NPC too (20030 and its kind), and those come and go with the
+		// bots, so a horse with a rider is not counted. One walk over the VID
+		// map a minute. mt2009 only - r40250's manager does not hand the map
+		// out, and the multipliers are not there either.
+		unsigned int standingMonsters = 0, standingStones = 0, standingNpcs = 0;
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		for (const auto& entry : CHARACTER_MANAGER::instance().GetCharacterVIDMap())
+		{
+			LPCHARACTER other = entry.second;
+			if (!other)
+				continue;
+			if (other->IsStone())
+				++standingStones;
+			else if (other->IsMonster())
+				++standingMonsters;
+			else if (other->GetCharType() == CHAR_TYPE_NPC && !other->GetRider())
+				++standingNpcs;
+		}
+#endif
+		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums sliced=%u mobs=%u stones=%u npcs=%u",
 				(unsigned int)m_mapBots.size(), s_uPlayerBotLoadTicks,
 				s_uPlayerBotLoadTickUs / 1000, s_uPlayerBotLoadTickMaxUs / 1000,
 				s_uPlayerBotLoadTargetSearches, s_uPlayerBotLoadTargetMisses,
@@ -3165,7 +3192,8 @@ void CPlayerBotManager::Update()
 				s_uPlayerBotLoadPlanBucket[3], s_uPlayerBotLoadPlanBucketUs[3] / 1000,
 				s_uPlayerBotLoadScans, s_uPlayerBotLoadScanUs / 1000,
 				s_uPlayerBotLoadSaves, s_uPlayerBotLoadWatchdog,
-				(unsigned int)(dwNow - s_dwPlayerBotLoadReportTime), s_uPlayerBotLoadSliced);
+				(unsigned int)(dwNow - s_dwPlayerBotLoadReportTime), s_uPlayerBotLoadSliced,
+				standingMonsters, standingStones, standingNpcs);
 		for (int b = 0; b < 4; ++b)
 			s_uPlayerBotLoadPlanBucket[b] = s_uPlayerBotLoadPlanBucketUs[b] = 0;
 		s_uPlayerBotLoadPlanDeferred = s_uPlayerBotLoadPlanResumed = s_uPlayerBotLoadPlanCached = 0;

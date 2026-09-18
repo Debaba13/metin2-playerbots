@@ -72,7 +72,7 @@ class TitleTest(unittest.TestCase):
         self.calls = []
         self.now = [100.0]
         native = types.ModuleType('textTail')
-        native.AttachTitle = lambda vid, text, r, g, b: self.calls.append((vid, text))
+        native.AttachPersonality = lambda vid, text, r, g, b: self.calls.append((vid, text))
         clock = types.ModuleType('app')
         clock.GetTime = lambda: self.now[0]
         self.saved = dict((name, sys.modules.get(name)) for name in ('textTail', 'app'))
@@ -115,8 +115,10 @@ class TitleTest(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertFalse(keeper.CanUpdate())
 
-    def test_a_client_without_attach_title_draws_nothing(self):
-        del sys.modules['textTail'].AttachTitle
+    def test_a_client_without_attach_personality_draws_nothing(self):
+        # The personality has its own row since client 2.0.13 (l0st3k's
+        # AttachPersonality); an older exe has no such row to draw in.
+        del sys.modules['textTail'].AttachPersonality
         self.assertFalse(status.show_title('42', '1'))
         self.assertEqual(self.calls, [])
 
@@ -128,7 +130,7 @@ class TitleSwitchTest(unittest.TestCase):
         import tempfile
         self.calls = []
         native = types.ModuleType('textTail')
-        native.AttachTitle = lambda vid, text, r, g, b: self.calls.append((vid, text))
+        native.AttachPersonality = lambda vid, text, r, g, b: self.calls.append((vid, text))
         clock = types.ModuleType('app')
         clock.GetTime = lambda: 100.0
         self.saved = dict((name, sys.modules.get(name)) for name in ('textTail', 'app'))

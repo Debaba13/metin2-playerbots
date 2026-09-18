@@ -206,6 +206,7 @@ namespace
 		return merged;
 	}
 
+#if !defined(PLAYERBOT_ENGINE_MT2009)
 	// The order the bag is tidied into: the red and blue potions, then every
 	// other potion - green and purple, the timed boosters, the auto potions -
 	// then chests and keys ("wszelakie potki pierwsze a potem reszte", Tieru,
@@ -322,6 +323,35 @@ namespace
 			sys_log(0, "PLAYERBOT_BAG: sorted pid=%u name=%s moves=%d",
 					ch->GetPlayerID(), ch->GetName(), moves);
 	}
+#else
+	// The whole bag, as a player's "Scal i uporzadkuj" lays it out
+	// (playerbot_arrange.cpp) - which keeps the potions-first order the
+	// sort above gave the r40250 bags - on its own clock, by pid, so a
+	// restart does not arrange the whole population in one minute.
+	std::map<DWORD, DWORD> s_mapPlayerBotArrangeNext;
+
+	void ManagePlayerBotArrange(LPCHARACTER ch, DWORD dwNow)
+	{
+		const DWORD pid = ch->GetPlayerID();
+		const DWORD spread = PlayerBotNavHash(pid ^ 0x41524e47U);
+		std::map<DWORD, DWORD>::iterator next = s_mapPlayerBotArrangeNext.find(pid);
+		if (next == s_mapPlayerBotArrangeNext.end())
+		{
+			s_mapPlayerBotArrangeNext[pid] = dwNow + spread % PLAYERBOT_ARRANGE_INTERVAL;
+			return;
+		}
+		if (dwNow < next->second)
+			return;
+		next->second = dwNow + PLAYERBOT_ARRANGE_INTERVAL + spread % PLAYERBOT_ARRANGE_SPREAD;
+		const playerbot_arrange::TResult result = playerbot_arrange::ArrangeInventory(ch, false);
+		if (result.code == playerbot_arrange::RESULT_DONE)
+			sys_log(0, "PLAYERBOT_BAG: arranged pid=%u name=%s items=%d moved=%d merged=%d units=%u pinned=%d strategy=%d us=%u",
+					pid, ch->GetName(), result.items, result.moved, result.merged, result.units,
+					result.pinned, result.strategy, result.micros);
+		else if (result.code == playerbot_arrange::RESULT_BUSY)
+			next->second = dwNow + PLAYERBOT_ARRANGE_BUSY_RETRY;
+	}
+#endif
 
 	void ManagePlayerBotStackMerge(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
@@ -338,7 +368,11 @@ namespace
 			sys_log(0, "PLAYERBOT_BAG: merged stacks pid=%u name=%s merges=%d",
 					ch->GetPlayerID(), ch->GetName(), merged);
 		// Then tidy: potions, boosters and chests to the front.
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		ManagePlayerBotArrange(ch, dwNow);
+#else
 		SortPlayerBotConsumablesToFront(ch);
+#endif
 		// A pass that used its whole budget has more to do: back soon, not in
 		// five minutes - a closed counter leaves eight packs of one material.
 		if (merged >= PLAYERBOT_STACK_MERGES_PER_PASS)

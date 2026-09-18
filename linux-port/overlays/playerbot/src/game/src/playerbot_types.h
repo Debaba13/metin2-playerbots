@@ -376,8 +376,19 @@ namespace
 	// "wszelakie potki pierwsze a potem reszte"). Only single-cell items move,
 	// each with the engine's own MoveItem into an empty cell - a swap goes
 	// through a free cell in three - so nothing is merged, overwritten or
-	// lost. Bounded per pass; runs on the stack-merge clock.
+	// lost. Bounded per pass; runs on the stack-merge clock. r40250 only: on
+	// the 2.x line the bag is laid out whole, below.
 	const int PLAYERBOT_SORT_MAX_MOVES = 30;
+	// The bots' "Scal i uporzadkuj" - the one a player's inventory button
+	// asks for (playerbot_arrange.cpp): the stacks poured together and the
+	// four pages laid out, potions first. Every half hour or so and not on
+	// every stack-merge pass: an item picked up since the last one shifts
+	// everything after its place in the order, and every item that moves is a
+	// save for the db core. A bot that was busy (a counter being served, the
+	// safebox open) is asked again a minute later.
+	const DWORD PLAYERBOT_ARRANGE_INTERVAL = 1800000;
+	const DWORD PLAYERBOT_ARRANGE_SPREAD = 600000;
+	const DWORD PLAYERBOT_ARRANGE_BUSY_RETRY = 60000;
 	// How long a bot may stand waiting for the engine's equip window before
 	// the wait is abandoned. Twelve archers stood at arrival points for
 	// twenty minutes, reset by the watchdog every ninety seconds, ticked and

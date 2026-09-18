@@ -936,6 +936,10 @@ class InventoryWindow(ui.ScriptWindow):
 
 
 	def __OnAutoStackButton(self):
+		import inventoryarrange
+		inventoryarrange.Request()
+
+	def __OnAutoStackButtonByMoves(self):
 		import autostackpump
 		moves = []
 		TOTAL_SLOTS = player.INVENTORY_MAX_NUM

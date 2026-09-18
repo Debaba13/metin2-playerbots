@@ -58,7 +58,7 @@ window = {
 							"default_image" : flamewindPath.GetInventory("autostack_01"),
 							"over_image" : flamewindPath.GetInventory("autostack_02"),
 							"down_image" : flamewindPath.GetInventory("autostack_03"),
-							"tooltip_text" : uiScriptLocale.INVENTORY_AUTOSTACK,
+							"tooltip_text" : "Scal i uporz\xb9dkuj",
 							"tooltip_y": -19,
 							"tooltip_x": -30,
 						},
