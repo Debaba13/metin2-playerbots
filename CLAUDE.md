@@ -4317,7 +4317,8 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   affects at login has the same race; give it a timer of a few seconds.
   Ten minutes after the timer went live 1 082 characters carried the bonus on
   point 19, and two GM characters that had not logged in since still on 8.
-  `affect.add_collect` converts and was never wrong, and the potions are
+  `affect.add_collect` takes a POINT_* as well (see "mt2009's
+  affect.add_collect takes a POINT too" below), and the potions are
   `potion_system.lua` on affect types of their own. Any other quest of ours
   that calls `affect.add` on this line wants a POINT_* number. The engine's
   own ceiling for a walker is 200 (`GetLimitPoint`; sprint adds up to 40 but
@@ -5904,6 +5905,113 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   after the update: the GUI runs every action as a new `Metin2-Launcher.ps1
   -Action` process, which imports the module the update wrote. Anything else
   that zips a world wants the same call.
+- **A pass the budget cuts must still move every bot.** 2.0.74's budget
+  resumed at a pid and alternated the heavy and light tick by sweep, so once
+  a sweep took several passes a bot got nothing between two visits - no next
+  waypoint, no blow - and stood at the end of its leg: "dwa kroki i staja" at
+  1500 bots on one core (SIZOWSKI, 18 September), invisible on m2zip, whose
+  1099 bots never sliced (`sliced=0`, `tick_max_ms` 91). The bots a pass does
+  not reach take `RunPlayerBotLightTick` (route continuation and the blow at
+  the target in hand, nothing planned) after it, every pass; the budgeted
+  pass leaves room for that by the last light pass's cost, never under a
+  quarter of the budget. `light_ms=` in `PLAYERBOT_LOAD`.
+- **A second channel is a partition, and every core must compute the same
+  one.** `M2_PLAYERBOT_CH2` (default 0) and `PLAYERBOT_CH2_SHARE` (10-90,
+  default 40) come to every core from the container's environment; the
+  entrypoint takes them from `.env` or from the web panel's
+  `/opt/m2spool/channels.wanted`, whichever `SET_AT` is newer, raises
+  `M2_CHANNELS` to 2 and writes `/opt/metin2/var/channels.effective` for the
+  panel. `playerbot_channel_rules.h` (pure, tested) puts a pid on channel 2
+  by a mixed hash under the share, unless it is pinned: every bot that has
+  ever owned an offline shop (`player.playerbot_channel_pin`, append-only,
+  filled by apply.sh and by each core before it reads) lives on channel 1 for
+  good, because shops are channel 1's alone - `SubmitPlayerBotOfflineShop`,
+  the stall pass and, for players too, `OpenOfflineShop` (playerbotify) refuse
+  anywhere else. Append-only is what keeps a core restarted mid-session
+  agreeing with its neighbours: no channel-2 bot can open a shop, so none can
+  become pinned while the others run. `LoadRegisteredBots` registers only
+  its own channel's identities, so the split, the queues, the top-up and a
+  GM's spawn cannot start another channel's bot; `IsRegisteredBotPID` asks
+  every channel's set, because "is this a bot" is a different question.
+  Pins unreadable: channel 1 takes only the spread's bots, channel 2 none - a
+  bot may start nowhere, never twice. `Spawn` also refuses a pid the P2P
+  table knows (the belt: it cannot see a start's first batch). A pid on two
+  cores is not a curiosity - the db core serves a bot's load to anyone,
+  P2P_MANAGER overwrites the entry, and two copies' saves duplicate items.
+  The operator's number is the world's, and it is split between the
+  kingdoms before it is split between the channels: `SplitForThisChannel`
+  runs `SplitPopulation` over every channel's identities (the same answer on
+  every core), then gives channel 2 its share of each kingdom
+  (`ShareOfTotal`, never more than its identities there) and channel 1 the
+  rest. Split per channel first, a thousand came out Shinsoo 252, Chunjo 491,
+  because the 1100 pinned shop owners are channel 1's and mostly Chunjo's.
+  Measured on m2zip at a thousand and 40: 282/200/276 on channel 1, 52/133/57
+  on channel 2, 334/333/333 in the world, no pid on both channels, no shop
+  opened on channel 2. Medal
+  droppers, the events leader, guild wars, tower raids, the strength census,
+  founding and the guild report are channel 1's. Ports: compose publishes
+  `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, and the launcher
+  widens both to 13000-13012 only while the channel is on, so a world that
+  never asked publishes nothing new. The client lists 2 channels and
+  intrologin hides one past the first that does not answer. A bot on
+  channel 2 does not trade: the offline market reads only its own channel's
+  shops (as ikashop's `IsNearShop` does), and `PlayerBotCanOpenShop` answers
+  no there, so its goods take the no-counter path - the merchant under bag
+  pressure, the safebox - instead of waiting for a counter that cannot
+  open. Buying across channels would need `IsNearShop` to let a bot through
+  and was not tried.
+- **An event that cancels itself wrote into freed memory.** `event_process`
+  deletes the queue element before calling the event and left `q_el` on it,
+  and `event_cancel` of a processing event writes `q_el->bCancel`. A quest's
+  `target.delete` of its own arrow is that path; the chunk often belonged to
+  the script compiled a moment before, and game2 died in `luaV_execute+0xac7`
+  (OP_GETGLOBAL through a Proto's `k` that was no longer one) at the third
+  point of the horse training on the fire land, and at every login beside it
+  (Dearminder, 18 September). `apply_event_cancel_in_flight` nulls `q_el`
+  after the delete; every reader handles NULL. Read the faulting instruction
+  before blaming a quest: `objdump -d --start-address` on the shipped binary
+  at the symbol's offset (luaV_execute is in the dynamic symbols).
+- **mt2009's affect.add_collect takes a POINT too, sums, and never expires.**
+  The panel's "Szybkosc biegu" passed `apply.MOV_SPEED` (APPLY 8 =
+  POINT_MAX_SP) and gave a hundred SP (archonek, 18 September); and because
+  a point has one AFFECT_COLLECT, taking a panel speed off there would take
+  the Biologist's movement reward with it. The panel's speed is
+  `affect.add_new(9910, POINT_MOV_SPEED, bonus, secs)` now - a type of its
+  own, beside speed_boost's quest affect - with `affect.remove_new`; both
+  had to join qc's function list in the Dockerfile.
+- **A requirement window is the client's count, not the server's.**
+  `utils.CountItemCountInInventory` counted `INVENTORY_PAGE_SIZE * 2` (+1
+  with the horse out), so after the four pages a horse-bag unlock read "0 na
+  60" for goods on pages III, IV or in the bag (blasty, 18 September) while
+  `CountSpecifyItem` on the server was right. utils.py is rendered by
+  clientrootify now. And intrologin.py is one of clientrootify's renders:
+  an edit made to `client-root/` directly is undone by the next render - put
+  it in `EDITS`.
+- **A village a bot has outgrown gives it its top bands, not its top band.**
+  `CollectPlayerBotM1HubsForLevel` took the nearest band when none held the
+  level, and for a bot above every band that was Joan's two band-21 hubs:
+  thirty bots of 28-35 and their horses on one meadow (Remigiusz, 18
+  September). Above the top band + 3 it takes whole bands downward until
+  `PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN` (6) hubs.
+- **A merge of Seban's panel can drop our links.** The 1.54.1 merge
+  (5f06d3d) took the "Masowe nadawanie przedmiotow" section out of
+  manage.html while `/manage/items` stayed - a page nothing linked to
+  (archonek, DUDU). And his spawn-plan form refuses to save without his
+  integration; it now says where the plan is set instead.
+- **The whole drop under `.** `/pickup_nearby` (`CHARACTER::PickupNearbyItems`,
+  playerbotify) hands every item in the pickup range that is the
+  character's or may be its party's to `PickupItem`, nearest first, 40 at
+  most, once per half second, lifting and restoring `m_lastPickupTime` around
+  its own calls; a bag without room for the next stops it.
+  `client-root/pickupnearby.py` sends it from the ` key; Z stays single.
+- **Per-kingdom bot counts.** `PLAYERBOT_AUTOSPAWN_PER_KINGDOM=1` and
+  `PLAYERBOT_AUTOSPAWN_{SHINSOO,CHUNJO,JINNO}` (launcher: "Indywidualne
+  wartosci dla krolestw", Greess) replace the split of the one number with
+  `playerbot_empire_rules::TakeKingdomCounts`: each kingdom its own, cut to
+  the identities it has, nothing handed on. With the second channel on each
+  kingdom's number is the world's too (`ScaleToThisChannel` per kingdom):
+  100/400/100 at 40 started 60/240/60 on channel 1 and 40/160/40 on
+  channel 2.
 
 ## Engine facts worth not re-deriving
 
