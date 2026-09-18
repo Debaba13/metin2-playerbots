@@ -1719,6 +1719,11 @@ namespace
 			unit = PLAYERBOT_PRIOR_SHELLFISH;
 		else if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
 			unit = PLAYERBOT_PRIOR_HORSE_MEDAL;
+		// An item-shop head, at the price of the coins it cost
+		// (PLAYERBOT_PRIOR_ISHOP_HAIRSTYLE), whatever the wallets say.
+		const bool hairstyle = item->GetType() == ITEM_COSTUME && item->GetSubType() == COSTUME_HAIR;
+		if (hairstyle)
+			unit = ScalePlayerBotIwakuraPrice(PLAYERBOT_PRIOR_ISHOP_HAIRSTYLE);
 		// A soul stone has no merchant price: the counter asks by grade. His
 		// table names every +4 by kind and three of the lower ones; the old
 		// per-grade array stays for a stone he has not priced.
@@ -1741,7 +1746,7 @@ namespace
 		// alone was a giveaway. A soul stone keeps its grade table.
 		const DWORD wallet = GetPlayerBotMarketMedianWallet();
 		if (wallet > 0 && item->GetType() != ITEM_METIN && bookSkill == 0 &&
-				materialBase == 0 && iwakuraBase == 0)
+				materialBase == 0 && iwakuraBase == 0 && !hairstyle)
 		{
 			DWORD permille = PLAYERBOT_MARKET_OTHER_WALLET_PERMILLE;
 			if (IsPlayerBotTradeableMaterial(item))
@@ -2053,7 +2058,14 @@ namespace
 		// anvil and lists the rest, which is why 2603 of them stood on the
 		// counters at +0 on 17 September while 28 bots wore one.
 		if (IsPlayerBotSpecialLevel30Weapon(item))
+		{
+			// One of another class stays in the bag while the anvil can take
+			// it towards its ceiling (PlayerBotRefinesLevel30ForSale), and is
+			// goods the moment it cannot.
+			if (PlayerBotRefinesLevel30ForSale(ch, item) && CanPlayerBotAttemptRefineItem(ch, item))
+				return -1;
 			return PlayerBotKeepsLevel30ForAnvil(ch, item) ? -1 : 2000;
+		}
 		// Gear under level thirty goes up at +6 or better and ranks under the
 		// materials whatever is rolled on it, and one counter carries only
 		// PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES of it (CollectPlayerBotShopItems).
@@ -2128,10 +2140,10 @@ namespace
 			const int decision = DecidePlayerBotMaterialListing(ch, item, report && !hoard);
 			if (decision == PLAYERBOT_LIST_LIST)
 				return 500;
-			// Under the player's floor: after what the bots are short of, ahead
-			// of a probe.
+			// Under the player's floor: ahead of spare gear
+			// (PLAYERBOT_SHOP_FLOOR_SCORE says why).
 			if (decision == PLAYERBOT_LIST_FLOOR)
-				return 480;
+				return PLAYERBOT_SHOP_FLOOR_SCORE;
 			if (decision == PLAYERBOT_LIST_PROBE)
 				return 450;
 			return hoard ? PLAYERBOT_SHOP_HOARD_SCORE : -1;
@@ -2166,11 +2178,20 @@ namespace
 			return 950;
 		if (IsPlayerBotSurplusRecipe(ch, item))
 			return 900;
-		// Hair dye: the one the bot is wearing is spent, the rest are stock.
-		// Ranked above ordinary spare gear because there is nowhere else in this
-		// world to buy one.
+		// Hair dye. The item shop's is stock worth a slot; one from the water
+		// is thrown away but for the few a bot keeps
+		// (PLAYERBOT_HAIR_DYE_KEEP_PERMILLE), and those go up last.
 		if (IsPlayerBotHairDye(item->GetVnum()))
-			return 900;
+		{
+			if (!IsPlayerBotFishedHairDye(item->GetVnum()))
+				return 900;
+			return IsPlayerBotHairDyeKeptForSale(item) ? 200 : -1;
+		}
+		// A hairstyle the bot cannot wear: an item-shop head a keeper bought
+		// for its counter (playerbot_itemshop.h). One it can wear is its own,
+		// on its way to its head.
+		if (item->GetType() == ITEM_COSTUME && item->GetSubType() == COSTUME_HAIR)
+			return item->CanUsedBy(ch) ? -1 : PLAYERBOT_SHOP_ISHOP_HAIR_SCORE;
 		// A Forgetting Scroll sells well; the keeper keeps it only while one of
 		// its own skills is waiting for it.
 		if (item->GetVnum() == PLAYERBOT_SKILL_FORGET_SCROLL_VNUM)
@@ -2445,6 +2466,35 @@ namespace
 					if (lowRoom <= 0)
 						continue;
 					--lowRoom;
+				}
+				kept.push_back(outScored[i]);
+			}
+			outScored.swap(kept);
+		}
+		// Nor a counter of one thing: PLAYERBOT_SHOP_SAME_VNUM_LINES lines of an
+		// item, and PLAYERBOT_SHOP_MARBLE_LINES marbles, one a monster
+		// (PLAYERBOT_SHOP_POLYMORPH_SCORE says why). An offline stand's add
+		// asks its own counter too (BotOfflineCounterRefuses).
+		{
+			int marbles = 0;
+			std::set<long> mobs;
+			std::map<DWORD, int> lines;
+			std::vector<std::pair<int, WORD> > kept;
+			kept.reserve(outScored.size());
+			for (size_t i = 0; i < outScored.size(); ++i)
+			{
+				LPITEM item = ch->GetInventoryItem(outScored[i].second);
+				if (item && GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL)
+				{
+					if (item->GetType() == ITEM_POLYMORPH)
+					{
+						if (marbles >= PLAYERBOT_SHOP_MARBLE_LINES || !mobs.insert(item->GetSocket(0)).second)
+							continue;
+						++marbles;
+					}
+					else if (IsPlayerBotSameVnumCapped(item) &&
+							++lines[item->GetVnum()] > PLAYERBOT_SHOP_SAME_VNUM_LINES)
+						continue;
 				}
 				kept.push_back(outScored[i]);
 			}

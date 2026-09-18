@@ -531,6 +531,15 @@ namespace
 	const int PLAYERBOT_LEVEL30_KEEP_PERCENT = 65;
 	// How many such weapons one bag works on at a time; the rest are goods.
 	const int PLAYERBOT_LEVEL30_KEEP_MAX = 3;
+	// A level-30 weapon of a class this bot cannot wear is goods, and 2 717
+	// of them stood on m2zip's counters at +0 and +2 on 18 September against
+	// thirty weapons of any kind sold in two days. This share of them - drawn
+	// by the pair, like the keep above - goes to the anvil first, as far as
+	// the operator's ceiling for its line and never under a scroll (the
+	// scrolls are for the bot's own gear), and is sold finished: "niech w 50%
+	// przypadkach ryzykuja ulepszanie, zeby pozniej drozej sprzedac gotowy
+	// przedmiot" (Tieru). Most burn on the way, which the counters can spare.
+	const int PLAYERBOT_LEVEL30_SALE_REFINE_PERCENT = 50;
 	const BYTE PLAYERBOT_LEVEL30_LOW_AVERAGE_SCROLL_FROM_PLUS = 4;
 	// A level-30 weapon is judged at what it will be, not at what it is: its
 	// blow at this plus (the family adds 48 attack by +7, nothing at +0)
@@ -1259,6 +1268,19 @@ namespace
 	// One bot in this many buys a hairstyle, once, from this level.
 	const DWORD PLAYERBOT_ISHOP_HAIR_SHARE = 4;
 	const BYTE PLAYERBOT_ISHOP_HAIR_MIN_LEVEL = 30;
+	// And one keeper in PLAYERBOT_ISHOP_HAIR_TRADE_SHARE buys a head it cannot
+	// wear, for its counter, when its coins are wanted for nothing of its own:
+	// the item shop's hairstyles are what a player should find on a counter,
+	// where the dyes from the water stood (Tieru, 18 September). One at a
+	// time, bag and counter together. No hairstyle on this package carries a
+	// bonus - every applytype of the 96 in the shop is zero - so it is the
+	// look that is for sale.
+	const DWORD PLAYERBOT_ISHOP_HAIR_TRADE_SHARE = 3;
+	// Asked like one of Iwakura's prices (ScalePlayerBotIwakuraPrice): the shop
+	// sells every head for 39 Dragon Coins, and a bot finds a fifty-coin
+	// voucher about once a month at the default permilles.
+	const DWORD PLAYERBOT_PRIOR_ISHOP_HAIRSTYLE = 2000000;
+	const int PLAYERBOT_SHOP_ISHOP_HAIR_SCORE = 950;
 
 	// How many acquaintances a bot keeps, and how much any one of them can be
 	// worth. Small on purpose: this is looked at on every party check, and a bot
@@ -1922,6 +1944,15 @@ namespace
 	// counters on the map the keeper stands on, and only in a village - away
 	// from one there is no counter a floor could be about.
 	const DWORD PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS = 50;
+	// And a material under that floor goes up ahead of spare gear, which
+	// scores 1000 and its plus from +4: a counter adds one line a visit, the
+	// top of its list, and a full counter's first free column went to a
+	// breastplate. Two days of m2zip's sales were 792 of 11 416 material lines
+	// against 210 of some sixteen thousand lines of gear, and the floor stops
+	// asking once the village holds PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS - so
+	// the gear waits a visit or two, not for good. Still behind a piece with
+	// prize lines (1500) and a level-30 weapon (2000).
+	const int PLAYERBOT_SHOP_FLOOR_SCORE = 1100;
 	// Pricing. The prior counts as this many sales when the market's median is
 	// blended in: after four sales the two weigh the same, after the full
 	// memory of eight the market has two thirds of the say.
@@ -2990,8 +3021,28 @@ namespace
 	};
 	const int PLAYERBOT_SHOP_POLICY_STALL_SCORE = 900;
 	// A polymorph marble is goods, not scrap: it went to the merchant for
-	// three hundred yang while the counters sold none.
-	const int PLAYERBOT_SHOP_POLYMORPH_SCORE = 600;
+	// three hundred yang while the counters sold none. But it is the goods
+	// that sell least of all: 6 581 marble lines stood on 1 033 of m2zip's
+	// counters on 18 September, up to thirty-one on one, and two days of logs
+	// held not one sale of a marble against 792 of a recipe material and 501
+	// of a book - while 65 of Bokjung's 85 counters had no cell left for the
+	// materials that village had none of. So a marble goes up after the
+	// materials and the books, and a counter shows
+	// PLAYERBOT_SHOP_MARBLE_LINES of them, never two of one monster; the rest
+	// are the merchant's under bag pressure (IsPlayerBotJunkItem).
+	const int PLAYERBOT_SHOP_POLYMORPH_SCORE = 380;
+	const int PLAYERBOT_SHOP_MARBLE_LINES = 3;
+	// And no counter carries more than PLAYERBOT_SHOP_SAME_VNUM_LINES lines of
+	// one item. The caps above were each for a kind - a material, a heap, the
+	// chests, the scrolls, the marbles - and nothing else had one, while the
+	// lines that went up before a cap existed never came down: on 18 September
+	// one of m2zip's counters carried 46 lines of Kawalek Lodu, others ten to
+	// fourteen of one hair dye or seventeen horse medals, and some 10 800 lines
+	// stood over three of one item ("caly sklep jest w matowych lodach",
+	// Tieru). The books and the soul stone keep their own cap by skill
+	// (IsPlayerBotCountedSingleGoods), a Forgetting Scroll is one skill's, and
+	// the operator's "stall" is never second-guessed.
+	const int PLAYERBOT_SHOP_SAME_VNUM_LINES = 3;
 	// The goods a player crafts or refines further (IsPlayerBotPickupGoods):
 	// beside the materials, over the chests and the spare gear.
 	const int PLAYERBOT_SHOP_PICKUP_GOODS_SCORE = 520;
@@ -3358,9 +3409,23 @@ namespace
 	// bot never tries to use one: they are goods and nothing else.
 	const DWORD PLAYERBOT_HAIR_DYE_SHOP_FIRST_VNUM = 71075;
 	const DWORD PLAYERBOT_HAIR_DYE_SHOP_LAST_VNUM = 71079;
+	// A dye from the water is worth next to nothing: the merchant pays three
+	// hundred and most players throw theirs away, while 5 147 of them stood
+	// on m2zip's counters on 18 September and 3 525 rode in the bags. A bot
+	// throws them away too (DiscardPlayerBotFishedDyes) but for one colour it
+	// has yet to use and these few per thousand, drawn by the item, kept for a
+	// counter: "a jak juz jakis sprzedaje, to niech bedzie bardzo rzadkie"
+	// (Tieru). The item shop's dyes are goods as before.
+	const int PLAYERBOT_HAIR_DYE_KEEP_PERMILLE = 30;
 
 	// A hair dye of either kind - one a bot could use, or one it can only sell.
 	// Both are worth money to somebody and neither is scrap.
+	// The fished range alone, the remover (70201) included.
+	bool IsPlayerBotFishedHairDye(DWORD vnum)
+	{
+		return vnum >= PLAYERBOT_HAIR_DYE_FIRST_VNUM && vnum <= PLAYERBOT_HAIR_DYE_LAST_VNUM;
+	}
+
 	bool IsPlayerBotHairDye(DWORD vnum)
 	{
 		return (vnum >= PLAYERBOT_HAIR_DYE_FIRST_VNUM &&

@@ -258,7 +258,8 @@ namespace
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
-			if (item && item->GetType() == ITEM_COSTUME && item->GetSubType() == COSTUME_HAIR)
+			if (item && item->GetType() == ITEM_COSTUME && item->GetSubType() == COSTUME_HAIR &&
+					item->CanUsedBy(ch))
 				return 0;
 		}
 		std::vector<DWORD> mine;
@@ -271,6 +272,43 @@ namespace
 		if (mine.empty())
 			return 0;
 		return mine[PlayerBotNavHash(ch->GetPlayerID() ^ 0x48414953U) % mine.size()];
+	}
+
+	// A head for the counter (PLAYERBOT_ISHOP_HAIR_TRADE_SHARE): one this bot
+	// cannot wear, so the pass that dresses it never takes it, bought by a
+	// keeper with a stand and none on the way already - in the bag or on the
+	// counter.
+	DWORD PickPlayerBotHairstyleForCounter(LPCHARACTER ch)
+	{
+		if (!ch || s_vecPlayerBotItemShopHair.empty() || !PlayerBotCanOpenShop(ch) ||
+				(PlayerBotNavHash(ch->GetPlayerID() ^ 0x48545244U) % PLAYERBOT_ISHOP_HAIR_TRADE_SHARE) != 0)
+			return 0;
+#if defined(ENABLE_IKASHOP_RENEWAL)
+		auto shop = ikashop::GetManager().GetShopByOwnerID(ch->GetPlayerID());
+		if (!shop)
+			return 0;
+		for (const auto& [id, line] : shop->GetItems())
+			if (line && line->GetTable() && line->GetTable()->bType == ITEM_COSTUME &&
+					line->GetTable()->bSubType == COSTUME_HAIR)
+				return 0;
+#endif
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (item && item->GetType() == ITEM_COSTUME && item->GetSubType() == COSTUME_HAIR &&
+					!item->CanUsedBy(ch))
+				return 0;
+		}
+		std::vector<DWORD> others;
+		for (size_t i = 0; i < s_vecPlayerBotItemShopHair.size(); ++i)
+		{
+			const TItemTable* proto = ITEM_MANAGER::instance().GetTable(s_vecPlayerBotItemShopHair[i]);
+			if (proto && !IsPlayerBotProtoForCharacter(ch, proto))
+				others.push_back(s_vecPlayerBotItemShopHair[i]);
+		}
+		if (others.empty())
+			return 0;
+		return others[PlayerBotNavHash(ch->GetPlayerID() ^ (DWORD)(get_global_time() / 3600)) % others.size()];
 	}
 
 	// Every wish the bot has, in the order it would spend on them. The buyer
@@ -315,6 +353,18 @@ namespace
 			wishes[n].bMarks = false;
 			wishes[n++].szReason = "hairstyle";
 		}
+		// Its own come first; a head for the counter only when nothing else
+		// is wanted, or the coins saved for a Kamien Duchowy would go on it.
+		if (n == 0)
+		{
+			const DWORD stock = PickPlayerBotHairstyleForCounter(ch);
+			if (stock != 0)
+			{
+				wishes[n].dwVnum = stock;
+				wishes[n].bMarks = false;
+				wishes[n++].szReason = "counter_hairstyle";
+			}
+		}
 		return n;
 	}
 
@@ -348,7 +398,7 @@ namespace
 		{
 			LPITEM item = ch->GetInventoryItem(cell);
 			if (!item || item->GetType() != ITEM_COSTUME || item->GetSubType() != COSTUME_HAIR ||
-					item->isLocked() || item->IsExchanging())
+					item->isLocked() || item->IsExchanging() || !item->CanUsedBy(ch))
 				continue;
 			state.bBoughtHairstyle = true;
 			if (ch->EquipItem(item))

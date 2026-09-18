@@ -1658,6 +1658,30 @@ namespace
 		return 0;
 	}
 
+	// Whether this bot grinds THIS level-30 weapon of another class for sale
+	// (PLAYERBOT_LEVEL30_SALE_REFINE_PERCENT). The id is the item's own, or an
+	// offline counter line's, which is the same item. A weapon over the
+	// scroll-only line never meets the plain anvil, so it is sold as it is.
+	bool PlayerBotRefinesLevel30ForSale(LPCHARACTER ch, LPITEM item, DWORD itemId)
+	{
+		if (!ch || !item || !IsPlayerBotSpecialLevel30Weapon(item) || item->CanUsedBy(ch) ||
+				IsPlayerBotScrollOnlyWeapon(item))
+			return false;
+		const DWORD salt = ch->GetPlayerID() ^ (itemId * 2246822519U) ^ 0x53414c45U;
+		return (int)(PlayerBotNavHash(salt) % 100U) < PLAYERBOT_LEVEL30_SALE_REFINE_PERCENT;
+	}
+
+	bool PlayerBotRefinesLevel30ForSale(LPCHARACTER ch, LPITEM item)
+	{
+		return item && PlayerBotRefinesLevel30ForSale(ch, item, item->GetID());
+	}
+
+	// How far: the operator's anvil ceiling for its average line.
+	BYTE GetPlayerBotLevel30SaleTarget(LPITEM item)
+	{
+		return (BYTE)GetPlayerBotLevel30AnvilCeiling(SumPlayerBotItemLines(item, APPLY_NORMAL_HIT_DAMAGE_BONUS));
+	}
+
 	// What a level-30 weapon will hit for once ground to
 	// PLAYERBOT_LEVEL30_PROJECT_PLUS, or as it is above that.
 	long long GetPlayerBotLevel30Potential(LPCHARACTER ch, LPITEM item)
@@ -1971,6 +1995,9 @@ namespace
 		if (IsPlayerBotSpecialLevel30Weapon(item) && IsPlayerBotWeapon(ch, item) &&
 				(item->IsEquipped() || IsPlayerBotLevel30Project(ch, item)))
 			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
+		// One of another class, ground for sale, as far as its ceiling.
+		if (PlayerBotRefinesLevel30ForSale(ch, item))
+			return GetPlayerBotLevel30SaleTarget(item);
 		// A scroll in the bag is a ladder to +9 for everybody: under it a
 		// failure costs a level or nothing, never the piece, so the ambition -
 		// which is about not burning what was earned - does not apply while

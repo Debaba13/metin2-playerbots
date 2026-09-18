@@ -265,7 +265,7 @@ namespace {
     // PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES of it one counter carries. lowGear is
     // what stays of that gear, for the add that follows. An item the operator
     // put on "stall" is never second-guessed.
-    DWORD BotOfflineUnwantedLine(NativeShop shop, int& lowGear) {
+    DWORD BotOfflineUnwantedLine(LPCHARACTER ch, NativeShop shop, int& lowGear) {
         lowGear = 0;
         DWORD unwanted = 0;
         if (!shop) return 0;
@@ -276,10 +276,56 @@ namespace {
         const DWORD owner = shop->GetOwnerPID();
         const bool sellsChests = IsPlayerBotResourceTrader(owner) ||
             IsPlayerBotDropper(GetPlayerBotPersonalityByPID(owner));
+        int marbles = 0;
+        std::set<long> marbleMobs;
+        std::map<DWORD, int> sameVnum;
         for (const auto& [id, line] : shop->GetItems()) {
             if (!line) continue;
             LPITEM preview = BotOfflinePreview(*line);
             if (!preview) continue;
+            // A counter shows PLAYERBOT_SHOP_MARBLE_LINES marbles, never two of
+            // one monster; the ones that went up before 2.0.78 - up to
+            // thirty-one on one counter, and none ever sold - come home one a
+            // visit to make room for goods that do (PLAYERBOT_SHOP_POLYMORPH_SCORE).
+            if (preview->GetType() == ITEM_POLYMORPH &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
+                if (!marbleMobs.insert(preview->GetSocket(0)).second ||
+                        ++marbles > PLAYERBOT_SHOP_MARBLE_LINES) {
+                    if (!unwanted) unwanted = id;
+                }
+                M2_DELETE(preview);
+                continue;
+            }
+            // Past PLAYERBOT_SHOP_SAME_VNUM_LINES of one item - 46 lines of one
+            // material stood on one counter - the rest come home one a visit.
+            if (IsPlayerBotSameVnumCapped(preview) &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
+                    ++sameVnum[preview->GetVnum()] > PLAYERBOT_SHOP_SAME_VNUM_LINES) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
+            // A dye from the water the owner does not keep for sale comes home
+            // to be thrown away (PLAYERBOT_HAIR_DYE_KEEP_PERMILLE): 5 147 of
+            // them stood on the counters.
+            if (IsPlayerBotFishedHairDye(preview->GetVnum()) &&
+                    GetPlayerBotItemPolicy(preview) == PLAYERBOT_ITEM_POLICY_NONE &&
+                    !IsPlayerBotHairDyeKeptForSaleId(id)) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
+            // A level-30 weapon of another class its owner grinds for sale
+            // comes home while the next step can be paid
+            // (PlayerBotRefinesLevel30ForSale): the counters held 2 717 of
+            // them at +0 and +2.
+            if (ch && PlayerBotRefinesLevel30ForSale(ch, preview, id) &&
+                    preview->GetRefineLevel() < GetPlayerBotLevel30SaleTarget(preview) &&
+                    CanPlayerBotPayRefineStep(ch, preview)) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
             if (preview->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
                     (!sellsChests || (int)preview->GetCount() > PLAYERBOT_CHEST_LINE_UNITS)) {
@@ -443,6 +489,51 @@ namespace {
         }
         return lines;
     }
+    // The polymorph marbles a counter carries, and whether one of them is this
+    // monster's (socket 0).
+    int BotOfflineMarbleLines(NativeShop shop, long mob, bool& sameMob) {
+        int lines = 0;
+        sameMob = false;
+        if (shop)
+            for (const auto& [id, line] : shop->GetItems()) {
+                if (!line || !line->GetTable() || line->GetTable()->bType != ITEM_POLYMORPH) continue;
+                ++lines;
+                if (line->GetInfo().alSockets[0] == mob) sameMob = true;
+            }
+        return lines;
+    }
+    // What a counter takes no more lines of: a material past
+    // PLAYERBOT_SHOP_MATERIAL_LINES and a heap of cheap goods past
+    // PLAYERBOT_SHOP_BULK_LINES (each a pack cut by BotOfflinePrepareLine),
+    // the Moonlight chests, the safe scrolls, the books and stones kept by
+    // count, and a marble past PLAYERBOT_SHOP_MARBLE_LINES or of a monster
+    // the counter shows already. The line chosen before the board opens and
+    // the add itself ask this one question, or a line cut for the add would
+    // stand in the bag unadded.
+    bool BotOfflineCounterRefuses(NativeShop shop, LPITEM item) {
+        if (!item) return true;
+        if (IsPlayerBotTradeableMaterial(item) &&
+                BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_MATERIAL_LINES) return true;
+        if (IsPlayerBotBulkGoods(item) &&
+                BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_BULK_LINES) return true;
+        if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
+                BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) return true;
+        if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
+                BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) return true;
+        if (IsPlayerBotCountedSingleGoods(item) &&
+                BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) return true;
+        if (item->GetType() == ITEM_POLYMORPH &&
+                GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL) {
+            bool sameMob = false;
+            if (BotOfflineMarbleLines(shop, item->GetSocket(0), sameMob) >= PLAYERBOT_SHOP_MARBLE_LINES || sameMob)
+                return true;
+        }
+        // And no more than PLAYERBOT_SHOP_SAME_VNUM_LINES of anything else.
+        if (IsPlayerBotSameVnumCapped(item) && GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL &&
+                BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SAME_VNUM_LINES)
+            return true;
+        return false;
+    }
     // The bag cell of the line to add. A hoard's pack of ten, a single key, a
     // pack of Moonlight chests (PLAYERBOT_CHEST_LINE_UNITS), a line of
     // refine scrolls (PLAYERBOT_SHOP_SCROLL_LINE_UNITS), a pack of a refine
@@ -547,22 +638,13 @@ namespace {
         o.preparedItem = 0;
         if (!ch || !shop || shop->GetDuration() == 0) return;
         int lowGear = 0;
-        BotOfflineUnwantedLine(shop, lowGear);
+        BotOfflineUnwantedLine(ch, shop, lowGear);
         std::vector<std::pair<int, WORD> > scored;
         CollectPlayerBotShopItems(ch, scored, IsPlayerBotStallKeeper(state), lowGear);
         for (auto [score, cell] : scored) {
             LPITEM item = ch->GetInventoryItem(cell);
             if (!item || BotOfflineSlot(ch, shop, item) < 0) continue;
-            if (IsPlayerBotTradeableMaterial(item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_MATERIAL_LINES) continue;
-            if (IsPlayerBotBulkGoods(item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_BULK_LINES) continue;
-            if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
-            if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
-            if (IsPlayerBotCountedSingleGoods(item) &&
-                    BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) continue;
+            if (BotOfflineCounterRefuses(shop, item)) continue;
             const int lineCell = BotOfflinePrepareLine(ch, cell);
             if (lineCell < 0) continue;
             LPITEM line = ch->GetInventoryItem((WORD)lineCell);
@@ -707,7 +789,7 @@ namespace {
             // An expired stand needs no edit mode to give a line back, and one
             // it would no longer take comes off before the stand is renewed.
             int lowGear = 0;
-            const DWORD unwanted = BotOfflineUnwantedLine(shop, lowGear);
+            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGear);
             if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGear, now)) {
                 BotOfflineFinishVisit(ch, state, now);
                 return false;
@@ -767,7 +849,7 @@ namespace {
         // no room for the piece refuses, and then the visit adds instead.
         int lowGearOnCounter = 0;
         {
-            const DWORD unwanted = BotOfflineUnwantedLine(shop, lowGearOnCounter);
+            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGearOnCounter);
             if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGearOnCounter, now)) {
                 BotOfflineFinishVisit(ch, state, now);
                 return false;
@@ -812,19 +894,7 @@ namespace {
             auto item = ch->GetInventoryItem(cell);
             int pos = BotOfflineSlot(ch, shop, item);
             if (pos < 0) continue;
-            // A material carries PLAYERBOT_SHOP_MATERIAL_LINES of one kind on a
-            // counter and a heap of cheap goods PLAYERBOT_SHOP_BULK_LINES, each
-            // a pack cut here (BotOfflinePrepareLine).
-            if (IsPlayerBotTradeableMaterial(item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_MATERIAL_LINES) continue;
-            if (IsPlayerBotBulkGoods(item) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_BULK_LINES) continue;
-            if (item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
-            if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
-                    BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
-            if (IsPlayerBotCountedSingleGoods(item) &&
-                    BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) continue;
+            if (BotOfflineCounterRefuses(shop, item)) continue;
             const int lineCell = BotOfflinePrepareLine(ch, cell);
             if (lineCell < 0) continue;
             const WORD at = (WORD)lineCell;

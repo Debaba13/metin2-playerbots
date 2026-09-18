@@ -872,6 +872,53 @@ namespace
 		return false;
 	}
 
+	// Whether this dye from the water is one of the few kept for a counter
+	// (PLAYERBOT_HAIR_DYE_KEEP_PERMILLE). The id is the item's own, or an
+	// offline counter line's, which is the same item.
+	bool IsPlayerBotHairDyeKeptForSaleId(DWORD itemId)
+	{
+		return (int)(PlayerBotNavHash(itemId ^ 0x44594553U) % 1000U) < PLAYERBOT_HAIR_DYE_KEEP_PERMILLE;
+	}
+
+	bool IsPlayerBotHairDyeKeptForSale(LPITEM item)
+	{
+		return item && IsPlayerBotHairDyeKeptForSaleId(item->GetID());
+	}
+
+	// Thrown away, as most players throw theirs: every dye from the water but
+	// one colour for a bot whose hair has none yet (ManagePlayerBotHairDye
+	// uses it) and the few kept for a counter. The remover is never used, so
+	// it is never the one kept. An item the operator gave a word to is his.
+	int DiscardPlayerBotFishedDyes(LPCHARACTER ch)
+	{
+		if (!ch || !ch->IsItemLoaded())
+			return 0;
+		bool keepOneColour = ch->GetPart(PART_HAIR) == 0;
+		int thrown = 0;
+		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM item = ch->GetInventoryItem(cell);
+			if (!item || item->GetCell() != cell || item->IsEquipped() || item->isLocked() ||
+					!IsPlayerBotFishedHairDye(item->GetVnum()) ||
+					GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_NONE)
+				continue;
+			if (keepOneColour && item->GetVnum() > PLAYERBOT_HAIR_DYE_FIRST_VNUM)
+			{
+				keepOneColour = false;
+				continue;
+			}
+			if (IsPlayerBotHairDyeKeptForSale(item))
+				continue;
+			thrown += std::max<int>(1, item->GetCount());
+			ITEM_MANAGER::instance().RemoveItem(item, "PLAYERBOT_DISCARD");
+		}
+		if (thrown > 0)
+			PlayerBotLogThrottled("dye_discard", get_dword_time(),
+					"PLAYERBOT_LOOK: threw away hair dye pid=%u name=%s count=%d",
+					ch->GetPlayerID(), ch->GetName(), thrown);
+		return thrown;
+	}
+
 	bool EndPlayerBotFishingSession(LPCHARACTER ch, TPlayerBotAIState& state,
 			DWORD dwNow, const char* reason)
 	{
@@ -889,6 +936,7 @@ namespace
 		state.dwNextFishingCheckTime = dwNow +
 				number(PLAYERBOT_FISHING_REST_MIN, PLAYERBOT_FISHING_REST_MAX);
 		StowPlayerBotRod(ch);
+		DiscardPlayerBotFishedDyes(ch);
 		ClearPlayerBotRoute(state, true);
 		// An angler that has just packed the rod away is the one bot reliably
 		// standing in Joan with nothing left to do. Half of them wander over to

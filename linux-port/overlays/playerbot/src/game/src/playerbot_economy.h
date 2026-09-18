@@ -835,6 +835,9 @@ namespace
 		return occupied * 100 >= PLAYERBOT_BAG_CELLS * PLAYERBOT_BAG_FULL_PERCENT;
 	}
 
+	// Defined with the stall's keeps in playerbot_town.h.
+	int CountPlayerBotVnumUnitsAhead(LPCHARACTER ch, LPITEM item);
+
 	// Fewer free cells than the loot and the chests need to land in. The
 	// junk rule below reads this together with PlayerBotCanOpenShop: a bag
 	// under pressure with a counter to sell from keeps its goods, a bag
@@ -898,6 +901,15 @@ namespace
 	{
 		return item && (item->GetType() == ITEM_SKILLBOOK ||
 				item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM);
+	}
+
+	// What PLAYERBOT_SHOP_SAME_VNUM_LINES caps by vnum: everything but the
+	// goods counted by kind, a Forgetting Scroll (its skill is its kind) and a
+	// marble (PLAYERBOT_SHOP_MARBLE_LINES, one a monster).
+	bool IsPlayerBotSameVnumCapped(LPITEM item)
+	{
+		return item && !IsPlayerBotCountedSingleGoods(item) &&
+				item->GetType() != ITEM_SKILLFORGET && item->GetType() != ITEM_POLYMORPH;
 	}
 
 	// One key per kind of those goods, zero for anything else: a book's skill
@@ -1290,9 +1302,12 @@ namespace
 		// the chests, so the loot and the Moonlight chests that open by
 		// themselves still have somewhere to land.
 		// A polymorph marble is counter goods; the merchant takes it only
-		// under bag pressure with no counter to sell from, like a material.
+		// under bag pressure with no counter to sell from, like a material -
+		// or past the PLAYERBOT_SHOP_MARBLE_LINES a counter shows, which no
+		// counter will take and which would otherwise ride in the bag for good.
 		if (item->GetType() == ITEM_POLYMORPH)
-			return IsPlayerBotBagUnderPressure(ch) && !PlayerBotCanOpenShop(ch);
+			return IsPlayerBotBagUnderPressure(ch) && (!PlayerBotCanOpenShop(ch) ||
+					CountPlayerBotVnumUnitsAhead(ch, item) >= PLAYERBOT_SHOP_MARBLE_LINES);
 		if (item->GetType() == ITEM_TREASURE_BOX)
 			return CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS &&
 					!PlayerBotHasTreasureKeyFor(ch, item);
@@ -1358,9 +1373,9 @@ namespace
 		// the counter is where the operator asked the trade to happen.
 		if (IsPlayerBotRawOre(vnum) || IsPlayerBotSmeltedOre(vnum))
 			return false;
-		// Hair dye. The merchant pays nothing for it and a player will: it is
-		// the only way to change a character's colour for good, and the anglers
-		// pull it out of the water by the handful.
+		// Hair dye is never the merchant's: the item shop's is goods, and one
+		// from the water is thrown away (DiscardPlayerBotFishedDyes) but for
+		// the colour a bot has yet to use and the few kept for a counter.
 		if (IsPlayerBotHairDye(vnum))
 			return false;
 		// A dead fish waits for the campfire at the end of the next session, as
@@ -1596,6 +1611,7 @@ namespace
 		if (!ch || !ch->IsItemLoaded())
 			return false;
 		DiscardPlayerBotSurplusBoosters(ch);
+		DiscardPlayerBotFishedDyes(ch);
 
 		size_t soldCount = 0;
 		long long totalSoldGold = 0;
@@ -1825,8 +1841,14 @@ namespace
 	// the blacksmith can make into one. Goods are sold at what they are.
 	bool IsPlayerBotRefineBagCandidate(LPCHARACTER ch, LPITEM item)
 	{
-		if (!item || item->GetRefinedVnum() == 0 ||
-				!IsPlayerBotEquipmentCandidate(ch, item) ||
+		if (!item || item->GetRefinedVnum() == 0)
+			return false;
+		// A level-30 weapon of a class this bot cannot wear, ground for sale
+		// (PlayerBotRefinesLevel30ForSale): no equipment candidate of its own,
+		// and never junk.
+		if (PlayerBotRefinesLevel30ForSale(ch, item))
+			return item->GetRefineLevel() < GetPlayerBotRefineTarget(ch, item);
+		if (!IsPlayerBotEquipmentCandidate(ch, item) ||
 				IsPlayerBotJunkItem(ch, item))
 			return false;
 		// An Archer's stone dagger is worn only on a stone, so it is neither a
@@ -2493,12 +2515,14 @@ namespace
 		return sold || bought;
 	}
 
-	bool CanPlayerBotAttemptRefineItem(LPCHARACTER ch, LPITEM item)
+	// The purse and the bag against the next step of this piece: the fee over
+	// the reserve, and every material with the Biologist's share left alone.
+	// Asked of an offline counter's line too (BotOfflineUnwantedLine), which
+	// is why it takes the item and not its place.
+	bool CanPlayerBotPayRefineStep(LPCHARACTER ch, LPITEM item)
 	{
-		if (!ch || !item || item->GetRefinedVnum() == 0 ||
-				item->GetRefineLevel() >= GetPlayerBotRefineTarget(ch, item))
+		if (!ch || !item)
 			return false;
-
 		const TRefineTable* recipe = CRefineManager::instance().GetRefineRecipe(
 				item->GetRefineSet());
 		if (!recipe || ch->GetGold() - GetPlayerBotReservedGold(ch) <
@@ -2513,6 +2537,20 @@ namespace
 					GetPlayerBotBiologistReserve(ch, recipe->materials[i].vnum) < recipe->materials[i].count)
 				return false;
 		}
+		return true;
+	}
+
+	bool CanPlayerBotAttemptRefineItem(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || item->GetRefinedVnum() == 0 ||
+				item->GetRefineLevel() >= GetPlayerBotRefineTarget(ch, item))
+			return false;
+		if (!CanPlayerBotPayRefineStep(ch, item))
+			return false;
+		const TRefineTable* recipe = CRefineManager::instance().GetRefineRecipe(
+				item->GetRefineSet());
+		if (!recipe)
+			return false;
 		// A weapon refined only under a scroll is no errand without one: the
 		// planner asks this before it sends a bot to the blacksmith.
 		if (IsPlayerBotScrollOnlyWeapon(item) &&
