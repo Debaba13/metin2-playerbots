@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T08:40:05Z",
-  "statusMessage": "2.0.72: boty kupują księgi, Kamienie Duchowe i okazy dla Biologa, których brakuje im do rozwoju, czytają gotową księgę zamiast czekać, a sklepy offline przeceniają i dokładają towar na zmianę. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T09:58:47Z",
+  "statusMessage": "2.0.73: księgi i Kamienie Duchowe trafiają na lady po jednej sztuce, bot zostawia sobie rezerwę liczoną w sztukach i czyta księgi dopiero z doświadczeniem na odczyt. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.72",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.72/metin2-server-update-2.0.72.zip",
-    "sha256": "AB9D645215243B07A670C4D4DA14F5333523852AAA7F213E91A9EFA01C8FCDFD"
+    "version": "2.0.73",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.73/metin2-server-update-2.0.73.zip",
+    "sha256": "E7467762D8C9C19F384A4A1F1D8D054497B932AE0991046FCCEAD9CADD98D47D"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
