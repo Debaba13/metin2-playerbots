@@ -17,6 +17,75 @@ every version here.
 
 ---
 
+## 2.0.78 — 2026-09-18
+
+Serwer 2.0.78, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Aktualizacja, która nie mogła zbudować serwera (archonek)
+
+- Jeśli w plikach serwera został `messenger_manager.cpp` z cudzej przeróbki
+  (systemu towarzysza z innego forka), budowa rdzenia gry kończyła się
+  błędem „'class CPlayerBotManager' has no member named 'GetCompanionOwner'”
+  i każda aktualizacja od 2.0.74 przerywała się w tym samym miejscu.
+  Aktualizacja podmieniała nasze pliki, a ten zostawiała.
+- Paczka aktualizacji zawiera teraz fabryczny `messenger_manager.cpp`, więc
+  po kliknięciu ZAINSTALUJ AKTUALIZACJE plik wraca do wersji z paczki
+  i serwer się buduje. Przeróbka tego pliku (lista znajomych z forka) znika.
+- Launcher przy takim błędzie budowy mówi teraz wprost, który plik silnika
+  pochodzi z cudzej przeróbki i jak przywrócić fabryczny, zamiast ogólnego
+  „Operacja nie powiodła się”.
+
+### Różnorodność na ladach (Tieru, Hiob)
+
+- Na jednej ladzie stoją najwyżej 3 linie tego samego przedmiotu. Do tej
+  pory zdarzały się lady z 46 liniami Kawałka Lodu albo z kilkunastoma
+  liniami jednej farby do włosów. Nadmiar wraca do torby sprzedawcy, po
+  jednej linii przy każdej wizycie przy sklepie, i robi miejsce innemu
+  towarowi. Księgi umiejętności, Zwoje Zapomnienia i Kamienie Duchowe mają
+  dalej własne limity.
+- Marmury Polimorfii: najwyżej 3 na ladzie, nigdy dwa tego samego potwora.
+  Przez dwa dni nie sprzedał się ani jeden z 6581 wystawionych, a zapychały
+  lady, na których brakowało miejsca na materiały.
+- Materiał, którego w danej wiosce nikt nie wystawia, trafia na ladę przed
+  zwykłym sprzętem. W drugich wioskach (Bokjung, Jayang, Bakra) sprzedawcy
+  mieli brakujące materiały w torbach, ale ich lady były pełne.
+
+### Broń na 30 poziom innej klasy (Tieru)
+
+- Połowa broni na 30 poziom, których bot nie może założyć, idzie najpierw do
+  kowala. Ulepsza je na zwykłym kowadle, bez zwojów, do sufitu z tabeli dla
+  jej średnich obrażeń: do +7 przy średnich do 21%, do +6 przy 22–29%, do +4
+  przy 30–36%. Gotowy przedmiot trafia na ladę droższy, a te, które spłoną,
+  przestają zapychać lady. Broń z co najmniej 37% średnich albo 15% obrażeń
+  umiejętności nie idzie na kowadło i trafia na ladę jak dotąd.
+- Dla porządku: przy szansach tej rodziny (90/85/75/65/55/45/35/25/20%)
+  +9 zostaje rzadkością. Od +5 do +9 pod Zwojem Błogosławieństwa to średnio
+  ok. 200 zwojów, a na zwykłym kowadle dochodzi 0,8% broni.
+
+### Farby do włosów i fryzury (Tieru)
+
+- Farby do włosów z łowienia boty wyrzucają, tak jak robi większość graczy.
+  Zostawiają jedną, jeśli same nie mają jeszcze koloru włosów, i bardzo
+  rzadko (3 na 100) jakąś na sprzedaż. Farby już wystawione wracają z lad.
+- Co trzeci sprzedawca, któremu Smocze Monety nie są potrzebne na nic
+  własnego, kupuje w ItemShopie fryzurę, której sam nie założy, i wystawia
+  ją na ladę z ceną wyjściową ok. 2 mln yang (więcej przy wyższych
+  stawkach yang).
+  Fryzury z ItemShopu w tej paczce nie mają bonusów, więc sprzedaje się
+  wygląd. Monety boty mają z kuponów z metinów i bossów, więc przy domyślnej
+  szansie na kupon takich fryzur będzie niewiele.
+
+### Wojny gildii: pole bitwy dalej od strefy bezpiecznej (gregory_955)
+
+- Pole bitwy na mapach gildyjnych Chunjo i Jinno stało przy samej granicy
+  strefy bezpiecznej (50–100 jednostek od niej), więc część walczących
+  zawsze stała w strefie, gdzie nie da się zadać ciosu. W wojnie Chunjo
+  z 18 września było to 11 z 67 botów. Pole bitwy trzyma się teraz co
+  najmniej 800 jednostek od strefy: na mapie Chunjo przesuwa się o ok. 1000
+  jednostek, na mapie Jinno o ok. 800.
+- Ostatnia para wojny zapisuje się w bazie, więc restart przy aktualizacji
+  nie oddaje pierwszej wojny tym samym dwóm gildiom.
+
 ## 2.0.77 — 2026-09-18
 
 Serwer 2.0.77, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
