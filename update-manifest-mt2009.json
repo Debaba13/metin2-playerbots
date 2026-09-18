@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T19:21:52Z",
-  "statusMessage": "2.0.77 (serwer 2.0.77, klient 2.0.16 bez zmian): naprawione zbieranie logów, aktualizacja nie przerywa się na obrazie panelu, więcej materiałów na ladach każdej wioski, wojny gildii bez gonienia wrogów w strefie bezpiecznej, wyjście z Czerwonego Lasu. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T21:04:24Z",
+  "statusMessage": "2.0.78 (serwer 2.0.78, klient 2.0.16 bez zmian): aktualizacja znów buduje serwer z przerobionym messenger_manager.cpp; różnorodniejsze lady botów, broń na 30 poziom innej klasy ulepszana na sprzedaż, farby z łowienia wyrzucane, wojny gildii z dala od strefy bezpiecznej. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.77",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.77/metin2-server-update-2.0.77.zip",
-    "sha256": "7B18610A05483F09E3797E1D734BA036CDF0E0BAEEE82319F746BAA52A9826AF"
+    "version": "2.0.78",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.78/metin2-server-update-2.0.78.zip",
+    "sha256": "7740B455B4DA699058C1AD0115946CA7D6E8F05555212A10EC2AC50861C436BD"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
