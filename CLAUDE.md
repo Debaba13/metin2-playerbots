@@ -6223,6 +6223,24 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `char_battle.cpp`. Checked by running the step against the running image's
   own tree - six handlers gone, the state table and the other 211 login
   handlers untouched; not yet built into an image or watched in a world.
+- **"Stall" is the counter instead of the merchant, not a counter of nothing
+  else.** 2.0.78's caps - three lines of an item, three marbles of three
+  monsters - stepped round every item the operator had put on "stall", and the
+  test world's own policy file had marbles and Kawalek Lodu on it: the panel's
+  example, written by a test on 13 September and never taken out. So those two
+  stood 6 735 lines over three of a kind there on 19 September (3 877 marbles;
+  2 858 of Kawalek Lodu, 46 on one counter) against 3 343 for everything else,
+  and read as caps that did nothing - which is also where "caly sklep jest w
+  matowych lodach" came from. Since 2.0.79 the caps hold for "stall" too, in
+  the classic collector, `BotOfflineCounterRefuses` and
+  `BotOfflineUnwantedLine`: the item still goes up ahead of everything and is
+  never junk, so what is over the cap waits in the bag. The test world's file
+  was emptied at 00:18 that night (the three lines are in
+  `scratchpad/item_policy_m2zip_backup_20260919.tsv` of session 82d3ab90), and
+  with 2.0.78's caps then reaching both the marble lines began to fall within
+  minutes (6 628 to 6 608 by 00:23). A test that writes the spool writes the
+  operator's world: put it back when the test ends, and read the policy file
+  before measuring anything a policy can steer.
 
 ## Engine facts worth not re-deriving
 
