@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T16:09:56Z",
-  "statusMessage": "2.0.75 (serwer 2.0.75, klient 2.0.15): przycisk Scal i uporządkuj w ekwipunku (boty porządkują torby tak samo), liczba potworów w respie od x1 do x4 w panelu, działające pole Metiny i bossowie w czasie odradzania, launcher sprawdza przed aktualizacją klienta, czy gra jest zamknięta, reset świata i kopia działają też na dużym świecie. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T18:19:14Z",
+  "statusMessage": "2.0.76 (serwer 2.0.76, klient 2.0.16): cały drop pod tyldą `, liczba botów osobno dla każdego królestwa, drugi kanał CH2 (domyślnie wyłączony), płynny ruch przy dużej liczbie botów, koniec wyrzucania z serwera przy szkoleniu konia, działająca szybkość biegu z panelu, okno juków liczy wszystkie strony, boty nie oddają handlarzowi cennych rzeczy. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.75",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.75/metin2-server-update-2.0.75.zip",
-    "sha256": "748E71E5699DF053C3C2EE820C9EBDF1BC4D2FBCF46875D96348E3F08F8F8F04"
+    "version": "2.0.76",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.76/metin2-server-update-2.0.76.zip",
+    "sha256": "95C6E19E95D1CF86238B69B50F44863349DC44FB068174D6DC7B7BCCB3B75FA6"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.15",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.75/metin2-client-update-2.0.15.zip",
-    "sha256": "B8D28C0EC34446582A5937B53C2C8B3DDCA3437DCF589FD3793BDDDB2A5661D4"
+    "version": "2.0.16",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.76/metin2-client-update-2.0.16.zip",
+    "sha256": "21044DCD27FB3C810A719A4419755CCCF2EA70067B44E784C50B57290C2930DF"
   }
 }
