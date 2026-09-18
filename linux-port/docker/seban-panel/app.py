@@ -73,10 +73,10 @@ MAP_RESPAWN_OPTIONS = (
 # Monkey Dungeons and Spider Dungeon V1 ship no stone.txt, so only their mob
 # respawns can be configured. The explicit allowlist also protects the helper.
 MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {5, 25, 45, 104, 71, 108, 109})
-STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv"),)
+STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel*/*/playerbot_status.tsv"),)
 GUILD_STATUS_GLOBS = (os.environ.get("PLAYERBOTS_GUILD_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_guild_status.tsv"),)
 GUILD_TIERS = {0: "Elitarna", 1: "Silna", 2: "Średnia", 3: "Zwykła"}
-BOT_SYSLOG_GLOB = os.environ.get("PLAYERBOTS_SYSLOG_GLOB", "/opt/metin2/var/channel1/*/syslog")
+BOT_SYSLOG_GLOB = os.environ.get("PLAYERBOTS_SYSLOG_GLOB", "/opt/metin2/var/channel*/*/syslog")
 RATES_SPOOL = Path("/opt/m2spool")
 UPDATE_SPOOL = Path("/opt/m2update")
 UPDATE_WATCHER_MAX_AGE_SECONDS = 90
@@ -816,7 +816,7 @@ def fishing_diagnostics():
     bots = live_bots()
     anglers = [bot for bot in bots if int(bot.get("action") or 0) == 14]
     matches = []
-    for path in Path("/opt/metin2/var/channel1").glob("*/syslog"):
+    for path in Path("/opt/metin2/var").glob("channel*/*/syslog"):
         try:
             with path.open("rb") as handle:
                 handle.seek(max(0, path.stat().st_size - 262144))

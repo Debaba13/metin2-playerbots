@@ -270,6 +270,10 @@ PLAYERBOT_STATUS_PATHS = (
     "/opt/metin2/var/channel1/first/playerbot_status.tsv",
     "/opt/metin2/var/channel1/game1/playerbot_status.tsv",
     "/opt/metin2/var/channel1/game2/playerbot_status.tsv",
+    # The second channel's cores, when the server runs one (M2_PLAYERBOT_CH2).
+    "/opt/metin2/var/channel2/first/playerbot_status.tsv",
+    "/opt/metin2/var/channel2/game1/playerbot_status.tsv",
+    "/opt/metin2/var/channel2/game2/playerbot_status.tsv",
 )
 _PLAYERBOT_STATUS_LOCK = threading.Lock()
 _PLAYERBOT_STATUS_CACHE_KEY = None
@@ -2944,6 +2948,23 @@ T = {
                       "en":"✅ Saved! The new counts are live in game and fill in at the next respawn."},
  "count_saved_restart": {"pl":"Zapisano. Nikt nie jest zalogowany, więc pomocnik w grze nie odpowiedział — nowa liczba potworów zadziała po restarcie serwera (albo zapisz jeszcze raz, gdy ktoś będzie w grze).",
                          "en":"Saved. Nobody is logged in, so the in-game helper did not answer — the new counts apply after a server restart (or save again while somebody is in game)."},
+ "ch2_title":   {"pl":"Drugi kanał (CH2)", "en":"Second channel (CH2)"},
+ "ch2_help":    {"pl":"Drugi kanał gry. Część botów gra na CH2, więc serwer rozkłada je na dwa rdzenie procesora i udźwignie więcej botów naraz. Wszystkie sklepy (botów i graczy) stoją tylko na CH1 - boty, które kiedykolwiek miały sklep, zostają na CH1 na stałe. Domyślnie wyłączony.",
+                 "en":"A second game channel. Some of the bots play on CH2, so the server spreads them over two CPU cores and carries more bots at once. Every shop, bots' and players', stands on CH1 only - a bot that has ever kept a shop stays on CH1 for good. Off by default."},
+ "ch2_enable":  {"pl":"Włącz drugi kanał (CH2)", "en":"Switch the second channel on (CH2)"},
+ "ch2_share":   {"pl":"Botów na CH2", "en":"Bots on CH2"},
+ "ch2_save":    {"pl":"Zapisz (zadziała po restarcie serwera)", "en":"Save (applies after a server restart)"},
+ "ch2_now_off": {"pl":"Teraz: CH2 wyłączony - wszystkie boty grają na CH1.", "en":"Now: CH2 is off - every bot plays on CH1."},
+ "ch2_now_on":  {"pl":"Teraz: CH2 włączony, na CH2 gra {share}% botów.", "en":"Now: CH2 is on, {share}% of the bots play on it."},
+ "ch2_ports":   {"pl":"Gracze wejdą na CH2 po najbliższym uruchomieniu serwera z launchera (GRAJ) - launcher otworzy wtedy porty 13010-13012. Boty grają na CH2 już teraz.",
+                 "en":"Players reach CH2 after the next start from the launcher (GRAJ), which opens ports 13010-13012 then. The bots play on CH2 already."},
+ "ch2_pending": {"pl":"Zapisano w panelu: {what}. Zadziała po restarcie serwera.", "en":"Saved in the panel: {what}. Applies after a server restart."},
+ "ch2_on_word": {"pl":"CH2 włączony, {share}% botów", "en":"CH2 on, {share}% of the bots"},
+ "ch2_off_word": {"pl":"CH2 wyłączony", "en":"CH2 off"},
+ "ch2_saved":   {"pl":"✅ Zapisano. Zmiana kanałów zadziała po restarcie serwera (GRAJ w launcherze albo restart kontenera gry).",
+                 "en":"✅ Saved. The channel change applies after a server restart (GRAJ in the launcher or a restart of the game container)."},
+ "ch2_bad":     {"pl":"Udział botów na CH2 musi być liczbą od 10 do 90. Nic nie zmieniono.", "en":"The share of bots on CH2 has to be between 10 and 90. Nothing was changed."},
+ "ch2_failed":  {"pl":"Nie udało się zapisać ustawienia kanałów w katalogu wymiany z serwerem.", "en":"Could not write the channel setting into the spool shared with the server."},
  "rates_range":  {"pl":"Każda z trzech wartości musi być liczbą całkowitą od 1 do 10000. Nic nie zmieniono. 🙂","en":"Each of the three has to be a whole number between 1 and 10000. Nothing was changed. 🙂",
                   "de":"Alle drei müssen ganze Zahlen zwischen 1 und 10000 sein. Es wurde nichts geändert. 🙂",
                   "tr":"Üçü de 1 ile 10000 arasında tam sayı olmalı. Hiçbir şey değiştirilmedi. 🙂"},
@@ -5270,6 +5291,23 @@ regenLabel("regen_boss");regenLabel("regen_mob");
 </select>
 {% endfor %}
 <button class="big" style="margin-top:18px">{{t('count_save')}}</button>
+</form></div>
+{% endif %}
+{% if channels %}
+<div class="card">
+<form method="post" action="{{url_for('rates_channels')}}">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<h3>🔀 {{t('ch2_title')}}</h3>
+<p class="muted">{{t('ch2_help')}}</p>
+<p>{% if channels.on %}{{ t('ch2_now_on').replace('{share}', channels.share|string) }}{% else %}{{t('ch2_now_off')}}{% endif %}</p>
+{% if channels.on and not channels.ports_open %}<p class="muted">⚠️ {{t('ch2_ports')}}</p>{% endif %}
+{% if channels.pending %}<p class="muted">🕓 {{ t('ch2_pending').replace('{what}', channels.pending) }}</p>{% endif %}
+<label><input type="checkbox" name="ch2" value="1"{% if channels.want_on %} checked{% endif %}> {{t('ch2_enable')}}</label>
+<h3 style="margin-top:12px">{{t('ch2_share')}}</h3>
+<select name="share">
+{% for p in channels.choices %}<option value="{{p}}"{% if channels.want_share == p %} selected{% endif %}>{{p}}%</option>{% endfor %}
+</select>
+<button class="big" style="margin-top:18px">{{t('ch2_save')}}</button>
 </form></div>
 {% endif %}""")
 
@@ -8224,7 +8262,10 @@ def api_bot_logs(bot_name):
         log_files = [
             "/opt/metin2/var/channel1/game1/syslog",
             "/opt/metin2/var/channel1/first/syslog",
-            "/opt/metin2/var/channel1/game2/syslog"
+            "/opt/metin2/var/channel1/game2/syslog",
+            "/opt/metin2/var/channel2/game1/syslog",
+            "/opt/metin2/var/channel2/first/syslog",
+            "/opt/metin2/var/channel2/game2/syslog",
         ]
         matched_lines = []
         # The whole name and not a prefix of one: "botgrom" used to match
@@ -12796,8 +12837,15 @@ def rates():
             regen_count = read_regen_count_mt2009()
         except Exception:
             regen_count = {name: 100 for name in MT2009_REGEN_COUNT_FLAGS}
+    channels = None
+    if ENGINE_MT2009:
+        try:
+            channels = read_channels_state()
+        except Exception:
+            channels = None
     return render_template_string(TPL_RATES, cur=cur_rates, presets=RATE_PRESETS, regen=regen,
                                   regen_count=regen_count, count_choices=REGEN_COUNT_CHOICES,
+                                  channels=channels,
                                   intro_key="rates_intro_mt2009" if ENGINE_MT2009 else "rates_intro",
                                   state_msg=t("rates_st_" + st) if st in RATE_STATES else "")
 
@@ -12879,6 +12927,75 @@ def rates_regen_count():
             except Exception:
                 pass
         flash(t("count_saved_restart"))
+    return redirect(url_for("rates"))
+
+
+# The second channel (M2_PLAYERBOT_CH2). The game container decides it at every
+# start from .env (the launcher's) or from this panel's wish in the spool,
+# whichever was made later, and writes what it runs with beside the status
+# files. The panel cannot restart the container, so a change here applies at
+# the next start; the launcher reads the wish then and opens CH2's ports.
+CHANNELS_WISH = os.path.join(AI_SPOOL, "channels.wanted")
+CHANNELS_EFFECTIVE = "/opt/metin2/var/channels.effective"
+CH2_SHARE_CHOICES = (20, 30, 40, 50, 60, 70)
+
+
+def _read_kv(path):
+    out = {}
+    try:
+        with open(path, "r", encoding="ascii", errors="replace") as fh:
+            for line in fh:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def read_channels_state():
+    eff = _read_kv(CHANNELS_EFFECTIVE)
+    wish = _read_kv(CHANNELS_WISH)
+    on = eff.get("CH2") == "1"
+    share = int(eff.get("SHARE", "40")) if eff.get("SHARE", "").isdigit() else 40
+    ports = eff.get("PORTS", "13000-13002")
+    state = {"on": on, "share": share, "ports_open": ports.endswith("13012"),
+             "want_on": on, "want_share": share, "pending": "", "choices": CH2_SHARE_CHOICES}
+    if wish.get("CH2") in ("0", "1"):
+        w_on = wish.get("CH2") == "1"
+        w_share = int(wish.get("SHARE", "40")) if wish.get("SHARE", "").isdigit() else 40
+        state["want_on"], state["want_share"] = w_on, w_share
+        # A wish the running server does not match yet.
+        if w_on != on or (w_on and w_share != share):
+            state["pending"] = (t("ch2_on_word").replace("{share}", str(w_share)) if w_on
+                                else t("ch2_off_word"))
+    if state["want_share"] not in CH2_SHARE_CHOICES:
+        state["want_share"] = 40
+    return state
+
+
+@app.post("/rates/channels")
+@login_required
+def rates_channels():
+    """The second channel's switch and share, written for the next start."""
+    if not ENGINE_MT2009:
+        return redirect(url_for("rates"))
+    on = request.form.get("ch2", "") == "1"
+    raw = (request.form.get("share", "") or "").strip()
+    if not raw.isdigit() or int(raw) not in CH2_SHARE_CHOICES:
+        flash(t("ch2_bad"), "error")
+        return redirect(url_for("rates"))
+    body = "CH2=%d\nSHARE=%d\nSET_AT=%d\n" % (1 if on else 0, int(raw), int(time.time()))
+    tmp = CHANNELS_WISH + ".tmp"
+    try:
+        with open(tmp, "w", encoding="ascii") as fh:
+            fh.write(body)
+        os.replace(tmp, CHANNELS_WISH)
+    except OSError:
+        flash(t("ch2_failed"), "error")
+        return redirect(url_for("rates"))
+    app.logger.info("channels: CH2=%s share=%s written for the next start", int(on), raw)
+    flash(t("ch2_saved"))
     return redirect(url_for("rates"))
 
 
@@ -14253,7 +14370,10 @@ def action():
             return redirect(url_for("player", pid=pid))
         arg1, arg2 = preset.split(" ", 1)
     elif cmd == "SPEED":
-        arg2 = "3600"
+        # Thirty days: the speed stays until "Normal (reset)" takes it off.
+        # An hour looked like a speed that stopped working, and on mt2009 the
+        # old affect ignored the duration anyway (web_admin.quest, SPEED).
+        arg2 = "2592000"
     elif cmd == "LEVEL":
         # Checked here rather than left to the server, which does not refuse it
         # -- it returns from PointChange without a word and reports success all

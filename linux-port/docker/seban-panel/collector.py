@@ -6,7 +6,7 @@ from pathlib import Path
 import pymysql
 
 INTERVAL = int(os.environ.get("SEBAN_COLLECTOR_INTERVAL", "300"))
-STATUS_GLOB = os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv")
+STATUS_GLOB = os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel*/*/playerbot_status.tsv")
 
 
 def connect():
