@@ -6115,6 +6115,93 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `[string]::IsNullOrWhiteSpace([string](@($probe) -join ''))`; `"$x".Trim()`
   is safe too, a bare `.Trim()` on a cast never is. Tested under
   StrictMode 2.0 both ways, and the whole bundle end to end on m2zip.
+- **A floor is only as good as the room on the counter.** 2.0.77's village
+  floor did what it said - 272 of the 409 lines the keepers added in the
+  first twenty minutes were recipe materials - and the missing pairs fell
+  only from 167 to 155 in forty minutes, all of it in the first villages:
+  Bokjung, Jayang and Bakra did not move, because 65 of Bokjung's 85 offline
+  counters had all sixty cells taken, and the keepers of Bakra held 48 of
+  the 49 materials Bakra lacked in their own bags. What filled the counters
+  was measured against two days of sales (`scratchpad/sell_through.py` of
+  session 82d3ab90 is the shape): 6 581 polymorph marble lines on 1 033
+  counters, up to thirty-one on one, and not one marble sold, against 792
+  sales of 11 416 material lines and 501 of 99 book lines; weapons were
+  7 071 lines for 30 sales. A marble scored 600, above every material, so a
+  keeper with a marble and a floor material put the marble up first. The
+  counter shows `PLAYERBOT_SHOP_MARBLE_LINES` now, never two of one monster
+  (socket 0), the rest come home one a service visit (`BotOfflineUnwantedLine`),
+  the score is under the books and the materials, and a marble past the
+  counter's share is merchant scrap under bag pressure even with a counter.
+  The caps of the two offline add loops are one function now
+  (`BotOfflineCounterRefuses`): the line chosen before the board opens and
+  the add must refuse the same thing, or a cut line stays in the bag.
+  Measure it as marble lines per counter, full counters per village and the
+  missing pairs of `market_coverage.py`, by village. Everything in these
+  2.0.78 notes was compiled on both engines and ran on m2zip from 22:48 on
+  18 September; the release went out before the first measurement of it
+  came back, because 2.0.77's update was failing for a player.
+- **A pick's memory that lives in the process is gone at every update.**
+  2.0.77 kept the kingdom's last war pair in the process, and every update
+  is a restart, so the first war after each start went back to the pair of
+  the smallest gap: Tuskaffki and Przelew24 again at 21:36 on 18 September,
+  the first war after 2.0.77 went in. `player.playerbot_guild.last_war_at`
+  (unix seconds, added by apply.sh) is written at each declaration and read
+  once before the first pick (`LoadPlayerBotGuildWarMemory`); a table
+  without the column answers with an error and the memory starts empty, as
+  before. The first start with it read `war memory loaded guilds=4
+  kingdoms=2`: two pairs, seeded by hand from that evening's wars.
+- **A counter is three lines of any one thing.** The per-kind caps (a
+  material's lines, a heap's, the chests', the scrolls', the counted singles')
+  left everything else uncapped, and the lines from before a cap existed
+  never came down: on 18 September a counter of m2zip held 46 lines of
+  Kawalek Lodu, others ten to fourteen of one hair dye or seventeen horse
+  medals, and 10 865 lines stood over three of one vnum ("caly sklep jest w
+  matowych lodach", Tieru). `PLAYERBOT_SHOP_SAME_VNUM_LINES` caps every item
+  by vnum but the goods counted by kind, a Forgetting Scroll and a marble
+  (`IsPlayerBotSameVnumCapped`), in the classic collector, in
+  `BotOfflineCounterRefuses` and, one line a visit, in `BotOfflineUnwantedLine`.
+- **A level-30 weapon of another class is ground for sale by half its
+  keepers.** `PlayerBotRefinesLevel30ForSale` (by the pair, like the anvil
+  keep) sends it to the plain anvil as far as the operator's ceiling for its
+  line and never under a scroll, and it is listed the moment the next step
+  cannot be paid; a counter line of one comes home while it can
+  (`CanPlayerBotPayRefineStep`, the purse-and-bag half of
+  `CanPlayerBotAttemptRefineItem`, asked of a preview). Worth knowing before
+  promising +9 from it: the family runs 90/85/75/65/55/45/35/25/20, so from +5
+  under a Blessing Scroll a +9 costs some 207 scrolls on average (59 with the
+  +10% scroll, 14 with the no-reduction stone, 0.79% at the plain anvil) -
+  the world held 2 453 Blessing Scrolls and one level-30 weapon at +9.
+- **A dye from the water is thrown away.** 5 157 counter lines and 3 516 bag
+  items of 70201-70206 on 18 September, merchant price three hundred, and
+  "wiekszosc ludzi je wyrzuca" (Tieru). `DiscardPlayerBotFishedDyes` (at the
+  end of a fishing session and at every merchant) keeps one colour for a bot
+  whose hair has none yet (`ManagePlayerBotHairDye` uses it) and
+  `PLAYERBOT_HAIR_DYE_KEEP_PERMILLE` by item id for a counter; the rest come
+  home from the counters to be thrown. The item shop's dyes are goods.
+- **An item-shop hairstyle is a keeper's stock.** One keeper in
+  `PLAYERBOT_ISHOP_HAIR_TRADE_SHARE` with nothing else to spend coins on buys
+  a head it cannot wear (`PickPlayerBotHairstyleForCounter`) and lists it at
+  `PLAYERBOT_PRIOR_ISHOP_HAIRSTYLE`; `WearPlayerBotBoughtHairstyle` and the
+  hairstyle wish ask `CanUsedBy`, so the pass that dresses a bot never takes
+  the one for sale. None of the 96 heads in this package's shop carries a
+  bonus (every applytype is zero), whatever a player remembers of another
+  server.
+- **The ground nearest a point is the edge of whatever surrounds it.**
+  `FindPlayerBotWarGround` took the first open cell in rings from the
+  Town.txt point, and on the guild maps whose point is inside the safe zone
+  that cell is the zone's own border: fifty units from ATTR_BANPK on
+  metin2_map_guild_02 and a hundred on _03 (guild_01's point is open ground,
+  450 from it). A bot's spot is the ground and up to 400 units of pid, so the
+  war straddled the border - four minutes into the Chunjo war of 18 September
+  eleven of sixty-seven fighters stood where no blow lands, with the 2.0.77
+  foe filter already in place. The ground now keeps
+  `PLAYERBOT_GUILD_WAR_SAFE_MARGIN` (800) from the zone, sampled on rings of
+  200 in sixteen directions (`IsPlayerBotWarGroundClearOfSafeZone`), and falls
+  back to the old nearest cell only where nothing in reach qualifies; the
+  battlefield line carries `safe_margin=`. Measured with
+  `scratchpad/war_ground_margin.py` (a BANPK distance transform on the map's
+  server_attr): the new ground is about a kilometre from the old on _02 and
+  800 units on _03.
 
 ## Engine facts worth not re-deriving
 
