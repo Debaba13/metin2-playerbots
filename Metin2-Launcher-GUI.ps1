@@ -227,6 +227,7 @@ $script:Strings = @{
         botDialog    = 'Liczba grajacych botow'
         difficulty   = 'POZIOM TRUDNOSCI'
         difficultyDialog = 'Poziom trudnosci swiata'
+        coop         = 'COOP: GRA ZE ZNAJOMYMI'
         apply        = 'Zastosuj'
         cancel       = 'Anuluj'
         panelDialog  = 'Ktory panel otworzyc?'
@@ -282,6 +283,7 @@ $script:Strings = @{
         botDialog    = 'Number of playing bots'
         difficulty   = 'DIFFICULTY'
         difficultyDialog = 'World difficulty'
+        coop         = 'CO-OP: PLAY WITH FRIENDS'
         apply        = 'Apply'
         cancel       = 'Cancel'
         panelDialog  = 'Which panel should open?'
@@ -1459,6 +1461,14 @@ $worldBackupButton = New-Button (T 'worldBackup') 496 418 230 32 ([Drawing.Color
 # The world's difficulty - the waits at the Biologist and the stable keeper -
 # chosen here and applied at the next start (M2_DIFFICULTY in .env).
 $difficultyButton = New-Button (T 'difficulty') 28 456 218 32 ([Drawing.Color]::FromArgb(120, 95, 40))
+# COOP (experimental, the local branch "coop"): this world played with friends
+# over the Internet. The button exists only when the optional module does.
+$coopModulePath = Join-Path $root 'launcher\Metin2Launcher.Coop.psm1'
+$coopButton = $null
+if (Test-Path -LiteralPath $coopModulePath -PathType Leaf) {
+    Import-Module $coopModulePath -Force
+    $coopButton = New-Button (T 'coop') 262 456 218 32 ([Drawing.Color]::FromArgb(40, 120, 150))
+}
 
 # The language switch sits with the other small buttons rather than in a menu:
 # somebody who cannot read the window needs to find it without reading anything.
@@ -1468,6 +1478,7 @@ $languageButton.Add_Click({ Switch-LauncherLanguage })
 foreach ($button in @($installButton, $playButton, $dockerButton, $stopButton, $panelButton, $clientButton, $updateButton, $bundleButton, $diagnosticsButton, $openLogButton, $folderButton, $botCountButton, $importDbButton, $repairDbButton, $dbAccessButton, $gmPanelButton, $worldBackupButton, $difficultyButton, $languageButton)) {
     $script:form.Controls.Add($button)
 }
+if ($coopButton) { $script:form.Controls.Add($coopButton) }
 
 $script:actionStatus = [Windows.Forms.Label]::new()
 $script:actionStatus.Text = (T 'ready')
@@ -1714,6 +1725,390 @@ function Show-PanelPasswordDialog {
     Start-LauncherAction -Action 'PanelPassword' -Yes
 }
 
+function Show-CoopSecretDialog {
+    # Passwords are shown here and nowhere else: an action's output is a file
+    # under launcher-logs, and support bundles carry that folder.
+    param([string]$Title, [string]$Intro, [string]$Secret)
+    $dialog = [Windows.Forms.Form]::new()
+    $dialog.Text = $Title
+    $dialog.Size = [Drawing.Size]::new(560, 290)
+    $dialog.StartPosition = 'CenterParent'
+    $dialog.FormBorderStyle = 'FixedDialog'
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+    $info = [Windows.Forms.Label]::new()
+    $info.Text = $Intro
+    $info.Location = [Drawing.Point]::new(14, 12)
+    $info.Size = [Drawing.Size]::new(520, 44)
+    $dialog.Controls.Add($info)
+    $box = [Windows.Forms.TextBox]::new()
+    $box.Text = $Secret
+    $box.ReadOnly = $true
+    $box.Multiline = $true
+    $box.ScrollBars = 'Vertical'
+    $box.WordWrap = $true
+    $box.Location = [Drawing.Point]::new(14, 60)
+    $box.Size = [Drawing.Size]::new(520, 132)
+    $box.Font = [Drawing.Font]::new('Consolas', 10)
+    $dialog.Controls.Add($box)
+    $copy = [Windows.Forms.Button]::new()
+    $copy.Text = 'Kopiuj do schowka'
+    $copy.Location = [Drawing.Point]::new(14, 202)
+    $copy.Size = [Drawing.Size]::new(170, 32)
+    $copy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($box.Text) } catch { } })
+    $dialog.Controls.Add($copy)
+    $close = [Windows.Forms.Button]::new()
+    $close.Text = 'Zamknij'
+    $close.Location = [Drawing.Point]::new(434, 202)
+    $close.Size = [Drawing.Size]::new(100, 32)
+    $close.DialogResult = [Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($close)
+    $dialog.CancelButton = $close
+    [void]$dialog.ShowDialog()
+    $dialog.Dispose()
+}
+
+function Get-CoopClientFolder {
+    $config = Get-LauncherConfig
+    $folder = [string]$config.clientRoot
+    if (-not $folder -and [string]$config.clientExecutable) { $folder = Split-Path -Parent ([string]$config.clientExecutable) }
+    if ($folder -and (Test-Path -LiteralPath $folder -PathType Container)) { return $folder }
+    return ''
+}
+
+function Show-CoopDialog {
+    # Co-op over the Internet (experimental, the local branch "coop"). Hosting
+    # and its end restart the game container and so run as actions in the
+    # main window; everything else here is quick and in-process, and nothing
+    # that shows a password is written to any log.
+    if (-not (Get-Command Get-M2CoopNetworkReport -ErrorAction SilentlyContinue)) {
+        [Windows.Forms.MessageBox]::Show('Ta paczka nie ma modułu COOP.', 'COOP', 'OK', 'Information') | Out-Null
+        return
+    }
+    $dialog = [Windows.Forms.Form]::new()
+    $dialog.Text = 'COOP - gra ze znajomymi przez internet (eksperymentalne)'
+    $dialog.Size = [Drawing.Size]::new(660, 600)
+    $dialog.StartPosition = 'CenterParent'
+    $dialog.FormBorderStyle = 'FixedDialog'
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+
+    $tabs = [Windows.Forms.TabControl]::new()
+    $tabs.Location = [Drawing.Point]::new(10, 10)
+    $tabs.Size = [Drawing.Size]::new(626, 500)
+    $dialog.Controls.Add($tabs)
+    $hostTab = [Windows.Forms.TabPage]::new()
+    $hostTab.Text = 'Hostuję swój świat'
+    $joinTab = [Windows.Forms.TabPage]::new()
+    $joinTab.Text = 'Dołączam do znajomego'
+    $tabs.TabPages.Add($hostTab)
+    $tabs.TabPages.Add($joinTab)
+
+    # ------------------------------------------------------------ host tab
+    $status = [Windows.Forms.Label]::new()
+    $status.Location = [Drawing.Point]::new(12, 10)
+    $status.Size = [Drawing.Size]::new(594, 74)
+    $status.Font = [Drawing.Font]::new('Segoe UI', 9.5)
+    $hostTab.Controls.Add($status)
+
+    $friendsLabel = [Windows.Forms.Label]::new()
+    $friendsLabel.Text = 'Znajomi (każdy ma własne konto w Twoim świecie):'
+    $friendsLabel.Location = [Drawing.Point]::new(12, 90)
+    $friendsLabel.Size = [Drawing.Size]::new(400, 20)
+    $hostTab.Controls.Add($friendsLabel)
+
+    $list = [Windows.Forms.ListView]::new()
+    $list.View = 'Details'
+    $list.FullRowSelect = $true
+    $list.HideSelection = $false
+    $list.MultiSelect = $false
+    $list.Location = [Drawing.Point]::new(12, 112)
+    $list.Size = [Drawing.Size]::new(430, 190)
+    [void]$list.Columns.Add('Znajomy', 170)
+    [void]$list.Columns.Add('Login', 130)
+    [void]$list.Columns.Add('Stan', 110)
+    $hostTab.Controls.Add($list)
+
+    $addButton = [Windows.Forms.Button]::new()
+    $addButton.Text = 'Dodaj znajomego'
+    $addButton.Location = [Drawing.Point]::new(452, 112)
+    $addButton.Size = [Drawing.Size]::new(154, 32)
+    $hostTab.Controls.Add($addButton)
+    $inviteButton = [Windows.Forms.Button]::new()
+    $inviteButton.Text = 'Kod zaproszenia'
+    $inviteButton.Location = [Drawing.Point]::new(452, 150)
+    $inviteButton.Size = [Drawing.Size]::new(154, 32)
+    $hostTab.Controls.Add($inviteButton)
+    $blockButton = [Windows.Forms.Button]::new()
+    $blockButton.Text = 'Zablokuj / odblokuj'
+    $blockButton.Location = [Drawing.Point]::new(452, 188)
+    $blockButton.Size = [Drawing.Size]::new(154, 32)
+    $hostTab.Controls.Add($blockButton)
+    $secureButton = [Windows.Forms.Button]::new()
+    $secureButton.Text = 'Zabezpiecz konta'
+    $secureButton.Location = [Drawing.Point]::new(452, 232)
+    $secureButton.Size = [Drawing.Size]::new(154, 32)
+    $hostTab.Controls.Add($secureButton)
+    $passwordsButton = [Windows.Forms.Button]::new()
+    $passwordsButton.Text = 'Moje hasła'
+    $passwordsButton.Location = [Drawing.Point]::new(452, 270)
+    $passwordsButton.Size = [Drawing.Size]::new(154, 32)
+    $hostTab.Controls.Add($passwordsButton)
+
+    $hostButton = [Windows.Forms.Button]::new()
+    $hostButton.Text = 'HOSTUJ ŚWIAT'
+    $hostButton.Location = [Drawing.Point]::new(12, 316)
+    $hostButton.Size = [Drawing.Size]::new(200, 42)
+    $hostButton.BackColor = [Drawing.Color]::FromArgb(27, 150, 88)
+    $hostButton.ForeColor = [Drawing.Color]::White
+    $hostButton.FlatStyle = 'Flat'
+    $hostButton.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
+    $hostTab.Controls.Add($hostButton)
+    $stopButtonCoop = [Windows.Forms.Button]::new()
+    $stopButtonCoop.Text = 'ZAKOŃCZ HOSTOWANIE'
+    $stopButtonCoop.Location = [Drawing.Point]::new(222, 316)
+    $stopButtonCoop.Size = [Drawing.Size]::new(200, 42)
+    $stopButtonCoop.BackColor = [Drawing.Color]::FromArgb(180, 75, 55)
+    $stopButtonCoop.ForeColor = [Drawing.Color]::White
+    $stopButtonCoop.FlatStyle = 'Flat'
+    $stopButtonCoop.Font = [Drawing.Font]::new('Segoe UI Semibold', 10)
+    $hostTab.Controls.Add($stopButtonCoop)
+    $checkButton = [Windows.Forms.Button]::new()
+    $checkButton.Text = 'Sprawdź sieć'
+    $checkButton.Location = [Drawing.Point]::new(452, 316)
+    $checkButton.Size = [Drawing.Size]::new(154, 42)
+    $hostTab.Controls.Add($checkButton)
+
+    $hostHelp = [Windows.Forms.Label]::new()
+    $hostHelp.Text = ('Kolejność: Zabezpiecz konta, Dodaj znajomego, HOSTUJ ŚWIAT, a potem Kod zaproszenia - ' +
+        'skopiuj go i wyślij znajomemu w prywatnej wiadomości (zawiera hasło). Hostowanie uruchamia ponownie ' +
+        'serwer gry (około minuty), prosi Windows o zgodę na regułę zapory dla portów 11000 i 13000-13002 ' +
+        'i otwiera je w routerze przez UPnP. Ty grasz dalej na serwerze 1, znajomy na serwerze Online.')
+    $hostHelp.Location = [Drawing.Point]::new(12, 368)
+    $hostHelp.Size = [Drawing.Size]::new(594, 96)
+    $hostHelp.ForeColor = [Drawing.Color]::DimGray
+    $hostTab.Controls.Add($hostHelp)
+
+    # ------------------------------------------------------------ join tab
+    $joinInfo = [Windows.Forms.Label]::new()
+    $joinInfo.Text = ('Wklej kod zaproszenia, który dostałeś od znajomego (zaczyna się od M2COOP1:). ' +
+        'Launcher dopisze jego świat do Twojego klienta jako drugi serwer na liście.')
+    $joinInfo.Location = [Drawing.Point]::new(12, 12)
+    $joinInfo.Size = [Drawing.Size]::new(594, 40)
+    $joinTab.Controls.Add($joinInfo)
+    $codeBox = [Windows.Forms.TextBox]::new()
+    $codeBox.Multiline = $true
+    $codeBox.WordWrap = $true
+    $codeBox.ScrollBars = 'Vertical'
+    $codeBox.Location = [Drawing.Point]::new(12, 56)
+    $codeBox.Size = [Drawing.Size]::new(594, 110)
+    $codeBox.Font = [Drawing.Font]::new('Consolas', 9)
+    $joinTab.Controls.Add($codeBox)
+    $joinButton = [Windows.Forms.Button]::new()
+    $joinButton.Text = 'Zapisz w kliencie'
+    $joinButton.Location = [Drawing.Point]::new(12, 176)
+    $joinButton.Size = [Drawing.Size]::new(200, 36)
+    $joinTab.Controls.Add($joinButton)
+    $forgetButton = [Windows.Forms.Button]::new()
+    $forgetButton.Text = 'Usuń świat znajomego z listy'
+    $forgetButton.Location = [Drawing.Point]::new(222, 176)
+    $forgetButton.Size = [Drawing.Size]::new(220, 36)
+    $joinTab.Controls.Add($forgetButton)
+    $joinStatus = [Windows.Forms.Label]::new()
+    $joinStatus.Location = [Drawing.Point]::new(12, 224)
+    $joinStatus.Size = [Drawing.Size]::new(594, 120)
+    $joinStatus.Font = [Drawing.Font]::new('Segoe UI', 9.5)
+    $joinTab.Controls.Add($joinStatus)
+
+    $closeButton = [Windows.Forms.Button]::new()
+    $closeButton.Text = 'Zamknij'
+    $closeButton.Location = [Drawing.Point]::new(536, 518)
+    $closeButton.Size = [Drawing.Size]::new(100, 32)
+    $closeButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($closeButton)
+    $dialog.CancelButton = $closeButton
+
+    $refresh = {
+        $state = Read-M2CoopState -ServerRoot $root
+        $bindings = Get-M2CoopGameBindings -ServerRoot $root
+        $lines = @()
+        if (-not $bindings.Running) { $lines += 'Serwer gry: nie działa - najpierw GRAJ.' }
+        elseif ($bindings.Public) { $lines += 'Hostowanie: WŁĄCZONE - porty gry są otwarte dla sieci.' }
+        else { $lines += 'Hostowanie: wyłączone - porty gry słuchają tylko na tym komputerze.' }
+        $public = ''
+        if ($state.hosting -and [string]$state.hosting.publicAddress) { $public = [string]$state.hosting.publicAddress }
+        if ($public) { $lines += ('Adres dla znajomych (ostatnio): {0}' -f $public) }
+        $defaults = @()
+        try { $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $root) }
+        catch { $lines += 'Baza nie odpowiada - uruchom serwer (GRAJ).' }
+        if ($defaults.Count -gt 0) { $lines += ('UWAGA: konta {0} mają hasła z paczki - kliknij Zabezpiecz konta.' -f ($defaults -join ', ')) }
+        else { $lines += 'Konta admin i test: hasła zmienione.' }
+        $status.Text = ($lines -join [Environment]::NewLine)
+        $status.ForeColor = $(if ($defaults.Count -gt 0) { [Drawing.Color]::DarkRed } else { [Drawing.Color]::Black })
+        $list.Items.Clear()
+        foreach ($f in @($state.friends)) {
+            $item = [Windows.Forms.ListViewItem]::new([string]$f.name)
+            [void]$item.SubItems.Add([string]$f.login)
+            [void]$item.SubItems.Add($(if ($f.blocked) { 'zablokowany' } else { 'aktywny' }))
+            $item.Tag = [string]$f.login
+            [void]$list.Items.Add($item)
+        }
+        $client = Get-CoopClientFolder
+        $cfg = $(if ($client) { Join-Path $client 'coop.cfg' } else { '' })
+        if ($cfg -and (Test-Path -LiteralPath $cfg -PathType Leaf)) {
+            $text = [IO.File]::ReadAllText($cfg)
+            $name = ''; $hostName = ''
+            if ($text -match '(?m)^name=(.*)$') { $name = $Matches[1].Trim() }
+            if ($text -match '(?m)^host=(.*)$') { $hostName = $Matches[1].Trim() }
+            $joinStatus.Text = ("W Twoim kliencie jest świat znajomego: {0} ({1}).`r`nW kliencie wybierz serwer 'Online: {0}'." -f $name, $hostName)
+        }
+        elseif ($client) { $joinStatus.Text = 'W Twoim kliencie nie ma jeszcze świata znajomego.' }
+        else { $joinStatus.Text = 'Nie wiem, gdzie jest klient - wskaż go przyciskiem WYBIERZ KLIENTA w oknie launchera.' }
+    }
+
+    $selectedFriend = {
+        if ($list.SelectedItems.Count -eq 0) {
+            [Windows.Forms.MessageBox]::Show('Zaznacz znajomego na liście.', 'COOP', 'OK', 'Information') | Out-Null
+            return $null
+        }
+        $login = [string]$list.SelectedItems[0].Tag
+        foreach ($f in @((Read-M2CoopState -ServerRoot $root).friends)) { if ([string]$f.login -eq $login) { return $f } }
+        return $null
+    }
+
+    $addButton.Add_Click({
+        $name = [Microsoft.VisualBasic.Interaction]::InputBox('Imię albo nick znajomego (z niego powstanie login):', 'Dodaj znajomego', '')
+        if (-not $name) { return }
+        try {
+            $friend = New-M2CoopFriend -ServerRoot $root -Name $name
+            Write-LocalLog ("COOP: dodano konto znajomego, login {0}." -f $friend.login)
+            & $refresh
+            Show-CoopSecretDialog -Title 'Nowy znajomy' `
+                -Intro ("Konto gotowe. Login i hasło są też w kodzie zaproszenia - wyślij znajomemu kod (przycisk Kod zaproszenia) po włączeniu hostowania.") `
+                -Secret ("Login: {0}`r`nHasło: {1}`r`nKod usuwania postaci: {2}" -f $friend.login, $friend.password, $friend.socialId)
+        }
+        catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'COOP', 'OK', 'Error') | Out-Null }
+    })
+
+    $inviteButton.Add_Click({
+        $friend = & $selectedFriend
+        if (-not $friend) { return }
+        if ($friend.blocked) { [Windows.Forms.MessageBox]::Show('To konto jest zablokowane - najpierw je odblokuj.', 'COOP', 'OK', 'Information') | Out-Null; return }
+        $dialog.Cursor = [Windows.Forms.Cursors]::WaitCursor
+        $public = Get-M2CoopPublicAddress
+        $dialog.Cursor = [Windows.Forms.Cursors]::Default
+        if (-not $public) { [Windows.Forms.MessageBox]::Show('Nie udało się odczytać Twojego adresu w internecie.', 'COOP', 'OK', 'Warning') | Out-Null; return }
+        $code = Get-M2CoopFriendInvite -ServerRoot $root -Friend $friend -HostAddress $public
+        try { [Windows.Forms.Clipboard]::SetText($code) } catch { }
+        Write-LocalLog ("COOP: skopiowano kod zaproszenia dla loginu {0}." -f $friend.login)
+        Show-CoopSecretDialog -Title ('Kod zaproszenia - ' + [string]$friend.name) `
+            -Intro ("Kod jest już w schowku. Wyślij go znajomemu w prywatnej wiadomości - zawiera jego hasło. Znajomy wkleja go w swoim launcherze (COOP, Dołączam do znajomego) albo w pliku Dolacz.bat w folderze klienta.") `
+            -Secret $code
+    })
+
+    $blockButton.Add_Click({
+        $friend = & $selectedFriend
+        if (-not $friend) { return }
+        try {
+            Set-M2CoopFriendBlocked -ServerRoot $root -Login ([string]$friend.login) -Blocked (-not [bool]$friend.blocked)
+            Write-LocalLog ("COOP: konto {0} {1}." -f $friend.login, $(if ($friend.blocked) { 'odblokowane' } else { 'zablokowane' }))
+            & $refresh
+        }
+        catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'COOP', 'OK', 'Error') | Out-Null }
+    })
+
+    $secureButton.Add_Click({
+        try {
+            $changed = Protect-M2CoopAccounts -ServerRoot $root
+            $names = @($changed.PSObject.Properties | ForEach-Object { $_.Name })
+            & $refresh
+            if ($names.Count -eq 0) {
+                [Windows.Forms.MessageBox]::Show('Konta admin i test nie mają już haseł z paczki.', 'COOP', 'OK', 'Information') | Out-Null
+                return
+            }
+            Write-LocalLog ("COOP: zmieniono hasła kont {0}." -f ($names -join ', '))
+            $text = ($names | ForEach-Object { "Konto {0}: hasło {1}" -f $_, $changed.$_ }) -join "`r`n"
+            Show-CoopSecretDialog -Title 'Nowe hasła' `
+                -Intro 'Od teraz logujesz się na te konta tymi hasłami (w kliencie wpisz je zamiast starych). Launcher je pamięta - przycisk Moje hasła.' `
+                -Secret $text
+        }
+        catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'COOP', 'OK', 'Error') | Out-Null }
+    })
+
+    $passwordsButton.Add_Click({
+        $state = Read-M2CoopState -ServerRoot $root
+        $lines = @()
+        if ($state.PSObject.Properties.Name -contains 'accounts' -and $state.accounts) {
+            foreach ($p in $state.accounts.PSObject.Properties) { $lines += ("Konto {0}: hasło {1}" -f $p.Name, $p.Value) }
+        }
+        foreach ($f in @($state.friends)) { $lines += ("Znajomy {0}: login {1}, hasło {2}" -f $f.name, $f.login, $f.password) }
+        if ($lines.Count -eq 0) { $lines += 'Launcher nie zmieniał jeszcze żadnego hasła.' }
+        Show-CoopSecretDialog -Title 'Hasła COOP' -Intro 'Hasła kont zmienionych i założonych przez okno COOP.' -Secret ($lines -join "`r`n")
+    })
+
+    $hostButton.Add_Click({
+        try { $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $root) }
+        catch { [Windows.Forms.MessageBox]::Show('Baza nie odpowiada - uruchom najpierw serwer (GRAJ).', 'COOP', 'OK', 'Warning') | Out-Null; return }
+        if ($defaults.Count -gt 0) {
+            [Windows.Forms.MessageBox]::Show(('Konta {0} mają hasła z paczki - każdy w internecie mógłby się na nie zalogować. Najpierw kliknij Zabezpiecz konta.' -f ($defaults -join ', ')), 'COOP', 'OK', 'Warning') | Out-Null
+            return
+        }
+        $answer = [Windows.Forms.MessageBox]::Show(
+            ("Hostowanie:`r`n- uruchomi ponownie serwer gry (około minuty) - wyloguj się z gry,`r`n" +
+             "- poprosi Windows o zgodę na regułę zapory dla portów gry,`r`n" +
+             "- otworzy te porty w routerze (UPnP).`r`n`r`nKontynuować?"), 'Hostuj świat', 'YesNo', 'Question')
+        if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
+        $dialog.Close()
+        Start-LauncherAction -Action 'CoopHost' -Yes
+    })
+
+    $stopButtonCoop.Add_Click({
+        $answer = [Windows.Forms.MessageBox]::Show(
+            "Zakończenie hostowania zamknie porty w routerze i uruchomi ponownie serwer gry (około minuty). Znajomi zostaną rozłączeni.`r`n`r`nKontynuować?",
+            'Zakończ hostowanie', 'YesNo', 'Question')
+        if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
+        $dialog.Close()
+        Start-LauncherAction -Action 'CoopStop' -Yes
+    })
+
+    $checkButton.Add_Click({
+        $dialog.Close()
+        Start-LauncherAction -Action 'CoopCheck'
+    })
+
+    $joinButton.Add_Click({
+        try {
+            $invite = Read-M2CoopInvite -Code $codeBox.Text
+            $client = Get-CoopClientFolder
+            if (-not $client) { throw 'Nie wiem, gdzie jest klient - wskaż go przyciskiem WYBIERZ KLIENTA w oknie launchera.' }
+            $path = Write-M2CoopClientConfig -ClientFolder $client -Invite $invite
+            Write-LocalLog ("COOP: zapisano swiat znajomego w {0}." -f $path)
+            try { [Windows.Forms.Clipboard]::SetText([string]$invite.password) } catch { }
+            $codeBox.Text = ''
+            & $refresh
+            Show-CoopSecretDialog -Title 'Świat znajomego dodany' `
+                -Intro ("Uruchom klienta i wybierz serwer 'Online: {0}'. Hasło jest w schowku." -f $invite.name) `
+                -Secret ("Login: {0}`r`nHasło: {1}" -f $invite.login, $invite.password)
+        }
+        catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'COOP', 'OK', 'Error') | Out-Null }
+    })
+
+    $forgetButton.Add_Click({
+        $client = Get-CoopClientFolder
+        if (-not $client) { return }
+        $cfg = Join-Path $client 'coop.cfg'
+        if (Test-Path -LiteralPath $cfg -PathType Leaf) {
+            [IO.File]::Delete($cfg)
+            Write-LocalLog 'COOP: usunieto swiat znajomego z klienta.'
+        }
+        & $refresh
+    })
+
+    try { & $refresh } catch { $status.Text = "Nie udało się odczytać stanu: $($_.Exception.Message)" }
+    [void]$dialog.ShowDialog()
+    $dialog.Dispose()
+}
+
 function Show-PanelChoiceDialog {
     # Two panels look at the same world and neither replaces the other, so the
     # button asks instead of deciding: the classic one is the map and the
@@ -1941,6 +2336,7 @@ $difficultyButton.Add_Click({
         Start-LauncherAction -Action 'SetDifficulty' -ExtraArgs $extra
     }
 })
+if ($coopButton) { $coopButton.Add_Click({ Show-CoopDialog }) }
 $importDbButton.Add_Click({
     if (-not (Confirm-DockerReady)) { return }
     $target = Get-GuiTargetVolume
@@ -2207,6 +2603,25 @@ $blinkTimer.Add_Tick({
         else { [Drawing.Color]::Gold }
 })
 $blinkTimer.Start()
+
+# COOP: the router's mappings are leased for four hours. While hosting is on
+# and this window is open they are renewed every hour by a quiet process of
+# their own, outside the action runner, so no button is ever refused for it.
+if ($coopButton) {
+    $script:coopRenewTimer = [Windows.Forms.Timer]::new()
+    $script:coopRenewTimer.Interval = 3600000
+    $script:coopRenewTimer.Add_Tick({
+        try {
+            $coopState = Read-M2CoopState -ServerRoot $root
+            if ($coopState.hosting -and $coopState.hosting.active) {
+                Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', ('"{0}"' -f $cliLauncher), '-Action', 'CoopRenew') | Out-Null
+            }
+        }
+        catch { }
+    })
+    $script:coopRenewTimer.Start()
+}
 
 $script:form.Add_FormClosing({
     param($sender, $eventArgs)

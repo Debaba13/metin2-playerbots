@@ -33,6 +33,10 @@ What the edits are:
                     against; what is left is the belt's cells passing 255: a
                     quickslot's position and a shop sale's cell are WORDs on
                     the wire now, as on the server.
+  co-op game host   the world is entered and every warp followed at the host
+                    the player logged in through, with only the port taken
+                    from the server: the server's one PROXY_IP cannot be both
+                    a friend's route to the host and the host's own 127.0.0.1.
 """
 import io
 import os
@@ -314,6 +318,73 @@ def apply_four_inventory_pages(ui):
          marker='bool CPythonNetworkStream::SendShopSellPacketNew(WORD bySlot, ITEM_COUNT byCount)')
 
 
+def apply_coop_game_host(ui):
+    # The server names one address for every client: each core's PROXY_IP in
+    # the character list (LOGIN_SUCCESS) and in every warp, 127.0.0.1 on a
+    # single-player install. A friend who logged in through the host's public
+    # address would be sent to his own 127.0.0.1 on entering the world. Every
+    # core of one world stands behind the address the player logged in
+    # through, so the client keeps that address (the chosen server's host in
+    # serverinfo.py) and takes only the port from the server. On the host's
+    # own machine that address is 127.0.0.1, which is also what makes a
+    # router without NAT loopback irrelevant.
+    stream_h = os.path.join(ui, 'PythonNetworkStream.h')
+    edit(stream_h,
+         '\t\tvoid ConnectGameServer(UINT iChrSlot);\n',
+         '\t\tvoid ConnectGameServer(UINT iChrSlot);\n'
+         '\t\t// The host the player logged in through; the world is entered and\n'
+         '\t\t// every warp followed there, the port alone being the server\'s\n'
+         '\t\t// (clientify.py, co-op).\n'
+         '\t\tvoid SetGameHost(const char* c_szHost);\n',
+         marker='void SetGameHost(const char* c_szHost);')
+    edit(stream_h,
+         '\t\tstd::string\tm_stPassword;\n',
+         '\t\tstd::string\tm_stPassword;\n'
+         '\t\tstd::string\tm_stGameHost;\n',
+         marker='\t\tstd::string\tm_stGameHost;')
+    stream_cpp = os.path.join(ui, 'PythonNetworkStream.cpp')
+    edit(stream_cpp,
+         '\tTSimplePlayerInformation&\trkSimplePlayerInfo=m_akSimplePlayerInfo[iChrSlot];\n'
+         '\tCNetworkStream::Connect((DWORD)rkSimplePlayerInfo.lAddr, rkSimplePlayerInfo.wPort);\n'
+         '}\n',
+         '\tTSimplePlayerInformation&\trkSimplePlayerInfo=m_akSimplePlayerInfo[iChrSlot];\n'
+         '\tif (!m_stGameHost.empty())\n'
+         '\t\tCNetworkStream::Connect(m_stGameHost.c_str(), rkSimplePlayerInfo.wPort);\n'
+         '\telse\n'
+         '\t\tCNetworkStream::Connect((DWORD)rkSimplePlayerInfo.lAddr, rkSimplePlayerInfo.wPort);\n'
+         '}\n'
+         '\n'
+         'void CPythonNetworkStream::SetGameHost(const char* c_szHost)\n'
+         '{\n'
+         '\tm_stGameHost = c_szHost ? c_szHost : "";\n'
+         '}\n',
+         marker='void CPythonNetworkStream::SetGameHost(const char* c_szHost)')
+    edit(os.path.join(ui, 'PythonNetworkStreamPhaseGame.cpp'),
+         '\tCNetworkStream::PingPort(kWarpPacket.lAddr, kWarpPacket.wPort);\n'
+         '\tSleep(2000);\n'
+         '\tCNetworkStream::Connect((DWORD)kWarpPacket.lAddr, kWarpPacket.wPort);\n',
+         '\t// The core\'s port from the server, the host the player logged in\n'
+         '\t// through (SetGameHost, clientify.py).\n'
+         '\tif (!m_stGameHost.empty())\n'
+         '\t{\n'
+         '\t\tCNetworkStream::PingPort(m_stGameHost, kWarpPacket.wPort);\n'
+         '\t\tSleep(2000);\n'
+         '\t\tCNetworkStream::Connect(m_stGameHost.c_str(), kWarpPacket.wPort);\n'
+         '\t}\n'
+         '\telse\n'
+         '\t{\n'
+         '\t\tCNetworkStream::PingPort(kWarpPacket.lAddr, kWarpPacket.wPort);\n'
+         '\t\tSleep(2000);\n'
+         '\t\tCNetworkStream::Connect((DWORD)kWarpPacket.lAddr, kWarpPacket.wPort);\n'
+         '\t}\n',
+         marker='CNetworkStream::PingPort(m_stGameHost, kWarpPacket.wPort);')
+    edit(os.path.join(ui, 'AccountConnector.cpp'),
+         '\t\trkNet.Connect(m_strAddr.c_str(), m_iPort);\n',
+         '\t\trkNet.SetGameHost(m_strAddr.c_str());\n'
+         '\t\trkNet.Connect(m_strAddr.c_str(), m_iPort);\n',
+         marker='rkNet.SetGameHost(m_strAddr.c_str());')
+
+
 def main(root):
     ui = os.path.join(root, 'UserInterface')
     if not os.path.isfile(os.path.join(ui, 'PythonTextTail.cpp')):
@@ -322,6 +393,7 @@ def main(root):
     apply_personality_row(ui)
     apply_discord_presence(ui)
     apply_four_inventory_pages(ui)
+    apply_coop_game_host(ui)
 
 
 if __name__ == '__main__':

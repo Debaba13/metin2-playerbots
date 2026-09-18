@@ -509,7 +509,9 @@ function Test-M2ProtectedPath {
         'linux-port\docker\.env',
         '.m2launcher.json',
         '.m2launcher-state.json',
-        '.m2install.json'
+        '.m2install.json',
+        # COOP: the friends' accounts and passwords, the hosting state.
+        '.m2coop.json'
     )
     foreach ($protectedFile in $protectedFiles) {
         if ($path.Equals($protectedFile, [StringComparison]::OrdinalIgnoreCase)) {

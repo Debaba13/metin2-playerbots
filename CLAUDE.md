@@ -6357,6 +6357,72 @@ implemented differently from what it describes.
 - **Next Roadmap Priorities:**
   * From PLAYERBOTS_FEATURE_SPECS.md: Module 2 (Mounted combat tuning against Metin stones), Module 4 (Bot guilds and guild marks), Module 5 (Live AI Config sliders in admin panel without recompilation), Module 6 (Weekly season analytics).
 
+## COOP (the local branch `coop` - never pushed, never announced)
+
+Playing the host's world with friends over the Internet: the host runs the
+stack, a friend runs only the client. Built on 19 September at the operator's
+request and secret until the operator says otherwise - no CHANGELOG, Discord
+or devlog line may mention it, and the branch is never pushed.
+
+- **The server needs no change; the client does.** The server names one
+  address for the game cores - PROXY_IP, which is M2_PUBLIC_ADDRESS and
+  127.0.0.1 on every install - in the LOGIN_SUCCESS character list and in
+  HEADER_GC_WARP. `apply_coop_game_host` (clientify.py) makes the client keep
+  the host it logged in through (AccountConnector's `m_strAddr`, the channel
+  address serverinfo gave it) and connect every core there with the packet's
+  port, so the host's own client and a friend's both work against one server
+  and nothing needs NAT loopback.
+- **The second server on the list is a file.** serverinfo.py reads
+  `coop.cfg` beside the client (name, host, auth, channel, channels) and adds
+  "Online: <name>"; a bad or missing file leaves one server. The guild-mark
+  name is "20" so two worlds' marks do not share a cache.
+  `tests/coop_serverinfo_test.py` runs it on Python 2.7 and 3.
+- **The launcher's half is `launcher/Metin2Launcher.Coop.psm1`**: the network
+  report (the LAN adapter with the default route - SSDP has to be bound to it,
+  because the WSL and Hyper-V adapters swallow the multicast - the public
+  address, the UPnP gateway, the CGNAT and double-NAT verdicts), our own UPnP
+  mappings (described "Metin2 SinglePlayer COOP"; somebody else's mapping is
+  never touched), one firewall rule added through UAC, friend accounts (the
+  engine's hash, `CONCAT('*', UPPER(SHA1(UNHEX(SHA1(pw)))))`), the invite code
+  (`M2COOP1:` + base64url JSON, password included) and coop.cfg. The console
+  actions are `Coop*` in Metin2-Launcher.ps1 (menu 23-29); the window's COOP
+  button opens `Show-CoopDialog`. A friend with no server uses
+  `linux-port-mt2009/client-coop/Dolacz.bat` in the client folder.
+- **No password reaches a log.** The window's actions write their output under
+  launcher-logs, which support bundles carry, so CoopHost, CoopStop and
+  CoopCheck print none, and whatever shows a password runs in-process in the
+  dialog. `.m2coop.json` keeps the passwords and is a protected path for
+  updates.
+- **Hosting is `M2_HOST_BIND_ADDRESS=0.0.0.0` in .env and a recreate of the
+  game container** (every core restarts). It survives GRAJ, which reads .env,
+  and GRAJ renews the router's four-hour lease; the panels stay on
+  M2_PANEL_BIND_ADDRESS, written out as 127.0.0.1 first. MariaDB is bound to
+  127.0.0.1 by compose whatever this says.
+- **A connection to a published port proves nothing on Docker Desktop.** Its
+  proxy accepts one before anything in the container listens and then closes
+  it; `Wait-CoopGameReady` waits for every core's handshake (`FD 01 FF ...`).
+  The first version called the world ready eleven seconds into a boot the
+  cores needed forty for.
+- **The shipped accounts are refused.** admin/admin (IMPLEMENTOR; gmlist
+  carries no IP) and test/test are created at initdb only, so the passwords
+  `Protect-M2CoopAccounts` sets stick, and hosting refuses while either account
+  still has the shipped one.
+- **Measured on m2coop** (a copy of m2zip under `Downloads\m2coop-test`, its
+  own project and volumes): CoopCheck on the Funbox 2.6 (UPnP answers, public
+  IPv4); CoopHost with the firewall and UPnP steps stubbed - bindings on
+  0.0.0.0 and all four cores answering on 192.168.1.16; CoopStop back to
+  127.0.0.1 and the LAN refused; the real window's COOP button opening the
+  dialog. Not run yet: a router mapping, the firewall rule, and a client on
+  another network - the operator's test on a laptop over mobile Internet.
+- **The traffic is not private.** The client's XTEA key is fixed and key
+  agreement is compiled out, so a password in LOGIN3 can be read on the way.
+  That is why friends' passwords are random and per world; say so before any
+  of this goes public.
+- UIAutomation sees the launcher's flat buttons as Pane with no Invoke
+  pattern; `PostMessage(BM_CLICK)` to the NativeWindowHandle clicks them. A
+  form started by `Start-Process -WindowStyle Hidden` stays hidden, because
+  its first ShowWindow takes the start's SW_HIDE.
+
 ## The mt2009 tree (second engine)
 
 `linux-port-mt2009/` is the same suite on the mt2009 / Martysama r41023 server
