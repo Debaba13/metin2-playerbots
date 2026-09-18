@@ -691,6 +691,27 @@ function Get-SpawnPlanFromEnv {
     return $plan
 }
 
+function Get-KingdomPlanFromEnv {
+    # PLAYERBOT_AUTOSPAWN_PER_KINGDOM with the three numbers, and the second
+    # channel with its share, as .env has them; off, 0/0/0 and 40% otherwise.
+    $envPath = Join-Path $root 'linux-port\docker\.env'
+    $plan = @{ PerKingdom = $false; Shinsoo = 0; Chunjo = 0; Jinno = 0; Channel2 = $false; Channel2Share = 40 }
+    if (Test-Path -LiteralPath $envPath -PathType Leaf) {
+        $content = [IO.File]::ReadAllText($envPath)
+        $m = [Regex]::Match($content, '(?m)^PLAYERBOT_AUTOSPAWN_PER_KINGDOM=(\d+)\s*$')
+        if ($m.Success) { $plan.PerKingdom = $m.Groups[1].Value -eq '1' }
+        foreach ($pair in @(@('Shinsoo', 'PLAYERBOT_AUTOSPAWN_SHINSOO'), @('Chunjo', 'PLAYERBOT_AUTOSPAWN_CHUNJO'), @('Jinno', 'PLAYERBOT_AUTOSPAWN_JINNO'))) {
+            $m = [Regex]::Match($content, '(?m)^' + $pair[1] + '=(\d+)\s*$')
+            if ($m.Success) { $plan[$pair[0]] = [int]$m.Groups[1].Value }
+        }
+        $m = [Regex]::Match($content, '(?m)^M2_PLAYERBOT_CH2=(\d+)\s*$')
+        if ($m.Success) { $plan.Channel2 = $m.Groups[1].Value -eq '1' }
+        $m = [Regex]::Match($content, '(?m)^PLAYERBOT_CH2_SHARE=(\d+)\s*$')
+        if ($m.Success) { $plan.Channel2Share = [int]$m.Groups[1].Value }
+    }
+    return $plan
+}
+
 function Get-DifficultyFromEnv {
     # M2_DIFFICULTY and the two hour counts, as .env has them; easy/0/0 when the
     # keys are not there yet (an older .env, which start-server.ps1 fills in).
@@ -991,6 +1012,21 @@ function Offer-StartupUpdates {
     Offer-ClientUpdate
 }
 
+function Update-BotDialogValueLabel {
+    # The heading of the bot dialog says what the core will start: the one
+    # number, or the sum of the three while each kingdom has its own.
+    param($Form)
+    if (-not $Form) { return }
+    $label = $Form.Controls['valueLabel']
+    $check = $Form.Controls['kingdomCheck']
+    if (-not $label -or -not $check) { return }
+    if ($check.Checked) {
+        $sum = [int]$Form.Controls['shinsooBox'].Value + [int]$Form.Controls['chunjoBox'].Value + [int]$Form.Controls['jinnoBox'].Value
+        $label.Text = "Boty: $sum (osobno dla królestw)"
+    }
+    else { $label.Text = "Boty: $([int]$Form.Controls['botBar'].Value)" }
+}
+
 function Show-BotCountDialog {
     # Slider instead of a typed number: the range is a property of the world, and
     # dragging is far friendlier than guessing a value. The maximum matches the
@@ -1002,11 +1038,15 @@ function Show-BotCountDialog {
     # registry has and logs requested/registered/started.
     # Under the slider, the spawn plan: the window the cohort arrives over and
     # the second cohort with its hours - "1000 w 15 minut, a dodatkowe 500 w
-    # ciagu 24 godzin". Returns @{ Count; Minutes; Late; Hours } or $null.
-    param([int]$Current = 350, [hashtable]$Plan = @{ Minutes = 1; Late = 0; Hours = 24 })
+    # ciagu 24 godzin". Below that, the operator's own number per kingdom
+    # (Greess's "Indywidualne wartosci dla krolestw") and the second channel.
+    # Returns @{ Count; Minutes; Late; Hours; PerKingdom; Shinsoo; Chunjo;
+    # Jinno; Channel2; Channel2Share } or $null.
+    param([int]$Current = 350, [hashtable]$Plan = @{ Minutes = 1; Late = 0; Hours = 24 },
+        [hashtable]$Kingdoms = @{ PerKingdom = $false; Shinsoo = 0; Chunjo = 0; Jinno = 0; Channel2 = $false; Channel2Share = 40 })
     $dialog = [Windows.Forms.Form]::new()
     $dialog.Text = (T 'botDialog')
-    $dialog.Size = [Drawing.Size]::new(480, 396)
+    $dialog.Size = [Drawing.Size]::new(480, 606)
     $dialog.StartPosition = 'CenterParent'
     $dialog.FormBorderStyle = 'FixedDialog'
     $dialog.MaximizeBox = $false
@@ -1073,16 +1113,96 @@ function Show-BotCountDialog {
         $dialog.Controls.Add($box)
     }
 
+    # Each kingdom its own number instead of a share of the one above. The
+    # core cuts each to the identities that kingdom has.
+    $kingdomCheck = [Windows.Forms.CheckBox]::new()
+    $kingdomCheck.Name = 'kingdomCheck'
+    $kingdomCheck.Text = 'Indywidualne wartości dla królestw'
+    $kingdomCheck.Location = [Drawing.Point]::new(14, 282)
+    $kingdomCheck.Size = [Drawing.Size]::new(440, 24)
+    $kingdomCheck.Checked = [bool]$Kingdoms.PerKingdom
+    $dialog.Controls.Add($kingdomCheck)
+    $kingdomRows = @(
+        @{ Name = 'shinsooBox'; Text = 'Shinsoo (czerwone):'; Color = [Drawing.Color]::FromArgb(220, 40, 40); Value = [int]$Kingdoms.Shinsoo; Y = 310 },
+        @{ Name = 'chunjoBox';  Text = 'Chunjo (żółte):';     Color = [Drawing.Color]::FromArgb(235, 200, 30); Value = [int]$Kingdoms.Chunjo; Y = 340 },
+        @{ Name = 'jinnoBox';   Text = 'Jinno (niebieskie):'; Color = [Drawing.Color]::FromArgb(40, 110, 220); Value = [int]$Kingdoms.Jinno; Y = 370 }
+    )
+    foreach ($row in $kingdomRows) {
+        $swatch = [Windows.Forms.Panel]::new()
+        $swatch.BackColor = $row.Color
+        $swatch.Location = [Drawing.Point]::new(34, $row.Y + 3)
+        $swatch.Size = [Drawing.Size]::new(18, 18)
+        $dialog.Controls.Add($swatch)
+        $label = [Windows.Forms.Label]::new()
+        $label.Text = $row.Text
+        $label.Location = [Drawing.Point]::new(58, $row.Y + 3)
+        $label.Size = [Drawing.Size]::new(236, 22)
+        $dialog.Controls.Add($label)
+        $box = [Windows.Forms.NumericUpDown]::new()
+        $box.Name = $row.Name
+        $box.Minimum = 0
+        $box.Maximum = 2500
+        $box.Value = [Math]::Max(0, [Math]::Min(2500, $row.Value))
+        $box.Location = [Drawing.Point]::new(300, $row.Y)
+        $box.Size = [Drawing.Size]::new(90, 24)
+        $box.Enabled = $kingdomCheck.Checked
+        $dialog.Controls.Add($box)
+    }
+    $kingdomCheck.Add_CheckedChanged({
+            $form = $this.FindForm()
+            if (-not $form) { return }
+            foreach ($name in @('shinsooBox', 'chunjoBox', 'jinnoBox')) { $form.Controls[$name].Enabled = $this.Checked }
+            $form.Controls['botBar'].Enabled = -not $this.Checked
+            Update-BotDialogValueLabel $form
+        })
+    foreach ($name in @('shinsooBox', 'chunjoBox', 'jinnoBox')) {
+        $dialog.Controls[$name].Add_ValueChanged({ Update-BotDialogValueLabel $this.FindForm() })
+    }
+    $bar.Enabled = -not $kingdomCheck.Checked
+    Update-BotDialogValueLabel $dialog
+
+    # The second channel: bots and players, shops on the first channel only.
+    $channelCheck = [Windows.Forms.CheckBox]::new()
+    $channelCheck.Name = 'channelCheck'
+    $channelCheck.Text = 'Drugi kanał (CH2) dla botów i graczy'
+    $channelCheck.Location = [Drawing.Point]::new(14, 406)
+    $channelCheck.Size = [Drawing.Size]::new(440, 24)
+    $channelCheck.Checked = [bool]$Kingdoms.Channel2
+    $dialog.Controls.Add($channelCheck)
+    $shareLabel = [Windows.Forms.Label]::new()
+    $shareLabel.Text = 'Ile procent botów gra na CH2 (10-90):'
+    $shareLabel.Location = [Drawing.Point]::new(34, 437)
+    $shareLabel.Size = [Drawing.Size]::new(260, 22)
+    $dialog.Controls.Add($shareLabel)
+    $shareBox = [Windows.Forms.NumericUpDown]::new()
+    $shareBox.Name = 'channelShareBox'
+    $shareBox.Minimum = 10
+    $shareBox.Maximum = 90
+    $shareBox.Value = [Math]::Max(10, [Math]::Min(90, [int]$Kingdoms.Channel2Share))
+    $shareBox.Location = [Drawing.Point]::new(300, 434)
+    $shareBox.Size = [Drawing.Size]::new(90, 24)
+    $shareBox.Enabled = $channelCheck.Checked
+    $dialog.Controls.Add($shareBox)
+    $channelCheck.Add_CheckedChanged({
+            $form = $this.FindForm()
+            if ($form) { $form.Controls['channelShareBox'].Enabled = $this.Checked }
+        })
+    $channelInfo = [Windows.Forms.Label]::new()
+    $channelInfo.Text = "Serwer rozkłada wtedy boty na dwa rdzenie procesora. Wszystkie sklepy`r`n(botów i graczy) stoją tylko na CH1. Otwiera porty 13010-13012."
+    $channelInfo.Location = [Drawing.Point]::new(14, 466)
+    $channelInfo.Size = [Drawing.Size]::new(440, 36)
+    $dialog.Controls.Add($channelInfo)
+
     $okButton = [Windows.Forms.Button]::new()
     $okButton.Text = (T 'apply')
-    $okButton.Location = [Drawing.Point]::new(252, 300)
+    $okButton.Location = [Drawing.Point]::new(252, 514)
     $okButton.Size = [Drawing.Size]::new(100, 32)
     $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
     $dialog.Controls.Add($okButton)
 
     $cancelButton = [Windows.Forms.Button]::new()
     $cancelButton.Text = (T 'cancel')
-    $cancelButton.Location = [Drawing.Point]::new(358, 300)
+    $cancelButton.Location = [Drawing.Point]::new(358, 514)
     $cancelButton.Size = [Drawing.Size]::new(96, 32)
     $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $dialog.Controls.Add($cancelButton)
@@ -1091,10 +1211,16 @@ function Show-BotCountDialog {
 
     $result = $dialog.ShowDialog()
     $chosen = @{
-        Count   = [int]$bar.Value
-        Minutes = [int]$dialog.Controls['minutesBox'].Value
-        Late    = [int]$dialog.Controls['lateBox'].Value
-        Hours   = [int]$dialog.Controls['hoursBox'].Value
+        Count         = [int]$bar.Value
+        Minutes       = [int]$dialog.Controls['minutesBox'].Value
+        Late          = [int]$dialog.Controls['lateBox'].Value
+        Hours         = [int]$dialog.Controls['hoursBox'].Value
+        PerKingdom    = [bool]$dialog.Controls['kingdomCheck'].Checked
+        Shinsoo       = [int]$dialog.Controls['shinsooBox'].Value
+        Chunjo        = [int]$dialog.Controls['chunjoBox'].Value
+        Jinno         = [int]$dialog.Controls['jinnoBox'].Value
+        Channel2      = [bool]$dialog.Controls['channelCheck'].Checked
+        Channel2Share = [int]$dialog.Controls['channelShareBox'].Value
     }
     $dialog.Dispose()
     if ($result -ne [Windows.Forms.DialogResult]::OK) { return $null }
@@ -1769,12 +1895,21 @@ $folderButton.Add_Click({
 $botCountButton.Add_Click({
     $current = Get-BotCountFromEnv
     $plan = Get-SpawnPlanFromEnv
-    $chosen = Show-BotCountDialog -Current $current -Plan $plan
+    $kingdoms = Get-KingdomPlanFromEnv
+    $chosen = Show-BotCountDialog -Current $current -Plan $plan -Kingdoms $kingdoms
     if ($null -eq $chosen) { return }
     $count = [int]$chosen.Count
-    $extra = @('-BotCount', "$count", '-SpawnMinutes', "$($chosen.Minutes)", '-LateJoiners', "$($chosen.Late)", '-LateHours', "$($chosen.Hours)")
+    $extra = @('-BotCount', "$count", '-SpawnMinutes', "$($chosen.Minutes)", '-LateJoiners', "$($chosen.Late)", '-LateHours', "$($chosen.Hours)",
+        '-PerKingdom', $(if ($chosen.PerKingdom) { '1' } else { '0' }),
+        '-ShinsooBots', "$($chosen.Shinsoo)", '-ChunjoBots', "$($chosen.Chunjo)", '-JinnoBots', "$($chosen.Jinno)",
+        '-Channel2', $(if ($chosen.Channel2) { '1' } else { '0' }), '-Channel2Share', "$($chosen.Channel2Share)")
+    $what = if ($chosen.PerKingdom) {
+        "osobno dla królestw: Shinsoo $($chosen.Shinsoo), Chunjo $($chosen.Chunjo), Jinno $($chosen.Jinno)"
+    }
+    else { "$count grających botów" }
+    $channelWhat = if ($chosen.Channel2) { ", drugi kanał włączony ($($chosen.Channel2Share)% botów na CH2)" } else { '' }
     $answer = [Windows.Forms.MessageBox]::Show(
-        "Ustawić $count grających botów (wejście w $($chosen.Minutes) min, $($chosen.Late) dodatkowych w ciągu $($chosen.Hours) h) i zrestartować serwer teraz, aby zastosować? Baza i postęp botów pozostaną bez zmian.",
+        "Ustawić $what (wejście w $($chosen.Minutes) min, $($chosen.Late) dodatkowych w ciągu $($chosen.Hours) h)$channelWhat i zrestartować serwer teraz, aby zastosować? Baza i postęp botów pozostaną bez zmian.",
         'Liczba botów', 'YesNoCancel', 'Question')
     if ($answer -eq [Windows.Forms.DialogResult]::Cancel) { return }
     if ($answer -eq [Windows.Forms.DialogResult]::Yes) {

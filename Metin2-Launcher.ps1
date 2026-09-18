@@ -8,6 +8,14 @@ param(
     [int]$SpawnMinutes = -1,
     [int]$LateJoiners = -1,
     [int]$LateHours = -1,
+    # SetBots: the operator's own number per kingdom (1 = on, 0 = off, -1 =
+    # leave it) and the three numbers, and the second channel with its share.
+    [int]$PerKingdom = -1,
+    [int]$ShinsooBots = -1,
+    [int]$ChunjoBots = -1,
+    [int]$JinnoBots = -1,
+    [int]$Channel2 = -1,
+    [int]$Channel2Share = -1,
     # SetDifficulty: easy | medium | hard | custom, and the hours custom reads.
     [string]$Difficulty = '',
     [string]$BiologistHours = '',
@@ -179,6 +187,9 @@ function Start-Server {
     Clear-PortConflicts -Quiet | Out-Null
     Assert-DockerPrerequisites -CheckPanelPort
     Write-Phase 'Docker sprawdzony'
+    # A second-channel wish left in the web panel, before .env is read.
+    try { Sync-ChannelWishFromPanel }
+    catch { Write-Host "Nie udalo sie odczytac ustawienia kanalow z panelu WWW: $($_.Exception.Message)" -ForegroundColor Yellow }
     # start-server.ps1 brings the stack up from the images that already exist.
     # After an interrupted update those are the old ones, so finish the build
     # first - otherwise the player keeps running the previous server and the
@@ -594,6 +605,96 @@ function Set-SpawnPlan {
     return @{ Minutes = $Minutes; Late = $Late; Hours = $Hours }
 }
 
+function Get-KingdomCountsFromEnv {
+    # PLAYERBOT_AUTOSPAWN_PER_KINGDOM and the three numbers; off and 0/0/0 when
+    # the keys are not there yet.
+    return @{
+        Enabled = (Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_PER_KINGDOM' -Default '0') -eq '1'
+        Shinsoo = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_SHINSOO' -Default '0')
+        Chunjo  = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_CHUNJO' -Default '0')
+        Jinno   = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_JINNO' -Default '0')
+    }
+}
+
+function Set-KingdomCounts {
+    # The operator's own number per kingdom (Greess): with it on, each kingdom
+    # starts its own count instead of a share of PLAYERBOT_AUTOSPAWN_COUNT, cut
+    # by the core to the identities the kingdom has. Read at the next start.
+    param([bool]$Enabled, [int]$Shinsoo = 0, [int]$Chunjo = 0, [int]$Jinno = 0)
+    $clamp = { param($n) if ($n -lt 0) { 0 } elseif ($n -gt 2500) { 2500 } else { $n } }
+    $Shinsoo = & $clamp $Shinsoo
+    $Chunjo = & $clamp $Chunjo
+    $Jinno = & $clamp $Jinno
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_PER_KINGDOM' -Value $(if ($Enabled) { '1' } else { '0' })
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_SHINSOO' -Value "$Shinsoo"
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_CHUNJO' -Value "$Chunjo"
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_JINNO' -Value "$Jinno"
+    return @{ Enabled = $Enabled; Shinsoo = $Shinsoo; Chunjo = $Chunjo; Jinno = $Jinno }
+}
+
+function Get-SecondChannelFromEnv {
+    $share = 40
+    [int]::TryParse((Get-DotEnvValue -Key 'PLAYERBOT_CH2_SHARE' -Default '40'), [ref]$share) | Out-Null
+    return @{ Enabled = (Get-DotEnvValue -Key 'M2_PLAYERBOT_CH2' -Default '0') -eq '1'; Share = $share }
+}
+
+function Set-SecondChannel {
+    # The second channel (M2_PLAYERBOT_CH2): the switch, the share of the bots
+    # that play on it, and the two port ranges compose publishes - 13000-13012
+    # while it is on (its cores listen on 13010-13012), the first channel's
+    # three otherwise. The host side keeps the first port a player may have
+    # moved. SetAt is when the choice was made: the game container compares it
+    # with the web panel's wish, and the newer of the two wins.
+    param([bool]$Enabled, [int]$Share = 40, [long]$SetAt = 0)
+    if ($Share -lt 10) { $Share = 10 }
+    if ($Share -gt 90) { $Share = 90 }
+    if ($SetAt -le 0) { $SetAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+    $first = 13000
+    $range = Get-DotEnvValue -Key 'M2_GAME_PORT_RANGE' -Default '13000-13002'
+    if ($range -match '^\s*(\d+)') { $first = [int]$Matches[1] }
+    $span = if ($Enabled) { 12 } else { 2 }
+    Set-DotEnvValue -Key 'M2_PLAYERBOT_CH2' -Value $(if ($Enabled) { '1' } else { '0' })
+    Set-DotEnvValue -Key 'PLAYERBOT_CH2_SHARE' -Value "$Share"
+    Set-DotEnvValue -Key 'M2_PLAYERBOT_CH2_SET_AT' -Value "$SetAt"
+    Set-DotEnvValue -Key 'M2_GAME_PORT_RANGE' -Value ('{0}-{1}' -f $first, ($first + $span))
+    Set-DotEnvValue -Key 'M2_GAME_CONTAINER_PORT_RANGE' -Value ('13000-{0}' -f (13000 + $span))
+    return @{ Enabled = $Enabled; Share = $Share }
+}
+
+function Sync-ChannelWishFromPanel {
+    # The web panel cannot write .env; it leaves its second-channel wish in the
+    # spool the game container reads (channels.wanted, with SET_AT). The
+    # container honours it for the bots at its next start whatever happens
+    # here, but only .env can publish the second channel's ports - so a wish
+    # newer than .env's own is copied into .env before the stack comes up.
+    # Only while the game container runs: its spool cannot be read otherwise.
+    $envPath = Get-PlayerbotEnvPath
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return }
+    $composeDir = Join-Path $serverRoot 'linux-port\docker'
+    $composeFile = Join-Path $composeDir 'docker-compose.yml'
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $text = @(docker compose --project-directory $composeDir -f $composeFile exec -T game cat /opt/m2spool/channels.wanted 2>$null)
+        $exit = $LASTEXITCODE
+    }
+    catch { return }
+    finally { $ErrorActionPreference = $previousPreference }
+    if ($exit -ne 0 -or $text.Count -eq 0) { return }
+    $wish = @{}
+    foreach ($line in $text) {
+        if ("$line" -match '^\s*([A-Z0-9_]+)=(\d+)\s*$') { $wish[$Matches[1]] = [long]$Matches[2] }
+    }
+    if (-not $wish.ContainsKey('CH2') -or -not $wish.ContainsKey('SET_AT')) { return }
+    $envAt = 0L
+    [long]::TryParse((Get-DotEnvValue -Key 'M2_PLAYERBOT_CH2_SET_AT' -Default '0'), [ref]$envAt) | Out-Null
+    if ($wish['SET_AT'] -le $envAt) { return }
+    $share = if ($wish.ContainsKey('SHARE')) { [int]$wish['SHARE'] } else { 40 }
+    $applied = Set-SecondChannel -Enabled ($wish['CH2'] -eq 1) -Share $share -SetAt $wish['SET_AT']
+    $what = if ($applied.Enabled) { "wlaczony, $($applied.Share)% botow na CH2" } else { 'wylaczony' }
+    Write-Host "Drugi kanal ustawiony w panelu WWW: $what." -ForegroundColor Green
+}
+
 function Set-BotCountAction {
     $current = Get-PlayerbotCount
     $plan = Get-SpawnPlanFromEnv
@@ -613,6 +714,29 @@ function Set-BotCountAction {
             $h = if ($LateHours -ge 0) { $LateHours } else { [int]$plan.Hours }
             $p = Set-SpawnPlan -Minutes $m -Late $l -Hours $h
             Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+        }
+        if ($PerKingdom -ge 0) {
+            $k = Get-KingdomCountsFromEnv
+            $s = if ($ShinsooBots -ge 0) { $ShinsooBots } else { $k.Shinsoo }
+            $c = if ($ChunjoBots -ge 0) { $ChunjoBots } else { $k.Chunjo }
+            $j = if ($JinnoBots -ge 0) { $JinnoBots } else { $k.Jinno }
+            $kk = Set-KingdomCounts -Enabled ($PerKingdom -eq 1) -Shinsoo $s -Chunjo $c -Jinno $j
+            if ($kk.Enabled) {
+                Write-Host "Zapisano: osobno dla królestw - Shinsoo $($kk.Shinsoo), Chunjo $($kk.Chunjo), Jinno $($kk.Jinno)." -ForegroundColor Green
+            }
+            else { Write-Host 'Zapisano: jedna liczba botów dzielona po równo na królestwa.' -ForegroundColor Green }
+        }
+        if ($Channel2 -ge 0) {
+            # Written only when it changes, so the moment of the choice stays the
+            # one it was made at and a wish from the web panel made after it is
+            # not overwritten by a dialog that only changed the bot count.
+            $cur = Get-SecondChannelFromEnv
+            $share = if ($Channel2Share -ge 0) { $Channel2Share } else { $cur.Share }
+            if (($Channel2 -eq 1) -ne $cur.Enabled -or (($Channel2 -eq 1) -and $share -ne $cur.Share)) {
+                $ch = Set-SecondChannel -Enabled ($Channel2 -eq 1) -Share $share
+                if ($ch.Enabled) { Write-Host "Zapisano: drugi kanał (CH2) włączony, $($ch.Share)% botów na CH2." -ForegroundColor Green }
+                else { Write-Host 'Zapisano: drugi kanał (CH2) wyłączony.' -ForegroundColor Green }
+            }
         }
         if ($Yes) {
             Start-Server
@@ -640,6 +764,34 @@ function Set-BotCountAction {
     else {
         $p = Set-SpawnPlan -Minutes ([int]$m) -Late ([int]$l) -Hours ([int]$h)
         Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+    }
+    $k = Get-KingdomCountsFromEnv
+    $kAnswer = Read-Host "Osobna liczba botów dla każdego królestwa? (t/n, Enter = $(if ($k.Enabled) { 't' } else { 'n' }))"
+    if ("$kAnswer".Trim() -match '^[tTyY]') {
+        $sAnswer = Read-Host "Shinsoo, czerwone (0-2500, Enter = $($k.Shinsoo))"
+        $cAnswer = Read-Host "Chunjo, żółte (0-2500, Enter = $($k.Chunjo))"
+        $jAnswer = Read-Host "Jinno, niebieskie (0-2500, Enter = $($k.Jinno))"
+        $s = if ("$sAnswer".Trim() -match '^\d+$') { [int]$sAnswer } else { $k.Shinsoo }
+        $c = if ("$cAnswer".Trim() -match '^\d+$') { [int]$cAnswer } else { $k.Chunjo }
+        $j = if ("$jAnswer".Trim() -match '^\d+$') { [int]$jAnswer } else { $k.Jinno }
+        $kk = Set-KingdomCounts -Enabled $true -Shinsoo $s -Chunjo $c -Jinno $j
+        Write-Host "Zapisano: Shinsoo $($kk.Shinsoo), Chunjo $($kk.Chunjo), Jinno $($kk.Jinno)." -ForegroundColor Green
+    }
+    elseif ("$kAnswer".Trim() -match '^[nN]') {
+        Set-KingdomCounts -Enabled $false -Shinsoo $k.Shinsoo -Chunjo $k.Chunjo -Jinno $k.Jinno | Out-Null
+        Write-Host 'Zapisano: jedna liczba botów dzielona po równo na królestwa.' -ForegroundColor Green
+    }
+    $ch2 = Get-SecondChannelFromEnv
+    $chAnswer = Read-Host "Drugi kanał (CH2) dla botów i graczy? Sklepy zostają na CH1 (t/n, Enter = $(if ($ch2.Enabled) { 't' } else { 'n' }))"
+    if ("$chAnswer".Trim() -match '^[tTyY]') {
+        $shAnswer = Read-Host "Ile procent botów na CH2 (10-90, Enter = $($ch2.Share))"
+        $share = if ("$shAnswer".Trim() -match '^\d+$') { [int]$shAnswer } else { $ch2.Share }
+        $applied2 = Set-SecondChannel -Enabled $true -Share $share
+        Write-Host "Zapisano: drugi kanał włączony, $($applied2.Share)% botów na CH2." -ForegroundColor Green
+    }
+    elseif ("$chAnswer".Trim() -match '^[nN]' -and $ch2.Enabled) {
+        Set-SecondChannel -Enabled $false -Share $ch2.Share | Out-Null
+        Write-Host 'Zapisano: drugi kanał wyłączony.' -ForegroundColor Green
     }
     if (Confirm-Operation 'Zrestartować serwer teraz, aby zastosować zmianę? Baza i postęp botów pozostają bez zmian') {
         Start-Server
