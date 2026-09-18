@@ -17,6 +17,55 @@ every version here.
 
 ---
 
+## 2.0.73 — 2026-09-18
+
+Serwer 2.0.73, klient bez zmian (2.0.13).
+
+### Księgi i Kamienie Duchowe na ladach po jednej sztuce (przegląd Codexa)
+
+Bot kupuje z lady linię tylko wtedy, gdy cała mieści się w tym, czego mu brakuje.
+Tymczasem sklep offline wystawiał księgi i Kamienie Duchowe całymi stosami (do
+dziesięciu sztuk), więc bot, któremu brakowało trzech kamieni, nie mógł kupić
+dziesięciu. Teraz nadwyżka idzie na ladę po jednej sztuce, najwyżej trzy linie
+jednego rodzaju naraz (księgi liczone osobno dla każdej umiejętności). Linia
+kamieni dłuższa niż trzy wraca przy najbliższej wizycie do torby, żeby wyjść
+ponownie po sztuce.
+
+Poprawiona jest też rezerwa, którą bot zostawia sobie:
+
+- Kamienie Duchowe: liczone były tylko kamienie w komórkach torby *przed* danym
+  stosem, więc jeden stos dziesięciu kamieni przy rezerwie trzech nigdy nie
+  trafiał na ladę. Teraz rezerwa liczy się w sztukach w całej torbie, a na ladę
+  idzie wyłącznie nadwyżka.
+- Księgi własnej umiejętności: rezerwa („dwanaście ksiąg do czytania”) liczyła
+  stosy zamiast sztuk, więc przy stosach po dziesięć bot trzymał do stu
+  dwudziestu ksiąg jednej umiejętności. Teraz dwanaście znaczy dwanaście.
+- Bot nigdy nie wystawia tego, co za chwilę sam chciałby kupić: rezerwa
+  sprzedawcy to dokładnie ta liczba, której brakuje kupującemu.
+
+### Bot nie „czyta” już księgi, której silnik mu nie da
+
+Silnik czyta księgę tylko postaci, która ma przy sobie 20 000 doświadczenia
+(każde czytanie tyle kosztuje). Z mniejszą ilością odmawia, zostawia księgę —
+a bot próbował dalej co 8 sekund i w logu wyglądało to jak nieudane czytanie.
+Na serwerze testowym w 12 minut było 7 095 takich prób i tylko 23 prawdziwe
+odczyty. Najczęściej dotyczyło to dropperów z zablokowanym doświadczeniem i
+botów na 40 poziomie w drugich wioskach. Teraz bot czeka na doświadczenie, a
+log mówi to wprost (`book read waits for experience`).
+
+### Pomiary
+
+W logu serwera każda sprzedaż z lady offline ma teraz linię
+`PLAYERBOT_OFFLINE: sold` z czasem, przez jaki oferta stała na ladzie.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy z 1099 botami, 32 minuty nowej wersji wobec 37 minut 2.0.72:
+80 linii ksiąg poszło na lady po jednej sztuce i żadna nie naruszyła rezerwy
+właściciela, boty kupowały 93 księgi na godzinę wobec 69, na lady trafiały 872
+linie na godzinę wobec 736, a pustych prób czytania było 57 na godzinę zamiast
+33 383. Zero resetów strażnika bezczynności i żadnego padu rdzenia.
+
 ## 2.0.72 — 2026-09-18
 
 Serwer 2.0.72, klient bez zmian (2.0.13).
