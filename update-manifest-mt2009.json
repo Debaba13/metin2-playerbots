@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T21:04:24Z",
-  "statusMessage": "2.0.78 (serwer 2.0.78, klient 2.0.16 bez zmian): aktualizacja znów buduje serwer z przerobionym messenger_manager.cpp; różnorodniejsze lady botów, broń na 30 poziom innej klasy ulepszana na sprzedaż, farby z łowienia wyrzucane, wojny gildii z dala od strefy bezpiecznej. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T22:27:03Z",
+  "statusMessage": "2.0.79 (serwer 2.0.79, klient 2.0.16 bez zmian): bez klątwy małp w Lochach Małp; przedmioty ustawione w panelu na „stall” trafiają na ladę najwyżej w 3 liniach. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.78",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.78/metin2-server-update-2.0.78.zip",
-    "sha256": "7740B455B4DA699058C1AD0115946CA7D6E8F05555212A10EC2AC50861C436BD"
+    "version": "2.0.79",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.79/metin2-server-update-2.0.79.zip",
+    "sha256": "CEE7FE686E6EC571F20F36B738EFCD75D56374CBD1BBC6078CE963C0E49186DF"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
