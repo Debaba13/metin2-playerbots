@@ -17,6 +17,63 @@ every version here.
 
 ---
 
+## 2.0.77 — 2026-09-18
+
+Serwer 2.0.77, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Aktualizacja i zbieranie logów (archonek, Urtopy, DUDU)
+
+- „ZBIERZ / WYŚLIJ LOGI” w 2.0.76 kończyło się błędem „You cannot call
+  a method on a null-valued expression” na każdym serwerze bez drugiego
+  kanału. Naprawione, działa od razu po zainstalowaniu tej aktualizacji.
+- Starszy Docker Compose próbował przy starcie pobrać z internetu obraz
+  panelu zaawansowanego (metin2/seban-panel), który serwer buduje sam,
+  i przerywał start albo aktualizację błędem „pull access denied”. Od
+  2.0.77 go nie pobiera.
+- Launcher pokazywał „Kanał aktualizacji nie został jeszcze opublikowany”,
+  gdy w logach nieudanej akcji trafiła się gdziekolwiek liczba 404, choć
+  manifest był na miejscu. Teraz ten komunikat oznacza tylko prawdziwy brak
+  manifestu, a błąd pobierania obrazu ma własną wskazówkę.
+- Aktualizacja klienta odmawia, gdy gra jest włączona. Zamknij grę (sprawdź
+  też Menedżer zadań, czy metin2client.exe nie został w tle) i kliknij
+  ZAINSTALUJ AKTUALIZACJE jeszcze raz.
+
+### Więcej materiałów na ladach (Hiob, Xewi)
+
+- Rynek botów liczył tylko to, czego brakuje botom, a zakupów gracza nie
+  widzi, więc większość materiałów uznawał za nadmiar. Boty trzymały
+  w torbach i magazynach ok. 1,3 mln sztuk materiałów, a na ladach było
+  ok. 105 tys. W prawie co trzeciej parze „materiał × wioska” nie było ani
+  sztuki (np. Czarny Uniform w Pyongmoo i Bakrze, Księga Klątw i Ząb Orka
+  nigdzie).
+- Teraz każda wioska ma na ladach co najmniej 50 sztuk każdego materiału do
+  ulepszania, który boty w niej mają ponad własny zapas na kowala. To, czego
+  bot potrzebuje do własnych ulepszeń, zostaje w torbie.
+- Sklepy botów uzupełniają się szybciej: budżet zmian w sklepach offline
+  jest dwa razy większy i nie gubi wolnych sekund.
+- Nowe linie przybywają stopniowo, bo sprzedawca dokłada jedną przy każdej
+  wizycie przy sklepie (co 10–15 minut), więc ladom trzeba dać godzinę
+  lub dwie.
+- Wyszukiwarka przedmiotów pokazuje sklepy tylko z mapy, na której stoisz.
+  Szukaj w wiosce, w której stoją sklepy.
+
+### Wojny gildii (gregory_955)
+
+- Boty nie gonią już przeciwników stojących w strefie bezpiecznej, gdzie
+  nikogo nie da się uderzyć. Bot, który sam stoi w strefie, najpierw
+  wychodzi na miejsce zbiórki.
+- Te same dwie gildie nie walczą już co dwie godziny. Para z ostatniej
+  wojny w królestwie czeka, a pierwszeństwo mają gildie, które dawno nie
+  walczyły.
+- Wynik trwającej wojny widać w panelu na stronie gildii
+  (⚔ z gildią … wynik:wynik).
+
+### Czerwony Las
+
+- Punkt wyjścia z Czerwonego Lasu stał na zablokowanym terenie: boty, które
+  chciały opuścić mapę, co 20 sekund planowały drogę donikąd. Wejście,
+  wyjście i po jednym hubie w obu Lasach przeniesione na sprawdzony teren.
+
 ## 2.0.76 — 2026-09-18
 
 Serwer 2.0.76, klient 2.0.16. W launcherze ZAINSTALUJ AKTUALIZACJE — podnoszenie
