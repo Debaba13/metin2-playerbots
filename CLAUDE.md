@@ -5576,6 +5576,63 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   package is assembled by unpacking the **published** update zip over the deploy
   tree, never by trusting a rebuild to reproduce it; compare the two file by
   file before shipping, the way `scratchpad/player_zip_2071.py` does.
+- **A development purchase is a quantity, and the trip to make it is a
+  share.** `playerbot_progression_needs.h` (Codex, 18 September) counts what a
+  bot is short of for its own progress - books of a skill at Master up to
+  `GetPlayerBotBookKeepLimit`, Kamienie Duchowe up to
+  `PLAYERBOT_GRAND_MASTER_STONE_KEEP` while a skill stands at G1..G10, and the
+  open collect row's specimens up to `GetPlayerBotBiologistReserve` - and
+  `WantsPlayerBotStallItem` takes a counter line only when its whole count fits
+  that need (`IsPlayerBotProgressionOffer`). It is paid from at most 30% of the
+  bot's own spare gold and never over twice `GetPlayerBotShopAskingPrice`
+  (`CanPlayerBotPayForOffer`, asked at the browse and again on the native slot
+  right before the buy). The trip to the first village's counters for it
+  (`ShouldPlayerBotVisitProgressionMarket`, answered through
+  `NeedsPlayerBotM1OnlyServices`, which also holds the bot in M1 for the trip)
+  was written for every bot with a skill at Master and gold - which is nearly
+  the whole population, because a bot reads every book it gets and is always
+  short of twelve - so it ships as `PLAYERBOT_PROGRESSION_TRIP_PER_MILLE` of the
+  live bots at a time, droppers and a player's party left out, with a
+  `PLAYERBOT_MARKET: progression trip` line: the shape of 2.0.60's herb flood
+  caught before it left. The ledger counts books by 50300 alone, so its supply
+  says "some book", not "this skill's book"; measure empty trips before
+  widening the share. `IsPlayerBotSinglyTradedGoods` has no caller, and
+  `BotOfflinePrepareLine` cuts no book or stone, so the new line unit of one
+  for them reaches the classic stall's split only.
+- **The offline shops' mutation budget is one a second for every keeper
+  together.** `BotOfflineBudget` gates every step of every service visit, and
+  the night of 18 September spent 1 863 of its 3 600 an hour on m2zip - 775
+  edits, 720 adds, 269 buys. Codex's reprice slice (four lines every other
+  visit, so repricing could no longer starve restocking) would have asked for
+  more than the whole budget, and a keeper refused a token stands at its stand
+  until the visit's ninety seconds run out. The slice is
+  `PLAYERBOT_OFFLINE_REPRICE_SLICE` lines an hour now, at the ten-minute pace
+  only while a counter's stamp is behind the generation this core runs (a
+  yang rate moved in the panel). A restart is not a change - the first visit
+  stamps the counter with what the core runs: walking every counter again at
+  the fast pace took 284 of the 468 mutations of the first fifteen minutes
+  after one - when every keeper's first visit is queueing for the same
+  budget - and adds fell from 169 to 117, the bots' own purchases from 76 to
+  48. The price of that: the stamp lives in memory, and a new
+  `PLAYERBOT_PRICE_TABLE_VERSION` arrives with a restart and nothing else,
+  so a bumped table reaches the counters at the hourly pace. Persist the
+  stamp (the core's directory is the `game-var` volume) in the release that
+  next bumps it. Left at 0 until a rotation came round, as the first build
+  of this had it, the stamp could not see a rate moved either: a counter of
+  thirty lines at two an hour comes round in fifteen hours. `PLAYERBOT_OFFLINE: budget last_minute granted=
+  refused=` is the measurement, and granted near sixty a minute is a queue -
+  which the ten minutes after a restart are, every keeper's first visit
+  falling inside them (46 to 56 a minute measured on 2.0.72; 2.0.71 had no
+  counter to say). And **a step of a
+  slice is a visit of its own.** The first version kept the visit open between
+  steps with the board still in edit mode; the ACK was back before the next
+  tick, that tick asked `RecvShopRequestEditClientPacket` again, ikashop
+  refused it as `IsBusy(BUSY_SHOP_MANAGE)`, the visit ended there and the slice
+  was finished a service interval later - so on m2zip not one line was added to
+  any counter in the sixteen minutes after a restart, against 169 on 2.0.71.
+  Each step now closes its visit and comes back two seconds on, and the first
+  visit after a spawn restocks first (`nextReprice` 0), as it always did.
+  Anything that mutates an ikashop board twice has to reopen it in between.
 
 ## Engine facts worth not re-deriving
 
