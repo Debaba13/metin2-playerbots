@@ -186,6 +186,15 @@ EOF
 # auth core -- the game binary installed under the name `auth'. PLAYER_SQL
 # points at the account database: auth authenticates, it loads no characters.
 # -----------------------------------------------------------------------------
+#
+# server_version is the oldest client the auth core lets in. The client sends
+# constInfo.GAME_VERSION before it logs in (expansion*10000 + major*100 +
+# minor, plus 1000000 for a release build) and CInputAuth::Login answers
+# "UPDATE" to anything below this. 1.1.0 is the client with four inventory
+# pages (playerbotify.py, apply_four_inventory_pages): a two-page client would
+# draw this world's third bag page as its horse page. Only the auth core gets
+# the token - in a game core the engine also reads it as "a production server"
+# and blocks /reload p and /reload q and the beta_server flag with it.
 render_auth() {
   local d="$VAR_DIR/auth"
   core_skeleton "$d"
@@ -194,6 +203,7 @@ render_auth() {
   cat > "$d/CONFIG" <<EOF
 CHANNEL: 1
 HOSTNAME: Auth01
+server_version: 1010100
 PORT: ${M2_AUTH_PORT}
 P2P_PORT: ${M2_AUTH_P2P_PORT}
 DB_ADDR: 127.0.0.1

@@ -293,6 +293,22 @@ class HuntTest(unittest.TestCase):
 		self.assertEqual(self.hunter.targetVid, 0)
 		self.assertEqual(STATE['walks'][-1], (1000, 1000))
 
+	def test_names_the_target_it_gave_up_on_for_a_minute(self):
+		self.hunter.config['stones'] = 1
+		STATE['where'][55] = (2000, 1000, 0)
+		STATE['distance'][55] = 900
+		self.hunter.OnServerTarget('55')
+		step(self.hunter)
+		self.assertEqual(commands('/autohunt_target'), ['/autohunt_target 2000 1 0 0'])
+		step(self.hunter, 8.5)
+		self.assertEqual(self.hunter.targetVid, 0)
+		del STATE['commands'][:]
+		step(self.hunter, 2.5)
+		self.assertEqual(commands('/autohunt_target'), ['/autohunt_target 2000 1 0 0 55'])
+		del STATE['commands'][:]
+		step(self.hunter, 60.0)
+		self.assertEqual(commands('/autohunt_target'), ['/autohunt_target 2000 1 0 0'])
+
 	def test_an_archer_shoots_from_afar(self):
 		STATE['race'] = 5
 		STATE['group'] = 2

@@ -29,6 +29,12 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * uigameoption.py, uiscript/gameoptiondialog.py - the "Tytuly botow" row of
                     the game options: a bot's personality title or the classic
                     alignment title (playerbot_status_tail.py keeps the choice).
+  * uiscript/inventorywindow.py - four page tabs instead of two; uiinventory.py
+                    already makes one tab per page but the horse page, reading
+                    player.INVENTORY_PAGE_COUNT from the exe.
+  * constinfo.py  - GAME_VERSION 1.1.0: the version the client sends before
+                    logging in, and the server's server_version refuses the
+                    two-page client below it (m2-render-config).
 
 Exact-string edits on the stock CP1250/CRLF files, byte for byte otherwise.
 Idempotent; re-run after a new client package.
@@ -349,6 +355,88 @@ EDITS = {
          b'\t\t\t\t},\r\n'
          b'\t\t\t],\r\n'),
     ],
+    # Four bag pages (playerbotify.py and clientify.py, four pages): the two
+    # large tabs become four small ones, 32 pixels each, spread under the
+    # 160-pixel grid that starts at x 8. The locale has tooltips for the first
+    # two pages only, and a script under the loader's sandbox is no place for
+    # getattr, so the new ones say it themselves.
+    'uiscript/inventorywindow.py': [
+        (b'\t\t\t\t\t"x" : 10,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_large_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_large_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_large_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_1,\r\n',
+         b'\t\t\t\t\t"x" : 12,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_1,\r\n'),
+        (b'\t\t\t\t\t"x" : 10 + 78,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_large_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_large_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_large_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_2,\r\n',
+         b'\t\t\t\t\t"x" : 52,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_2,\r\n'),
+        (b'\t\t\t\t\t\t\t"text" : "II",\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'
+         b'\t\t\t\t},\r\n'
+         b'\r\n'
+         b'\t\t\t\t# {\r\n'
+         b'\t\t\t\t# \t"name" : "Inventory_Tab_03",\r\n',
+         b'\t\t\t\t\t\t\t"text" : "II",\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'
+         b'\t\t\t\t},\r\n'
+         + b''.join(
+             b'\t\t\t\t{\r\n'
+             b'\t\t\t\t\t"name" : "Inventory_Tab_%s",\r\n'
+             b'\t\t\t\t\t"type" : "radio_button",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"x" : %s,\r\n'
+             b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+             b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+             b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+             b'\t\t\t\t\t"tooltip_text" : "%s. Ekwipunek",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"children" :\r\n'
+             b'\t\t\t\t\t(\r\n'
+             b'\t\t\t\t\t\t{\r\n'
+             b'\t\t\t\t\t\t\t"name" : "Inventory_Tab_%s_Print",\r\n'
+             b'\t\t\t\t\t\t\t"type" : "text",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"x" : 0,\r\n'
+             b'\t\t\t\t\t\t\t"y" : 0,\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"all_align" : "center",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"text" : "%s",\r\n'
+             b'\t\t\t\t\t\t},\r\n'
+             b'\t\t\t\t\t),\r\n'
+             b'\t\t\t\t},\r\n' % (num, x, page, num, label)
+             for num, x, page, label in ((b'03', b'92', b'3', b'III'), (b'04', b'132', b'4', b'IV')))
+         + b'\r\n'
+         b'\t\t\t\t# {\r\n'
+         b'\t\t\t\t# \t"name" : "Inventory_Tab_03",\r\n'),
+    ],
+    'constinfo.py': [
+        (b'\t"major" : 0,\r\n\t"minor" : 15,\r\n',
+         b'\t"major" : 1,\r\n\t"minor" : 0,\r\n'),
+    ],
 }
 
 
@@ -363,9 +451,13 @@ def main():
             raise SystemExit('clientrootify: no %s in %s' % (name, args.root))
         data = io.open(src, 'rb').read()
         for old, new in edits:
+            # Already ours, asked first: an edit that inserts after its anchor
+            # keeps the anchor in its result, and asking for the anchor first
+            # put the options' title methods into uigameoption.py twice each
+            # time a published root was the base.
+            if data.count(new) == 1:
+                continue
             if data.count(old) != 1:
-                if data.count(new) == 1:
-                    continue  # already ours (re-run on our own output)
                 raise SystemExit('clientrootify: %s: expected exactly one %r, found %d' % (name, old[:50], data.count(old)))
             data = data.replace(old, new)
         out = os.path.join(OUT, name)

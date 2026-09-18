@@ -198,6 +198,12 @@ APPLY_LABELS = {
 # account.account has no empire column and player.player no bank_value.
 PANEL_ENGINE = os.environ.get("PLAYERBOTS_ENGINE", "r40250").strip().lower()
 ENGINE_MT2009 = PANEL_ENGINE == "mt2009"
+# The bag's pages as the client draws them: forty-five cells a page, two
+# pages on r40250 and four on the mt2009 line since 2.0.74 (cells 90-179,
+# with the horse's page moved to 180). What lies past them - the horse's
+# page, the belt's cells - is no bag page, and pos % 45 drew it over page II.
+INVENTORY_PAGE_SIZE = 45
+INVENTORY_PAGES = 4 if ENGINE_MT2009 else 2
 # Four /manage controls (target bot count, per-map respawn, student chest
 # toggle, +9 refine announcements) read/write quest and wiring files this
 # panel's own patch_*.py scripts (or, for +9 announcements, a hand-added
@@ -2291,7 +2297,7 @@ def player(pid):
         item["bonuses"] += [apply_text(item.get(f"attrtype{i}"), item.get(f"attrvalue{i}")) for i in range(7) if item.get(f"attrtype{i}") and item.get(f"attrvalue{i}")]
         if item["window"] == "EQUIPMENT" and item["pos"] in equipment_slots:
             equipment[equipment_slots[item["pos"]]] = item
-        elif item["window"] == "INVENTORY":
+        elif item["window"] == "INVENTORY" and int(item["pos"] or 0) < INVENTORY_PAGE_SIZE * INVENTORY_PAGES:
             inventory.append(item)
     socket_vnums = sorted({int(item.get(f"socket{i}") or 0) for item in [*items, *safebox] for i in range(3) if int(item.get(f"socket{i}") or 0) > 0})
     stone_defs = {}
@@ -2310,8 +2316,8 @@ def player(pid):
     gear_history = bot_gear_history(pid)
     offline_shop = bot_offline_shop(pid)
     character_stats = character_stat_summary(pid)
-    # Client uiinventory.py: page I begins at slot 0 and page II at slot 45.
-    return render_template("player.html", character=character, equipment=equipment, inventory=inventory, safebox=safebox, has_inventory_page_two=any(int(item["pos"] or 0) >= 45 for item in inventory), has_safebox=bool(safebox), gear_history=gear_history, offline_shop=offline_shop, character_stats=character_stats)
+    # Client uiinventory.py: a page every 45 cells, page I at slot 0.
+    return render_template("player.html", character=character, equipment=equipment, inventory=inventory, safebox=safebox, inventory_pages=INVENTORY_PAGES, has_safebox=bool(safebox), gear_history=gear_history, offline_shop=offline_shop, character_stats=character_stats)
 
 
 # VIP and "Dragon Coins" both turned out to be real, already-working engine

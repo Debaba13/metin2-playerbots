@@ -14,9 +14,11 @@
 # The client cannot list the monsters or the items round its character - the
 # scripts that do this without the server scan a million VIDs a frame - so it
 # asks the server (do_autohunt_target and do_autohunt_loot, playerbotify.py):
-#   "/autohunt_target <range> <stones> <dx> <dy>" -> "AutoHuntTarget <vid>",
+#   "/autohunt_target <range> <stones> <dx> <dy> [<skip>]" -> "AutoHuntTarget <vid>",
 #   the nearest monster this character may hit within the range of the point
-#   the hunt started from, what is already hitting it first;
+#   the hunt started from, what is already hitting it first - and with
+#   <stones> a Metin stone before every monster; <skip> is a target this
+#   hunt gave up on as out of its reach (STUCK_SKIP_SECONDS);
 #   "/autohunt_loot <range> <kinds> <dx> <dy>" -> "AutoHuntLoot <vid> <dx> <dy>",
 #   the nearest item on the ground it may take, of a kind the window keeps.
 # Every place goes both ways as an offset from the character: this client
@@ -101,6 +103,10 @@ ANCHOR_LEASH = 600
 # A target not reached in this long is behind something the walk cannot pass.
 STUCK_SECONDS = 8.0
 STUCK_PAUSE = 2.0
+# And it is named to the server this long afterwards, so the answer is another
+# one: with stones first, the server would send the hunter straight back to
+# the stone behind the same wall (blasty, 18 September).
+STUCK_SKIP_SECONDS = 60.0
 
 DEFAULTS = [
 	('range', 2000), ('stones', 0), ('pickup', 1), ('revive', 1), ('revive_after', 15), ('return', 1),
@@ -243,6 +249,8 @@ class Hunter(object):
 
 	def ResetState(self):
 		self.targetVid = 0
+		self.skipVid = 0
+		self.skipUntil = 0.0
 		self.attacking = False
 		self.anchor = (0, 0)
 		self.nextRequest = 0.0
@@ -383,8 +391,11 @@ class Hunter(object):
 		if now >= self.nextRequest:
 			self.nextRequest = now + TARGET_REQUEST_INTERVAL
 			(dx, dy) = self.AnchorOffset()
-			net.SendChatPacket('/autohunt_target %d %d %d %d' % (
-				self.config['range'], 1 if self.config['stones'] else 0, dx, dy))
+			command = '/autohunt_target %d %d %d %d' % (
+				self.config['range'], 1 if self.config['stones'] else 0, dx, dy)
+			if self.skipVid and now < self.skipUntil:
+				command += ' %d' % self.skipVid
+			net.SendChatPacket(command)
 
 		# An item at the character's feet is taken whatever else is going on.
 		self.PickNearLoot(now)
@@ -413,6 +424,8 @@ class Hunter(object):
 			if not self.approachSince:
 				self.approachSince = now
 			elif now - self.approachSince > STUCK_SECONDS:
+				self.skipVid = vid
+				self.skipUntil = now + STUCK_SKIP_SECONDS
 				self.targetVid = 0
 				self.approachSince = 0.0
 				self.nextRequest = now + STUCK_PAUSE

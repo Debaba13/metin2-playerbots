@@ -1423,6 +1423,9 @@ def main(root):
     apply_bot_warpset(game)
     apply_quest_item_use_log(game)
     apply_quest_item_event_log(game)
+    apply_four_inventory_pages(common, game, db)
+    apply_world_clock(game)
+    apply_auto_hunt_stone_priority(game)
     print('playerbotify: done')
 
 
@@ -2987,6 +2990,549 @@ def apply_bot_warpset(game):
          '\tif (GetDesc() && GetDesc()->IsBot())\n'
          '\t\treturn CPlayerBotManager::instance().WarpBot(this, x, y, lPrivateMapIndex);\n',
          marker='CPlayerBotManager::instance().WarpBot(this, x, y, lPrivateMapIndex);')
+
+
+def apply_four_inventory_pages(common, game, db):
+    """Four bag pages of 45 cells, the horse page after them.
+
+    The package had two pages and the horse inventory as a third
+    (ENABLE_EXTEND_INVEN_SYSTEM); most servers give four, and so do we (Tieru,
+    18 September). Two pages go in at cell 90 and every constant after the bag
+    moves up by them: bag 0-179, horse 180-224, equipment 225-256, dragon soul
+    257-286, belt 287-302, INVENTORY_AND_EQUIP_SLOT_MAX 303. What the engine
+    derives from those constants follows by itself; what does not is here:
+
+    - the item grid holds cell + 1 for every cell, and a belt cell's mark no
+      longer fits a BYTE (bItemGrid, GetInventoryItemGrid, is_empty_page_grid);
+    - a quickslot names a belt cell (TQuickslot.pos), and SyncQuickslot and
+      SwapItem took their cells as BYTEs;
+    - the exchange's room check was two pages and the horse page written out;
+    - a shop sale carried the cell in a byte, so a belt potion sold whatever
+      lay on the bag cell 256 below it;
+    - IsHorseInventory was a chain C++ reads as (cell >= 90) <= 135, true for
+      every inventory cell, so MoveItem refused every move into the belt.
+
+    The rows a world already holds are moved by the db core at boot
+    (__MigrateInventoryFourPages), once, before any game core can load one.
+    The client is clientify.py's half of the change, and CONFIG's
+    server_version (m2-render-config) refuses a client of the old layout.
+    """
+    edit(os.path.join(common, 'length.h'),
+         '\tINVENTORY_DEFAULT_PAGE_COUNT = 2,\n',
+         '\t// Four bag pages, the horse page after them (playerbotify.py,\n'
+         '\t// apply_four_inventory_pages).\n'
+         '\tINVENTORY_DEFAULT_PAGE_COUNT = 4,\n',
+         marker='\tINVENTORY_DEFAULT_PAGE_COUNT = 4,\n')
+    edit(os.path.join(common, 'tables.h'),
+         'typedef struct SQuickslot\n{\n\tBYTE\ttype;\n\tBYTE\tpos;\n} TQuickslot;\n',
+         'typedef struct SQuickslot\n{\n\tBYTE\ttype;\n'
+         '\t// A WORD since the four inventory pages put the belt at 287-302\n'
+         '\t// (playerbotify.py); the db core widens the stored rows once.\n'
+         '\tWORD\tpos;\n} TQuickslot;\n',
+         marker='\tWORD\tpos;\n} TQuickslot;\n')
+
+    char_h = os.path.join(game, 'char.h')
+    edit(char_h,
+         '\tstd::array<BYTE,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n',
+         '\t// cell + 1 for every cell, and the belt runs to 302 (four pages).\n'
+         '\tstd::array<WORD,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n',
+         marker='\tstd::array<WORD,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n')
+    edit(char_h,
+         '\t\tvoid\t\t\tSyncQuickslot(BYTE bType, BYTE bOldPos, BYTE bNewPos);\n',
+         '\t\tvoid\t\t\tSyncQuickslot(BYTE bType, WORD bOldPos, WORD bNewPos);\n')
+    edit(char_h,
+         '\t\tBYTE* GetInventoryItemGrid() { return (m_PlayerSlots) ? m_PlayerSlots->bItemGrid.data() : nullptr; }\n',
+         '\t\tWORD* GetInventoryItemGrid() { return (m_PlayerSlots) ? m_PlayerSlots->bItemGrid.data() : nullptr; }\n')
+    edit(char_h,
+         '\t\tbool\t\t\tSwapItem(BYTE bCell, BYTE bDestCell);\n',
+         '\t\tbool\t\t\tSwapItem(WORD bCell, WORD bDestCell);\n')
+
+    char_item = os.path.join(game, 'char_item.cpp')
+    edit(char_item,
+         '\t\t\tBYTE* gridPtr = m_PlayerSlots->bItemGrid.data();\n',
+         '\t\t\tWORD* gridPtr = m_PlayerSlots->bItemGrid.data();\n')
+    edit(char_item,
+         'bool CHARACTER::SwapItem(BYTE bCell, BYTE bDestCell)\n',
+         'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n')
+    edit(char_item,
+         '\t\tBYTE bInvenCell = item1->GetCell();\n',
+         '\t\tWORD bInvenCell = item1->GetCell();\n')
+    edit(char_item,
+         '\t\tBYTE bCell1 = item1->GetCell();\n\t\tBYTE bCell2 = item2->GetCell();\n',
+         '\t\tWORD bCell1 = item1->GetCell();\n\t\tWORD bCell2 = item2->GetCell();\n')
+
+    edit(os.path.join(game, 'utils.h'),
+         'extern bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n',
+         'extern bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n'
+         "// The character's item grid is a WORD one since the four pages (playerbotify.py).\n"
+         'extern bool is_empty_page_grid(WORD* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n',
+         marker='extern bool is_empty_page_grid(WORD* grid,')
+    utils_cpp = os.path.join(game, 'utils.cpp')
+    edit(utils_cpp,
+         'bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n{\n',
+         "// One body for the character's WORD item grid and the offline shop's BYTE\n"
+         '// scratch copy of the bag (playerbotify.py, apply_four_inventory_pages).\n'
+         'template <typename TGridCell>\n'
+         'static bool is_empty_page_grid_t(const TGridCell* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n{\n',
+         marker='static bool is_empty_page_grid_t(const TGridCell* grid,')
+    edit(utils_cpp,
+         '\t\tBYTE bPage = bCell / (dwGridMaxNum / bPageCount);\n',
+         '\t\tint bPage = bCell / (dwGridMaxNum / bPageCount);\n')
+    edit(utils_cpp,
+         '\t\t\tBYTE p = bCell + (dwGridWidth * j);\n',
+         '\t\t\tint p = bCell + (dwGridWidth * j);\n')
+    edit(utils_cpp,
+         '\t\t} while (++j < bSize);\n\t}\n\treturn true;\n}\n\nstd::string decrypt_aes_hash(',
+         '\t\t} while (++j < bSize);\n\t}\n\treturn true;\n}\n\n'
+         'bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n'
+         '{\n'
+         '\treturn is_empty_page_grid_t(grid, bCell, bSize, iExceptionCell, dwGridWidth, dwGridHeight, bPageCount, check_inventory, customGridSize);\n'
+         '}\n\n'
+         'bool is_empty_page_grid(WORD* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n'
+         '{\n'
+         '\treturn is_empty_page_grid_t(grid, bCell, bSize, iExceptionCell, dwGridWidth, dwGridHeight, bPageCount, check_inventory, customGridSize);\n'
+         '}\n\n'
+         'std::string decrypt_aes_hash(',
+         marker='bool is_empty_page_grid(WORD* grid, WORD bCell,')
+
+    edit(os.path.join(game, 'char.cpp'),
+         '\treturn cell.window_type == INVENTORY && cell.cell >= INVENTORY_DEFAULT_MAX_NUM <= INVENTORY_MAX_NUM;\n',
+         '\t// The chain this replaces read as (cell >= 90) <= 135, true for every\n'
+         '\t// inventory cell, and MoveItem refused each move into the belt with it.\n'
+         '\treturn cell.window_type == INVENTORY && cell.cell >= INVENTORY_DEFAULT_MAX_NUM && cell.cell < INVENTORY_MAX_NUM;\n',
+         marker='cell.cell >= INVENTORY_DEFAULT_MAX_NUM && cell.cell < INVENTORY_MAX_NUM;\n')
+
+    edit(os.path.join(game, 'char_quickslot.cpp'),
+         'void CHARACTER::SyncQuickslot(BYTE bType, BYTE bOldPos, BYTE bNewPos)\n',
+         'void CHARACTER::SyncQuickslot(BYTE bType, WORD bOldPos, WORD bNewPos)\n')
+
+    exchange = os.path.join(game, 'exchange.cpp')
+    edit(exchange,
+         '\tstatic CGrid s_grid1(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 1\n'
+         '\tstatic CGrid s_grid2(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 2\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\tstatic CGrid s_grid3(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 3\n'
+         '\t//static CGrid s_grid4(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 4\n'
+         '#endif\n'
+         '\n'
+         '\ts_grid1.Clear();\n'
+         '\ts_grid2.Clear();\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\ts_grid3.Clear();\n'
+         '\t//s_grid4.Clear();\n'
+         '#endif\n'
+         '\n'
+         '\tLPCHARACTER\tvictim = GetCompany()->GetOwner();\n'
+         '\tLPITEM item;\n'
+         '\n'
+         '\tint i;\n'
+         '\n'
+         '\tfor (i = 0; i < INVENTORY_PAGE_SIZE*1; ++i)\n'
+         '\t{\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid1.Put(i, 1, item->GetSize());\n'
+         '\t}\n'
+         '\tfor (i = INVENTORY_PAGE_SIZE*1; i < INVENTORY_PAGE_SIZE*2; ++i)\n'
+         '\t{\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid2.Put(i - INVENTORY_PAGE_SIZE*1, 1, item->GetSize());\n'
+         '\t}\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\tint maxHorseInventorySize = victim->GetInventoryMaxCount();\n'
+         '\tfor (i = INVENTORY_PAGE_SIZE*2; i < INVENTORY_PAGE_SIZE*3; ++i)\n'
+         '\t{\n'
+         '\t\tif (i >= maxHorseInventorySize)\n'
+         '\t\t{\n'
+         '\t\t\ts_grid3.Put(i - INVENTORY_PAGE_SIZE * 2, 1, 1);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid3.Put(i - INVENTORY_PAGE_SIZE*2, 1, item->GetSize());\n'
+         '\t}\n'
+         '\t//for (i = INVENTORY_PAGE_SIZE*3; i < INVENTORY_PAGE_SIZE*4; ++i)\n'
+         '\t//{\n'
+         '\t//\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t//\t\tcontinue;\n'
+         '\n'
+         '\t//\ts_grid4.Put(i - INVENTORY_PAGE_SIZE*3, 1, item->GetSize());\n'
+         '\t//}\n'
+         '#endif\n',
+         '\t// One grid a page, the horse page last, each placed on by itself: an\n'
+         '\t// item never stands across two pages (playerbotify.py, four pages).\n'
+         '\tstatic CGrid * s_apGrid[INVENTORY_PAGE_COUNT] = {};\n'
+         '\tfor (int page = 0; page < INVENTORY_PAGE_COUNT; ++page)\n'
+         '\t{\n'
+         '\t\tif (!s_apGrid[page])\n'
+         '\t\t\ts_apGrid[page] = M2_NEW CGrid(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW);\n'
+         '\t\ts_apGrid[page]->Clear();\n'
+         '\t}\n'
+         '\n'
+         '\tLPCHARACTER\tvictim = GetCompany()->GetOwner();\n'
+         '\tLPITEM item;\n'
+         '\n'
+         '\tint i;\n'
+         '\n'
+         '\t// A row of the horse page the victim cannot use takes nothing.\n'
+         '\tconst int iUsableCells = victim->GetInventoryMaxCount();\n'
+         '\tfor (i = 0; i < INVENTORY_MAX_NUM; ++i)\n'
+         '\t{\n'
+         '\t\tCGrid * pkGrid = s_apGrid[i / INVENTORY_PAGE_SIZE];\n'
+         '\t\tconst int iLocal = i % INVENTORY_PAGE_SIZE;\n'
+         '\n'
+         '\t\tif (i >= iUsableCells)\n'
+         '\t\t{\n'
+         '\t\t\tpkGrid->Put(iLocal, 1, 1);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\tpkGrid->Put(iLocal, 1, item->GetSize());\n'
+         '\t}\n',
+         marker='\tstatic CGrid * s_apGrid[INVENTORY_PAGE_COUNT] = {};\n')
+    edit(exchange,
+         '\t\t\tint iPos;\n'
+         '\n'
+         '\t\t\tif ((iPos = s_grid1.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid1.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '\t\t\telse if ((iPos = s_grid2.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid2.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\t\t\telse if ((iPos = s_grid3.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid3.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '\t\t\t//else if ((iPos = s_grid4.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t//{\n'
+         '\t\t\t//\ts_grid4.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t//}\n'
+         '#endif\n'
+         '\t\t\telse\n'
+         '\t\t\t\treturn false;\n',
+         '\t\t\tint iPos = -1;\n'
+         '\n'
+         '\t\t\tfor (int page = 0; page < INVENTORY_PAGE_COUNT; ++page)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif ((iPos = s_apGrid[page]->FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\ts_apGrid[page]->Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t\t\tbreak;\n'
+         '\t\t\t\t}\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tif (iPos < 0)\n'
+         '\t\t\t\treturn false;\n',
+         marker='\t\t\t\tif ((iPos = s_apGrid[page]->FindBlank(1, item->GetSize())) >= 0)\n')
+
+    edit(os.path.join(game, 'input_main.cpp'),
+         '\t\t\t\tif (uiBytes < sizeof(BYTE) + sizeof(ITEM_COUNT))\n'
+         '\t\t\t\t\treturn -1;\n'
+         '\n'
+         '\t\t\t\tBYTE pos = *(c_pData++);\n'
+         '\t\t\t\tITEM_COUNT count = *(c_pData);\n'
+         '\n'
+         '\t\t\t\tsys_log(0, "INPUT: %s SHOP: SELL2", ch->GetName());\n'
+         '\t\t\t\tCShopManager::instance().Sell(ch, pos, count);\n'
+         '\t\t\t\treturn sizeof(BYTE) + sizeof(ITEM_COUNT);\n',
+         '\t\t\t\t// The cell is a WORD since the four inventory pages put the belt\n'
+         '\t\t\t\t// at 287-302, and the count is read whole: its low byte alone\n'
+         '\t\t\t\t// made a thousand arrows 232 (playerbotify.py, clientify.py).\n'
+         '\t\t\t\tif (uiBytes < sizeof(WORD) + sizeof(ITEM_COUNT))\n'
+         '\t\t\t\t\treturn -1;\n'
+         '\n'
+         '\t\t\t\tWORD pos;\n'
+         '\t\t\t\tmemcpy(&pos, c_pData, sizeof(WORD));\n'
+         '\t\t\t\tITEM_COUNT count;\n'
+         '\t\t\t\tmemcpy(&count, c_pData + sizeof(WORD), sizeof(ITEM_COUNT));\n'
+         '\n'
+         '\t\t\t\tsys_log(0, "INPUT: %s SHOP: SELL2", ch->GetName());\n'
+         '\t\t\t\tCShopManager::instance().Sell(ch, pos, count);\n'
+         '\t\t\t\treturn sizeof(WORD) + sizeof(ITEM_COUNT);\n',
+         marker='\t\t\t\tmemcpy(&count, c_pData + sizeof(WORD), sizeof(ITEM_COUNT));\n')
+    edit(os.path.join(game, 'shop_manager.h'),
+         '\tvoid\tSell(LPCHARACTER ch, BYTE bCell, ITEM_COUNT bCount=0);\n',
+         '\tvoid\tSell(LPCHARACTER ch, WORD bCell, ITEM_COUNT bCount=0);\n')
+    edit(os.path.join(game, 'shop_manager.cpp'),
+         'void CShopManager::Sell(LPCHARACTER ch, BYTE bCell, ITEM_COUNT bCount)\n',
+         'void CShopManager::Sell(LPCHARACTER ch, WORD bCell, ITEM_COUNT bCount)\n')
+
+    client_manager = os.path.join(db, 'ClientManager.cpp')
+    edit(client_manager,
+         'bool CClientManager::Initialize()\n',
+         '// Four inventory pages (playerbotify.py, apply_four_inventory_pages): two\n'
+         '// bag pages went in at cell 90, so every INVENTORY row at 90 or above - the\n'
+         '// horse page, the belt - moves up by those 90 cells, and a quickslot\'s\n'
+         '// position became a WORD so that it can name a belt cell again. It is done\n'
+         '// here, once, before a game core can ask for a character: this is the one\n'
+         '// process that never runs beside an older build (the migrate container does,\n'
+         '// while an update recreates the stack), and a character loaded by the old\n'
+         '// layout and saved by the new one would keep its horse page on page three.\n'
+         '// A failure stops the db core - starting the new layout on the old rows is\n'
+         '// that same mistake - and InnoDB takes the half-done work back.\n'
+         'static bool __FourPagesQuery(const char * c_pszQuery, std::unique_ptr<SQLMsg> * pMsg = NULL)\n'
+         '{\n'
+         '\tstd::unique_ptr<SQLMsg> msg = CDBManager::instance().DirectQuery(c_pszQuery);\n'
+         '\tif (msg->uiSQLErrno != 0)\n'
+         '\t{\n'
+         '\t\tsys_err("INVENTORY_PAGES: query failed (errno %u): %s", msg->uiSQLErrno, c_pszQuery);\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\tif (pMsg)\n'
+         '\t\t*pMsg = std::move(msg);\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'static bool __MigrateInventoryFourPagesInside(const char * c_pszPostfix)\n'
+         '{\n'
+         '\tconst int c_iShift = INVENTORY_PAGE_SIZE * 2;\n'
+         '\tconst unsigned int c_uiOldQuickslotBytes = 2 * QUICKSLOT_MAX_NUM;\n'
+         '\tchar szQuery[1024];\n'
+         '\n'
+         '\t// What is about to move, for the log: the old horse page, the old belt.\n'
+         '\tstd::unique_ptr<SQLMsg> count;\n'
+         '\tsnprintf(szQuery, sizeof(szQuery),\n'
+         '\t\t\t"SELECT COUNT(*), COALESCE(SUM(pos >= %d AND pos < %d), 0), COALESCE(SUM(pos >= %d AND pos < %d), 0)"\n'
+         '\t\t\t" FROM item%s WHERE window = \'INVENTORY\' AND pos >= %d",\n'
+         '\t\t\tINVENTORY_DEFAULT_MAX_NUM - c_iShift, INVENTORY_MAX_NUM - c_iShift,\n'
+         '\t\t\tBELT_INVENTORY_SLOT_START - c_iShift, BELT_INVENTORY_SLOT_END - c_iShift,\n'
+         '\t\t\tc_pszPostfix, c_iShift);\n'
+         '\tif (!__FourPagesQuery(szQuery, &count))\n'
+         '\t\treturn false;\n'
+         '\tunsigned int uiRows = 0, uiHorse = 0, uiBelt = 0;\n'
+         '\tif (count->Get() && count->Get()->pSQLResult)\n'
+         '\t{\n'
+         '\t\tMYSQL_ROW row = mysql_fetch_row(count->Get()->pSQLResult);\n'
+         '\t\tif (row && row[0] && row[1] && row[2])\n'
+         '\t\t{\n'
+         '\t\t\tuiRows = strtoul(row[0], NULL, 10);\n'
+         '\t\t\tuiHorse = strtoul(row[1], NULL, 10);\n'
+         '\t\t\tuiBelt = strtoul(row[2], NULL, 10);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\t// Highest first, although no key forbids two rows on one cell for a moment.\n'
+         '\tsnprintf(szQuery, sizeof(szQuery),\n'
+         '\t\t\t"UPDATE item%s SET pos = pos + %d WHERE window = \'INVENTORY\' AND pos >= %d ORDER BY pos DESC",\n'
+         '\t\t\tc_pszPostfix, c_iShift, c_iShift);\n'
+         '\tif (!__FourPagesQuery(szQuery))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\t// A quickslot row is two bytes a slot in the old form and three in the new,\n'
+         '\t// so its length says which one it is.\n'
+         '\tstd::unique_ptr<SQLMsg> slots;\n'
+         '\tsnprintf(szQuery, sizeof(szQuery), "SELECT id, quickslot FROM player%s WHERE LENGTH(quickslot) = %u",\n'
+         '\t\t\tc_pszPostfix, c_uiOldQuickslotBytes);\n'
+         '\tif (!__FourPagesQuery(szQuery, &slots))\n'
+         '\t\treturn false;\n'
+         '\tunsigned int uiQuickslots = 0;\n'
+         '\tif (slots->Get() && slots->Get()->pSQLResult)\n'
+         '\t{\n'
+         '\t\tMYSQL_RES * pRes = slots->Get()->pSQLResult;\n'
+         '\t\tMYSQL_ROW row;\n'
+         '\t\twhile ((row = mysql_fetch_row(pRes)))\n'
+         '\t\t{\n'
+         '\t\t\tunsigned long * pLengths = mysql_fetch_lengths(pRes);\n'
+         '\t\t\tif (!row[0] || !row[1] || !pLengths || pLengths[1] != c_uiOldQuickslotBytes)\n'
+         '\t\t\t\tcontinue;\n'
+         '\n'
+         '\t\t\tconst BYTE * pOld = (const BYTE *) row[1];\n'
+         '\t\t\tTQuickslot aSlot[QUICKSLOT_MAX_NUM];\n'
+         '\t\t\tmemset(aSlot, 0, sizeof(aSlot));\n'
+         '\t\t\tfor (int i = 0; i < QUICKSLOT_MAX_NUM; ++i)\n'
+         '\t\t\t{\n'
+         '\t\t\t\taSlot[i].type = pOld[i * 2];\n'
+         '\t\t\t\tWORD wPos = pOld[i * 2 + 1];\n'
+         '\t\t\t\tif (aSlot[i].type == QUICKSLOT_TYPE_ITEM && wPos >= c_iShift)\n'
+         '\t\t\t\t\twPos += c_iShift;\n'
+         '\t\t\t\taSlot[i].pos = wPos;\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tchar szEscaped[sizeof(aSlot) * 2 + 1];\n'
+         '\t\t\tCDBManager::instance().EscapeString(szEscaped, aSlot, sizeof(aSlot));\n'
+         '\t\t\tchar szUpdate[512];\n'
+         '\t\t\tsnprintf(szUpdate, sizeof(szUpdate), "UPDATE player%s SET quickslot = \'%s\' WHERE id = %u",\n'
+         '\t\t\t\t\tc_pszPostfix, szEscaped, (unsigned int) strtoul(row[0], NULL, 10));\n'
+         '\t\t\tif (!__FourPagesQuery(szUpdate))\n'
+         '\t\t\t\treturn false;\n'
+         '\t\t\t++uiQuickslots;\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\tif (!__FourPagesQuery("INSERT INTO playerbot_migrations (name, done_at) VALUES (\'inventory_four_pages\', NOW())"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tsys_log(0, "INVENTORY_PAGES: four pages: %u item rows moved up by %d (horse page %u, belt %u, other %u), %u quickslot rows widened",\n'
+         '\t\t\tuiRows, c_iShift, uiHorse, uiBelt, uiRows - uiHorse - uiBelt, uiQuickslots);\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'static bool __MigrateInventoryFourPages(const char * c_pszPostfix)\n'
+         '{\n'
+         '\tstatic_assert(sizeof(TQuickslot) == 3, "a quickslot is a BYTE type and a WORD position");\n'
+         '\n'
+         '\tif (!__FourPagesQuery("CREATE TABLE IF NOT EXISTS playerbot_migrations (name VARCHAR(64) NOT NULL PRIMARY KEY, done_at DATETIME NOT NULL) ENGINE=InnoDB"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tstd::unique_ptr<SQLMsg> done;\n'
+         '\tif (!__FourPagesQuery("SELECT 1 FROM playerbot_migrations WHERE name = \'inventory_four_pages\'", &done))\n'
+         '\t\treturn false;\n'
+         '\tif (done->Get() && done->Get()->uiNumRows > 0)\n'
+         '\t\treturn true;\n'
+         '\n'
+         '\tif (!__FourPagesQuery("START TRANSACTION"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tif (!__MigrateInventoryFourPagesInside(c_pszPostfix) || !__FourPagesQuery("COMMIT"))\n'
+         '\t{\n'
+         '\t\t__FourPagesQuery("ROLLBACK");\n'
+         '\t\tsys_err("INVENTORY_PAGES: the move to four inventory pages failed and was rolled back");\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'bool CClientManager::Initialize()\n',
+         marker='static bool __MigrateInventoryFourPages(const char * c_pszPostfix)\n')
+    edit(client_manager,
+         '\t//END_ITEM_UNIQUE_ID\n',
+         '\t//END_ITEM_UNIQUE_ID\n'
+         '\n'
+         '\t// Before any game core connects (playerbotify.py, four inventory pages).\n'
+         '\tif (!__MigrateInventoryFourPages(GetTablePostfix()))\n'
+         '\t{\n'
+         '\t\tfprintf(stderr, "Inventory layout migration failed. Exit DBCache Server\\n");\n'
+         '\t\treturn false;\n'
+         '\t}\n',
+         marker='\tif (!__MigrateInventoryFourPages(GetTablePostfix()))\n')
+
+
+def apply_world_clock(game):
+    """Every core keeps the world's clock, bots or none.
+
+    The manager's Update - the weights file, the timed events and the chest
+    gate among everything else - only starts with the first bot a core loads,
+    and every core rolls its own Moonlight chests (CreateDropItem). A core
+    that hosts no bot therefore never shut the chests outside their event
+    (first and game2 under the unified layout: "mimo harmonogramu blaskow
+    dropia one takze poza nim", NerrVoVy, 18 September).
+    CPlayerBotManager::StartWorldClock runs that part on a clock of its own
+    from MapLocations, the first point a core knows its maps, until Update
+    takes over.
+    """
+    edit(os.path.join(game, 'input_db.cpp'),
+         '\t// single number, split between the kingdoms that have registered identities.\n'
+         '\tif (CPlayerBotManager::instance().GetCount() == 0)\n',
+         '\t// single number, split between the kingdoms that have registered identities.\n'
+         '\t//\n'
+         '\t// Every core keeps the world\'s clock - the weights and the timed events\n'
+         '\t// with their chest gate - whether or not it will host a single bot\n'
+         '\t// (CPlayerBotManager::StartWorldClock, playerbotify.py).\n'
+         '\tCPlayerBotManager::instance().StartWorldClock();\n'
+         '\tif (CPlayerBotManager::instance().GetCount() == 0)\n',
+         marker='\tCPlayerBotManager::instance().StartWorldClock();\n')
+
+
+def apply_auto_hunt_stone_priority(game):
+    """Auto Lowy's "Metiny" is a priority, not a permission.
+
+    The window's switch only let stones into the pool, where the nearest
+    monster beat them: "ten priorytet na metiny by sie przydal, bo aktualnie
+    troche zbedna opcja" (blasty, 18 September). With it on, any stone in range
+    comes before every monster, the nearest stone first. And a stone the
+    client could not reach - uiautohunt.py gives a target up after
+    STUCK_SECONDS - is named in a fifth argument and passed over, or the
+    priority would send the hunter back to the same wall for ever.
+    """
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         "// has one. Monsters, and Metin stones when the window asks for them; only what\n"
+         "// battle_is_attackable lets this character hit; within the range of the point\n"
+         "// the hunt started from. What is already hitting the hunter comes first, then\n"
+         "// the nearest. The answer is \"AutoHuntTarget <vid>\", zero for nothing.\n",
+         "// has one. Monsters, and Metin stones when the window asks for them; only what\n"
+         "// battle_is_attackable lets this character hit; within the range of the point\n"
+         "// the hunt started from. What is already hitting the hunter comes first, then\n"
+         "// the nearest - except that a stone, when the window asks for stones, comes\n"
+         "// before every monster (playerbotify.py, apply_auto_hunt_stone_priority).\n"
+         "// A fifth argument names a VID the client gave up on as out of its reach.\n"
+         "// The answer is \"AutoHuntTarget <vid>\", zero for nothing.\n",
+         marker="// A fifth argument names a VID the client gave up on as out of its reach.\n")
+    edit(path,
+         '\tbool\t\tm_bStones;\n'
+         '\tLPCHARACTER\tm_pkBest;\n'
+         '\tint\t\tm_iBestScore;\n'
+         '\n'
+         '\tFAutoHuntTarget(LPCHARACTER ch, int anchorX, int anchorY, int range, bool stones)\n'
+         '\t\t: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_bStones(stones),\n'
+         '\t\tm_pkBest(NULL), m_iBestScore(0x7fffffff)\n',
+         '\tbool\t\tm_bStones;\n'
+         '\tDWORD\t\tm_dwSkipVID;\n'
+         '\tLPCHARACTER\tm_pkBest;\n'
+         '\tint\t\tm_iBestScore;\n'
+         '\n'
+         '\tFAutoHuntTarget(LPCHARACTER ch, int anchorX, int anchorY, int range, bool stones, DWORD skipVID)\n'
+         '\t\t: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_bStones(stones),\n'
+         '\t\tm_dwSkipVID(skipVID), m_pkBest(NULL), m_iBestScore(0x7fffffff)\n',
+         marker='\tDWORD\t\tm_dwSkipVID;\n')
+    edit(path,
+         '\t\tif (victim == m_ch || victim->IsDead())\n'
+         '\t\t\treturn;\n'
+         '\t\tif (!victim->IsMonster() && !(m_bStones && victim->IsStone()))\n',
+         '\t\tif (victim == m_ch || victim->IsDead())\n'
+         '\t\t\treturn;\n'
+         '\t\tif (m_dwSkipVID && (DWORD) victim->GetVID() == m_dwSkipVID)\n'
+         '\t\t\treturn;\n'
+         '\t\tif (!victim->IsMonster() && !(m_bStones && victim->IsStone()))\n',
+         marker='\t\tif (m_dwSkipVID && (DWORD) victim->GetVID() == m_dwSkipVID)\n')
+    edit(path,
+         '\t\tif (victim->GetVictim() == m_ch)\n'
+         '\t\t\tscore /= 4;\n'
+         '\t\tif (score < m_iBestScore)\n',
+         '\t\tif (victim->GetVictim() == m_ch)\n'
+         '\t\t\tscore /= 4;\n'
+         '\t\t// Asked for, a stone outranks every monster; the nearest stone wins.\n'
+         '\t\tif (m_bStones && victim->IsStone())\n'
+         '\t\t\tscore -= 1000000;\n'
+         '\t\tif (score < m_iBestScore)\n',
+         marker='\t\t// Asked for, a stone outranks every monster; the nearest stone wins.\n')
+    edit(path,
+         '\tchar arg1[256], arg2[256], arg3[256], arg4[256];\n'
+         '\tconst char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));\n'
+         '\ttwo_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));\n'
+         '\n'
+         '\tif (!ch->GetSectree() || ch->IsDead())\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget 0");\n',
+         '\tchar arg1[256], arg2[256], arg3[256], arg4[256], arg5[256];\n'
+         '\tconst char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));\n'
+         '\trest = two_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));\n'
+         '\tone_argument(rest, arg5, sizeof(arg5));\n'
+         '\n'
+         '\tif (!ch->GetSectree() || ch->IsDead())\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget 0");\n',
+         marker='\tone_argument(rest, arg5, sizeof(arg5));\n')
+    edit(path,
+         '\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0);\n',
+         '\t// The VID the client gave up on, if it names one (uiautohunt.py).\n'
+         '\tDWORD skipVID = 0;\n'
+         '\tif (*arg5)\n'
+         '\t\tstr_to_number(skipVID, arg5);\n'
+         '\n'
+         '\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n',
+         marker='\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n')
 
 
 if __name__ == '__main__':

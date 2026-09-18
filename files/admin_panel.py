@@ -3385,10 +3385,10 @@ T.update({
  "ai_scroll_off":{"en":"no restriction","pl":"bez ograniczenia","de":"keine Einschränkung","tr":"kısıtlama yok"},
  "ai_scroll_top":{"en":"only the upgrade to +9","pl":"tylko ulepszenie na +9","de":"nur die Verbesserung auf +9","tr":"yalnızca +9 yükseltmesi"},
  "ai_chest":     {"en":"Moonlight Treasure Chests","pl":"Szkatułki Księżycowe","de":"Mondschein-Schatztruhen","tr":"Ay Işığı Sandıkları"},
- "ai_chest_help":{"en":"How often a chest drops, in thousandths: per monster kill, and per broken Metin stone. The game default is 10‰ (1%) and 300‰ (30%); more chests mean more bonus scrolls, speed potions and Blessing Scrolls for the bots. Applies within five seconds, to bots and players alike.",
-                  "pl":"Jak często wypada szkatułka, w promilach: z zabitego potwora i z rozbitego Metina. Domyślnie w grze 10‰ (1%) i 300‰ (30%); więcej szkatułek to więcej zwojów bonusów, mikstur szybkości i Zwojów Błogosławieństwa u botów. Działa w pięć sekund, dla botów i graczy tak samo.",
-                  "de":"Wie oft eine Truhe fällt, in Promille: pro getötetem Monster und pro zerstörtem Metin. Spielstandard 10‰ (1%) und 300‰ (30%); mehr Truhen heißt mehr Bonusrollen, Tempotränke und Segensrollen bei den Bots. Gilt binnen fünf Sekunden, für Bots wie Spieler.",
-                  "tr":"Sandığın ne sıklıkla düştüğü, binde olarak: öldürülen canavar başına ve kırılan Metin başına. Oyun varsayılanı 10‰ (%1) ve 300‰ (%30); daha çok sandık, botlarda daha çok bonus parşömeni, hız iksiri ve Kutsama Parşömeni demek. Beş saniye içinde, bot ve oyuncu için aynı şekilde uygulanır."},
+ "ai_chest_help":{"en":"How often a chest drops while a chest event runs (the Events page), in thousandths: per monster kill, and per broken Metin stone. Outside an event no chest drops. The game default is 10‰ (1%) and 300‰ (30%); more chests mean more bonus scrolls, speed potions and Blessing Scrolls for the bots. Applies within five seconds, to bots and players alike.",
+                  "pl":"Jak często wypada szkatułka, gdy trwa event szkatułek (strona Eventy), w promilach: z zabitego potwora i z rozbitego Metina. Poza eventem szkatułki nie wypadają. Domyślnie w grze 10‰ (1%) i 300‰ (30%); więcej szkatułek to więcej zwojów bonusów, mikstur szybkości i Zwojów Błogosławieństwa u botów. Działa w pięć sekund, dla botów i graczy tak samo.",
+                  "de":"Wie oft eine Truhe fällt, solange ein Truhen-Event läuft (Seite Events), in Promille: pro getötetem Monster und pro zerstörtem Metin. Außerhalb eines Events fällt keine Truhe. Spielstandard 10‰ (1%) und 300‰ (30%); mehr Truhen heißt mehr Bonusrollen, Tempotränke und Segensrollen bei den Bots. Gilt binnen fünf Sekunden, für Bots wie Spieler.",
+                  "tr":"Bir sandık etkinliği sürerken (Etkinlikler sayfası) sandığın ne sıklıkla düştüğü, binde olarak: öldürülen canavar başına ve kırılan Metin başına. Etkinlik dışında sandık düşmez. Oyun varsayılanı 10‰ (%1) ve 300‰ (%30); daha çok sandık, botlarda daha çok bonus parşömeni, hız iksiri ve Kutsama Parşömeni demek. Beş saniye içinde, bot ve oyuncu için aynı şekilde uygulanır."},
  "ev_nav":       {"en":"\U0001F389 Events","pl":"\U0001F389 Eventy","de":"\U0001F389 Events","tr":"\U0001F389 Etkinlikler"},
  "ev_open":      {"en":"\U0001F389 Open events","pl":"\U0001F389 Otw\u00f3rz eventy","de":"\U0001F389 Events \u00f6ffnen","tr":"\U0001F389 Etkinlikleri a\u00e7"},
  "gl_nav":       {"en":"\U0001F6E1 Guilds","pl":"\U0001F6E1 Gildie","de":"\U0001F6E1 Gilden","tr":"\U0001F6E1 Loncalar"},
@@ -7394,6 +7394,9 @@ function openBotModal(pid) {
       }
 
       g_currentInvData = data;
+      // Every bot opens on page I, whichever page the last one was left on:
+      // the tab strip below is built with I active.
+      g_currentInvTab = 0;
       var p = data.player;
       var eq = data.equipment || {};
       var inv = data.inventory || [];
@@ -7579,11 +7582,15 @@ function openBotModal(pid) {
 
       html += '</div>'; // End Equipment Section
 
-      // Inventory Tabs (Tab I & Tab II)
+      // Inventory tabs: two pages on r40250, four on the mt2009 line since
+      // 2.0.74 (cells 90-179). What lies past the bag - the horse's page, the
+      // belt's cells - is on no tab.
       html += '<div class="m2-inv-tabs">' +
               '<button type="button" class="m2-tab-btn active" onclick="switchInvTab(0)">I</button>' +
               '<button type="button" class="m2-tab-btn" onclick="switchInvTab(1)">II</button>' +
-              '</div>';
+{% if engine_mt2009 %}              '<button type="button" class="m2-tab-btn" onclick="switchInvTab(2)">III</button>' +
+              '<button type="button" class="m2-tab-btn" onclick="switchInvTab(3)">IV</button>' +
+{% endif %}              '</div>';
 
       // 5x9 Inventory Grid Frame
       html += '<div class="m2-grid-frame">' +

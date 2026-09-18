@@ -661,9 +661,10 @@ window = {
 					"down_image" : ROOT_PATH + "middle_button_03.sub",
 				},
 
-				## BOT TITLES (playerbot_status_tail.py): the personality or the
-				## classic alignment title. The strings are CP1250 escapes so the
-				## file stays ASCII like the rest of the root.
+				## BOT PERSONALITIES (playerbot_status_tail.py): shown in their own
+				## row over each bot's head, independent of the classic alignment
+				## title (ranga). The strings are CP1250 escapes so the file stays
+				## ASCII like the rest of the root.
 				{
 					"name" : "bot_title_text",
 					"type" : "text",
@@ -693,7 +694,7 @@ window = {
 					"x" : LINE_DATA_X+MIDDLE_BUTTON_WIDTH,
 					"y" : 382,
 
-					"text" : "Klasyczne",
+					"text" : "Wy³¹czone",
 
 					"default_image" : ROOT_PATH + "middle_button_01.sub",
 					"over_image" : ROOT_PATH + "middle_button_02.sub",

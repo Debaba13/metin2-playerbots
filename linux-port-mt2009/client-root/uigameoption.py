@@ -203,9 +203,6 @@ class OptionDialog(ui.ScriptWindow):
 		self.botTitleButtonList[0].SAFE_SetEvent(self.__OnClickBotTitleButton, 1)
 		self.botTitleButtonList[1].SAFE_SetEvent(self.__OnClickBotTitleButton, 0)
 
-		self.botTitleButtonList[0].SAFE_SetEvent(self.__OnClickBotTitleButton, 1)
-		self.botTitleButtonList[1].SAFE_SetEvent(self.__OnClickBotTitleButton, 0)
-
 		for i in range(len(self.nightButtonList)):
 			self.nightButtonList[i].SAFE_SetEvent(self.__OnClickNightModeButton, i)
 
@@ -380,27 +377,10 @@ class OptionDialog(ui.ScriptWindow):
 		systemSetting.SetShowFloatingText(state)
 		self.RefreshFloatingTextButtons()
 
-	# A bot's personality title or the classic alignment title (NerrVoVy):
-	# playerbot_status_tail.py keeps the choice in playerbot_titles.cfg.
-	def __OnClickBotTitleButton(self, enabled):
-		import playerbot_status_tail
-		playerbot_status_tail.SetTitlesEnabled(enabled)
-		self.RefreshBotTitleButtons()
-		# A title already drawn stays until the bot's next alignment change (textTail
-		# has no detach), so the switch shows on the next login - say so (Tieru).
-		chat.AppendChat(chat.CHAT_TYPE_INFO, "Tytu\xb3y bot\xf3w: zmiana b\xeadzie widoczna po ponownym zalogowaniu.")
-
-	def RefreshBotTitleButtons(self):
-		import playerbot_status_tail
-		for btn in self.botTitleButtonList:
-			btn.SetUp()
-		if playerbot_status_tail.TitlesEnabled():
-			self.botTitleButtonList[0].Down()
-		else:
-			self.botTitleButtonList[1].Down()
-
-	# A bot's personality title or the classic alignment title (NerrVoVy):
-	# playerbot_status_tail.py keeps the choice in playerbot_titles.cfg.
+	# Whether a bot's personality shows in its own row over its head
+	# (NerrVoVy, 15 September; that row moved off the ranga/title spot
+	# 2026-09-16 - see playerbot_status_tail.py). playerbot_titles.cfg keeps
+	# the choice; the classic alignment title (ranga) is unaffected either way.
 	def __OnClickBotTitleButton(self, enabled):
 		import playerbot_status_tail
 		playerbot_status_tail.SetTitlesEnabled(enabled)
