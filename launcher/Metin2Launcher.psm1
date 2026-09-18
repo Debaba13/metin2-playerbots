@@ -1157,9 +1157,14 @@ function New-M2SupportBundle {
             # The second channel's cores too, when the server has run one
             # (M2_PLAYERBOT_CH2): their files are named ch2-<core>.
             $coreKeys = @('first', 'game1', 'game2')
-            $ch2Probe = ''
-            try { $ch2Probe = [string](docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c 'ls /opt/metin2/var/channel2/game1/syslog 2>/dev/null') } catch { $ch2Probe = '' }
-            if ($ch2Probe.Trim()) { $coreKeys += @('ch2-first', 'ch2-game1', 'ch2-game2') }
+            # A command that prints nothing gives $null, and [string] of that
+            # is $null too in Windows PowerShell 5.1 - so .Trim() on it threw
+            # "You cannot call a method on a null-valued expression" and the
+            # whole bundle failed on every server without a second channel
+            # (2.0.76: archonek, Urtopy). Joined and asked, never called.
+            $ch2Probe = $null
+            try { $ch2Probe = docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c 'ls /opt/metin2/var/channel2/game1/syslog 2>/dev/null' } catch { $ch2Probe = $null }
+            if (-not [string]::IsNullOrWhiteSpace([string](@($ch2Probe) -join ''))) { $coreKeys += @('ch2-first', 'ch2-game1', 'ch2-game2') }
             foreach ($core in $coreKeys) {
                 $coreDir = '/opt/metin2/var/channel1/' + $core
                 if ($core -like 'ch2-*') { $coreDir = '/opt/metin2/var/channel2/' + $core.Substring(4) }

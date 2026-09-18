@@ -140,7 +140,25 @@ function Get-M2LauncherErrorGuidance {
         }
     }
 
-    if ($value -match '(?i)\b404\b|not found.+update-manifest|update-manifest.+not found') {
+    # An image the build makes itself, looked for on Docker Hub by an older
+    # Compose: seban-collector and seban-item-grants run the image the
+    # seban-panel service builds, and the compose file says pull_policy: never
+    # for them only from 2.0.77 on.
+    if ($value -match '(?i)pull access denied for metin2/') {
+        return [pscustomobject]@{
+            Code = 'LOCAL_IMAGE_PULLED'
+            Title = 'Docker szukał w internecie obrazu, który serwer buduje sam'
+            Message = 'Starszy Docker Compose próbował pobrać z Docker Hub obraz panelu zaawansowanego (metin2/seban-panel), zanim go zbudował, i przerwał start. Pliki serwera i baza są w porządku.'
+            Remedy = 'Kliknij GRAJ jeszcze raz. Jeśli błąd wróci, otwórz PowerShell w folderze serwera, w podfolderze linux-port\docker, wykonaj: docker compose build seban-panel, a potem kliknij GRAJ. Logowanie do Docker Hub (docker login) niczego tu nie zmienia.'
+        }
+    }
+
+    # Only a 404 said of the manifest itself. This reads the whole output of
+    # the failed action, and a log carries "404" somewhere - the panel's answer
+    # to a missing icon, a pid, a coordinate - so the bare number sent
+    # archonek to wait for an update channel that was there all along
+    # (18 September: the manifest answered 200, the start had failed).
+    if ($value -match '(?i)update-manifest[^\r\n]*\b404\b|\b404\b[^\r\n]*update-manifest|not found[^\r\n]+update-manifest|update-manifest[^\r\n]+not found') {
         return [pscustomobject]@{
             Code = 'UPDATE_CHANNEL_UNPUBLISHED'
             Title = 'Kanał aktualizacji nie został jeszcze opublikowany'
