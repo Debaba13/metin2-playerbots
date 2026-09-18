@@ -17,6 +17,93 @@ every version here.
 
 ---
 
+## 2.0.74 — 2026-09-18
+
+Serwer 2.0.74, klient 2.0.14. **Serwer i klient muszą mieć tę samą wersję.**
+Stary klient nie zaloguje się do nowego serwera. Przycisk ZAINSTALUJ
+AKTUALIZACJE w launcherze aktualizuje oba naraz.
+
+### Cztery strony ekwipunku
+
+Ekwipunek ma cztery strony (I–IV, 180 pól) zamiast dwóch. Dotyczy to graczy i
+botów.
+
+- **Wyjątek od reguły „aktualizacja nie rusza bazy”.** Przy pierwszym starcie
+  serwer przenosi w bazie przedmioty, które leżały za drugą stroną: stronę
+  konia i pola pasa przesuwa na ich nowe miejsca, a pasek skrótów zapisuje w
+  nowym, szerszym formacie. Dzieje się to raz, zanim ktokolwiek się zaloguje.
+  W logu rdzenia bazy zostaje linia `INVENTORY_PAGES: four pages ...`.
+  **Tego nie da się cofnąć:** powrót do 2.0.73 lub starszej wersji wymaga
+  kopii świata sprzed aktualizacji. Jeśli chcesz mieć drogę powrotu, zrób ją
+  przed aktualizacją (launcher: KOPIA / NOWY SWIAT).
+- Starszy klient przy logowaniu dostaje komunikat „Wymagana aktualizacja
+  klienta gry przez Patcher.” Wystarczy zainstalować aktualizację w launcherze.
+- Boty też mają cztery strony, więc dłużej noszą łupy, zanim je sprzedadzą
+  albo odłożą do magazynu.
+- Oba panele pokazują w podglądzie postaci wszystkie cztery strony. Panel
+  klasyczny nie pokazywał wcześniej niczego ze stron III i IV, a panel Sebana
+  rysował te przedmioty na stronie II.
+
+### Klient 2.0.14
+
+- Klient jest skompilowany u nas z kodu źródłowego z paczki: to ten sam
+  klient co 2.0.13, z czterema stronami ekwipunku.
+- Discord Rich Presence pokazuje „Metin2 SinglePlayer”, a przycisk prowadzi
+  na kanał YouTube. Przycisków nie widać na własnym profilu — tak działa
+  Discord, a nie błąd.
+- Auto Łowy: z włączonymi Metinami kamień ma pierwszeństwo przed potworami.
+  Cel, do którego postać nie może dojść, jest pomijany przez minutę, zamiast
+  wracać do niej od razu (blasty).
+
+### Szkatułki Blasku Księżyca tylko w trakcie eventu (NerrVoVy)
+
+Szkatułki wypadały także poza eventem, z dwóch powodów:
+
+- rdzeń, na którym nie ma botów (w układzie `unified` rdzenie first i game2),
+  nigdy nie zamykał u siebie bramki skrzynek;
+- bez żadnego harmonogramu bramka stała otwarta wszędzie.
+
+Teraz każdy rdzeń ma własny zegar, a Szkatułki wypadają wyłącznie w trakcie
+eventu skrzynkowego ze strony Eventy (w harmonogramie albo po „Aktywuj
+teraz”). Bez eventu nie wypadają wcale.
+
+### Logowanie na dużym świecie (SIZOWSKI)
+
+Rdzeń gry obsługuje boty i graczy w jednym wątku. Długi przebieg botów (przy
+starcie ponad 0,7 s) wstrzymywał więc każde logowanie. Teraz przebieg botów
+ma budżet 120 ms, a to, co się nie zmieści, dokończy następny przebieg ćwierć
+sekundy później. Na serwerze testowym z budżetem 20 ms najdłuższy przebieg
+przy 1099 botach spadł z 343 do 34 ms. Budżet ustawia klucz `TICK_MS` w
+pliku wag (0 oznacza brak budżetu).
+
+### Boty
+
+- Boty poniżej 40 poziomu używają zielonych kamieni bonusów (dodawania i
+  zmiany) na broni i zbroi do 40 poziomu. Do tej pory kamienie leżały im w
+  torbach (Sammy).
+- Siano, marchewki i Księgi Misji nie trafiają już do handlarza: boty je
+  podnoszą i wystawiają w sklepach (Greess).
+
+### Panel na Linuksie / VPS (DUDU)
+
+Budowa panelu na Linuksie kończyła się błędem `/schema: not found`. Paczka nie
+wiozła schematu, a katalog panelu przygotowywał tylko launcher na Windowsie.
+Teraz przygotowuje go `update.sh` przed budową, a paczka zawiera schemat.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy z 1099 botami:
+
+- logowanie nowym klientem i przenoszenie przedmiotów między stronami I–IV
+  sprawdził Tieru;
+- migracja poszerzyła 1143 paski skrótów;
+- przez 17 minut po zmianie nie wypadła żadna Szkatułka, a godzinę wcześniej
+  w 6 minut było ich 39;
+- bot na 25 poziomie dodał bonusy zielonymi kamieniami do Gilotynowego
+  Ostrza+7 i Zbroi Płytowej Tygrysa+6;
+- boty podnosiły Księgi Misji około trzy razy częściej;
+- oba panele pokazują strony I–IV.
+
 ## 2.0.73 — 2026-09-18
 
 Serwer 2.0.73, klient bez zmian (2.0.13).
