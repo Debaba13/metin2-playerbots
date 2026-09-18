@@ -338,6 +338,17 @@ RUN set -eu; L=/opt/metin2/share/locale/poland/quest/libs/other/_otherModuleLoad
  && test -s /opt/metin2/share/locale/poland/quest/libs/other/m2_difficulty.lua \
  && echo "share: difficulty hooked into the quest libraries"
 
+# The monkey curse (port/shareify.py renders this step): the package's
+# monkey_curse quest turned anybody 55 minutes into a Monkey Dungeon (35 on
+# 108, 25 on 109) into a monkey and warped them out, bots included. Its event
+# handlers go; its state table stays for the flags characters already carry.
+RUN set -eu; O=/opt/metin2/share/locale/poland/quest/object \
+ && n=$(find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -print | wc -l) \
+ && find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -exec rm -f {} + \
+ && rm -rf "$O/monkey_curse" \
+ && ! find "$O" -path "$O/state" -prune -o -name 'monkey_curse*' -print | grep -q . \
+ && echo "share: monkey curse removed ($n handlers)"
+
 # The cores run unprivileged and read this tree by path; a directory only root
 # can enter costs every quest below it, silently. Repair, then assert.
 RUN set -eu; \

@@ -6202,6 +6202,27 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `scratchpad/war_ground_margin.py` (a BANPK distance transform on the map's
   server_attr): the new ground is about a kilometre from the old on _02 and
   800 units on _03.
+- **The monkey curse is a stock quest, and the image no longer carries it.**
+  `monkey_curse.quest` (the package's `quest/map_entrance/`) sets a timer at
+  every login inside a Monkey Dungeon - 55 minutes on 5, 25 and 45, 35 on 108,
+  25 on 109; 107 is on its list with no delay at all - and when it runs out
+  turns the character into a monkey (`pc.polymorph(5003, 5*60)`) and warps it
+  to its village, unless the herb of that dungeon's monkeys (50057-50059, an
+  affect for two hours) is running. No bot ever carried the herb, so the medal
+  droppers who live in those dungeons came out as monkeys ("klatwa malp, z
+  ktora boty nie potrafia sobie poradzic", SIZOWSKI, 12 September; "usuniemy
+  to", Tieru, 18 September). The cores load a quest's handlers from
+  `quest/object/<vnum or name>/<event>/` and its state table from
+  `object/state/`, so a shareify step deletes the six handler files (login,
+  logout, the timer and the three herbs' use) and the timer's directory from
+  the image, and fails the build if one is left; the state table stays, so the
+  `monkey_curse.time` flags characters already carry still name a quest the
+  engine knows, and an empty `use` directory is read as no handler at all
+  (`NPC::Set`). The herbs stay in the drop tables: `subquest_39` (levels 55-57)
+  asks for the hard one. It is not the Hwang curse, which 2.0.52 took out of
+  `char_battle.cpp`. Checked by running the step against the running image's
+  own tree - six handlers gone, the state table and the other 211 login
+  handlers untouched; not yet built into an image or watched in a world.
 
 ## Engine facts worth not re-deriving
 
