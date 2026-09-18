@@ -2474,7 +2474,10 @@ namespace
 		// Nor a counter of one thing: PLAYERBOT_SHOP_SAME_VNUM_LINES lines of an
 		// item, and PLAYERBOT_SHOP_MARBLE_LINES marbles, one a monster
 		// (PLAYERBOT_SHOP_POLYMORPH_SCORE says why). An offline stand's add
-		// asks its own counter too (BotOfflineCounterRefuses).
+		// asks its own counter too (BotOfflineCounterRefuses). An item on
+		// "stall" goes up ahead of everything and is held to the same lines:
+		// the operator's word is the counter instead of the merchant, not a
+		// counter of nothing else - the rest waits in the bag.
 		{
 			int marbles = 0;
 			std::set<long> mobs;
@@ -2484,7 +2487,7 @@ namespace
 			for (size_t i = 0; i < outScored.size(); ++i)
 			{
 				LPITEM item = ch->GetInventoryItem(outScored[i].second);
-				if (item && GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL)
+				if (item)
 				{
 					if (item->GetType() == ITEM_POLYMORPH)
 					{

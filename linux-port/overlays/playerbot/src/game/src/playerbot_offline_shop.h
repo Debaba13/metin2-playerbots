@@ -264,7 +264,8 @@ namespace {
     // below PLAYERBOT_SHOP_LOW_GEAR_MIN_REFINE, or past the
     // PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES of it one counter carries. lowGear is
     // what stays of that gear, for the add that follows. An item the operator
-    // put on "stall" is never second-guessed.
+    // put on "stall" is never taken home to be scrapped or cut, but it is
+    // still one of a counter's lines of a kind (the two caps first below).
     DWORD BotOfflineUnwantedLine(LPCHARACTER ch, NativeShop shop, int& lowGear) {
         lowGear = 0;
         DWORD unwanted = 0;
@@ -287,8 +288,13 @@ namespace {
             // one monster; the ones that went up before 2.0.78 - up to
             // thirty-one on one counter, and none ever sold - come home one a
             // visit to make room for goods that do (PLAYERBOT_SHOP_POLYMORPH_SCORE).
-            if (preview->GetType() == ITEM_POLYMORPH &&
-                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
+            // "Stall" included: the operator's word sends an item to the
+            // counter instead of the merchant, not over the whole counter.
+            // With marbles and Kawalek Lodu on "stall" in the test world's
+            // policy file those two stood 6 735 lines over three of a kind on
+            // 19 September (3 877 marbles; 2 858 of Kawalek Lodu, 46 on one
+            // counter) against 3 343 for everything else together.
+            if (preview->GetType() == ITEM_POLYMORPH) {
                 if (!marbleMobs.insert(preview->GetSocket(0)).second ||
                         ++marbles > PLAYERBOT_SHOP_MARBLE_LINES) {
                     if (!unwanted) unwanted = id;
@@ -297,9 +303,9 @@ namespace {
                 continue;
             }
             // Past PLAYERBOT_SHOP_SAME_VNUM_LINES of one item - 46 lines of one
-            // material stood on one counter - the rest come home one a visit.
+            // material stood on one counter - the rest come home one a visit,
+            // "stall" or not.
             if (IsPlayerBotSameVnumCapped(preview) &&
-                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
                     ++sameVnum[preview->GetVnum()] > PLAYERBOT_SHOP_SAME_VNUM_LINES) {
                 if (!unwanted) unwanted = id;
                 M2_DELETE(preview);
@@ -507,9 +513,9 @@ namespace {
     // PLAYERBOT_SHOP_BULK_LINES (each a pack cut by BotOfflinePrepareLine),
     // the Moonlight chests, the safe scrolls, the books and stones kept by
     // count, and a marble past PLAYERBOT_SHOP_MARBLE_LINES or of a monster
-    // the counter shows already. The line chosen before the board opens and
-    // the add itself ask this one question, or a line cut for the add would
-    // stand in the bag unadded.
+    // the counter shows already - an item on "stall" as much as any. The line
+    // chosen before the board opens and the add itself ask this one question,
+    // or a line cut for the add would stand in the bag unadded.
     bool BotOfflineCounterRefuses(NativeShop shop, LPITEM item) {
         if (!item) return true;
         if (IsPlayerBotTradeableMaterial(item) &&
@@ -522,14 +528,13 @@ namespace {
                 BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) return true;
         if (IsPlayerBotCountedSingleGoods(item) &&
                 BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) return true;
-        if (item->GetType() == ITEM_POLYMORPH &&
-                GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL) {
+        if (item->GetType() == ITEM_POLYMORPH) {
             bool sameMob = false;
             if (BotOfflineMarbleLines(shop, item->GetSocket(0), sameMob) >= PLAYERBOT_SHOP_MARBLE_LINES || sameMob)
                 return true;
         }
         // And no more than PLAYERBOT_SHOP_SAME_VNUM_LINES of anything else.
-        if (IsPlayerBotSameVnumCapped(item) && GetPlayerBotItemPolicy(item) != PLAYERBOT_ITEM_POLICY_STALL &&
+        if (IsPlayerBotSameVnumCapped(item) &&
                 BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SAME_VNUM_LINES)
             return true;
         return false;
