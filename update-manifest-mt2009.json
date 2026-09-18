@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T18:19:14Z",
-  "statusMessage": "2.0.76 (serwer 2.0.76, klient 2.0.16): cały drop pod tyldą `, liczba botów osobno dla każdego królestwa, drugi kanał CH2 (domyślnie wyłączony), płynny ruch przy dużej liczbie botów, koniec wyrzucania z serwera przy szkoleniu konia, działająca szybkość biegu z panelu, okno juków liczy wszystkie strony, boty nie oddają handlarzowi cennych rzeczy. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T19:21:52Z",
+  "statusMessage": "2.0.77 (serwer 2.0.77, klient 2.0.16 bez zmian): naprawione zbieranie logów, aktualizacja nie przerywa się na obrazie panelu, więcej materiałów na ladach każdej wioski, wojny gildii bez gonienia wrogów w strefie bezpiecznej, wyjście z Czerwonego Lasu. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.76",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.76/metin2-server-update-2.0.76.zip",
-    "sha256": "95C6E19E95D1CF86238B69B50F44863349DC44FB068174D6DC7B7BCCB3B75FA6"
+    "version": "2.0.77",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.77/metin2-server-update-2.0.77.zip",
+    "sha256": "7B18610A05483F09E3797E1D734BA036CDF0E0BAEEE82319F746BAA52A9826AF"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
