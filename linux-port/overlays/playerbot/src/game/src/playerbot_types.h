@@ -71,9 +71,19 @@ namespace
 	// Pigulki Krwi with them (Tieru, 15 September). The herbs are the
 	// herbalist's 50724 and 50726; the Biologist's 50704 and 50706 are quest
 	// items and were never left behind.
+	// The mission books and the horse's hay and carrots with them: a player uses
+	// both and no bot does, and the merchant was paying five hundred yang for a
+	// book ("Boty sprzedaja Ksiegi misji/marchewki/siano do handlarza. Lepiej
+	// jakby wystawialy w sklepach", Greess, 18 September).
 	const DWORD PLAYERBOT_PICKUP_GOODS_VNUMS[] = {
 		70014,    // Pigulka Krwi
 		70102,    // Fasolka Zen
+		50054,    // Siano
+		50055,    // Marchewka
+		50307,    // Ksiega Misji (Latwa)
+		50308,    // Ksiega Misji (Normalna)
+		50309,    // Ksiega Misji (Trudna)
+		50310,    // Ksiega Misji (ekspert)
 	};
 	// The herbalist's sixteen herbs, 50721-50736: every one of them is a
 	// material of some row on Baek-Go's board (playerbot_herbalism.h), so all
@@ -177,8 +187,25 @@ namespace
 	DWORD s_uPlayerBotLoadScans = 0;
 	DWORD s_uPlayerBotLoadSaves = 0;
 	DWORD s_uPlayerBotLoadWatchdog = 0;
+	// Passes of the manager's tick cut short by its time budget in the minute
+	// (PLAYERBOT_TICK_BUDGET_MS_DEFAULT, the TICK_MS key of the weights file).
+	DWORD s_uPlayerBotLoadSliced = 0;
 	DWORD s_dwPlayerBotLoadReportTime = 0;
 	const DWORD PLAYERBOT_LOAD_REPORT_INTERVAL = 60000;
+	// How long one pass of CPlayerBotManager::Update may run before it stops
+	// and leaves the rest of the bots to the next pass, a quarter of a second
+	// later, which starts where it stopped. The pass is the one thing on a
+	// core's main thread that grows with the bot count, and nothing bounded it:
+	// on a five-euro VPS 1140 bots took up to a second a pass, four passes a
+	// second, and a player's login went unanswered - "przez 4 sekundy rdzen nie
+	// przetwarza nawet pakietu handshake" (SIZOWSKI, 18 September). A pass on
+	// this project's own machine takes about fifty milliseconds with 1100 bots
+	// and at most a hundred and thirty, so the budget costs nothing there.
+	// Zero is no budget. The operator's knob is TICK_MS in the weights file.
+	const int PLAYERBOT_TICK_BUDGET_MS_DEFAULT = 120;
+	// A pass always serves at least this many bots, so the world's own work
+	// ahead of the loop can never eat the whole budget and stop every bot.
+	const unsigned int PLAYERBOT_TICK_MIN_BOTS = 50;
 	// And how long they took. A count says how often; only the clock says
 	// whether it matters. Microseconds from the monotonic clock, wrapping in a
 	// DWORD every 71 minutes - which the unsigned subtraction below survives.
@@ -1052,9 +1079,14 @@ namespace
 	// them from nobody.
 	const DWORD PLAYERBOT_BONUS_CHANGE_VNUM = 71084;
 	const DWORD PLAYERBOT_BONUS_ADD_VNUM = 71085;
-	// Below this the gear itself is still changing every few levels, so paying to
-	// polish its bonus lines is money the bot needs for the next weapon.
+	// Below this the gear itself is still changing every few levels, and a
+	// plain stone is worth more than the piece it would go on - so a bot this
+	// young spends only the green ones, which are for that gear and no other
+	// (IsPlayerBotGreenBonusStone).
 	const BYTE PLAYERBOT_BONUS_MIN_LEVEL = 30;
+	// Zielony Czar and Zielona Sila go on a weapon or a body armour of this
+	// level or less and on nothing else (char_item.cpp, the engine's rule).
+	const int PLAYERBOT_GREEN_BONUS_MAX_LEVEL = 40;
 	// What the bot keeps: roughly one strong offensive line, or two decent ones.
 	// --- Guilds and who a bot has got on with -------------------------------
 	// Forty is what a player needs at the Village Guard, and the fee is what the

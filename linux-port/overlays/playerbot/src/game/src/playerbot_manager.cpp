@@ -127,6 +127,8 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 namespace
 {
 	LPEVENT s_pkPlayerBotUpdateEvent = NULL;
+	// CPlayerBotManager::StartWorldClock, until the first bot's Update runs.
+	LPEVENT s_pkPlayerBotWorldEvent = NULL;
 
 	// Defined beside the lock itself, further down.
 	BYTE GetPlayerBotExpLockLevel(BYTE personality);
@@ -2147,6 +2149,28 @@ namespace
 		return PASSES_PER_SEC(1) / 4;
 	}
 
+	EVENTINFO(playerbot_world_event_info)
+	{
+		CPlayerBotManager* manager;
+	};
+
+	// The world's part of Update on a core no bot has woken yet: the weights
+	// file (the chest sliders are read there) and the timed events with their
+	// chest gate. Update makes the same two calls on every tick, so once it
+	// runs this clock has nothing left to do and ends.
+	EVENTFUNC(playerbot_world_event)
+	{
+		if (s_pkPlayerBotUpdateEvent)
+		{
+			s_pkPlayerBotWorldEvent = NULL;
+			return 0;
+		}
+		const DWORD dwNow = get_dword_time();
+		RefreshPlayerBotWeights(dwNow);
+		ManagePlayerBotEvents(dwNow);
+		return PASSES_PER_SEC(1);
+	}
+
 	CPlayerBotManager s_playerBotManager;
 }
 
@@ -2166,6 +2190,18 @@ CPlayerBotManager::~CPlayerBotManager()
 {
 	if (s_pkPlayerBotUpdateEvent)
 		event_cancel(&s_pkPlayerBotUpdateEvent);
+	if (s_pkPlayerBotWorldEvent)
+		event_cancel(&s_pkPlayerBotWorldEvent);
+}
+
+void CPlayerBotManager::StartWorldClock()
+{
+	if (s_pkPlayerBotUpdateEvent || s_pkPlayerBotWorldEvent)
+		return;
+	playerbot_world_event_info* info = AllocEventInfo<playerbot_world_event_info>();
+	info->manager = this;
+	s_pkPlayerBotWorldEvent = event_create(playerbot_world_event, info, PASSES_PER_SEC(1));
+	sys_log(0, "PLAYERBOT: world clock started (weights, timed events, chest gate)");
 }
 
 bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
@@ -3109,9 +3145,6 @@ void CPlayerBotManager::Update()
 	// ours to keep standing.
 	MaintainPlayerBotOreVeins(dwNow);
 
-	static DWORD s_dwTick = 0;
-	++s_dwTick;
-
 	// Once a minute: what the last minute cost. Read this before tuning any
 	// budget - the first version of the material errand was diagnosed from CPU
 	// alone and put the whole population's scans in one second.
@@ -3119,7 +3152,7 @@ void CPlayerBotManager::Update()
 		s_dwPlayerBotLoadReportTime = dwNow;
 	else if (dwNow - s_dwPlayerBotLoadReportTime >= PLAYERBOT_LOAD_REPORT_INTERVAL)
 	{
-		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums",
+		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums sliced=%u",
 				(unsigned int)m_mapBots.size(), s_uPlayerBotLoadTicks,
 				s_uPlayerBotLoadTickUs / 1000, s_uPlayerBotLoadTickMaxUs / 1000,
 				s_uPlayerBotLoadTargetSearches, s_uPlayerBotLoadTargetMisses,
@@ -3132,10 +3165,11 @@ void CPlayerBotManager::Update()
 				s_uPlayerBotLoadPlanBucket[3], s_uPlayerBotLoadPlanBucketUs[3] / 1000,
 				s_uPlayerBotLoadScans, s_uPlayerBotLoadScanUs / 1000,
 				s_uPlayerBotLoadSaves, s_uPlayerBotLoadWatchdog,
-				(unsigned int)(dwNow - s_dwPlayerBotLoadReportTime));
+				(unsigned int)(dwNow - s_dwPlayerBotLoadReportTime), s_uPlayerBotLoadSliced);
 		for (int b = 0; b < 4; ++b)
 			s_uPlayerBotLoadPlanBucket[b] = s_uPlayerBotLoadPlanBucketUs[b] = 0;
 		s_uPlayerBotLoadPlanDeferred = s_uPlayerBotLoadPlanResumed = s_uPlayerBotLoadPlanCached = 0;
+		s_uPlayerBotLoadSliced = 0;
 		s_uPlayerBotLoadPlans = s_uPlayerBotLoadScans = s_uPlayerBotLoadSaves = s_uPlayerBotLoadWatchdog = 0;
 		s_uPlayerBotLoadPlanUs = s_uPlayerBotLoadScanUs = s_uPlayerBotLoadTickUs = s_uPlayerBotLoadTickMaxUs = s_uPlayerBotLoadTicks = 0;
 		s_uPlayerBotLoadTargetSearches = s_uPlayerBotLoadTargetMisses = s_uPlayerBotLoadTargetUs = s_uPlayerBotLoadSnapshotUs = 0;
@@ -3158,8 +3192,34 @@ void CPlayerBotManager::Update()
 			++s_mapPlayerBotsOnMap[c->GetMapIndex()];
 	}
 
-	for (TPlayerBotMap::iterator it = m_mapBots.begin(); it != m_mapBots.end(); ++it)
+	// The tick proper, inside a time budget (PLAYERBOT_TICK_BUDGET_MS_DEFAULT,
+	// TICK_MS): a pass that runs out of it leaves the pid it stopped at and
+	// the next pass starts there, so every bot is still reached, only less
+	// often, and the core's other work - a player's login above all - gets
+	// its share of the thread. A sweep is one visit to every bot; the heavy and
+	// light ticks below alternate by sweep, not by pass, or a bot reached every
+	// other pass would land on the light one every time.
+	static DWORD s_dwPlayerBotSweep = 0;
+	static DWORD s_dwPlayerBotResumePid = 0;
+	TPlayerBotMap::iterator itFirst = m_mapBots.begin();
+	if (s_dwPlayerBotResumePid != 0)
+		itFirst = m_mapBots.lower_bound(s_dwPlayerBotResumePid);
+	else
+		++s_dwPlayerBotSweep;
+	s_dwPlayerBotResumePid = 0;
+	const DWORD dwTickBudgetUs = (DWORD)GetPlayerBotTickBudgetMs() * 1000U;
+	unsigned int uPassBots = 0;
+	for (TPlayerBotMap::iterator it = itFirst; it != m_mapBots.end(); ++it)
 	{
+		if (dwTickBudgetUs != 0 && uPassBots >= PLAYERBOT_TICK_MIN_BOTS &&
+				PlayerBotClockUs() - dwTickStartUs > dwTickBudgetUs)
+		{
+			s_dwPlayerBotResumePid = it->first;
+			++s_uPlayerBotLoadSliced;
+			break;
+		}
+		++uPassBots;
+
 		LPDESC d = it->second;
 		if (!d)
 			continue;
@@ -3184,7 +3244,7 @@ void CPlayerBotManager::Update()
 		// Keep expensive decisions staggered over two ticks, but let an already
 		// engaged bot continue its basic combo on the intervening tick.  This makes
 		// combat look like holding Space without doubling pathfinding/target scans.
-		if ((it->first + s_dwTick) % 2 != 0)
+		if ((it->first + s_dwPlayerBotSweep) % 2 != 0)
 		{
 			if (d->IsPhase(PHASE_GAME) && !ch->IsDead())
 			{

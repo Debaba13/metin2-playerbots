@@ -107,6 +107,9 @@ namespace
 	// author's town; zero is the operator who wants every bot hunting, asked
 	// for by name. The level floor beside it is PLAYERBOT_TOWN_REST_MIN_LEVEL.
 	int s_iPlayerBotRestPercent = 100;
+	// The manager tick's time budget per pass, in milliseconds (TICK_MS; see
+	// PLAYERBOT_TICK_BUDGET_MS_DEFAULT). Zero is no budget.
+	int s_iPlayerBotTickBudgetMs = PLAYERBOT_TICK_BUDGET_MS_DEFAULT;
 	// Percent of the bots that will pick a fight with a bot of another kingdom.
 	// Zero is off, and the default, and that is deliberate: this changes how the
 	// world behaves towards itself rather than how one bot spends its time, so
@@ -172,8 +175,8 @@ namespace
 		return PLAYERBOT_WEIGHT_DEFAULT_PATH;
 	}
 
-	// playerbot_events.h: whether a scheduled chest window is holding the
-	// engine's chest figures at zero right now.
+	// playerbot_events.h: whether the chest gate is holding the engine's chest
+	// figures at zero right now - it is whenever no chest event runs.
 	bool IsPlayerBotChestGateClosed();
 	// The sliders' figure (CONFIG's until a weights file names one), which is
 	// what the gate opens the drop to - never the engine's variable, which
@@ -191,6 +194,7 @@ namespace
 		s_bPlayerBotOverheadChat = true;
 		s_iPlayerBotScrapPercent = 0;
 		s_iPlayerBotRestPercent = 100;
+		s_iPlayerBotTickBudgetMs = PLAYERBOT_TICK_BUDGET_MS_DEFAULT;
 		s_iPlayerBotKingdomPvpPercent = 0;
 		s_iPlayerBotScrollFromPlus = 1;
 		s_bPlayerBotFastBooks = true;
@@ -355,6 +359,14 @@ namespace
 			if (percent != s_iPlayerBotRestPercent)
 				sys_log(0, "PLAYERBOT_CONFIG: town rest %d%%", percent);
 			s_iPlayerBotRestPercent = percent;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "TICK_MS"))
+		{
+			const int budget = value < 0 ? 0 : (value > 1000 ? 1000 : (int)value);
+			if (budget != s_iPlayerBotTickBudgetMs)
+				sys_log(0, "PLAYERBOT_CONFIG: tick budget %d ms%s", budget, budget ? "" : " (none)");
+			s_iPlayerBotTickBudgetMs = budget;
 			return;
 		}
 		if (PlayerBotWeightNameEquals(szKey, "KINGDOMPVP"))
@@ -847,6 +859,13 @@ namespace
 		if (!s_bPlayerBotWeightsInitialised)
 			ResetPlayerBotWeights();
 		return s_iPlayerBotRestPercent;
+	}
+
+	int GetPlayerBotTickBudgetMs()
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		return s_iPlayerBotTickBudgetMs;
 	}
 
 	// The market ledger's count of open counters on a map (playerbot_market.h,

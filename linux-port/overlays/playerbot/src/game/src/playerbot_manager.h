@@ -32,6 +32,13 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		void	OnLoadFailed(DWORD dwHandle);
 		void	OnDescriptorDestroyed(LPDESC d);
 		void	Update();
+		// The part of Update that is about the world and not about bots - the
+		// weights file and the timed events with their chest gate - on a clock
+		// of its own from the moment a core knows its maps (input_db.cpp,
+		// MapLocations, through playerbotify.py). A core that hosts no bot has
+		// no Update, and its chests used to drop whatever the events said; this
+		// stops by itself once the first bot's Update is running.
+		void	StartWorldClock();
 		// A player's shout, after the channel has it, and a whisper addressed to
 		// a bot. Both from patch 0007 in input_main.cpp; playerbot_chat_trade.h
 		// decides whether and which bot answers.

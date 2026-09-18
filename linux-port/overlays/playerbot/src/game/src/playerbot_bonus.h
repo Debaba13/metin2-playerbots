@@ -596,22 +596,67 @@ namespace
 				item->GetRefineLevel() >= PLAYERBOT_BONUS_MIN_REFINE;
 	}
 
+	// Zielony Czar and Zielona Sila (71151/76023, 71152/76024) are the change
+	// and add stones of the same kind as 71084/71085, and the engine lets a
+	// player spend one only on a weapon or a body armour of level forty or less
+	// (char_item.cpp, USE_CHANGE_ATTRIBUTE and USE_ADD_ATTRIBUTE). The bots never
+	// spent one: under PLAYERBOT_BONUS_MIN_LEVEL no stone was spent at all, and
+	// those are the bots whose gear the green stones are for ("Boty nie uzywaja
+	// zielonego czaru i zielonego wzmocnienia", Sammy Suricate, 18 September).
+	// The pass calls AddAttribute itself, so it has to keep the engine's rule
+	// on its own: a green stone never goes on a helmet or a level-70 armour.
+	bool IsPlayerBotGreenBonusStone(DWORD vnum)
+	{
+		return vnum == 71151 || vnum == 71152 || vnum == 76023 || vnum == 76024;
+	}
+
+	bool CanPlayerBotSpendGreenBonusStoneOn(LPITEM target)
+	{
+		if (!target)
+			return false;
+		if (target->GetType() != ITEM_WEAPON &&
+				!(target->GetType() == ITEM_ARMOR && target->GetSubType() == ARMOR_BODY))
+			return false;
+		for (int i = 0; i < ITEM_LIMIT_MAX_NUM; ++i)
+			if (target->GetLimitType(i) == LIMIT_LEVEL &&
+					target->GetLimitValue(i) > PLAYERBOT_GREEN_BONUS_MAX_LEVEL)
+				return false;
+		return true;
+	}
+
 	// The bag stone of the kind a vnum names: the change stone is
 	// USE_CHANGE_ATTRIBUTE and the add stone USE_ADD_ATTRIBUTE, and on these
 	// files each comes in three vnums (71084/71151/76023, 71085/71152/76024) -
-	// a bot counting only its own vnum vendored the others.
-	int FindPlayerBotBonusStoneCellLike(LPCHARACTER ch, DWORD vnum)
+	// a bot counting only its own vnum vendored the others. For a target, the
+	// stone that may go on it: a green one first where the target takes one -
+	// it is good for nothing else - and a plain one otherwise, unless the bot
+	// is young enough to spend green ones only (greenOnly). Without a target,
+	// any stone of the kind: the "is there anything to spend" of the pass.
+	int FindPlayerBotBonusStoneCellLike(LPCHARACTER ch, DWORD vnum, LPITEM target = NULL, bool greenOnly = false)
 	{
 		const TItemTable* proto = ITEM_MANAGER::instance().GetTable(vnum);
 		if (!ch || !proto)
 			return -1;
+		int plain = -1;
+		int green = -1;
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM stone = ch->GetInventoryItem(cell);
-			if (stone && stone->GetType() == proto->bType && stone->GetSubType() == proto->bSubType)
-				return cell;
+			if (!stone || stone->GetType() != proto->bType || stone->GetSubType() != proto->bSubType)
+				continue;
+			if (IsPlayerBotGreenBonusStone(stone->GetVnum()))
+			{
+				if (green < 0)
+					green = cell;
+			}
+			else if (plain < 0)
+				plain = cell;
 		}
-		return -1;
+		if (!target)
+			return greenOnly ? green : (plain >= 0 ? plain : green);
+		if (green >= 0 && CanPlayerBotSpendGreenBonusStoneOn(target))
+			return green;
+		return greenOnly ? -1 : plain;
 	}
 
 	// A bot spends the stones it holds and no others. It used to make one out
@@ -624,28 +669,24 @@ namespace
 	// economy charts had none of ("boty zmieniaja oraz dodaja bonusy bez
 	// przedmiotu", seban latino and Drip, 15 September). The operator's rule is
 	// the marble's: a bot without a stone does without, the way a player does.
-	bool HasPlayerBotBonusStone(LPCHARACTER ch, DWORD vnum)
+	bool HasPlayerBotBonusStone(LPCHARACTER ch, DWORD vnum, bool greenOnly = false)
 	{
-		return ch && FindPlayerBotBonusStoneCellLike(ch, vnum) >= 0;
+		return ch && FindPlayerBotBonusStoneCellLike(ch, vnum, NULL, greenOnly) >= 0;
 	}
 
-	bool ConsumePlayerBotBonusStone(LPCHARACTER ch, DWORD vnum)
+	// The stone FindPlayerBotBonusStoneCellLike chose for a piece, by its cell.
+	bool ConsumePlayerBotBonusStoneAt(LPCHARACTER ch, int cell)
 	{
-		if (!ch)
+		if (!ch || cell < 0 || cell >= PLAYERBOT_BAG_CELLS)
 			return false;
-		const int found = FindPlayerBotBonusStoneCellLike(ch, vnum);
-		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
-		{
-			LPITEM stone = ch->GetInventoryItem(cell);
-			if (!stone || (int)cell != found)
-				continue;
-			if (stone->GetCount() > 1)
-				stone->SetCount(stone->GetCount() - 1);
-			else
-				ITEM_MANAGER::instance().RemoveItem(stone, "PLAYERBOT_BONUS");
-			return true;
-		}
-		return false;
+		LPITEM stone = ch->GetInventoryItem((WORD)cell);
+		if (!stone)
+			return false;
+		if (stone->GetCount() > 1)
+			stone->SetCount(stone->GetCount() - 1);
+		else
+			ITEM_MANAGER::instance().RemoveItem(stone, "PLAYERBOT_BONUS");
+		return true;
 	}
 
 	// Worn gear only. Spares in the bag are sold or put in a stall long before
@@ -656,13 +697,13 @@ namespace
 		if (!ch || !ch->IsItemLoaded() || dwNow < state.dwNextBonusCheckTime)
 			return false;
 		state.dwNextBonusCheckTime = dwNow + PLAYERBOT_BONUS_INTERVAL;
-		if (ch->GetLevel() < PLAYERBOT_BONUS_MIN_LEVEL)
-			return false;
+		// A young bot spends the green stones only, on the gear they are for.
+		const bool greenOnly = ch->GetLevel() < PLAYERBOT_BONUS_MIN_LEVEL;
 		// Nothing to spend, nothing to weigh: the pass below scores every line
 		// of eight worn pieces, and a bag with no stone and no marble ends here.
-		if (!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_ADD_VNUM) &&
-				!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_CHANGE_VNUM) &&
-				FindPlayerBotBlessingMarbleCell(ch) < 0)
+		if (!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_ADD_VNUM, greenOnly) &&
+				!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_CHANGE_VNUM, greenOnly) &&
+				(greenOnly || FindPlayerBotBlessingMarbleCell(ch) < 0))
 			return false;
 
 		const BYTE wearSlots[] = {
@@ -688,7 +729,7 @@ namespace
 			// Four by the stone; the fifth is the marble's, below, and only when
 			// the bag holds one.
 			const bool bWantAdd = count < PLAYERBOT_BONUS_MAX_LINES;
-			const int marbleCell = (count == PLAYERBOT_BONUS_MAX_LINES)
+			const int marbleCell = (count == PLAYERBOT_BONUS_MAX_LINES && !greenOnly)
 					? FindPlayerBotBlessingMarbleCell(ch) : -1;
 			const bool bWantMarble = marbleCell >= 0;
 			// An item that has landed the roll its slot is bought for is finished.
@@ -708,7 +749,9 @@ namespace
 
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
-			if (!bWantMarble && !HasPlayerBotBonusStone(ch, stoneVnum))
+			const int stoneCell = bWantMarble ? -1
+					: FindPlayerBotBonusStoneCellLike(ch, stoneVnum, item, greenOnly);
+			if (!bWantMarble && stoneCell < 0)
 				continue;
 
 			// The piece has to come off for the engine to touch it, and it has to go
@@ -741,7 +784,7 @@ namespace
 				item->ChangeAttribute();
 
 			if (!bWantMarble)
-				ConsumePlayerBotBonusStone(ch, stoneVnum);
+				ConsumePlayerBotBonusStoneAt(ch, stoneCell);
 			++stonesUsed;
 
 			const int newScore = ScorePlayerBotItemBonuses(ch, item, wearCell);
@@ -788,8 +831,9 @@ namespace
 				continue;
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
-			if (!HasPlayerBotBonusStone(ch, stoneVnum))
-				break;
+			const int stoneCell = FindPlayerBotBonusStoneCellLike(ch, stoneVnum, item, greenOnly);
+			if (stoneCell < 0)
+				continue;
 			const int score = ScorePlayerBotItemBonuses(ch, item, WEAR_WEAPON);
 			// The engine's odds, as for the worn pieces above.
 			if (bWantAdd)
@@ -799,7 +843,7 @@ namespace
 			}
 			else
 				item->ChangeAttribute();
-			ConsumePlayerBotBonusStone(ch, stoneVnum);
+			ConsumePlayerBotBonusStoneAt(ch, stoneCell);
 			++stonesUsed;
 			LogManager::instance().ItemLog(ch, item,
 					bWantAdd ? "PLAYERBOT_BONUS_ADD" : "PLAYERBOT_BONUS_CHANGE",
