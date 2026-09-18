@@ -1429,6 +1429,10 @@ def main(root):
     apply_inventory_arrange(game)
     apply_quickslot_chain_word(game)
     apply_regen_spawn_count(game)
+    apply_pickup_nearby(game)
+    apply_bot_population_plan(game)
+    apply_shops_first_channel(game)
+    apply_event_cancel_in_flight(game)
     print('playerbotify: done')
 
 
@@ -3767,6 +3771,252 @@ def apply_regen_spawn_count(game):
          '\t\treturn;\n'
          '\tnum = target - (DWORD)regen->count;\n',
          marker='// are monsters or stones is multiplied: an NPC, a portal or a shop keeper\n')
+
+
+PICKUP_NEARBY_METHOD = r"""// "Podnies caly drop" - the ` key (client-root/pickupnearby.py; the shape is
+// SIZOWSKI's patch of 18 September). Every item on the ground within the
+// pickup range that is this character's or may be its party's, nearest
+// first, handed to PickupItem one at a time - so ownership, the party's
+// split, stacking and every item's own rule are the ones the Z key applies,
+// and PickupItem itself is not touched. It allows one pickup per half second
+// (m_lastPickupTime); the batch lifts that for its own items and leaves it
+// set afterwards, and is itself allowed once per half second a character.
+// A pile stops the batch at PICKUP_NEARBY_MAX items, and a bag with no room
+// for the next one stops it at once, rather than saying so for every item.
+int CHARACTER::PickupNearbyItems()
+{
+	const size_t PICKUP_NEARBY_MAX = 40;
+	const DWORD PICKUP_NEARBY_COOLDOWN_MS = 500;
+	if (!HasPlayerData() || IsObserverMode() || IsDead() || !GetSectree())
+		return 0;
+	static std::map<DWORD, DWORD> s_nextBatch;
+	const DWORD now = get_dword_time();
+	DWORD& next = s_nextBatch[GetPlayerID()];
+	if (now < next)
+		return 0;
+	next = now + PICKUP_NEARBY_COOLDOWN_MS;
+	if (!CanHandleItem(false, false, 0))
+	{
+		ChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot pickup item while busy."));
+		return 0;
+	}
+
+	struct FCollectNearby
+	{
+		LPCHARACTER ch;
+		std::vector<std::pair<int, DWORD> > found;
+		explicit FCollectNearby(LPCHARACTER c) : ch(c) {}
+		void operator()(LPENTITY ent)
+		{
+			if (!ent || !ent->IsType(ENTITY_ITEM))
+				return;
+			LPITEM item = static_cast<LPITEM>(ent);
+			if (!item->GetSectree() || !item->DistanceValid(ch))
+				return;
+			// Somebody else's drop is refused by PickupItem without a word; not
+			// asking at all is cheaper. With a party, PickupItem decides.
+			if (!item->IsOwnership(ch) && !ch->GetParty())
+				return;
+			found.push_back(std::make_pair(
+					DISTANCE_APPROX(ch->GetX() - item->GetX(), ch->GetY() - item->GetY()),
+					(DWORD)item->GetVID()));
+		}
+	} collect(this);
+	GetSectree()->ForEachAround(collect);
+	std::sort(collect.found.begin(), collect.found.end());
+
+	const DWORD held = playerData->m_lastPickupTime;
+	int picked = 0;
+	for (size_t i = 0; i < collect.found.size() && i < PICKUP_NEARBY_MAX; ++i)
+	{
+		// Re-found by VID: an earlier pickup can move or remove other items.
+		LPITEM item = ITEM_MANAGER::instance().FindByVID(collect.found[i].second);
+		if (!item || !item->GetSectree() || !item->DistanceValid(this))
+			continue;
+		const BYTE size = item->GetSize();
+		playerData->m_lastPickupTime = 0;
+		if (PickupItem(collect.found[i].second))
+		{
+			++picked;
+			continue;
+		}
+		if (GetEmptyInventory(size) < 0)
+			break;
+	}
+	playerData->m_lastPickupTime = std::max<DWORD>(held, now + 500);
+	return picked;
+}
+
+"""
+
+PICKUP_NEARBY_COMMAND = r"""// "Podnies caly drop" - the ` key (client-root/pickupnearby.py); the work is
+// CHARACTER::PickupNearbyItems in char_item.cpp.
+ACMD(do_pickup_nearby)
+{
+	ch->PickupNearbyItems();
+}
+"""
+
+
+def apply_pickup_nearby(game):
+    # The whole drop under the ` key (vanderro's suggestion of 18 September;
+    # Tieru: "jedno Z niech bedzie klasycznie, a ` najwyzej jako caly drop"; the
+    # shape of SIZOWSKI's patch). The character's method hands every item in
+    # reach to PickupItem one at a time; /pickup_nearby calls it.
+    edit(os.path.join(game, 'char.h'),
+         '\t\tbool\t\t\tPickupItem(DWORD vid);\n',
+         '\t\tbool\t\t\tPickupItem(DWORD vid);\n'
+         '\t\tint\t\t\t\tPickupNearbyItems();\n',
+         marker='\t\tint\t\t\t\tPickupNearbyItems();\n')
+    path = os.path.join(game, 'char_item.cpp')
+    edit(path,
+         '#include "item_manager.h"\n',
+         '#include "item_manager.h"\n'
+         '#include "sectree_manager.h"\n',
+         marker='#include "sectree_manager.h"\n')
+    edit(path,
+         'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n',
+         PICKUP_NEARBY_METHOD + 'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n',
+         marker='int CHARACTER::PickupNearbyItems()\n')
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         PICKUP_NEARBY_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_pickup_nearby)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_inventory_arrange);\n',
+         'ACMD(do_inventory_arrange);\n'
+         'ACMD(do_pickup_nearby);\n',
+         marker='ACMD(do_pickup_nearby);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "pickup_nearby",')
+
+
+
+def apply_bot_population_plan(game):
+    # Who starts where, on top of the one number: the second channel's part of
+    # it (M2_PLAYERBOT_CH2, CPlayerBotManager::SplitForThisChannel - the
+    # registry itself is split in LoadRegisteredBots) and the operator's own
+    # number per kingdom (PLAYERBOT_AUTOSPAWN_PER_KINGDOM, Greess). Both edit
+    # the bootstrap in input_db.cpp that the first block of main() wrote.
+    p = os.path.join(game, 'input_db.cpp')
+    edit(p,
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\t\t// The operator\'s medal droppers, on top of the population: this many in\n',
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\t\t// The number is the whole world\'s. With the second channel on, it is\n'
+         '\t\t// split between the kingdoms over every channel\'s identities first -\n'
+         '\t\t// a kingdom has the same share with the channel on as off - and each\n'
+         '\t\t// kingdom\'s part then between the channels. With it off, nothing\n'
+         '\t\t// changes on the first channel and any other starts nobody.\n'
+         '\t\tCPlayerBotManager::instance().SplitForThisChannel(autoSpawnCount, registered, want);\n'
+         '\t\t// The operator\'s own number for each kingdom instead of a share of the\n'
+         '\t\t// one above (the launcher\'s "Indywidualne wartosci dla krolestw",\n'
+         '\t\t// Greess): PLAYERBOT_AUTOSPAWN_PER_KINGDOM=1 and one\n'
+         '\t\t// PLAYERBOT_AUTOSPAWN_<KINGDOM> each, this channel\'s part of it, cut to\n'
+         '\t\t// the identities the kingdom has here - so M2_PLAYERBOT_KINGDOMS=0 above\n'
+         '\t\t// still leaves Shinsoo and Jinno with none.\n'
+         '\t\tconst char* configuredPerKingdom = std::getenv("PLAYERBOT_AUTOSPAWN_PER_KINGDOM");\n'
+         '\t\tif (configuredPerKingdom && *configuredPerKingdom && std::atoi(configuredPerKingdom) != 0)\n'
+         '\t\t{\n'
+         '\t\t\tconst char* const kingdomCountKeys[playerbot_empire_rules::EMPIRE_COUNT] = {\n'
+         '\t\t\t\tNULL, "PLAYERBOT_AUTOSPAWN_SHINSOO", "PLAYERBOT_AUTOSPAWN_CHUNJO",\n'
+         '\t\t\t\t"PLAYERBOT_AUTOSPAWN_JINNO" };\n'
+         '\t\t\tint asked[playerbot_empire_rules::EMPIRE_COUNT] = { 0, 0, 0, 0 };\n'
+         '\t\t\tfor (int e = playerbot_empire_rules::EMPIRE_SHINSOO;\n'
+         '\t\t\t\t\te <= playerbot_empire_rules::EMPIRE_JINNO; ++e)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tconst char* value = std::getenv(kingdomCountKeys[e]);\n'
+         '\t\t\t\tint count = value && *value ? std::atoi(value) : 0;\n'
+         '\t\t\t\tif (count > autoSpawnCeiling)\n'
+         '\t\t\t\t\tcount = autoSpawnCeiling;\n'
+         '\t\t\t\tasked[e] = CPlayerBotManager::instance().ScaleToThisChannel(count, (BYTE)e);\n'
+         '\t\t\t}\n'
+         '\t\t\tplayerbot_empire_rules::TakeKingdomCounts(asked, registered, want);\n'
+         '\t\t\tsys_log(0, "PLAYERBOT: autospawn per kingdom asked=%d/%d/%d registered=%d/%d/%d want=%d/%d/%d",\n'
+         '\t\t\t\t\tasked[1], asked[2], asked[3], registered[1], registered[2], registered[3],\n'
+         '\t\t\t\t\twant[1], want[2], want[3]);\n'
+         '\t\t}\n'
+         '\t\t// The operator\'s medal droppers, on top of the population: this many in\n',
+         marker='PLAYERBOT_AUTOSPAWN_PER_KINGDOM')
+    edit(p,
+         '\t\tplayerbot_empire_rules::SplitPopulation(lateJoiners, registeredLeft, lateWant);\n',
+         '\t\tplayerbot_empire_rules::SplitPopulation(lateJoiners, registeredLeft, lateWant);\n'
+         '\t\tCPlayerBotManager::instance().SplitForThisChannel(lateJoiners, registeredLeft, lateWant);\n',
+         marker='SplitForThisChannel(lateJoiners, registeredLeft, lateWant);')
+
+
+def apply_shops_first_channel(game):
+    # Every shop in the world stands on the first channel (the operator's rule
+    # for the second one: "wszystkie sklepy tylko na ch1"). A shop's entity
+    # lives on the channel it was opened on, the bots of the second channel
+    # neither sell nor serve a counter, and a keeper is pinned to the first
+    # channel for good (playerbot_channel_rules.h) - so a player's shop opened
+    # on the second channel would stand where no bot ever buys. Refused for
+    # everybody, the reopen included (it goes through OpenOfflineShop too).
+    edit(os.path.join(game, 'ikarus_shop_manager.cpp'),
+         '\tbool CShopManager::OpenOfflineShop(LPCHARACTER ch, const char* shopSign, TShopItemTable* pItemTable, BYTE bItemCount, BYTE bTimeIndex)\n'
+         '\t{\n'
+         '\t\tif(!ch)\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\tif (!CheckGMLevel(ch))\n'
+         '\t\t\treturn false;\n',
+         '\tbool CShopManager::OpenOfflineShop(LPCHARACTER ch, const char* shopSign, TShopItemTable* pItemTable, BYTE bItemCount, BYTE bTimeIndex)\n'
+         '\t{\n'
+         '\t\tif(!ch)\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\tif (!CheckGMLevel(ch))\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\t// playerbot: shops are the first channel\'s (playerbot_channel_rules.h).\n'
+         '\t\tif (g_bChannel != 1)\n'
+         '\t\t{\n'
+         '\t\t\tch->ChatPacket(CHAT_TYPE_INFO, "Sklep offline mozna otworzyc tylko na CH1.");\n'
+         '\t\t\treturn false;\n'
+         '\t\t}\n',
+         marker='// playerbot: shops are the first channel\'s (playerbot_channel_rules.h).')
+
+
+
+def apply_event_cancel_in_flight(game):
+    # event_process frees an event's queue element (cxx_q.Delete) before it
+    # calls the event, and left the event's q_el pointing at it for the whole
+    # call - so an event that cancels itself from inside wrote bCancel = TRUE
+    # into freed memory (event_cancel, the is_processing branch). A quest's
+    # target.delete on its own arrow is exactly that: target_event runs the
+    # "arrive" script, the script deletes the target, DeleteTarget cancels the
+    # running event. The chunk had often gone to the script compiled a moment
+    # before, and the core died in luaV_execute on the next global the script
+    # read - Dearminder's horse training on the fire land, twice at the third
+    # point and again at every login beside it (18 September, game2,
+    # target_event -> NPC::OnTarget -> lua_resume -> luaV_execute+0xac7, an
+    # OP_GETGLOBAL through a Proto's k that was no longer one). Nothing points
+    # at the element once it is freed; every reader of q_el handles NULL.
+    # event.cpp mixes line ends, so the anchor is tried with both.
+    path = os.path.join(game, 'event.cpp')
+    data = read(path)
+    if b'nothing may point at it' in data:
+        print('  already: %s' % os.path.relpath(path))
+        return
+    for eol in (b'\n', b'\r\n'):
+        old = (b'\t\tcxx_q.Delete(pElem);' + eol + eol +
+               b'\t\tthe_event->is_processing = TRUE;' + eol)
+        if data.count(old) != 1:
+            continue
+        new = (b'\t\tcxx_q.Delete(pElem);' + eol +
+               b'\t\t// playerbot: the element is freed above, so nothing may point at it:' + eol +
+               b'\t\t// an event cancelling itself from inside (a quest\'s target.delete on' + eol +
+               b'\t\t// its own arrow) wrote bCancel into whatever was allocated there next.' + eol +
+               b'\t\tthe_event->q_el = NULL;' + eol + eol +
+               b'\t\tthe_event->is_processing = TRUE;' + eol)
+        write(path, data.replace(old, new, 1))
+        print('  edited:  %s' % os.path.relpath(path))
+        return
+    raise SystemExit('playerbotify: event_process anchor not found in %s' % path)
 
 
 if __name__ == '__main__':
