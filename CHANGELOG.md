@@ -17,6 +17,32 @@ every version here.
 
 ---
 
+## 2.0.79 — 2026-09-19
+
+Serwer 2.0.79, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Klątwa małp usunięta (SIZOWSKI)
+
+- Quest z paczki mt2009 (`monkey_curse`) po 55 minutach w łatwym Lochu Małp
+  (35 w średnim, 25 w trudnym) zamieniał postać na 5 minut w małpę i wyrzucał
+  ją do wioski, chyba że działało zioło z małp. Boty tych ziół nie używają,
+  więc dropiarze medali wylatywali z lochów jako małpy. Klątwy nie ma już dla
+  nikogo, ani dla graczy, ani dla botów: obraz gry przy każdej budowie usuwa
+  pliki tego questa, więc następna aktualizacja jej nie przywróci.
+- Zioła z małp zostają w dropach, bo quest poboczny na poziomy 55–57 wymaga
+  zioła z trudnych małp. Samo użycie zioła niczego już nie robi.
+
+### Przedmioty na „stall” też mają limit linii na ladzie (Tieru)
+
+- Przedmiot ustawiony w panelu (Polityka przedmiotów) na „stall” dalej trafia
+  na ladę przed wszystkim innym i nigdy do handlarza, ale na jednej ladzie
+  stoją najwyżej 3 linie tego samego przedmiotu, a marmurów najwyżej 3, każdy
+  innego potwora. Reszta czeka w plecaku. Do tej pory taki wpis zapychał całe
+  lady jednym przedmiotem: na naszym serwerze testowym Kawałek Lodu ustawiony
+  na „stall” stał w 46 liniach na jednej ladzie.
+- Linie ponad limit wracają z lad same, po jednej przy każdej wizycie
+  sprzedawcy.
+
 ## 2.0.78 — 2026-09-18
 
 Serwer 2.0.78, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
