@@ -544,6 +544,40 @@ quest web_admin begin
 				end
 			end
 
+			-- How many a respawn line keeps standing, the same way
+			-- (Kiciamol, 18 September): m2_boss_count and m2_mob_count are
+			-- percents of each line's own count that regen_spawn tops up to
+			-- (regen_target_count; 100 = as the line says, 400 = four times).
+			-- arg1 = "boss,mob", digits only, 100..400.
+			local crows = wa_query("SELECT id, arg1 FROM player.web_admin_queue WHERE status='pending' AND cmd='REGEN_COUNT' ORDER BY id ASC LIMIT 3")
+			if type(crows) == "table" then
+				local ci
+				for ci = 1, table.getn(crows) do
+					local cr = crows[ci]
+					if type(cr) == "table" then
+						local cqid = tonumber(cr.id)
+						local cboss, cmob = nil, nil
+						if type(cr.arg1) == "string" then
+							local _, _, c1, c2 = string.find(cr.arg1, "^(%d+),(%d+)$")
+							cboss = tonumber(c1)
+							cmob = tonumber(c2)
+						end
+						if cqid ~= nil then
+							local cres = "done"
+							if cboss == nil or cmob == nil or cboss < 100 or cboss > 400 or cmob < 100 or cmob > 400 then
+								cres = "bad_args"
+							elseif game.set_event_flag == nil then
+								cres = "failed"
+							else
+								game.set_event_flag("m2_boss_count", cboss)
+								game.set_event_flag("m2_mob_count", cmob)
+							end
+							wa_query("UPDATE player.web_admin_queue SET status='" .. cres .. "' WHERE id=" .. cqid .. " AND status='pending' LIMIT 1")
+						end
+					end
+				end
+			end
+
 			-- The thirty seconds are safely longer than the seven the
 			-- panel waits, so this never races it: by the time a row is
 			-- old enough to be swept, the panel has long since either

@@ -2930,6 +2930,20 @@ T = {
                       "en":"✅ Saved! The new respawn times are live in game, no restart needed."},
  "regen_saved_restart": {"pl":"Zapisano. Nikt nie jest zalogowany, więc pomocnik w grze nie odpowiedział — nowe czasy zadziałają po restarcie serwera (albo zapisz jeszcze raz, gdy ktoś będzie w grze).",
                          "en":"Saved. Nobody is logged in, so the in-game helper did not answer — the new times apply after a server restart (or save again while somebody is in game)."},
+ "count_title": {"pl":"Liczba potworów w respie", "en":"Monsters per respawn"},
+ "count_help":  {"pl":"Ile potworów stoi w każdym miejscu respu: ×1 = jak w grze, ×2 = dwa razy więcej, aż do ×4. Nie trzeba restartu, a po restarcie ustawienie zostaje; dodatkowe potwory dochodzą przy najbliższym respie danego miejsca (Metiny i bossowie po swoim czasie odradzania, zwykle 15–25 minut). Osobno dla Metinów i bossów, osobno dla zwykłych potworów. Postacie niezależne (także żyły rud i krzaki ziół), portale, lochy i jednorazowe respy z misji zostają bez zmian.",
+                 "en":"How many monsters stand at each spawn point: ×1 = as in the game, ×2 = twice as many, up to ×4. No restart needed and kept across one; the extra monsters come at each spot's next respawn (stones and bosses after their own respawn time, usually 15-25 minutes). Stones and bosses apart from ordinary monsters. NPCs (ore veins and herb bushes too), portals, dungeons and a quest's one-off spawns are left alone."},
+ "count_warn":  {"pl":"Uwaga: ×2 to dwa razy więcej potworów na każdej mapie — serwer i boty mają przez to więcej pracy. Po zmniejszeniu mnożnika nadmiarowe potwory znikają dopiero, gdy ktoś je zabije.",
+                 "en":"Mind: ×2 is twice as many monsters on every map, and the server and the bots work that much harder. After lowering it, the extra monsters go only as they are killed."},
+ "count_boss":  {"pl":"Metiny i bossowie", "en":"Metin stones and bosses"},
+ "count_mob":   {"pl":"Zwykłe potwory", "en":"Ordinary monsters"},
+ "count_save":  {"pl":"Zapisz liczbę potworów", "en":"Save the monster counts"},
+ "count_range": {"pl":"Wybierz mnożnik od ×1 do ×4. Nic nie zmieniono.",
+                 "en":"Pick a multiplier from ×1 to ×4. Nothing was changed."},
+ "count_saved_live": {"pl":"✅ Zapisano! Nowa liczba potworów działa już w grze — dosypie się przy najbliższym respie.",
+                      "en":"✅ Saved! The new counts are live in game and fill in at the next respawn."},
+ "count_saved_restart": {"pl":"Zapisano. Nikt nie jest zalogowany, więc pomocnik w grze nie odpowiedział — nowa liczba potworów zadziała po restarcie serwera (albo zapisz jeszcze raz, gdy ktoś będzie w grze).",
+                         "en":"Saved. Nobody is logged in, so the in-game helper did not answer — the new counts apply after a server restart (or save again while somebody is in game)."},
  "rates_range":  {"pl":"Każda z trzech wartości musi być liczbą całkowitą od 1 do 10000. Nic nie zmieniono. 🙂","en":"Each of the three has to be a whole number between 1 and 10000. Nothing was changed. 🙂",
                   "de":"Alle drei müssen ganze Zahlen zwischen 1 und 10000 sein. Es wurde nichts geändert. 🙂",
                   "tr":"Üçü de 1 ile 10000 arasında tam sayı olmalı. Hiçbir şey değiştirilmedi. 🙂"},
@@ -3958,6 +3972,12 @@ MT2009_RATE_FLAGS = {
 # shows 100 for "normal", the flag carries 0 for it.
 MT2009_REGEN_FLAGS = {"regen_boss": "fastBossSpawn", "regen_mob": "fastMobSpawn"}
 REGEN_MIN_PERCENT = 10
+# How many a respawn line keeps standing: regen_spawn tops each line up to
+# its own count times m2_boss_count / m2_mob_count percent (playerbotify's
+# regen_target_count; 100 = as written, 400 at most). Kiciamol, 18 September:
+# his own edit of regen.cpp was undone by every update.
+MT2009_REGEN_COUNT_FLAGS = {"count_boss": "m2_boss_count", "count_mob": "m2_mob_count"}
+REGEN_COUNT_CHOICES = (100, 150, 200, 250, 300, 400)
 
 def read_regen_mt2009():
     """The two flags as the page shows them (100 = normal), from player.quest."""
@@ -3971,6 +3991,25 @@ def read_regen_mt2009():
                 if REGEN_MIN_PERCENT <= value < 100:
                     out[name] = value
     return out
+
+def read_regen_count_mt2009():
+    """The two multipliers as percents (100 = as the game has it), from player.quest."""
+    out = {name: 100 for name in MT2009_REGEN_COUNT_FLAGS}
+    with db() as c, c.cursor() as cur:
+        for name, flag in MT2009_REGEN_COUNT_FLAGS.items():
+            cur.execute("SELECT lValue FROM player.quest WHERE dwPID=0 AND szName=%s LIMIT 1", (flag,))
+            row = cur.fetchone()
+            if row:
+                value = int(row["lValue"] if isinstance(row, dict) else row[0])
+                if 100 < value <= max(REGEN_COUNT_CHOICES):
+                    out[name] = value
+    return out
+
+def persist_regen_count_mt2009(cur, vals):
+    for name, flag in MT2009_REGEN_COUNT_FLAGS.items():
+        value = int(vals[name])
+        cur.execute("REPLACE INTO player.quest (dwPID, szName, szState, lValue) "
+                    "VALUES (0, %s, '', %s)", (flag, 0 if value <= 100 else value))
 
 def persist_regen_mt2009(cur, vals):
     for name, flag in MT2009_REGEN_FLAGS.items():
@@ -5215,6 +5254,22 @@ function regenSet(k,v){document.getElementById(k).value=v;regenLabel(k);}
 regenLabel("regen_boss");regenLabel("regen_mob");
 </script>
 <button class="big" style="margin-top:18px">{{t('regen_save')}}</button>
+</form></div>
+{% endif %}
+{% if regen_count %}
+<div class="card">
+<form method="post" action="{{url_for('rates_regen_count')}}">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<h3>👥 {{t('count_title')}}</h3>
+<p class="muted">{{t('count_help')}}</p>
+<p class="muted">⚠️ {{t('count_warn')}}</p>
+{% for key, icon in (("count_boss", "🪨"), ("count_mob", "👾")) %}
+<h3 style="margin-top:{{ 12 if loop.first else 18 }}px">{{icon}} {{t(key)}}</h3>
+<select id="{{key}}" name="{{key}}">
+{% for p in count_choices %}<option value="{{p}}"{% if regen_count[key] == p %} selected{% endif %}>×{{ (p / 100) | round(1) | replace(".0", "") | replace(".", ",") }}</option>{% endfor %}
+</select>
+{% endfor %}
+<button class="big" style="margin-top:18px">{{t('count_save')}}</button>
 </form></div>
 {% endif %}""")
 
@@ -12731,12 +12786,18 @@ def rates():
         flash(t("rates_no_script"), "error")
     st = rates_status().get("state", "")
     regen = None
+    regen_count = None
     if ENGINE_MT2009:
         try:
             regen = read_regen_mt2009()
         except Exception:
             regen = {name: 100 for name in MT2009_REGEN_FLAGS}
+        try:
+            regen_count = read_regen_count_mt2009()
+        except Exception:
+            regen_count = {name: 100 for name in MT2009_REGEN_COUNT_FLAGS}
     return render_template_string(TPL_RATES, cur=cur_rates, presets=RATE_PRESETS, regen=regen,
+                                  regen_count=regen_count, count_choices=REGEN_COUNT_CHOICES,
                                   intro_key="rates_intro_mt2009" if ENGINE_MT2009 else "rates_intro",
                                   state_msg=t("rates_st_" + st) if st in RATE_STATES else "")
 
@@ -12780,6 +12841,45 @@ def rates_regen():
         flash(t("regen_saved_restart"))
     return redirect(url_for("rates"))
 
+
+
+@app.post("/rates/regen_count")
+@login_required
+def rates_regen_count():
+    """How many monsters each respawn line keeps standing, stones and bosses
+    apart from the rest. mt2009 only: the engine's regen_spawn reads the flags."""
+    if not ENGINE_MT2009:
+        return redirect(url_for("rates"))
+    vals = {}
+    for name in MT2009_REGEN_COUNT_FLAGS:
+        raw = (request.form.get(name, "") or "").strip()
+        if not raw.isdigit() or int(raw) not in REGEN_COUNT_CHOICES:
+            flash(t("count_range"), "error")
+            return redirect(url_for("rates"))
+        vals[name] = int(raw)
+    try:
+        with db() as c, c.cursor() as cur:
+            persist_regen_count_mt2009(cur, vals)
+    except Exception:
+        flash(t("db_down"), "error")
+        return redirect(url_for("rates"))
+    try:
+        status, qid = queue_and_wait("", "REGEN_COUNT", "%d,%d" % (vals["count_boss"], vals["count_mob"]), "",
+                                     wait=RATES_LIVE_WAIT)
+    except Exception:
+        status, qid = "failed", 0
+    if status == "done":
+        flash(t("count_saved_live"))
+    else:
+        if status == "timeout":
+            try:
+                with db() as c, c.cursor() as cur:
+                    cur.execute("UPDATE player.web_admin_queue SET status='cancelled' "
+                                "WHERE id=%s AND status='pending'", (qid,))
+            except Exception:
+                pass
+        flash(t("count_saved_restart"))
+    return redirect(url_for("rates"))
 
 
 @app.route("/guilds")

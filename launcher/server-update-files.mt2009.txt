@@ -120,6 +120,7 @@ linux-port-mt2009/docker/game/src/server/game/src/item.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/main.cpp
+linux-port-mt2009/docker/game/src/server/game/src/mob_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/p2p.cpp
 linux-port-mt2009/docker/game/src/server/game/src/p2p.h
 # Every Playerbot source has a build-context copy here, discovered like the
