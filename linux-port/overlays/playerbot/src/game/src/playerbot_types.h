@@ -230,6 +230,17 @@ namespace
 	const DWORD PLAYERBOT_STAT_CHECK_INTERVAL = 1000;
 	const DWORD PLAYERBOT_SKILL_CHECK_INTERVAL = 1000;
 	const DWORD PLAYERBOT_SKILL_BOOK_CHECK_INTERVAL = 8000;
+	// What LearnSkillByBook wants in hand before it reads, class book or
+	// Leadership or Combo, on every level under the cap (FN_should_check_exp).
+	// Short of it the engine answers "lack of experience", keeps the book and
+	// the use still returns true - so a bot tried again every
+	// PLAYERBOT_SKILL_BOOK_CHECK_INTERVAL and logged a read: on m2zip on
+	// 18 September 7 095 "read skill book" lines in twelve minutes against 23
+	// reads the engine actually rolled, 78 of the 91 readers below the mark
+	// (droppers whose experience is locked at 25 and 33, bots of forty in a
+	// second village where they may not hunt). A class read also costs this
+	// much experience, whatever it rolls.
+	const int PLAYERBOT_BOOK_READ_EXP = 20000;
 	// The two skills every class trains from a book that is not an
 	// ITEM_SKILLBOOK: Sztuka Wojny Sun Zi / Wu Zi / WeiLiao Zi (50301-50303,
 	// Leadership by twenty levels each) and Sztuka Combo (50304-50306, Combo
@@ -565,6 +576,13 @@ namespace
 	// service visit (BotOfflineUnwantedLine) and goes up again in fives.
 	const int PLAYERBOT_SHOP_SCROLL_LINE_UNITS = 5;
 	const int PLAYERBOT_SHOP_SCROLL_LINES = 3;
+	// Single lines of one kind kept by count - the books of one skill, the
+	// soul stone - one offline counter carries at a time. A line is one unit
+	// (GetPlayerBotStallLineUnits), because a bot buys a line only when all of
+	// it fits what it is short of, and a stand adds one line a visit, so ten
+	// spare books of one skill would otherwise be the next ten visits' only
+	// goods. Three is the stone's keep: no bot is ever short of more stones.
+	const int PLAYERBOT_SHOP_COUNTED_SINGLE_LINES = 3;
 	// Keys of one kind a bot holds on to with no chest in the bag; the rest
 	// are goods (IsPlayerBotSurplusTreasureKey). 2598 gold and silver keys lay
 	// in 1057 bags on the test world on 15 September, and not one of those

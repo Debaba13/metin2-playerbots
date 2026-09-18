@@ -778,20 +778,89 @@ namespace
 		return !worn || GetPlayerBotEquipmentScore(item, ch) > GetPlayerBotEquipmentScore(worn, ch);
 	}
 
-	// Books of one skill in the cells before this one. Cell order decides, so
-	// the same books stay put from one town visit to the next.
+	// Books of one skill in the cells before this one, in books. Cell order
+	// decides, so the same books stay put from one town visit to the next. It
+	// used to count rows, and a book stacks to ten on mt2009, so "keep twelve"
+	// kept twelve stacks - up to a hundred and twenty books of a skill nothing
+	// was selling. An item outside the bag (the safebox's, asked
+	// whether to come out) has no cells before it: the whole bag is in front.
 	int CountPlayerBotSkillBooksAhead(LPCHARACTER ch, LPITEM item, DWORD skillVnum)
 	{
 		int ahead = 0;
-		const WORD ownCell = item->GetCell();
+		const WORD ownCell = item->GetWindow() == INVENTORY
+				? item->GetCell() : (WORD)PLAYERBOT_BAG_CELLS;
 		for (WORD cell = 0; cell < ownCell && cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
 			LPITEM other = ch->GetInventoryItem(cell);
-			if (other && other != item && other->GetType() == ITEM_SKILLBOOK &&
+			if (other && other != item && other->GetCell() == cell &&
+					other->GetType() == ITEM_SKILLBOOK &&
 					GetPlayerBotSkillBookSkillVnum(other) == skillVnum)
-				++ahead;
+				ahead += std::max<int>(1, other->GetCount());
 		}
 		return ahead;
+	}
+
+	// Defined further down (playerbot_progression_needs.h): a bot's books of
+	// one skill over the whole bag, and whether a skill of its build is at a
+	// Grand Master grade the soul stone trains.
+	int CountPlayerBotOwnedSkillBooks(LPCHARACTER ch, DWORD skill);
+	bool PlayerBotHasGrandMasterToTrain(LPCHARACTER ch);
+
+	// The goods a bot keeps a number of and sells the rest of one at a time: a
+	// skill book (its kind is its skill) and the soul stone. A counter line of
+	// either is a single (GetPlayerBotStallLineUnits), because a buyer takes a
+	// line only when all of it fits what it is short of.
+	bool IsPlayerBotCountedSingleGoods(LPITEM item)
+	{
+		return item && (item->GetType() == ITEM_SKILLBOOK ||
+				item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM);
+	}
+
+	// One key per kind of those goods, zero for anything else: a book's skill
+	// with the top bit set (socket 0 of the engine's 50300, the first value of
+	// a named book - GetPlayerBotSkillBookSkillVnum), the stone's vnum. Asked of
+	// the raw fields too, because an offline counter's line is not an item.
+	DWORD GetPlayerBotStallKindKeyOf(DWORD vnum, BYTE type, long socket0, long value0)
+	{
+		if (type == ITEM_SKILLBOOK)
+			return 0x80000000U | (DWORD)(vnum == 50300 ? socket0 : value0);
+		return vnum == PLAYERBOT_GRAND_MASTER_STONE_VNUM ? vnum : 0;
+	}
+
+	DWORD GetPlayerBotStallKindKey(LPITEM item)
+	{
+		return item ? GetPlayerBotStallKindKeyOf(item->GetVnum(), item->GetType(),
+				item->GetSocket(0), item->GetValue(0)) : 0;
+	}
+
+	// What the bag keeps of that kind: the books of its own skill it will read
+	// (GetPlayerBotBookKeepLimit) and none of anybody else's; three stones while
+	// a skill stands at a grade they train, one against the day one will. The
+	// same numbers the buyer's side asks for (GetPlayerBotProgressionNeed), so a
+	// counter never sells what its keeper would walk to the market to buy back.
+	int GetPlayerBotCountedGoodsKeep(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item)
+			return 0;
+		if (item->GetType() == ITEM_SKILLBOOK)
+		{
+			const DWORD skill = GetPlayerBotSkillBookSkillVnum(item);
+			return ch->GetSkillGroup() != 0 && IsPlayerBotOwnSkill(ch, skill)
+					? GetPlayerBotBookKeepLimit(ch, skill) : 0;
+		}
+		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
+			return PlayerBotHasGrandMasterToTrain(ch) ? PLAYERBOT_GRAND_MASTER_STONE_KEEP : 1;
+		return 0;
+	}
+
+	// Units of the item's kind over the whole bag.
+	int CountPlayerBotStallKindUnits(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item)
+			return 0;
+		if (item->GetType() == ITEM_SKILLBOOK)
+			return CountPlayerBotOwnedSkillBooks(ch, GetPlayerBotSkillBookSkillVnum(item));
+		return (int)ch->CountSpecifyItem(item->GetVnum());
 	}
 
 	// A key whose lock matches this chest, anywhere in the bag.

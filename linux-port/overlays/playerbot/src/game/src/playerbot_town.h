@@ -2023,18 +2023,15 @@ namespace
 		// A retired item is nobody's goods (IsPlayerBotRetiredItem).
 		if (IsPlayerBotRetiredItem(item->GetVnum()))
 			return -1;
-		// Nor a Kamien Duchowy: every bot trains with its own.
-		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM) {
-			const int keep = PlayerBotHasGrandMasterToTrain(ch) ? PLAYERBOT_GRAND_MASTER_STONE_KEEP : 1;
-			int before = 0;
-			for (WORD cell = 0; cell < item->GetCell() && cell < PLAYERBOT_BAG_CELLS; ++cell) {
-				LPITEM held = ch->GetInventoryItem(cell);
-				if (held && held->GetCell() == cell && held->GetVnum() == item->GetVnum()) before += held->GetCount();
-			}
-			// A stack holding the reserve is kept; single splitting below
-			// makes excess stones available without selling the reserve.
-			return before >= keep ? 800 : -1;
-		}
+		// A Kamien Duchowy is every bot's own to train with, up to its keep
+		// (GetPlayerBotCountedGoodsKeep); a stack holding a stone over the keep
+		// is goods, and the cut takes only what is over it (BotOfflinePrepareLine,
+		// the classic stall's MayListWhole). Counting only the stones in the cells
+		// before a stack, as this did, never let a bot's one stack go: ten in a
+		// stack against a keep of three were ten kept.
+		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
+			return playerbot_stall_rules::HoldsSpare(CountPlayerBotVnumUnitsAhead(ch, item),
+					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item)) ? 800 : -1;
 		if (item->GetType() == ITEM_POLYMORPH || IsPlayerBotMetinDetector(item->GetVnum()))
 			return PLAYERBOT_SHOP_POLYMORPH_SCORE;
 		// Seven of the Forgetting Scrolls are marked "do sprzedazy u
@@ -2194,11 +2191,12 @@ namespace
 		if (item->GetType() == ITEM_SKILLBOOK)
 		{
 			// Its own, within what it keeps to read, stays in the bag: a counter
-			// used to carry the very book its keeper was waiting to read.
+			// used to carry the very book its keeper was waiting to read. A stack
+			// is goods once it holds a book over the keep, counted in books over
+			// the skill; the line is cut from what is over it.
 			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(item);
-			if (ch->GetSkillGroup() != 0 && IsPlayerBotOwnSkill(ch, skillVnum) &&
-					CountPlayerBotSkillBooksAhead(ch, item, skillVnum) <
-						GetPlayerBotBookKeepLimit(ch, skillVnum))
+			if (!playerbot_stall_rules::HoldsSpare(CountPlayerBotSkillBooksAhead(ch, item, skillVnum),
+					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item)))
 				return -1;
 			return GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_METIN_DROPPER
 					? 1800 : 400;
@@ -3229,6 +3227,9 @@ namespace
 		unsigned int uNoLine = 0, uNoSlot = 0, uAntiFlag = 0;
 		// Lines of each hoarded material on this counter.
 		std::map<DWORD, int> hoardLines;
+		// Units of each kind a bot keeps by count (a book's skill, the soul
+		// stone) this counter already carries.
+		std::map<DWORD, int> countedListed;
 		for (size_t i = 0; i < scored.size(); ++i)
 		{
 			if (tableCount >= tableLimit)
@@ -3246,6 +3247,15 @@ namespace
 			if (GetPlayerBotStallLineUnitsFor(ch, item) == PLAYERBOT_SHOP_HOARD_PACK_UNITS &&
 					((int)item->GetCount() > PLAYERBOT_SHOP_HOARD_PACK_UNITS ||
 						++hoardLines[item->GetVnum()] > PLAYERBOT_SHOP_HOARD_LINES))
+				continue;
+			// A stack of a kind kept by count goes up whole here, so it goes up
+			// only while what stays in the bag still holds the keep: the scorer
+			// calls a stack goods once it holds one unit over it, and the split
+			// above may not have cut it down that far.
+			const DWORD countedKind = GetPlayerBotStallKindKey(item);
+			if (countedKind && !playerbot_stall_rules::MayListWhole(
+					CountPlayerBotStallKindUnits(ch, item), countedListed[countedKind],
+					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item)))
 				continue;
 			const TItemTable* proto = item->GetProto();
 			if (!proto || IS_SET(proto->dwAntiFlags,
@@ -3321,6 +3331,8 @@ namespace
 			if (scored[i].first > bestScore)
 				bestScore = scored[i].first;
 			++tableCount;
+			if (countedKind)
+				countedListed[countedKind] += (int)item->GetCount();
 
 			if (!pszBestName)
 				pszBestName = proto->szLocaleName;

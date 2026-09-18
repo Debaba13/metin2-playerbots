@@ -230,6 +230,13 @@ namespace {
                 (unsigned int)line.count, (long long)line.price);
             LogManager::instance().ItemLog(ch, (int)line.item, (int)vnum,
                 "PLAYERBOT_STALL_SOLD", hint);
+            // Every sale with how long its line stood, which is what the work on
+            // unsold stock has to be measured by. -1 for a line this core never
+            // saw go up: a restart inherited it, and its age is not known.
+            sys_log(0, "PLAYERBOT_OFFLINE: sold pid=%u name=%s vnum=%u skill=%u count=%u price=%lld listed_s=%d",
+                ch->GetPlayerID(), ch->GetName(), vnum, skill, (unsigned int)line.count,
+                (long long)line.price, haveListing && known->second.when != 0
+                    ? (int)((now - known->second.when) / 1000) : -1);
             if (haveListing) o.listed.erase(known);
         }
         playerbot_offline::sold.erase(it);
@@ -257,6 +264,17 @@ namespace {
             if (preview->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
                     (!sellsChests || (int)preview->GetCount() > PLAYERBOT_CHEST_LINE_UNITS)) {
+                if (!unwanted) unwanted = id;
+                M2_DELETE(preview);
+                continue;
+            }
+            // A soul stone line longer than PLAYERBOT_GRAND_MASTER_STONE_KEEP
+            // is one no bot can buy - none is ever short of more - and the
+            // stand used to put a stack up whole; it comes home to go up a
+            // stone at a time (BotOfflinePrepareLine).
+            if (preview->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM &&
+                    (int)preview->GetCount() > PLAYERBOT_GRAND_MASTER_STONE_KEEP &&
+                    GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
                 if (!unwanted) unwanted = id;
                 M2_DELETE(preview);
                 continue;
@@ -391,6 +409,21 @@ namespace {
                 if (line && line->GetInfo().vnum == vnum) ++lines;
         return lines;
     }
+    // How many lines of this item's kind kept by count - the books of its
+    // skill, the soul stone (GetPlayerBotStallKindKey) - the counter carries.
+    int BotOfflineKindLinesOf(NativeShop shop, LPITEM item) {
+        const DWORD kind = GetPlayerBotStallKindKey(item);
+        int lines = 0;
+        if (!shop || !kind) return 0;
+        for (const auto& [id, line] : shop->GetItems()) {
+            if (!line || !line->GetTable()) continue;
+            const auto& info = line->GetInfo();
+            if (GetPlayerBotStallKindKeyOf(info.vnum, line->GetTable()->bType,
+                    info.alSockets[0], line->GetTable()->alValues[0]) == kind)
+                ++lines;
+        }
+        return lines;
+    }
     // The bag cell of the line to add. A hoard's pack of ten, a single key, a
     // pack of Moonlight chests (PLAYERBOT_CHEST_LINE_UNITS), a line of
     // refine scrolls (PLAYERBOT_SHOP_SCROLL_LINE_UNITS), a pack of a refine
@@ -446,6 +479,27 @@ namespace {
                 ch->GetPlayerID(), ch->GetName(), item->GetVnum(), take, (unsigned int)item->GetCount(), keep);
             return to;
         }
+        if (IsPlayerBotCountedSingleGoods(item)) {
+            // A book of its own skill and a soul stone keep their count over the
+            // whole kind (GetPlayerBotCountedGoodsKeep), and a line is one unit
+            // of what is over it: a bot buys a line only when all of it fits
+            // what it is short of, so a stack went up whole and stood there -
+            // ten stones against a buyer short of three. The stack keeps the
+            // rest, the keep included, and the next visit cuts the next.
+            const int keep = GetPlayerBotCountedGoodsKeep(ch, item);
+            const int total = CountPlayerBotStallKindUnits(ch, item);
+            const int take = playerbot_stall_rules::LineTake((int)item->GetCount(), total, keep, units);
+            if (take <= 0) return -1;
+            if (take >= (int)item->GetCount()) return cell;
+            if (CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_SHOP_SPLIT_KEEP_FREE_CELLS) return -1;
+            const int to = ch->GetEmptyInventory(item->GetSize());
+            if (to < 0 || !ch->MoveItem(TItemPos(INVENTORY, cell), TItemPos(INVENTORY, (WORD)to), take))
+                return -1;
+            sys_log(0, "PLAYERBOT_OFFLINE: cut a line pid=%u name=%s vnum=%u units=%d left=%u keep=%d kind=%u total=%d",
+                ch->GetPlayerID(), ch->GetName(), item->GetVnum(), take, (unsigned int)item->GetCount(), keep,
+                (unsigned int)(GetPlayerBotStallKindKey(item) & 0x7fffffffU), total);
+            return to;
+        }
         const bool cut = units == PLAYERBOT_SHOP_HOARD_PACK_UNITS ||
             (units == 1 && item->GetType() == ITEM_TREASURE_KEY) ||
             item->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM;
@@ -488,6 +542,8 @@ namespace {
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
             if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
+            if (IsPlayerBotCountedSingleGoods(item) &&
+                    BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) continue;
             const int lineCell = BotOfflinePrepareLine(ch, cell);
             if (lineCell < 0) continue;
             LPITEM line = ch->GetInventoryItem((WORD)lineCell);
@@ -748,6 +804,8 @@ namespace {
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_CHEST_COUNTER_LINES) continue;
             if (IsPlayerBotSafeRefineScroll(item->GetVnum()) &&
                     BotOfflineLinesOf(shop, item->GetVnum()) >= PLAYERBOT_SHOP_SCROLL_LINES) continue;
+            if (IsPlayerBotCountedSingleGoods(item) &&
+                    BotOfflineKindLinesOf(shop, item) >= PLAYERBOT_SHOP_COUNTED_SINGLE_LINES) continue;
             const int lineCell = BotOfflinePrepareLine(ch, cell);
             if (lineCell < 0) continue;
             const WORD at = (WORD)lineCell;

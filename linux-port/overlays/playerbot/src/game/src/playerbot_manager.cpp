@@ -3,6 +3,7 @@
 #include "playerbot_empire_rules.h"
 #include "playerbot_world_rules.h"
 #include "playerbot_event_rules.h"
+#include "playerbot_stall_rules.h"
 
 #include "char.h"
 #include "skill.h"
@@ -1598,12 +1599,34 @@ namespace
 		return false;
 	}
 
+	// Whether LearnSkillByBook will read at all: under the level cap it wants
+	// PLAYERBOT_BOOK_READ_EXP in hand (FN_should_check_exp - mt2009 waves the
+	// cap through, r40250's english locale asks at every level).
+	bool PlayerBotHasBookReadExp(LPCHARACTER ch)
+	{
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		if (ch->GetLevel() >= gPlayerMaxLevel)
+			return true;
+#endif
+		return (long long)ch->GetExp() >= PLAYERBOT_BOOK_READ_EXP;
+	}
+
 	void ManagePlayerBotSkillBooks(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || !ch->IsItemLoaded() || ch->GetSkillGroup() == 0 ||
 				dwNow < state.dwNextSkillBookTime)
 			return;
 		state.dwNextSkillBookTime = dwNow + PLAYERBOT_SKILL_BOOK_CHECK_INTERVAL;
+		// Short of the experience a read wants, the engine keeps the book and
+		// the use still says yes: nothing to try until the bot has hunted.
+		if (!PlayerBotHasBookReadExp(ch))
+		{
+			PlayerBotLogThrottled("book_exp", dwNow,
+					"PLAYERBOT_AI: book read waits for experience pid=%u name=%s level=%d exp=%lld need=%d",
+					ch->GetPlayerID(), ch->GetName(), (int)ch->GetLevel(),
+					(long long)ch->GetExp(), PLAYERBOT_BOOK_READ_EXP);
+			return;
+		}
 
 		const TJobSkillBuild build = GetPlayerBotSkillBuild(ch->GetJob(), ch->GetSkillGroup(), ch->GetPlayerID());
 		int bestCell = -1;
