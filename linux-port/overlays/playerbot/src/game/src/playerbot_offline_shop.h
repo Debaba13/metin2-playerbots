@@ -5,10 +5,26 @@
 namespace {
     using NativeShop = ikashop::CShopManager::SHOP_HANDLE;
     DWORD s_nextBotOfflineMutation = 0;
+    // What the one-a-second budget handed out and turned away in the last
+    // minute. Granted near sixty means every keeper's visit is queueing
+    // behind the others; measure it before moving the budget or the slice.
+    DWORD s_botOfflineBudgetMinute = 0;
+    unsigned s_botOfflineBudgetGranted = 0, s_botOfflineBudgetRefused = 0;
 
     bool BotOfflineBudget(DWORD now) {
-        if (!playerbot_offline::Due(now, s_nextBotOfflineMutation)) return false;
+        if (s_botOfflineBudgetMinute == 0) s_botOfflineBudgetMinute = now;
+        if ((int)(now - s_botOfflineBudgetMinute) >= 60000) {
+            sys_log(0, "PLAYERBOT_OFFLINE: budget last_minute granted=%u refused=%u",
+                s_botOfflineBudgetGranted, s_botOfflineBudgetRefused);
+            s_botOfflineBudgetMinute = now;
+            s_botOfflineBudgetGranted = s_botOfflineBudgetRefused = 0;
+        }
+        if (!playerbot_offline::Due(now, s_nextBotOfflineMutation)) {
+            ++s_botOfflineBudgetRefused;
+            return false;
+        }
         s_nextBotOfflineMutation = now + 1000;
+        ++s_botOfflineBudgetGranted;
         return true;
     }
     bool BotOfflineBusy(LPCHARACTER ch, const TPlayerBotAIState& state) {
@@ -312,7 +328,13 @@ namespace {
         for (const auto& [id, line] : shop->GetItems()) {
             if (!line || !line->GetTable()) continue;
             const BYTE type = line->GetTable()->bType;
-            if (type != ITEM_WEAPON && type != ITEM_ARMOR) continue;
+            if (type != ITEM_WEAPON && type != ITEM_ARMOR) {
+                LPITEM needed = BotOfflinePreview(*line);
+                bool reclaim = needed && IsPlayerBotProgressionOffer(ch, needed);
+                if (needed) M2_DELETE(needed);
+                if (reclaim) { gain = 1; return id; }
+                continue;
+            }
             if (id == o.lastReclaimItem && !playerbot_offline::Due(now, o.lastReclaimAt + 21600000U)) continue;
             LPITEM preview = BotOfflinePreview(*line);
             if (!preview) continue;
@@ -500,6 +522,7 @@ namespace {
         if (BotOfflinePoll(ch, now)) {
             // Never stand waiting for the DB, nor leave edit mode locking sales.
             if (o.visiting) BotOfflineFinishVisit(ch, state, now);
+            if (o.repriceSteps) o.nextService = now + 2000;
             return false;
         }
         // The first visit after a spawn is spread over a whole service interval.
@@ -549,6 +572,10 @@ namespace {
                 }
                 manager.RecvShopSafeboxCloseClientPacket(ch);
             }
+            // A slice cut short by the stand selling out has nothing left to
+            // reprice, and a step count left behind would keep bringing the
+            // keeper back every two seconds (the poll branch above).
+            o.repriceSteps = 0;
             o.nextService = now + BotOfflineServiceGap(state);
             return false;
         }
@@ -589,7 +616,13 @@ namespace {
         o.nextStep = now + 3000;
         if (!BotOfflineBudget(now)) return true;
         o.lastServedAt = now;
-        BotOfflinePrepareVisitLine(ch, state, shop);
+        // A visit that reprices adds nothing - the restock loop below stops at
+        // once on the same test - so it cuts no line: the cut would only be
+        // poured back by the merge pass, after a whole bag's scoring for it.
+        if (!o.restockTurn && o.nextReprice && Due(now, o.nextReprice) && !shop->GetItems().empty())
+            o.preparedItem = 0;
+        else
+            BotOfflinePrepareVisitLine(ch, state, shop);
         ch->SetLookingShopOwner(true);
         manager.RecvShopSafeboxOpenClientPacket(ch);
         auto box = ch->GetIkarusShopSafebox();
@@ -688,7 +721,19 @@ namespace {
             o.preparedItem = 0;
         }
         bool sent = false;
+        // The first visit after a spawn restocks, as it always did: the
+        // counters were priced a minute before the restart, so the reprice
+        // clock starts an hour on and the two take turns from then on. The
+        // stamp is taken to be the generation this core runs, for the same
+        // reason: left at 0 until a rotation came round - fifteen hours for
+        // a counter of thirty lines at two an hour - it could not tell a yang
+        // rate moved in the panel from no change at all.
+        if (o.nextReprice == 0) o.nextReprice = now + PLAYERBOT_OFFLINE_REPRICE_MS;
+        if (o.priceGeneration == 0) o.priceGeneration = GetPlayerBotPriceGeneration();
+        const bool allowRestock = o.restockTurn;
+        o.restockTurn = false;
         for (auto [score, cell] : scored) {
+            if (!allowRestock && Due(now, o.nextReprice) && !shop->GetItems().empty()) break;
             auto item = ch->GetInventoryItem(cell);
             int pos = BotOfflineSlot(ch, shop, item);
             if (pos < 0) continue;
@@ -729,6 +774,7 @@ namespace {
             break; // at most one item per short service visit
         }
         if (!sent && Due(now, o.nextReprice)) {
+            if (o.repriceSteps == 0) o.repriceSteps = PLAYERBOT_OFFLINE_REPRICE_SLICE;
             // Rotate by ID, one existing offer per visit; recompute from market
             // policy, not a repeated percentage markdown tending towards zero.
             auto it = shop->GetItems().upper_bound(o.repriceItem);
@@ -751,7 +797,11 @@ namespace {
                                 preview->GetVnum(),
                                 preview->GetType() == ITEM_SKILLBOOK ? (uint32_t)preview->GetSocket(0) : 0u,
                                 now, (uint8_t)preview->GetRefineLevel() }).first;
-                    const uint32_t standing = now - listed->second.when;
+                    // Unknown age after restart is not the process uptime.
+                    if (listed->second.when == 0 && listed->second.observedSince == 0)
+                        listed->second.observedSince = now;
+                    const uint32_t since = listed->second.when ? listed->second.when : listed->second.observedSince;
+                    const uint32_t standing = now - since;
                     int discount = (int)(standing / PLAYERBOT_OFFLINE_UNSOLD_STEP_MS) * PLAYERBOT_SHOP_UNSOLD_DISCOUNT_PERCENT;
                     if (discount > PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_TOTAL)
                         discount = PLAYERBOT_SHOP_UNSOLD_DISCOUNT_MAX_TOTAL;
@@ -769,16 +819,40 @@ namespace {
                     }
                 }
             }
-            // A counter priced against an older table is walked at the pace of the
-            // service visit (10-15 min), not one line an hour; the stamp is set
-            // only once the rotation has come round, so every line was seen.
-            // The stamp carries the yang rate too (GetPlayerBotPriceGeneration).
-            if (o.priceGeneration != GetPlayerBotPriceGeneration()) {
-                if (wrapped) o.priceGeneration = GetPlayerBotPriceGeneration();
+            // PLAYERBOT_OFFLINE_REPRICE_SLICE lines a slice, one visit and one
+            // native ACK each. Complete slices alternate with a restock
+            // opportunity; neither starves the other.
+            if (wrapped) o.priceGeneration = GetPlayerBotPriceGeneration();
+            if (--o.repriceSteps > 0 && !wrapped) {
+                // The next step is a visit of its own, two seconds on, after
+                // the ACK (the poll above holds it while one is pending). It
+                // used to stay in the open visit instead: an ACK back before
+                // the next tick let that tick ask for edit mode again while
+                // the board was still open, ikashop refused it as busy
+                // (BUSY_SHOP_MANAGE), the visit ended there and the slice was
+                // finished a service interval later - so on m2zip nothing was
+                // added to any counter for the first sixteen minutes after a
+                // restart, against 169 adds on the build before.
                 o.nextReprice = now;
-            } else {
-                o.nextReprice = now + 3600000;
+                BotOfflineFinishVisit(ch, state, now);
+                o.nextService = now + 2000;
+                return false;
             }
+            o.repriceSteps = 0;
+            o.restockTurn = true; // maintenance cannot starve new goods either
+            // Every step spent a mutation of the core's shared budget, so the
+            // ten-minute pace is for a counter priced against an older
+            // generation than this core runs - a yang rate moved in the panel -
+            // and hourly otherwise (PLAYERBOT_OFFLINE_REPRICE_*). A restart is
+            // not a change (the first visit stamps the counter, above): the
+            // counters were priced by the same table a minute before, and
+            // walking every one of them again at the fast pace took 284 of the
+            // first fifteen minutes' 468 mutations on m2zip, when the first
+            // visits of every keeper already queue for them. The stamp lives in
+            // memory only, so a new price table - which arrives with a restart
+            // and nothing else - reaches the counters at the hourly pace.
+            o.nextReprice = now + (o.priceGeneration != GetPlayerBotPriceGeneration()
+                    ? PLAYERBOT_OFFLINE_REPRICE_CATCHUP_MS : PLAYERBOT_OFFLINE_REPRICE_MS);
         }
         BotOfflineFinishVisit(ch, state, now);
         return false;

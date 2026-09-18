@@ -193,8 +193,9 @@ namespace
 		return true;
 	}
 
-	bool NeedsPlayerBotM1OnlyServices(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
+	bool NeedsPlayerBotM1OnlyServices(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
+		if (ShouldPlayerBotVisitProgressionMarket(ch, state, dwNow)) return true;
 		if (!ch)
 			return false;
 		// Bokjung has no profession trainers, no Biologist and no old woman.

@@ -27,40 +27,27 @@ namespace {
                 if (distance <= PLAYERBOT_MARKET_TRIP_RANGE) shops.emplace_back(distance, shop);
             }
             std::sort(shops.begin(), shops.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-            // Bound expensive item previews and rotate the starting shop.
-            unsigned checked = 0;
-            const size_t start = shops.empty() ? 0 : (ch->GetPlayerID() + now / 120000) % shops.size();
-            for (size_t n = 0; n < shops.size() && checked < 64 && !o.buyOwner; ++n) {
-                auto shop = shops[(start+n) % shops.size()].second;
-                for (const auto& [id, line] : shop->GetItems()) {
-                    if (++checked > 64) break;
-                    if (!line) continue;
-                    const auto price = line->GetPrice().GetTotalYangAmount();
-                    // A level-30 weapon, a medal or a scroll is saved up for: the
-                    // bot's own budget caps it, not the median wallet.
-                    const long long strategicCap = budget * PLAYERBOT_STRATEGIC_BUDGET_PERCENT / 100;
-                    const bool strategic = IsPlayerBotStrategicPurchase(line->GetInfo().vnum);
-                    const long long cap = strategic ? strategicCap
-                            : (long long)GetPlayerBotMarketMedianWallet() * PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100;
-                    // A weapon far better than the one in the hand is saved for
-                    // the same way (IsPlayerBotStrategicWeaponOffer): over the
-                    // wallet cap it is still looked at, against the bot's budget.
-                    const bool overCap = cap > 0 && price > cap;
-                    const bool weaponLine = line->GetTable() && line->GetTable()->bType == ITEM_WEAPON;
-                    if (price <= 0 || price > budget ||
-                            (overCap && (strategic || !weaponLine || price > strategicCap))) continue;
-                    auto preview = BotOfflinePreview(*line);
-                    if (!preview) continue;
-                    bool want = WantsPlayerBotStallItem(ch, preview) && ch->GetEmptyInventory(preview->GetSize()) >= 0 &&
-                            (!overCap || IsPlayerBotStrategicWeaponOffer(ch, preview));
-                    M2_DELETE(preview);
-                    if (!want) continue;
-                    o.buyOwner = shop->GetOwnerPID();
-                    o.buyItem = id;
-                    o.buyUntil = now + 45000;
-                    break;
-                }
-            }
+            // Resume within the shop too: a full counter must not hide item 65.
+            int bestPriority = -1;
+            long long bestPrice = 0;
+            BrowseLines(shops, o, 64, [&](auto shop, auto id, const auto& line) {
+                if (!line) return;
+                const auto price = line->GetPrice().GetTotalYangAmount();
+                if (price <= 0 || price > budget) return;
+                auto preview = BotOfflinePreview(*line);
+                if (!preview) return;
+                const bool want = WantsPlayerBotStallItem(ch, preview) &&
+                    CanPlayerBotPayForOffer(ch, preview, price) && ch->GetEmptyInventory(preview->GetSize()) >= 0;
+                const int priority = IsPlayerBotProgressionOffer(ch, preview) ? 100 : 0;
+                M2_DELETE(preview);
+                if (!want || priority < bestPriority ||
+                        (priority == bestPriority && price >= bestPrice)) return;
+                bestPriority = priority;
+                bestPrice = price;
+                o.buyOwner = shop->GetOwnerPID();
+                o.buyItem = id;
+                o.buyUntil = now + 45000;
+            });
         }
         if (!o.buyOwner) return false;
         auto shop = manager.GetShopByOwnerID(o.buyOwner);
@@ -75,8 +62,13 @@ namespace {
         SetPlayerBotAction(state, BOT_ACTION_TRAVEL, now);
         if (!MovePlayerBotTownLeg(ch, state, now, shop->GetSpawn().x, shop->GetSpawn().y, 600)) return true;
         auto price = line->GetPrice().GetTotalYangAmount();
-        if (price > Affordable(ch->GetGold(), GetPlayerBotReservedGold(ch), PLAYERBOT_SHOPPING_GOLD_FLOOR)) {
+        auto finalPreview = BotOfflinePreview(*line);
+        const bool stillWanted = finalPreview && WantsPlayerBotStallItem(ch, finalPreview) &&
+            CanPlayerBotPayForOffer(ch, finalPreview, price) && ch->GetEmptyInventory(finalPreview->GetSize()) >= 0;
+        if (finalPreview) M2_DELETE(finalPreview);
+        if (!stillWanted) {
             o.buyOwner = 0;
+            ClearPlayerBotRoute(state, true);
             return false;
         }
         if (!BotOfflineBudget(now)) return true;

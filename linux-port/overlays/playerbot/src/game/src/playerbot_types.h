@@ -905,6 +905,22 @@ namespace
 	const int PLAYERBOT_SHOPPING_RANGE = 1800;
 	// Gold a bot will not spend on the market; potions and gear come first.
 	const DWORD PLAYERBOT_SHOPPING_GOLD_FLOOR = 200000;
+	// The trip to the first village's counters for a skill book, a Kamien
+	// Duchowy or a Biologist specimen (playerbot_progression_needs.h). Almost
+	// every bot with a skill at Master is short of books, so the trip is a
+	// share of the live population like the Biologist's errands (2.0.60 sent
+	// "every bot with an outgrown herb row" and half the world rode into the
+	// gates): PLAYERBOT_PROGRESSION_TRIP_PER_MILLE of the bots at a time, for
+	// PLAYERBOT_PROGRESSION_TRIP_MS each, asked again every _RETRY_MIN to
+	// _MAX, the first time within _FIRST_MAX of a spawn.
+	const int PLAYERBOT_PROGRESSION_TRIP_PER_MILLE = 30;
+	const DWORD PLAYERBOT_PROGRESSION_TRIP_MS = 10 * 60 * 1000;
+	const DWORD PLAYERBOT_PROGRESSION_TRIP_FIRST_MIN_MS = 60 * 1000;
+	const DWORD PLAYERBOT_PROGRESSION_TRIP_FIRST_MAX_MS = 30 * 60 * 1000;
+	const DWORD PLAYERBOT_PROGRESSION_TRIP_RETRY_MIN_MS = 30 * 60 * 1000;
+	const DWORD PLAYERBOT_PROGRESSION_TRIP_RETRY_MAX_MS = 45 * 60 * 1000;
+	// Kamienie Duchowe a bot with a skill at G1..G10 keeps for its training.
+	const int PLAYERBOT_GRAND_MASTER_STONE_KEEP = 3;
 	// How many refine-material cells a bot carries as stock for its own counter.
 	// They stack, so this is eight cells out of ninety however many pieces are
 	// held - and eight is one full stall, which is as much as it can display.
@@ -948,6 +964,17 @@ namespace
 	// schodza po obecnych cenach to zmniejszaj ceny stopniowo do jakiegos
 	// stopnia minimalnego").
 	const DWORD PLAYERBOT_OFFLINE_UNSOLD_STEP_MS = 2 * 60 * 60 * 1000;
+	// How often a stand's lines are repriced, and how many at a time. Every
+	// step of a slice is a native edit and costs one of the core's offline
+	// mutations (BotOfflineBudget, one a second for every keeper together),
+	// and the night of 18 September already spent 1 863 of the 3 600 an hour
+	// on m2zip - 775 of them edits - before a slice existed. So a slice runs
+	// on the ten-minute catch-up only while this core has seen a counter
+	// priced against an older table (a yang rate moved), hourly otherwise;
+	// a restart is not a change, and its first visit restocks.
+	const DWORD PLAYERBOT_OFFLINE_REPRICE_SLICE = 2;
+	const DWORD PLAYERBOT_OFFLINE_REPRICE_CATCHUP_MS = 10 * 60 * 1000;
+	const DWORD PLAYERBOT_OFFLINE_REPRICE_MS = 60 * 60 * 1000;
 	const int PLAYERBOT_MARKET_DEMAND_MIN_PERCENT = 10;
 	const int PLAYERBOT_MARKET_DEMAND_MAX_PERCENT = 25;
 	// A stand runs PLAYERBOT_SHOP_MIN..MAX_DURATION (10-25 min), so "went at
@@ -1722,6 +1749,13 @@ namespace
 	// was still asking it a day later ("pelno w m1 sklepow gdzie Zwoje sa po
 	// 9000", Iwakura). A shop whose stamp is behind this number reprices on
 	// every service visit instead, until its whole counter has been walked.
+	// Since 2.0.72 that holds for a yang rate moved while the core runs and
+	// not for this number: the stamp lives in memory, a restart takes every
+	// counter as priced by the table it starts with, and a new table only
+	// ever arrives with a restart - so a bump here reaches the counters at
+	// PLAYERBOT_OFFLINE_REPRICE_MS a slice. Persist the stamp (the core's own
+	// directory is the game-var volume) before relying on a bump to move
+	// prices fast.
 	// 3: Iwakura's price list v1.0 (14 September) - jewellery, boots, shields,
 	// ores and the mt2009 materials, one scaling curve for everything.
 	// 4: the stamp carries the yang rate as well (GetPlayerBotPriceGeneration),
@@ -5039,6 +5073,7 @@ namespace
 		DWORD dwShopWeightsGeneration;
 		DWORD dwNextShopKeepTime;
 		DWORD dwNextShoppingTime;
+		DWORD dwProgressionTripNext = 0, dwProgressionTripUntil = 0;
 		// The shopping trip: when it must be over, when the counters may be read
 		// again, and which keeper the bot is currently walking up to. The stall is
 		// held as a VID rather than a position so that a keeper which packs up

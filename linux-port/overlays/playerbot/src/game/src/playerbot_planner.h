@@ -176,6 +176,9 @@ namespace
 
 		OfferPlayerBotGoal(candidates, rank, count, NeedsPlayerBotPotions(ch),
 				BOT_GOAL_RESTOCK, PLAYERBOT_WEIGHT_RESTOCK);
+		// Training blocked on alignment needs ordinary hunting, not another stone.
+		OfferPlayerBotGoal(candidates, rank, count, PlayerBotNeedsTrainingRank(ch),
+				BOT_GOAL_LEVEL_UP, PLAYERBOT_WEIGHT_SKILL);
 		OfferPlayerBotGoal(candidates, rank, count,
 				state.bAmbition == BOT_AMBITION_EQUIPMENT && canRefine,
 				BOT_GOAL_REFINE, PLAYERBOT_WEIGHT_REFINE);

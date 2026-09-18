@@ -1421,8 +1421,9 @@ namespace
 	}
 
 	// What a counter's prices were set under: the table version and the yang
-	// rate. The offline service reprices a stand whose stamp differs, so a
-	// moved rate reaches every counter within one service round.
+	// rate. The offline service reprices a stand whose stamp differs at the
+	// catch-up pace (PLAYERBOT_OFFLINE_REPRICE_CATCHUP_MS a slice), so a rate
+	// moved while the core runs reaches every counter in hours, not days.
 	DWORD GetPlayerBotPriceGeneration()
 	{
 		const int rate = std::max(1, CHARACTER_MANAGER::instance().GetMobGoldAmountRate(NULL));
@@ -2023,8 +2024,17 @@ namespace
 		if (IsPlayerBotRetiredItem(item->GetVnum()))
 			return -1;
 		// Nor a Kamien Duchowy: every bot trains with its own.
-		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
-			return -1;
+		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM) {
+			const int keep = PlayerBotHasGrandMasterToTrain(ch) ? PLAYERBOT_GRAND_MASTER_STONE_KEEP : 1;
+			int before = 0;
+			for (WORD cell = 0; cell < item->GetCell() && cell < PLAYERBOT_BAG_CELLS; ++cell) {
+				LPITEM held = ch->GetInventoryItem(cell);
+				if (held && held->GetCell() == cell && held->GetVnum() == item->GetVnum()) before += held->GetCount();
+			}
+			// A stack holding the reserve is kept; single splitting below
+			// makes excess stones available without selling the reserve.
+			return before >= keep ? 800 : -1;
+		}
 		if (item->GetType() == ITEM_POLYMORPH || IsPlayerBotMetinDetector(item->GetVnum()))
 			return PLAYERBOT_SHOP_POLYMORPH_SCORE;
 		// Seven of the Forgetting Scrolls are marked "do sprzedazy u

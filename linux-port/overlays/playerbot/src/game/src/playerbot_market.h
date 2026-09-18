@@ -167,6 +167,12 @@ namespace
 		if (!ch || !offer)
 			return false;
 
+		// Development demand is shared with the journey and own-shop reclaim.
+		if (offer->GetType() == ITEM_SKILLBOOK || offer->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
+			return IsPlayerBotProgressionOffer(ch, offer);
+		if (GetPlayerBotBiologistPurchaseNeed(ch, offer->GetVnum()) > 0)
+			return IsPlayerBotProgressionOffer(ch, offer);
+
 		// The bean for a bot standing out a negative rank in town: the one thing
 		// that lifts it there (KeepPlayerBotNegativeRankInTown), one at a time.
 		if (offer->GetVnum() == PLAYERBOT_ZEN_BEAN_VNUM)
@@ -196,19 +202,6 @@ namespace
 			return GetPlayerBotStuckSkill(ch) != 0 &&
 					ch->GetLevel() > PLAYERBOT_SKILL_RESET_MAX_LEVEL &&
 					ch->CountSpecifyItem(PLAYERBOT_SKILL_FORGET_SCROLL_VNUM) == 0;
-		if (offer->GetType() == ITEM_SKILLBOOK)
-		{
-			const DWORD skillVnum = GetPlayerBotSkillBookSkillVnum(offer);
-			if (skillVnum == 0 || ch->GetSkillGroup() == 0 ||
-					!IsPlayerBotOwnSkill(ch, skillVnum))
-				return false;
-			// Already at the grade a book stops helping, or already holding the
-			// working stock: somebody else needs it more. The limit is the
-			// bag's own (GetPlayerBotBookKeepLimit) - a few for a skill not yet
-			// readable, the full stock once it is.
-			return CountPlayerBotSkillBooksAhead(ch, offer, skillVnum) <
-					GetPlayerBotBookKeepLimit(ch, skillVnum);
-		}
 
 		// A horse medal, if this bot still has a horse to raise. Buying one is
 		// hours of the Monkey Dungeon it does not have to run.
@@ -283,6 +276,7 @@ namespace
 	{
 		if (!ch)
 			return false;
+		if (PlayerBotNeedsProgressionShopping(ch)) return true;
 		// A bean for a negative rank (WantsPlayerBotStallItem).
 		if (ch->GetRealAlignment() < 0 && ch->CountSpecifyItem(PLAYERBOT_ZEN_BEAN_VNUM) == 0)
 			return true;
@@ -345,6 +339,20 @@ namespace
 					(long long)ScalePlayerBotIwakuraPrice(PLAYERBOT_LEVEL30_BASE_PRICE);
 	}
 
+	bool CanPlayerBotPayForOffer(LPCHARACTER ch, LPITEM item, long long price) {
+		if (!ch || !item || price <= 0) return false;
+		const long long spare = (long long)ch->GetGold() - GetPlayerBotReservedGold(ch) - PLAYERBOT_SHOPPING_GOLD_FLOOR;
+		if (price > spare) return false;
+		if (IsPlayerBotProgressionOffer(ch, item)) {
+			const long long fair = GetPlayerBotShopAskingPrice(item);
+			return fair > 0 && price <= fair * 2 && price <= spare * 30 / 100;
+		}
+		if (IsPlayerBotStrategicPurchase(item->GetVnum()) || IsPlayerBotStrategicWeaponOffer(ch, item))
+			return price <= GetPlayerBotStrategicPurchaseCap(ch);
+		const long long cap = (long long)GetPlayerBotMarketMedianWallet() * PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100;
+		return cap <= 0 || price <= cap;
+	}
+
 	// One line of one counter: what a buyer decided it wants, where it is, and
 	// which slot number CShopManager::Buy will need.
 	struct TPlayerBotStallPick
@@ -397,16 +405,10 @@ namespace
 				if (keeper->GetDesc() && keeper->GetDesc()->IsBot())
 					continue;
 				const std::vector<CShop::SHOP_ITEM>& lines = keeper->GetMyShop()->GetItemVector();
-				const DWORD cap = (DWORD)((unsigned long long)GetPlayerBotMarketMedianWallet() *
-						PLAYERBOT_MARKET_STACK_WALLET_PERCENT / 100);
 				for (size_t k = 0; k < lines.size(); ++k)
 				{
 					const CShop::SHOP_ITEM& line = lines[k];
-					if (!line.pkItem || line.vnum == 0 || line.price <= 0 ||
-							(cap != 0 && (DWORD)line.price > cap &&
-								!((IsPlayerBotStrategicPurchase(line.vnum) ||
-										IsPlayerBotStrategicWeaponOffer(ch, line.pkItem)) &&
-									(long long)line.price <= GetPlayerBotStrategicPurchaseCap(ch))))
+					if (!line.pkItem || line.vnum == 0 || !CanPlayerBotPayForOffer(ch, line.pkItem, line.price))
 						continue;
 					TPlayerBotShopOffer offer;
 					offer.dwVnum = line.vnum;
@@ -447,7 +449,8 @@ namespace
 				// The real item, with its sockets and bonus lines, is still in
 				// the keeper's bag to be looked at - or it is sold, and it is not.
 				LPITEM candidateItem = FindPlayerBotOfferItem(keeper, candidate);
-				if (!WantsPlayerBotStallItem(ch, candidateItem))
+				if (!WantsPlayerBotStallItem(ch, candidateItem) ||
+						!CanPlayerBotPayForOffer(ch, candidateItem, candidate.dwPrice))
 					continue;
 				// Room for this particular thing, not room in general. The engine
 				// refuses the whole purchase when the item does not fit, and a
@@ -483,6 +486,12 @@ namespace
 		LPSHOP shop = pick.keeper->GetMyShop();
 		if (!shop || ch->GetShop() || ch->GetExchange())
 			return false;
+		// Revalidate the native slot immediately before sending the buy.
+		const std::vector<CShop::SHOP_ITEM>& lines = shop->GetItemVector();
+		if (pick.bSlot >= lines.size()) return false;
+		const CShop::SHOP_ITEM& line = lines[pick.bSlot];
+		if (!line.pkItem || line.price != pick.dwPrice || !WantsPlayerBotStallItem(ch, line.pkItem) ||
+				!CanPlayerBotPayForOffer(ch, line.pkItem, line.price)) return false;
 		if (!shop->AddGuest(ch, pick.keeper->GetVID(), false))
 			return false;
 

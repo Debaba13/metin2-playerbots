@@ -95,6 +95,7 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_skills.h"
 #include "playerbot_combat.h"
 #include "playerbot_economy.h"
+#include "playerbot_progression_needs.h"
 #include "playerbot_bonus.h"
 #include "playerbot_travel.h"
 #include "playerbot_planner.h"
@@ -1623,7 +1624,13 @@ namespace
 			const BYTE masterType = ch->GetSkillMasterType(skillVnum);
 			if (masterType == SKILL_MASTER && skillLevel >= 20 && skillLevel < 30)
 			{
-				const int priority = (skillVnum == build.dwPrimaryMaxSkill ? 10000 : 0) + skillLevel;
+				const bool ready = IsPlayerBotFastBooksEnabled() ||
+					get_global_time() >= ch->GetSkillNextReadTime(skillVnum) ||
+					ch->FindAffect(AFFECT_SKILL_NO_BOOK_DELAY);
+				const bool canUnlock = ch->CountSpecifyItem(71001) || ch->CountSpecifyItem(71094);
+				if (!ready && !canUnlock) continue;
+				const int priority = (ready ? 100000 : 0) +
+					(skillVnum == build.dwPrimaryMaxSkill ? 10000 : 0) + skillLevel;
 				if (priority > bestPriority)
 				{
 					bestPriority = priority;
@@ -1639,7 +1646,8 @@ namespace
 			return;
 		}
 
-		if (get_global_time() < ch->GetSkillNextReadTime(bestSkillVnum))
+		if (!IsPlayerBotFastBooksEnabled() && !ch->FindAffect(AFFECT_SKILL_NO_BOOK_DELAY) &&
+				get_global_time() < ch->GetSkillNextReadTime(bestSkillVnum))
 		{
 			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 			{
@@ -1747,6 +1755,7 @@ namespace
 			const int level = ch->GetSkillLevel(vnum);
 			if (level < 30 || level >= 40)
 				continue;
+			if (ch->GetRealAlignment() < 1000 + 500 * (level - 30)) continue;
 			const int priority = (vnum == build.dwPrimaryMaxSkill ? 10000 : 0) + level;
 			if (priority > bestPriority)
 			{

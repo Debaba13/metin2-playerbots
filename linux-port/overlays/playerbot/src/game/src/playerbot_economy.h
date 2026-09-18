@@ -384,6 +384,8 @@ namespace
 			return 0;
 		if (IsPlayerBotSafeRefineScroll(item->GetVnum()))
 			return PLAYERBOT_SHOP_SCROLL_LINE_UNITS;
+		if (item->GetType() == ITEM_SKILLBOOK || item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
+			return 1;
 		if (item->GetType() == ITEM_USE || item->GetType() == ITEM_METIN ||
 				item->GetType() == ITEM_TREASURE_KEY ||
 				(item->GetVnum() >= 27992 && item->GetVnum() <= 27994))
