@@ -43,6 +43,10 @@ namespace
 	DWORD s_adwPlayerBotNextGuildWarTime[playerbot_empire_rules::EMPIRE_COUNT];
 	DWORD s_dwNextPlayerBotGuildWarCheck = 0;
 	unsigned int s_uPlayerBotGuildWarsFought = 0;
+	// Who fought last, per kingdom and per guild, for the pick below. Kept for
+	// the process: the first war after a restart may repeat a pair, no more.
+	std::map<BYTE, std::pair<DWORD, DWORD> > s_mapPlayerBotLastWarPair;
+	std::map<DWORD, DWORD> s_mapPlayerBotGuildLastWarAt;
 
 	bool IsPlayerBotGuildWarPair(DWORD a, DWORD b)
 	{
@@ -93,8 +97,14 @@ namespace
 
 	// Two guilds of the kingdom that can fight now: both with
 	// PLAYERBOT_GUILD_WAR_MIN_ONLINE bots in this core's world, neither at war
-	// already, the closest tiers of any pair, rotated by the minute so the same
-	// two do not meet every time.
+	// already, the closest tiers of any pair. The rotation by the minute alone
+	// did not stop the same two meeting every time: a kingdom with exactly two
+	// guilds of the top tier had one pair at a gap of none, and that pair won
+	// every pick - Tuskaffki and Przelew24 fought every war of Shinsoo for a day
+	// on m2zip, with seven more guilds ready (gregory_955, 17 September). So
+	// the kingdom's last pair sits the next war out whenever a third guild is
+	// ready, and between pairs of one gap the one whose latest war is oldest
+	// goes first - a guild that has never fought before any that has.
 	bool PickPlayerBotGuildWarPair(BYTE empire, DWORD dwNow, CGuild*& out1, CGuild*& out2)
 	{
 		std::vector<TPlayerBotWarEntry> ready;
@@ -120,26 +130,43 @@ namespace
 		if (ready.size() < 2)
 			return false;
 		std::sort(ready.begin(), ready.end(), PlayerBotWarEntryOrder);
+		std::pair<DWORD, DWORD> last(0, 0);
+		std::map<BYTE, std::pair<DWORD, DWORD> >::const_iterator lastIt = s_mapPlayerBotLastWarPair.find(empire);
+		if (lastIt != s_mapPlayerBotLastWarPair.end())
+			last = lastIt->second;
+		const bool skipLast = ready.size() >= 3;
 		const size_t start = (size_t)(PlayerBotNavHash(dwNow / 60000U ^ 0x57415250U) % ready.size());
+		bool found = false;
 		size_t bestI = 0, bestJ = 1;
 		int bestGap = INT_MAX;
+		DWORD bestLastWar = 0;
 		for (size_t n = 0; n < ready.size(); ++n)
 		{
 			const size_t i = (start + n) % ready.size();
 			for (size_t m = 1; m < ready.size(); ++m)
 			{
 				const size_t j = (i + m) % ready.size();
+				const DWORD gi = ready[i].guild->GetID();
+				const DWORD gj = ready[j].guild->GetID();
+				if (skipLast && ((gi == last.first && gj == last.second) || (gi == last.second && gj == last.first)))
+					continue;
 				const int gap = abs(ready[i].tier - ready[j].tier);
-				if (gap < bestGap)
+				std::map<DWORD, DWORD>::const_iterator wi = s_mapPlayerBotGuildLastWarAt.find(gi);
+				std::map<DWORD, DWORD>::const_iterator wj = s_mapPlayerBotGuildLastWarAt.find(gj);
+				const DWORD lastWar = std::max(wi == s_mapPlayerBotGuildLastWarAt.end() ? 0U : wi->second,
+						wj == s_mapPlayerBotGuildLastWarAt.end() ? 0U : wj->second);
+				if (!found || gap < bestGap || (gap == bestGap && lastWar < bestLastWar))
 				{
+					found = true;
 					bestGap = gap;
+					bestLastWar = lastWar;
 					bestI = i;
 					bestJ = j;
 				}
 			}
-			if (bestGap == 0)
-				break;
 		}
+		if (!found)
+			return false;
 		out1 = ready[bestI].guild;
 		out2 = ready[bestJ].guild;
 		return true;
@@ -253,6 +280,11 @@ namespace
 				continue;
 			}
 			a->RequestDeclareWar(b->GetID(), GUILD_WAR_TYPE_FIELD);
+			s_mapPlayerBotLastWarPair[(BYTE)empire] = std::make_pair(a->GetID(), b->GetID());
+			// Never zero, so "has fought" and "never fought" stay apart in the
+			// pick even in the first millisecond of the process.
+			s_mapPlayerBotGuildLastWarAt[a->GetID()] = dwNow | 1U;
+			s_mapPlayerBotGuildLastWarAt[b->GetID()] = dwNow | 1U;
 			TPlayerBotGuildWar war;
 			war.dwGuild1 = a->GetID();
 			war.dwGuild2 = b->GetID();
@@ -378,7 +410,19 @@ namespace
 		return true;
 	}
 
-	// The nearest bot of the enemy guild on the bot's map.
+	// Whether a blow can land on this one where it stands. battle_is_attackable
+	// refuses anybody on ATTR_BANPK, the struck and the striker alike, and the
+	// guild map's arrival is inside its safe zone on two of the three maps.
+	bool IsPlayerBotWarTargetable(LPCHARACTER other)
+	{
+		return other && !IsPlayerBotSafeZone(other->GetMapIndex(), other->GetX(), other->GetY());
+	}
+
+	// The nearest bot of the enemy guild on the bot's map that a blow can
+	// reach. One standing in the safe zone was chosen like any other, so its
+	// enemies walked in after it and swung at nothing for as long as it stood
+	// there: "sporo stalo w bezpiecznej czesci i inne boty nie mogly ich
+	// zaatakowac" (gregory_955, 17 September).
 	LPCHARACTER FindPlayerBotGuildWarFoe(LPCHARACTER ch, CGuild* enemy)
 	{
 		LPCHARACTER best = NULL;
@@ -388,7 +432,7 @@ namespace
 		{
 			LPCHARACTER other = CHARACTER_MANAGER::instance().FindByPID(it->first);
 			if (!other || other == ch || other->IsDead() || other->GetGuild() != enemy ||
-					other->GetMapIndex() != ch->GetMapIndex())
+					other->GetMapIndex() != ch->GetMapIndex() || !IsPlayerBotWarTargetable(other))
 				continue;
 			const int distance = DISTANCE_APPROX(ch->GetX() - other->GetX(), ch->GetY() - other->GetY());
 			if (distance < bestDistance)
@@ -478,7 +522,7 @@ namespace
 		{
 			LPCHARACTER held = CHARACTER_MANAGER::instance().Find(state.dwTargetVID);
 			if (held && !held->IsDead() && held->GetGuild() == enemy &&
-					held->GetMapIndex() == ch->GetMapIndex())
+					held->GetMapIndex() == ch->GetMapIndex() && IsPlayerBotWarTargetable(held))
 				foe = held;
 		}
 		if (!foe)
@@ -510,9 +554,13 @@ namespace
 		const int combatRange = isBow ? 800 : PLAYERBOT_DUEL_MELEE_RANGE;
 		const bool caster = ch->GetJob() == JOB_SHAMAN ||
 				(ch->GetJob() == JOB_SURA && ch->GetSkillGroup() == 2);
-		if (distance > combatRange)
+		// A bot standing in the safe zone - just arrived, or up again at the
+		// town point - cannot strike from there either, so it walks at its foe
+		// until it is out, whatever the range says.
+		const bool inSafeZone = !IsPlayerBotWarTargetable(ch);
+		if (distance > combatRange || inSafeZone)
 		{
-			if (!isBow && caster && distance <= PLAYERBOT_DUEL_CASTER_RANGE &&
+			if (!inSafeZone && !isBow && caster && distance <= PLAYERBOT_DUEL_CASTER_RANGE &&
 					dwNow >= state.dwNextSkillCastTime)
 			{
 				if (ch->IsStateMove())
@@ -520,13 +568,20 @@ namespace
 				if (CastPlayerBotDuelSkill(ch, foe, state, dwNow))
 					return true;
 			}
-			if (!isBow && distance <= PLAYERBOT_SEARCH_RANGE &&
+			if (!inSafeZone && !isBow && distance <= PLAYERBOT_SEARCH_RANGE &&
 					TryPlayerBotDuelGapCloser(ch, foe, state, dwNow, distance))
 				return true;
 			if (dwNow >= state.dwNextGuildWarMoveTime)
 			{
 				state.dwNextGuildWarMoveTime = dwNow + 1000;
-				MovePlayerBot(ch, foe->GetX(), foe->GetY(), dwNow, 4, distance > PLAYERBOT_SEARCH_RANGE, false);
+				// Out of the safe zone by way of the rally, which is open,
+				// fightable ground by construction (FindPlayerBotWarGround):
+				// a walk at a foe a step away would count as arrived at once
+				// and leave the bot standing where it cannot strike.
+				if (inSafeZone)
+					MovePlayerBot(ch, rallyX, rallyY, dwNow, 4, false, false);
+				else
+					MovePlayerBot(ch, foe->GetX(), foe->GetY(), dwNow, 4, distance > PLAYERBOT_SEARCH_RANGE, false);
 			}
 			return true;
 		}

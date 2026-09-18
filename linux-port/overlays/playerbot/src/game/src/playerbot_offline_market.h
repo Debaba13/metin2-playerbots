@@ -106,7 +106,7 @@ namespace {
             if (IsPlayerBotM2Map(shop->GetSpawn().map)) ++s_iPlayerBotStallsInM2;
             for (const auto& [id, item] : shop->GetItems()) {
                 if (!item) continue;
-                AddPlayerBotMarketSupply(item->GetVnum(), item->GetInfo().count);
+                AddPlayerBotMarketSupply(item->GetVnum(), item->GetInfo().count, shop->GetSpawn().map);
                 ++lines;
             }
         }

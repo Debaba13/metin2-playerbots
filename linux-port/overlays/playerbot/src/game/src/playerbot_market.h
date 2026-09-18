@@ -840,6 +840,7 @@ namespace
 			return;
 		s_dwMarketLedgerTime = dwNow;
 		s_mapMarketLedger.clear();
+		s_mapMarketLocalSupply.clear();
 
 		DWORD stalls = 0, lines = 0, demandBots = 0;
 		DWORD auStallsByReason[PLAYERBOT_SHOP_REASON_MAX] = { 0 };
@@ -869,7 +870,7 @@ namespace
 					// item does not stay in the bag.
 					if (!FindPlayerBotOfferItem(ch, offer))
 						continue;
-					AddPlayerBotMarketSupply(offer.dwVnum, offer.wCount);
+					AddPlayerBotMarketSupply(offer.dwVnum, offer.wCount, ch->GetMapIndex());
 					++lines;
 				}
 			}
@@ -928,12 +929,12 @@ namespace
 				auStallsByReason[PLAYERBOT_SHOP_REASON_ROLL], auStallsByReason[PLAYERBOT_SHOP_REASON_SPARE],
 				auStallsByReason[PLAYERBOT_SHOP_REASON_HOARD]);
 		ReportPlayerBotWeaponGoals(dwNow);
-		sys_log(0, "PLAYERBOT_MARKET: ledger stalls=%u lines=%u vnums=%u demand_bots=%u wallet=%u decisions list=%u probe=%u no_demand=%u overstock=%u top:%s",
+		sys_log(0, "PLAYERBOT_MARKET: ledger stalls=%u lines=%u vnums=%u demand_bots=%u wallet=%u decisions list=%u probe=%u no_demand=%u overstock=%u floor=%u top:%s",
 				stalls, lines, (unsigned int)s_mapMarketLedger.size(), demandBots,
 				s_dwMarketMedianWallet,
 				s_auMarketDecisions[PLAYERBOT_LIST_LIST], s_auMarketDecisions[PLAYERBOT_LIST_PROBE],
 				s_auMarketDecisions[PLAYERBOT_LIST_NO_DEMAND], s_auMarketDecisions[PLAYERBOT_LIST_OVERSTOCK],
-				top.c_str());
+				s_auMarketDecisions[PLAYERBOT_LIST_FLOOR], top.c_str());
 		for (int d = 0; d < PLAYERBOT_LIST_DECISIONS; ++d)
 			s_auMarketDecisions[d] = 0;
 	}

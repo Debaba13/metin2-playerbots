@@ -184,6 +184,25 @@ namespace
 	};
 	typedef std::map<DWORD, TPlayerBotMarketLedgerEntry> TPlayerBotMarketLedger;
 	TPlayerBotMarketLedger s_mapMarketLedger;
+	// The same units by the map their counter stands on. A player - and the
+	// item finder - sees one map's counters, and a core-wide count could call
+	// a material plentiful while whole villages had none of it: on m2zip on
+	// 18 September 167 of 564 pairs of a recipe material the bots held two
+	// hundred of and a village had nothing on sale, Czarny Uniform 62 065 in
+	// bags and none in Pyongmoo or Bakra.
+	std::map<unsigned long long, DWORD> s_mapMarketLocalSupply;
+
+	unsigned long long PlayerBotMarketLocalKey(long lMapIndex, DWORD vnum)
+	{
+		return ((unsigned long long)(DWORD)lMapIndex << 32) | vnum;
+	}
+
+	DWORD GetPlayerBotMarketLocalSupply(long lMapIndex, DWORD vnum)
+	{
+		std::map<unsigned long long, DWORD>::const_iterator it =
+				s_mapMarketLocalSupply.find(PlayerBotMarketLocalKey(lMapIndex, vnum));
+		return it == s_mapMarketLocalSupply.end() ? 0 : it->second;
+	}
 	DWORD s_dwMarketLedgerTime = 0;
 	DWORD s_dwMarketReportTime = 0;
 	// The median of what a shopping bot has to spend, from the same walk. Zero
@@ -204,9 +223,12 @@ namespace
 		PLAYERBOT_LIST_PROBE,
 		PLAYERBOT_LIST_NO_DEMAND,
 		PLAYERBOT_LIST_OVERSTOCK,
+		// Listed because this village's counters hold less than a player's
+		// floor of it, whatever the bots are short of.
+		PLAYERBOT_LIST_FLOOR,
 		PLAYERBOT_LIST_DECISIONS
 	};
-	DWORD s_auMarketDecisions[PLAYERBOT_LIST_DECISIONS] = { 0, 0, 0, 0 };
+	DWORD s_auMarketDecisions[PLAYERBOT_LIST_DECISIONS] = { 0, 0, 0, 0, 0 };
 	// When each bot's decisions were last counted. The bag is scored again on
 	// every tick of the walk to the pitch - four times a second for half a
 	// minute - and counting each of those made one keeper with five held
@@ -222,7 +244,7 @@ namespace
 		return true;
 	}
 	const char* const s_apszMarketDecisionNames[PLAYERBOT_LIST_DECISIONS] = {
-		"LIST", "PROBE", "NO_DEMAND", "OVERSTOCK"
+		"LIST", "PROBE", "NO_DEMAND", "OVERSTOCK", "FLOOR"
 	};
 
 	const TPlayerBotMarketLedgerEntry* GetPlayerBotMarketLedgerEntry(DWORD vnum)
@@ -235,13 +257,15 @@ namespace
 	// the next refresh: three keepers scoring the same material in the same
 	// minute would otherwise each see the counters empty of it and all three
 	// put it up.
-	void AddPlayerBotMarketSupply(DWORD vnum, WORD count)
+	void AddPlayerBotMarketSupply(DWORD vnum, WORD count, long lMapIndex)
 	{
 		if (vnum == 0 || count == 0)
 			return;
 		TPlayerBotMarketLedgerEntry& entry = s_mapMarketLedger[vnum];
 		entry.dwSupplyUnits += count;
 		++entry.dwSupplyStalls;
+		if (lMapIndex > 0)
+			s_mapMarketLocalSupply[PlayerBotMarketLocalKey(lMapIndex, vnum)] += count;
 	}
 
 	// The unit price the world's counters last asked for a thing, keyed like

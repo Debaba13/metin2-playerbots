@@ -832,7 +832,8 @@ namespace
 			// points and no stones at all.
 			const TPlayerBotHuntingHub forestHubs[] = {
 				{  316300,   16500, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
-				{  316500,   40300, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				// Moved 325 units off a blocked cell (2.0.77, server_attr).
+				{  316325,   40575, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  310300,   27200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  324400,   36200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  284800,   29700, 64, 255, false, 0 },
@@ -844,9 +845,12 @@ namespace
 			// the two hardest of them (80 and 82) are what makes the upper hubs
 			// a party's ground rather than anybody's.
 			const TPlayerBotHuntingHub redForestHubs[] = {
-				{ 1110100,   72700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				// The first and third stood on blocked cells; both moved onto
+				// the nearest open ground (2.0.77, server_attr), the first to
+				// the new arrival point.
+				{ PLAYERBOT_RED_FOREST_ARRIVAL_X, PLAYERBOT_RED_FOREST_ARRIVAL_Y, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1070400,   67400, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
-				{ 1123000,   15200, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1122625,   15675, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1078200,   40800, 73, 255, false, 0 },
 				{ 1053300,   43700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1080600,   16200, 73, 255, false, 0 },

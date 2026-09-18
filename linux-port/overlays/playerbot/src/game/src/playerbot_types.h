@@ -1900,6 +1900,20 @@ namespace
 	// stock nobody asked for, and it stays in the bag.
 	const DWORD PLAYERBOT_MARKET_SUPPLY_PER_BUYER = 5;
 	const DWORD PLAYERBOT_MARKET_SUPPLY_MARGIN_PERCENT = 150;
+	// ...and that counted only bots. A player is the buyer this ledger cannot
+	// see, so the rule above held nearly everything back: on m2zip on 18
+	// September 3 366 of the listing decisions of ten minutes said overstock
+	// against 255 that listed, the bags held 844 thousand units of material
+	// and the counters 105 thousand, Kawalek Klejnotu 114 215 held and 7 to
+	// 174 on the counters of a village, and a player's item finder found no
+	// counter at all with the Orc Valley's or the desert's materials in any of
+	// the three kingdoms ("chomikuja po 40 sztuk", Hiob; "0 bodzi na
+	// sklepach", Xewi). So a village's own counters keep this many units of
+	// every recipe material a bot there holds beyond its anvil's reserve,
+	// whatever the bots are short of: the floor is asked first, of the
+	// counters on the map the keeper stands on, and only in a village - away
+	// from one there is no counter a floor could be about.
+	const DWORD PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS = 50;
 	// Pricing. The prior counts as this many sales when the market's median is
 	// blended in: after four sales the two weigh the same, after the full
 	// memory of eight the market has two thirds of the say.
@@ -2325,8 +2339,10 @@ namespace
 	// taken from the densest 6400-unit cell and nearest that cell's centre. A
 	// spawn point is ground the engine itself puts monsters on, which is the
 	// best evidence available here: this machine has no python-lzo, so
-	// server_attr could not be decoded to check the cell directly. Worth
-	// re-checking with tools/decode_server_attr.py on a machine that has it.
+	// server_attr could not be decoded to check the cell directly. It was
+	// decoded in 2.0.77 (m2-eterpack:dev has lzo): the Forest's and the Demon
+	// Tower's two points stand on open ground, the Red Forest's did not - see
+	// below - and one hub of each forest stood on a blocked cell.
 	//
 	// The coordinate rule is the one in "Engine facts": world = BasePosition +
 	// cell * 100. It was confirmed the hard way tonight - the production Orc
@@ -2338,10 +2354,20 @@ namespace
 	// Trent's own spawns are 65 to 71 (Duch Drzewa through Zle Drzewo), so the
 	// band starts where its weakest monster stops being a waste of a trip.
 	const BYTE PLAYERBOT_FOREST_MIN_LEVEL = 62;
-	const long PLAYERBOT_RED_FOREST_ARRIVAL_X = 1110100;
-	const long PLAYERBOT_RED_FOREST_ARRIVAL_Y = 72700;
-	const long PLAYERBOT_RED_FOREST_EXIT_X = 1110100;
-	const long PLAYERBOT_RED_FOREST_EXIT_Y = 73200;
+	// The Red Forest's two points were the ones that check was owed: decoded
+	// in 2.0.77, both stood on blocked cells. An arrival there is rescued a
+	// cell away by the engine, but the exit's nearest open cell was 625 units
+	// off, beyond every snap, so each bot that wanted to leave planned the
+	// same unreachable walk every twenty seconds - 657 of the core's 1018
+	// "unreachable" lines in half an hour on m2zip, 22 of the 25 bots on the
+	// map. Both are cell centres of the map's main walkable area now, with
+	// three open cells all round (scratchpad/pick_points_2077.py of session
+	// 82d3ab90 is the measurement: the map's own server_attr, BLOCK|OBJECT at
+	// the cell centre like the navigation grid, the area the regen stands on).
+	const long PLAYERBOT_RED_FOREST_ARRIVAL_X = 1110125;
+	const long PLAYERBOT_RED_FOREST_ARRIVAL_Y = 72425;
+	const long PLAYERBOT_RED_FOREST_EXIT_X = 1109625;
+	const long PLAYERBOT_RED_FOREST_EXIT_Y = 72425;
 	// 74 to 82 (Czerw. Duch Drzewa through Czerwone Zle Drzewo).
 	const BYTE PLAYERBOT_RED_FOREST_MIN_LEVEL = 71;
 	// The Demon Tower is not a frontier and has no hub table: a bot goes there

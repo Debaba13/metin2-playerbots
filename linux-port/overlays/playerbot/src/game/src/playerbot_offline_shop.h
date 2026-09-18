@@ -4,10 +4,21 @@
 // Included once after playerbot_town.h. All transfers use native Ikarus.
 namespace {
     using NativeShop = ikashop::CShopManager::SHOP_HANDLE;
-    DWORD s_nextBotOfflineMutation = 0;
-    // What the one-a-second budget handed out and turned away in the last
-    // minute. Granted near sixty means every keeper's visit is queueing
-    // behind the others; measure it before moving the budget or the slice.
+    // The core's offline-shop mutations, as a bucket: one token every
+    // PLAYERBOT_OFFLINE_MUTATION_MS, at most PLAYERBOT_OFFLINE_MUTATION_BURST
+    // in hand. It was one a second with nothing saved, so two visits asking in
+    // the same second had one refused while the seconds before had gone
+    // unused - 35 to 47 granted a minute against 25 to 213 refused on m2zip
+    // on 18 September, with a thousand keepers waiting to restock. Each token
+    // is one small ikashop request to the db core, and the db core's queue is
+    // the thing to read if this is ever raised again.
+    const DWORD PLAYERBOT_OFFLINE_MUTATION_MS = 500;
+    const unsigned PLAYERBOT_OFFLINE_MUTATION_BURST = 5;
+    unsigned s_botOfflineTokens = PLAYERBOT_OFFLINE_MUTATION_BURST;
+    DWORD s_botOfflineTokenTime = 0;
+    // What the budget handed out and turned away in the last minute. Granted
+    // near its ceiling (120) means every keeper's visit is queueing behind the
+    // others; measure it before moving the budget or the slice.
     DWORD s_botOfflineBudgetMinute = 0;
     unsigned s_botOfflineBudgetGranted = 0, s_botOfflineBudgetRefused = 0;
 
@@ -19,11 +30,17 @@ namespace {
             s_botOfflineBudgetMinute = now;
             s_botOfflineBudgetGranted = s_botOfflineBudgetRefused = 0;
         }
-        if (!playerbot_offline::Due(now, s_nextBotOfflineMutation)) {
+        if (s_botOfflineTokenTime == 0) s_botOfflineTokenTime = now;
+        const DWORD earned = (now - s_botOfflineTokenTime) / PLAYERBOT_OFFLINE_MUTATION_MS;
+        if (earned > 0) {
+            s_botOfflineTokens = std::min<unsigned>(PLAYERBOT_OFFLINE_MUTATION_BURST, s_botOfflineTokens + earned);
+            s_botOfflineTokenTime += earned * PLAYERBOT_OFFLINE_MUTATION_MS;
+        }
+        if (s_botOfflineTokens == 0) {
             ++s_botOfflineBudgetRefused;
             return false;
         }
-        s_nextBotOfflineMutation = now + 1000;
+        --s_botOfflineTokens;
         ++s_botOfflineBudgetGranted;
         return true;
     }
@@ -825,11 +842,17 @@ namespace {
                 // the only thing left is its id. The skill is socket 0 - every
                 // ordinary book is vnum 50300 and one cheap sale of a spare
                 // must not set the price of Aura Miecza.
-                if (sent)
+                if (sent) {
                     o.listed[id] = playerbot_offline::ListedLine{
                         item->GetVnum(),
                         item->GetType() == ITEM_SKILLBOOK ? (uint32_t)item->GetSocket(0) : 0u,
                         now, (uint8_t)item->GetRefineLevel() };
+                    // On the ledger at once, by its village, like a classic
+                    // stall's lines: the next keeper there must not put the
+                    // same material up against the player's floor in the
+                    // minute before the ledger is rebuilt.
+                    AddPlayerBotMarketSupply(item->GetVnum(), (WORD)item->GetCount(), shop->GetSpawn().map);
+                }
             }
             break; // at most one item per short service visit
         }

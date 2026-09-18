@@ -1926,7 +1926,12 @@ namespace
 		const DWORD supply = entry ? entry->dwSupplyUnits : 0;
 		const DWORD demand = entry ? entry->dwDemandBots : 0;
 		int decision;
-		if (demand == 0)
+		// The player's floor first (PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS): this
+		// village's own counters, not the core's.
+		if (IsPlayerBotVillageMap(ch->GetMapIndex()) &&
+				GetPlayerBotMarketLocalSupply(ch->GetMapIndex(), item->GetVnum()) < PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS)
+			decision = PLAYERBOT_LIST_FLOOR;
+		else if (demand == 0)
 			decision = supply == 0 ? PLAYERBOT_LIST_PROBE : PLAYERBOT_LIST_NO_DEMAND;
 		else
 		{
@@ -2123,6 +2128,10 @@ namespace
 			const int decision = DecidePlayerBotMaterialListing(ch, item, report && !hoard);
 			if (decision == PLAYERBOT_LIST_LIST)
 				return 500;
+			// Under the player's floor: after what the bots are short of, ahead
+			// of a probe.
+			if (decision == PLAYERBOT_LIST_FLOOR)
+				return 480;
 			if (decision == PLAYERBOT_LIST_PROBE)
 				return 450;
 			return hoard ? PLAYERBOT_SHOP_HOARD_SCORE : -1;
@@ -3488,7 +3497,7 @@ namespace
 		// On the ledger now rather than at its next refresh - see
 		// AddPlayerBotMarketSupply for the three keepers this is about.
 		for (size_t i = 0; i < offers.size(); ++i)
-			AddPlayerBotMarketSupply(offers[i].dwVnum, offers[i].wCount);
+			AddPlayerBotMarketSupply(offers[i].dwVnum, offers[i].wCount, ch->GetMapIndex());
 		sys_log(0, "PLAYERBOT_SHOP: opened pid=%u name=%s reason=%s items=%u left_behind no_line=%u no_slot=%u antiflag=%u first_vnum=%u first_price=%u pos=(%ld,%ld) sign=\"%s\"",
 				ch->GetPlayerID(), ch->GetName(), GetPlayerBotShopReasonName(state.bShopOpenReason),
 				(unsigned int)tableCount, uNoLine, uNoSlot, uAntiFlag,
