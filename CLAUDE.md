@@ -4757,6 +4757,17 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   build after every update, one file at a time. The answer is a search over
   `game/src` for the symbol and the stock file from the full package for
   each hit; a launcher that named the files itself would be the real fix.
+  It sprang again on 18 September, the same file and the same call:
+  archonek's `messenger_manager.cpp` called `GetCompanionOwner` at line
+  190 and every update from 2.0.74 failed there, while the launcher's
+  diagnosis said "update channel not published" (the 404 rule of the
+  time) and then nothing that named the file. Since 2.0.78
+  that file ships in the update package, so the next click puts the stock
+  copy back (`guild.cpp` has shipped since 2.0.65), and
+  `Get-M2LauncherErrorGuidance` answers `ENGINE_FILE_FROM_MOD` with the file
+  the compiler named for any "`CPlayerBotManager` has no member named" line.
+  Read the launcher log's compiler lines before any other theory of a failed
+  update: `grep -o "[a-z_0-9]*\.cpp:[0-9]*:[0-9]*: error: .*"`.
 - **A rule written for bot parties was asked of a player's.** `ManagePlayerBotParty`
   put every party it checked back on `PARTY_EXP_DISTRIBUTION_PARITY`, the
   player's included, on every check ("boty dodane do PT zawsze same zmieniaja
