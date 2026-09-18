@@ -5789,6 +5789,121 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   the YouTube channel instead of mt2009.pl. Discord does not show a profile's
   owner the buttons of their own presence, so "Dolacz do gry" is checked from
   another account.
+- **"Scal i uporzadkuj" is one server operation, for a player's button and for
+  the bots alike.** The inventory's auto-stack button sent a move for every
+  pair of stacks - three hundred in a frame, which the flood limit closed the
+  connection on, and then a few at a time (autostackpump.py) - and a queue of
+  moves could only pour stacks, never lay a page out. It sends
+  `/inventory_arrange` once now (client-root/inventoryarrange.py), and the
+  server answers `InventoryArrangeResult <code> <moved> <merged> <units>`.
+  `playerbot_arrange.cpp` is a translation unit of its own - the mt2009
+  Makefile compiles every `*.cpp` in game/src, r40250's every
+  `playerbot_*.cpp`, where it is a stub - and reads the four pages into
+  `playerbot_arrange_rules.h` (pure, tests/playerbot_arrange_rules_test.cpp).
+  The plan pours stacks on a copy of the counts (the fullest stack keeps its
+  id and an emptied stack's quickslot follows it), then lays the pages out by
+  category, potions first as the operator asked for the bots' bags: first fit
+  in reading order; the tallest first when that does not fit; an exact packing
+  of the free runs when neither does (bin packing with heights of one to three
+  is a table over the runs: best[a] is the most two-cell items beside `a`
+  three-cell ones); and, never needed yet, the old layout, which is always
+  legal because pouring only takes items away. Only a complete, checked plan
+  is applied, the way MoveItem moves one item: every item that changes cell
+  is RemoveFromCharacter'd first and SetItem'd at its new cell after, so a
+  cycle needs no free cell, and the quickslots are rewritten from a snapshot
+  taken before the first pour. An item `isLocked()` stays where it is - an
+  active auto potion, whose affect holds its id and which MoveItem refuses.
+  Refused when dead, when `CanHandleItem(false, false, 0)` says busy (every
+  busy state, the item shop's included), while a quest runs, and within two
+  seconds of the last click. Two stacks pour only when vnum, flag word,
+  sockets, attributes and look all match - stricter than MoveItem, which asks
+  the sockets alone. The units of every vnum are counted again after each run
+  and a difference goes to syserr as `INVENTORY_ARRANGE:`. The bots on the
+  2.x line arrange every half hour and a pid's spread (`ManagePlayerBotArrange`,
+  in place of `SortPlayerBotConsumablesToFront` there): an item picked up
+  since shifts everything after its place in the order, and every moved item
+  is a save for the db core. The client refuses the click while an item hangs
+  on the cursor or a private shop is being built - both name cells the server
+  is about to change. The method the button used to call stays in
+  uiinventory.py as `__OnAutoStackButtonByMoves`, never called: clientrootify
+  anchors the edit on the method's first line alone, which is the only text
+  the stock root, a root with the pump and a root with this all share.
+- **`ChainQuickslotItem` took its old position as a BYTE**, and four pages put
+  the belt on 287-302: a potion stack running out in the belt chained the
+  quickslot that pointed at bag cell 34 (290 - 256) and left the belt's own on
+  an empty cell. WORD since 2.0.75, like SyncQuickslot and TQuickslot.pos.
+- **How many monsters a respawn line keeps standing is an event flag, and
+  "boss or stone" was never true of any line.** `regen_spawn` topped each line
+  up to its `max_count`; `regen_target_count` (playerbotify
+  `apply_regen_spawn_count`) makes that `max_count` times `m2_mob_count` or
+  `m2_boss_count` percent (100 or unset = as written, 400 at most), written by
+  the classic panel's /rates card "Liczba potworow w respie" as `player.quest`
+  rows with dwPID 0 and made live by web_admin.quest's `REGEN_COUNT`, like the
+  respawn times (Kiciamol, 18 September - his own edit of regen.cpp was undone
+  by every update). A dungeon's lines and a quest's one-off spawn are never
+  multiplied, nor is any line one of whose possible members is not a monster
+  or a stone (`regen_member_vnums`: the vnum, a group's members, every member
+  of every group a group of groups may draw); and a count above the target
+  spawns nothing: `max_count - count` used to wrap round to four billion the
+  moment a lowered multiplier left more standing than the line asked for.
+  The member test is what the first version got wrong: it asked the type of
+  `m` lines only, and **stone.txt's `r` lines are not Metin stones** - on this
+  world they are the ore veins (20047-20059) and herb bushes (206xx), NPCs of
+  rank five, 380 lines against the 180 `m` lines that hold the actual stones -
+  so "zwykle potwory x2" would have doubled every vein and bush, and "Metiny i
+  bossowie x2" the horse and pony groups of npc.txt. `read_line` also
+  classified a line as boss or stone before it had parsed the vnum - the zero
+  of a fresh REGEN - so `is_boss_or_stone` was false for every line and the
+  /rates page's "Metiny i bossowie" respawn time reached nothing since
+  2.0.64; the vnum is read first now and a group of groups is asked the way
+  the engine asks a group (a boss, a mini-boss or a stone among its members),
+  which takes in four `r` lines of stones 8031-8034 on the other cores' maps
+  and puts the veins and bushes on the boss field's respawn time. The groups
+  of a group of groups are private to `CMobManager`, whose only answer was one
+  at random, so playerbotify gives it `GetGroupGroupMembers` and
+  `mob_manager.h` ships staged. `scratchpad/regen_class/classify.py` of
+  session 82d3ab90 is the shape of the measurement: it reads every map's four
+  regen files, group.txt, group_group.txt and `world.mob_proto`'s rank and type.
+  The maps are built three seconds before the `m2_*` flags reach the core, so
+  after a restart the boot spawn is x1 and each line reaches its multiple at
+  its own next respawn - minutes for monsters, 15-25 minutes for stones and
+  bosses. `PLAYERBOT_LOAD` carries `mobs=`, `stones=` and `npcs=`, what is
+  standing on the core, which is how the multiplier is measured; `npcs=` leaves
+  out a horse with a rider, which comes and goes with the bots. A vein kills
+  itself 7-15 minutes after it stands and its line brings it back only at the
+  line's own time (18-22 minutes, most an hour), so an NPC count watched for
+  three minutes after a switch proves nothing - the lines have not come round.
+  Measured on m2zip at 1099 bots: 41 436 monsters at x1, 80 344 two minutes
+  after x2; with stones at x2 and monsters at x1 the stones went 113 -> 231 as
+  their lines came round while the veins' lines came back one apiece (+27,
+  where two a line would have been at least +62); and the surplus after going
+  back to x1 fell 81.4k -> 72k in twenty minutes, by killing alone. The bots'
+  pass went from 13-14 s to 16-18 s of every 60 at x2.
+- **A client update refused for a running game is asked about before the
+  download.** Windows will not replace the exe of a running program and says
+  so only at the copy - after the 65 MB download, every time: Ratorex (18
+  September) tried five times in a quarter of an hour. `Assert-ClientNotRunning`
+  (Metin2-Launcher.ps1) asks `Get-M2FolderProcesses` for anything running from
+  the client folder before `Update-Client` downloads, and "update everything"
+  asks it before the server, so a new server is never left beside a client
+  that cannot log in to it; a sharing violation at the copy
+  (`Test-M2FileInUse`, HRESULT 0x80070020/21) gets `New-M2FileInUseError`
+  instead of the raw Windows sentence. Like every launcher fix, it reaches a
+  player one update late.
+- **Compress-Archive stops at 2 GB, and the world's backup went through it.**
+  Windows PowerShell 5.1's Compress-Archive holds every entry in a
+  MemoryStream (a documented limit), so a world whose `log.sql` dump passed
+  2 GB failed `New-M2DatabaseBackup` with `Exception calling "Write" with "3"
+  argument(s): "Stream was too long."` - "Strumien jest za dlugi" on a Polish
+  Windows. The reset backs the world up before it deletes anything, so such a
+  world could not be reset at all, and the world stayed whole every time
+  (uxietoszef, 18 September: three tries in a day). The backup's zip is
+  `ZipFile.CreateFromDirectory` now, which writes each file straight into the
+  archive; tested on a 2.4 GB file, and `Expand-Archive` - the restore's way
+  back - reads it whole. Unlike an update fix this one works on the first try
+  after the update: the GUI runs every action as a new `Metin2-Launcher.ps1
+  -Action` process, which imports the module the update wrote. Anything else
+  that zips a world wants the same call.
 
 ## Engine facts worth not re-deriving
 
