@@ -188,9 +188,14 @@ const int PLAYERBOT_SHOP_ENGINE_COLUMNS = 5;
 // world of two thousand bots opened no counter for hours after every
 // restart while each one killed its eight hundred. r40250 grants it to
 // anybody. The junk rule asks, because a bag that cannot be sold from a
-// counter has only the merchant left.
+// counter has only the merchant left. Shops are the first channel's alone
+// (playerbot_channel_rules.h), so a bot on the second one keeps nothing for
+// a counter it can never open - its goods take the no-counter path instead
+// of filling the bag for good.
 inline bool PlayerBotCanOpenShop(LPCHARACTER ch)
 {
+	if (g_bChannel != 1)
+		return false;
 #if defined(PLAYERBOT_ENGINE_MT2009)
 	return ch && ch->CanOpenShop();
 #else

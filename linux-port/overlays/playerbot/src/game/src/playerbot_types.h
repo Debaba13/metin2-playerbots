@@ -190,6 +190,9 @@ namespace
 	// Passes of the manager's tick cut short by its time budget in the minute
 	// (PLAYERBOT_TICK_BUDGET_MS_DEFAULT, the TICK_MS key of the weights file).
 	DWORD s_uPlayerBotLoadSliced = 0;
+	// And what the light ticks of the bots those passes did not reach cost
+	// in the minute (RunPlayerBotLightTick), in microseconds.
+	DWORD s_uPlayerBotLoadLightUs = 0;
 	DWORD s_dwPlayerBotLoadReportTime = 0;
 	const DWORD PLAYERBOT_LOAD_REPORT_INTERVAL = 60000;
 	// How long one pass of CPlayerBotManager::Update may run before it stops
@@ -2245,6 +2248,10 @@ namespace
 	// choice set up to this many from the nearest bands, so the youngest
 	// cohort is spread over several rectangles instead of one.
 	const int PLAYERBOT_M2_HUB_CHOICES_MIN = 4;
+	// A bot above every band of a village (here for an errand) takes the top
+	// bands together until there are at least this many hubs - Joan's top
+	// band alone is two hubs (CollectPlayerBotM1HubsForLevel).
+	const int PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN = 6;
 	// How often the monster a bot is already fighting is asked again whether
 	// it is still worth fighting. Not every tick: the answer needs the bot's
 	// material shortages, which cost a walk of the bag.
@@ -2954,6 +2961,10 @@ namespace
 	// The goods a player crafts or refines further (IsPlayerBotPickupGoods):
 	// beside the materials, over the chests and the spare gear.
 	const int PLAYERBOT_SHOP_PICKUP_GOODS_SCORE = 520;
+	// What Iwakura's sheet prices and no rule of its own placed
+	// (IsPlayerBotSheetGoods): the horse and polymorph books and the stone
+	// scroll the merchant used to take. Beside a polymorph marble.
+	const int PLAYERBOT_SHOP_SHEET_GOODS_SCORE = 600;
 	// Offsets tried for a pitch the bot cannot walk to before the stand is
 	// put off for a while (the open pass in playerbot_town.h).
 	const int PLAYERBOT_SHOP_PITCH_TRIES = 4;

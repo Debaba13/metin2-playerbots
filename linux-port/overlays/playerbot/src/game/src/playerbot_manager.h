@@ -73,6 +73,19 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		// a time over hours - scheduled here, spawned from Update.
 		void	SetSpawnWindow(DWORD dwWindowMs);
 		size_t	ScheduleLateJoiners(size_t count, BYTE bEmpire, DWORD dwWindowMs);
+		// The second channel (M2_PLAYERBOT_CH2, playerbot_channel_rules.h): how
+		// much of the operator's number this core's channel starts - of the
+		// whole world's, or of one kingdom's when bEmpire is given. The
+		// identities themselves are split when the registry loads: this core
+		// only ever registers its own channel's.
+		int	ScaleToThisChannel(int total, BYTE bEmpire = 0);
+		// The bootstrap's split made channel-aware: the world's number between
+		// the kingdoms over every channel's identities - so a kingdom has the
+		// same share with the second channel on as off - and each kingdom's
+		// part between the channels, capped by this channel's identities.
+		// With the second channel off, want[] is left as it is on channel 1
+		// and emptied on any other.
+		void	SplitForThisChannel(int total, const int* registeredHere, int* want);
 
 		// The three things the F10 bot-admin window asks for. The data behind
 		// the last two lives in playerbot_admin.h, inside the anonymous
@@ -119,8 +132,17 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 
 		TPlayerBotMap		m_mapBots;
 		THandleToPlayerMap	m_mapHandles;
+		// This channel's identities - what may be spawned here - and every
+		// identity whatever its channel, which is what "is this pid a bot"
+		// asks (IsRegisteredBotPID: the guilds, the parties, the P2P count).
 		TRegisteredPlayerBotSet m_setRegisteredBots;
+		TRegisteredPlayerBotSet m_setAllRegisteredBots;
 		TPlayerBotAccountMap	m_mapBotAccounts;
+		// The second channel's plan, read with the registry: the switch, the
+		// share, and the identities each channel (1, 2) holds per kingdom.
+		bool			m_bSecondChannel = false;
+		int			m_iSecondChannelShare = 40;
+		int			m_aChannelIdentities[3][4] = {};
 		// Spawns still to be sent, and when the next batch goes. Filled by
 		// SpawnRegistered, drained by Update, see PLAYERBOT_SPAWN_WINDOW.
 		std::deque<DWORD>	m_dequePendingSpawns;

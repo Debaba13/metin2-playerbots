@@ -345,6 +345,24 @@ namespace
 				out[count++] = h;
 		if (count > 0)
 			return count;
+		// Above every band - a bot the village has outgrown, here for an
+		// errand - the top bands together, whole bands until there are at
+		// least PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN hubs. The nearest band
+		// alone was Joan's two band-21 hubs for every bot of twenty-five and
+		// over in the village: thirty of them and their horses on one meadow
+		// (Remigiusz's screenshot, 18 September).
+		int top = 0;
+		for (int h = 0; h < hubTotal; ++h)
+			top = std::max(top, (int)hubs[h].mobLevel);
+		if (hubTotal > 0 && botLevel > top + 3)
+		{
+			for (int distance = 0; distance < 64 && count < cap &&
+					count < PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN; ++distance)
+				for (int h = 0; h < hubTotal && count < cap; ++h)
+					if (top - hubs[h].mobLevel == distance)
+						out[count++] = h;
+			return count;
+		}
 		int best = 1000;
 		for (int h = 0; h < hubTotal; ++h)
 			best = std::min(best, abs(hubs[h].mobLevel - botLevel));

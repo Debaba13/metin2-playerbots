@@ -208,6 +208,22 @@ int main()
 		registered[EMPIRE_CHUNJO] = 500;
 		SplitPopulation(0, registered, want);
 		assert(want[EMPIRE_CHUNJO] == 0);
+
+		// The operator's own number per kingdom: each takes its own, cut to
+		// what it has, and nothing it cannot take goes to the others.
+		int asked[EMPIRE_COUNT] = { 0, 60, 900, 60 };
+		registered[EMPIRE_SHINSOO] = 500;
+		registered[EMPIRE_CHUNJO] = 1012;
+		registered[EMPIRE_JINNO] = 40;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[EMPIRE_SHINSOO] == 60 && want[EMPIRE_CHUNJO] == 900 && want[EMPIRE_JINNO] == 40);
+		asked[EMPIRE_CHUNJO] = -5;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[0] == 0 && want[EMPIRE_CHUNJO] == 0);
+		// A kingdom switched off (no identities) takes nothing.
+		registered[EMPIRE_JINNO] = 0;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[EMPIRE_JINNO] == 0 && want[EMPIRE_SHINSOO] == 60);
 	}
 
 	// -----------------------------------------------------------------

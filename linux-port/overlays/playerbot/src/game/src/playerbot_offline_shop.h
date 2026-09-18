@@ -133,6 +133,8 @@ namespace {
         using namespace playerbot_offline;
         auto& manager = ikashop::GetManager();
         state.dwNextShopKeepTime = now + 120000;
+        // Shops are the first channel's alone (ManagePlayerBotPrivateShop).
+        if (g_bChannel != 1) return false;
         if (manager.GetShopByOwnerID(ch->GetPlayerID()) || requests.count(ch->GetPlayerID()) ||
                 !db_clientdesc || !db_clientdesc->IsPhase(PHASE_DBCLIENT) || !count) return false;
         // Keep the existing prices and selection, but revalidate every line,

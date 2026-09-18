@@ -2169,8 +2169,11 @@ namespace
 		// (A Blessing or Dragon God scroll was judged here, under the materials
 		// that took it first - see above the material reserve.)
 		// An ITEM_MATERIAL no recipe consumes is scenery, not goods: it was put
-		// up for its type, and its type is not a reason anybody would buy it.
-		if (item->GetRefinedVnum() == 0 && item->GetType() == ITEM_MATERIAL)
+		// up for its type, and its type is not a reason anybody would buy it -
+		// unless Iwakura's sheet prices it, which is exactly that reason (the
+		// branch after the books below lists it).
+		if (item->GetRefinedVnum() == 0 && item->GetType() == ITEM_MATERIAL &&
+				!IsPlayerBotSheetGoods(item))
 			return -1;
 		// A soul stone the bot cannot seat - the wrong school's, no socket open,
 		// the wrong grade for the piece it keeps - is somebody else's set.
@@ -2186,6 +2189,14 @@ namespace
 				return -1;
 			return 400;
 		}
+		// What Iwakura's sheet prices by name and nothing above placed: the
+		// horse and polymorph books and the stone detachment scroll the junk
+		// rule used to sell (IsPlayerBotSheetGoods, which keeps them from the
+		// merchant now - so they have to be goods here, or they would ride in
+		// the bag for good). After the Combo and Leadership books, which are
+		// on the sheet too and keep a few to read.
+		if (IsPlayerBotSheetGoods(item))
+			return PLAYERBOT_SHOP_SHEET_GOODS_SCORE;
 		// Skill books. Stock for everyone; the Metin dropper's whole trade, so
 		// on its counter they go up beside the level-30 weapons.
 		if (item->GetType() == ITEM_SKILLBOOK)
@@ -2989,6 +3000,12 @@ namespace
 		if (HasPlayerBotOfflineShop(ch)) return false;
 #endif
 		if (!ch || !ch->IsItemLoaded())
+			return false;
+		// Every shop in the world stands on the first channel (the operator's
+		// rule for the second one, playerbot_channel_rules.h): a bot on another
+		// channel never opens one, and every bot that has ever kept one lives
+		// on the first.
+		if (g_bChannel != 1)
 			return false;
 
 		// The stall's own lifetime is settled earlier in the tick; by the time

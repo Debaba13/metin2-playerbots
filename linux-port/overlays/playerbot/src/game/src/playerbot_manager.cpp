@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "playerbot_manager.h"
 #include "playerbot_empire_rules.h"
+#include "playerbot_channel_rules.h"
 #include "playerbot_world_rules.h"
 #include "playerbot_event_rules.h"
 #include "playerbot_stall_rules.h"
@@ -27,6 +28,7 @@
 #include "buffer_manager.h"
 #include "motion.h"
 #include "party.h"
+#include "p2p.h"
 #include "questmanager.h"
 #include "safebox.h"
 #include "questpc.h"
@@ -2250,6 +2252,19 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 
 	if (IsManaged(dwPlayerID) || CHARACTER_MANAGER::instance().FindByPID(dwPlayerID))
 		return false;
+	// The channel partition (LoadRegisteredBots) is what keeps a bot on one
+	// core; this is the belt to it. A pid the P2P table knows is logged in on
+	// another core, and two copies of one character would each save over the
+	// other and duplicate whatever either of them sold. The table knows only
+	// the logins its peers have announced - not the first batch of a start -
+	// which is why it is the belt and not the rule.
+	if (P2P_MANAGER::instance().FindByPID(dwPlayerID))
+	{
+		PlayerBotLogThrottled("spawn_elsewhere", get_dword_time(),
+				"PLAYERBOT_CHANNEL: refused pid=%u, already logged in on another core (channel %u here)",
+				dwPlayerID, (unsigned int)g_bChannel);
+		return false;
+	}
 
 	LPDESC d = DESC_MANAGER::instance().CreateBotDesc(bEmpire);
 	if (!d)
@@ -2293,6 +2308,40 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 	return true;
 }
 
+// The bots that have ever kept an offline shop, which live on the first
+// channel for good (playerbot_channel_rules.h). The table only grows: every
+// core adds the owners it sees before it reads, and apply.sh does the same
+// before any core starts. False when the table cannot be read.
+static bool LoadPlayerBotChannelPins(std::set<DWORD>& out)
+{
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+	std::unique_ptr<SQLMsg> create(AccountDB::instance().DirectQuery(
+			"CREATE TABLE IF NOT EXISTS player.playerbot_channel_pin ("
+			"pid INT UNSIGNED NOT NULL PRIMARY KEY, pinned_at DATETIME NOT NULL) ENGINE=InnoDB"));
+	std::unique_ptr<SQLMsg> add(AccountDB::instance().DirectQuery(
+			"INSERT IGNORE INTO player.playerbot_channel_pin (pid, pinned_at) "
+			"SELECT owner, NOW() FROM player.ikashop_offlineshop"));
+	std::unique_ptr<SQLMsg> msg(AccountDB::instance().DirectQuery(
+			"SELECT pid FROM player.playerbot_channel_pin"));
+	if (!msg.get() || msg->uiSQLErrno != 0 || !msg->Get() || !msg->Get()->pSQLResult)
+		return false;
+	MYSQL_ROW row;
+	while (NULL != (row = mysql_fetch_row(msg->Get()->pSQLResult)))
+	{
+		DWORD pid = 0;
+		if (row[0])
+			str_to_number(pid, row[0]);
+		if (pid != 0)
+			out.insert(pid);
+	}
+#else
+	// A classic stall is the keeper's own and ends with it: nothing of it is
+	// left on a channel to be pinned to.
+	(void)out;
+#endif
+	return true;
+}
+
 bool CPlayerBotManager::LoadRegisteredBots()
 {
 	if (m_bRegistryLoaded)
@@ -2303,7 +2352,35 @@ bool CPlayerBotManager::LoadRegisteredBots()
 	m_bRegistryLoaded = true;
 	m_bRegistryAvailable = false;
 	m_setRegisteredBots.clear();
+	m_setAllRegisteredBots.clear();
 	m_mapBotAccounts.clear();
+
+	// The second channel's plan (playerbot_channel_rules.h): the switch and the
+	// share from the container's environment, which every core of this world
+	// shares, and the pins. Each core registers only its own channel's
+	// identities, so nothing downstream - the split, the queues, the top-up,
+	// a GM's spawn - can start another channel's bot here.
+	m_bSecondChannel = false;
+	m_iSecondChannelShare = playerbot_channel_rules::CH2_SHARE_DEFAULT;
+	for (int c = 0; c < 3; ++c)
+		for (int e = 0; e < 4; ++e)
+			m_aChannelIdentities[c][e] = 0;
+	const char* secondChannel = std::getenv("M2_PLAYERBOT_CH2");
+	if (secondChannel && *secondChannel && std::atoi(secondChannel) != 0)
+		m_bSecondChannel = true;
+	const char* secondShare = std::getenv("PLAYERBOT_CH2_SHARE");
+	if (secondShare && *secondShare)
+		m_iSecondChannelShare = playerbot_channel_rules::ClampShare(std::atoi(secondShare));
+	std::set<DWORD> pins;
+	const bool pinsKnown = !m_bSecondChannel || LoadPlayerBotChannelPins(pins);
+	// Without the pins a pinned bot's channel cannot be told, so the second
+	// channel takes nobody and the first takes only whom the spread gives it:
+	// a bot may then start nowhere, and never twice.
+	if (!pinsKnown)
+		sys_err("PLAYERBOT_CHANNEL: player.playerbot_channel_pin cannot be read; %s",
+				g_bChannel == 1 ? "only the spread's first-channel bots start here"
+						: "this channel starts no bots");
+	unsigned int otherChannel = 0;
 
 	const char* query =
 			"SELECT l.pid, a.id, a.login, pi.empire, p.level "
@@ -2359,6 +2436,15 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			str_to_number(empire, row[3]);
 		if (pid != 0 && empire >= 1 && empire <= 3)
 		{
+			m_setAllRegisteredBots.insert(pid);
+			const int channel = playerbot_channel_rules::ChannelOf(pid, m_bSecondChannel,
+					m_iSecondChannelShare, pins.find(pid) != pins.end());
+			++m_aChannelIdentities[channel][empire];
+			if (channel != (int)g_bChannel || (!pinsKnown && g_bChannel != 1))
+			{
+				++otherChannel;
+				continue;
+			}
 			m_setRegisteredBots.insert(pid);
 			TPlayerBotAccount account;
 			account.dwID = 0;
@@ -2377,10 +2463,23 @@ bool CPlayerBotManager::LoadRegisteredBots()
 		}
 	}
 
+	if (m_bSecondChannel || g_bChannel != 1)
+		sys_log(0, "PLAYERBOT_CHANNEL: channel=%u second=%d share=%d here=%u elsewhere=%u "
+				"ch1=%d/%d/%d ch2=%d/%d/%d pinned=%u pins_read=%d",
+				(unsigned int)g_bChannel, m_bSecondChannel ? 1 : 0, m_iSecondChannelShare,
+				(unsigned int)m_setRegisteredBots.size(), otherChannel,
+				m_aChannelIdentities[1][1], m_aChannelIdentities[1][2], m_aChannelIdentities[1][3],
+				m_aChannelIdentities[2][1], m_aChannelIdentities[2][2], m_aChannelIdentities[2][3],
+				(unsigned int)pins.size(), pinsKnown ? 1 : 0);
+
 	m_bRegistryAvailable = !m_setRegisteredBots.empty();
 	if (!m_bRegistryAvailable)
 	{
-		sys_err("PLAYERBOT_AUTH: registry has no valid seeded identities; refusing every bot spawn");
+		// A channel the partition gives nobody is not a broken registry.
+		if (!m_setAllRegisteredBots.empty())
+			sys_log(0, "PLAYERBOT_CHANNEL: channel %u carries no bots", (unsigned int)g_bChannel);
+		else
+			sys_err("PLAYERBOT_AUTH: registry has no valid seeded identities; refusing every bot spawn");
 		return false;
 	}
 
@@ -2391,7 +2490,7 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			perEmpire[playerbot_empire_rules::EMPIRE_SHINSOO],
 			perEmpire[playerbot_empire_rules::EMPIRE_CHUNJO],
 			perEmpire[playerbot_empire_rules::EMPIRE_JINNO]);
-	ReportPlayerBotRegistryShortfall((unsigned int)m_setRegisteredBots.size());
+	ReportPlayerBotRegistryShortfall((unsigned int)m_setAllRegisteredBots.size());
 	return true;
 }
 
@@ -2487,8 +2586,60 @@ bool CPlayerBotManager::IsRegistered(DWORD dwPlayerID)
 
 bool CPlayerBotManager::IsRegisteredBotPID(DWORD dwPlayerID) const
 {
-	return m_bRegistryLoaded && m_bRegistryAvailable &&
-			m_setRegisteredBots.find(dwPlayerID) != m_setRegisteredBots.end();
+	// Any channel's bot: this answers "is this character a bot", which a guild
+	// master or a party leader on the other channel is just as much.
+	return m_bRegistryLoaded &&
+			m_setAllRegisteredBots.find(dwPlayerID) != m_setAllRegisteredBots.end();
+}
+
+void CPlayerBotManager::SplitForThisChannel(int total, const int* registeredHere, int* want)
+{
+	LoadRegisteredBots();
+	if (!want || !registeredHere)
+		return;
+	if (!m_bSecondChannel)
+	{
+		if (g_bChannel != 1)
+			for (int e = 0; e < playerbot_empire_rules::EMPIRE_COUNT; ++e)
+				want[e] = 0;
+		return;
+	}
+	// A kingdom M2_PLAYERBOT_KINGDOMS=0 leaves out has no share anywhere.
+	const char* kingdoms = std::getenv("M2_PLAYERBOT_KINGDOMS");
+	const bool chunjoOnly = kingdoms && *kingdoms && std::atoi(kingdoms) == 0;
+	int world[playerbot_empire_rules::EMPIRE_COUNT] = { 0, 0, 0, 0 };
+	int worldWant[playerbot_empire_rules::EMPIRE_COUNT];
+	for (int e = playerbot_empire_rules::EMPIRE_SHINSOO; e <= playerbot_empire_rules::EMPIRE_JINNO; ++e)
+		if (!chunjoOnly || e == playerbot_empire_rules::EMPIRE_CHUNJO)
+			world[e] = m_aChannelIdentities[1][e] + m_aChannelIdentities[2][e];
+	playerbot_empire_rules::SplitPopulation(total, world, worldWant);
+	for (int e = 0; e < playerbot_empire_rules::EMPIRE_COUNT; ++e)
+		want[e] = 0;
+	for (int e = playerbot_empire_rules::EMPIRE_SHINSOO; e <= playerbot_empire_rules::EMPIRE_JINNO; ++e)
+	{
+		const int here = playerbot_channel_rules::ShareOfTotal(worldWant[e], true,
+				m_iSecondChannelShare, (int)g_bChannel, m_aChannelIdentities[2][e]);
+		want[e] = std::min(here, std::max(0, registeredHere[e]));
+	}
+	sys_log(0, "PLAYERBOT: autospawn world=%d, channel %u starts %d/%d/%d (world split %d/%d/%d)",
+			total, (unsigned int)g_bChannel, want[1], want[2], want[3],
+			worldWant[1], worldWant[2], worldWant[3]);
+}
+
+int CPlayerBotManager::ScaleToThisChannel(int total, BYTE bEmpire)
+{
+	// The plan is read with the registry; a channel with no identities of its
+	// own must still learn that it takes nothing, so the load is asked for
+	// that whatever it answers.
+	LoadRegisteredBots();
+	int second = 0;
+	if (bEmpire >= 1 && bEmpire <= 3)
+		second = m_aChannelIdentities[2][bEmpire];
+	else
+		for (int e = 1; e <= 3; ++e)
+			second += m_aChannelIdentities[2][e];
+	return playerbot_channel_rules::ShareOfTotal(total, m_bSecondChannel,
+			m_iSecondChannelShare, (int)g_bChannel, second);
 }
 
 // Queues the first `count` registered identities and sends the first batch.
@@ -2545,6 +2696,10 @@ size_t CPlayerBotManager::SpawnRegistered(size_t count, BYTE bEmpire)
 // restored by TopUpMissingBots like the rest.
 size_t CPlayerBotManager::SpawnMedalDropperCohort(size_t count, BYTE bEmpire, BYTE bExpLockLevel)
 {
+	// The operator's number is per kingdom for the world: the first channel
+	// starts the cohort, or two channels would start it twice.
+	if (g_bChannel != 1)
+		return 0;
 	if (count == 0 || bEmpire < 1 || bEmpire > 3 || bExpLockLevel == 0 || !LoadRegisteredBots())
 		return 0;
 	m_bMedalDropperCohortLevel = bExpLockLevel;
@@ -3109,6 +3264,34 @@ static bool HoldPlayerBotForEquipWindow(LPCHARACTER ch, TPlayerBotAIState& state
 	return true;
 }
 
+// The light half of a bot's tick: the next leg of a route already planned and
+// the blow at the target already in hand. It plans nothing and looks for
+// nothing, which is why it may run for every bot the budgeted pass did not
+// reach. Without that, a pass cut by the budget left a bot standing at the end
+// of its waypoint until the sweep came round to it again - at 1500 bots on one
+// core that was two seconds and more, "dwa kroki i staja" (SIZOWSKI, 18
+// September), while a bot's full tick only has to come that often.
+static void RunPlayerBotLightTick(LPDESC d, LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+{
+	if (!d->IsPhase(PHASE_GAME) || ch->IsDead())
+		return;
+	// Following an already computed route is cheap; planning one is not, and
+	// stays in the full tick.
+	if (!state.vecRoute.empty() && state.uRouteIndex < state.vecRoute.size() &&
+			state.lRouteMapIndex == ch->GetMapIndex())
+		MovePlayerBot(ch, state.lRouteDestX, state.lRouteDestY, dwNow, 32, true,
+				state.bRouteAllowsHorse);
+	LPCHARACTER quickTarget = state.dwTargetVID != 0
+			? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
+	ExecutePlayerBotBasicAttack(ch, quickTarget, state, dwNow);
+	// This pass lands about half of all killing blows, and the full tick
+	// cannot count them later: it replaces a target it finds dead before it
+	// reaches the attack block, so the credit there only ever sees a live
+	// monster. Without this line the battle horse trial counted roughly every
+	// other kill.
+	NotePlayerBotBattleHorseKill(ch, state, quickTarget);
+}
+
 void CPlayerBotManager::Update()
 {
 	const DWORD dwNow = get_dword_time();
@@ -3179,7 +3362,7 @@ void CPlayerBotManager::Update()
 				++standingNpcs;
 		}
 #endif
-		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums sliced=%u mobs=%u stones=%u npcs=%u",
+		sys_log(0, "PLAYERBOT_LOAD: bots=%u ticks=%u tick_ms=%u tick_max_ms=%u targets=%u misses=%u target_ms=%u snapshot_ms=%u plans=%u deferred=%u resumed=%u cached=%u plan_ms=%u p64=%u/%ums p256=%u/%ums p1024=%u/%ums pfar=%u/%ums scans=%u scan_ms=%u saves=%u watchdog=%u over=%ums sliced=%u light_ms=%u mobs=%u stones=%u npcs=%u",
 				(unsigned int)m_mapBots.size(), s_uPlayerBotLoadTicks,
 				s_uPlayerBotLoadTickUs / 1000, s_uPlayerBotLoadTickMaxUs / 1000,
 				s_uPlayerBotLoadTargetSearches, s_uPlayerBotLoadTargetMisses,
@@ -3193,11 +3376,12 @@ void CPlayerBotManager::Update()
 				s_uPlayerBotLoadScans, s_uPlayerBotLoadScanUs / 1000,
 				s_uPlayerBotLoadSaves, s_uPlayerBotLoadWatchdog,
 				(unsigned int)(dwNow - s_dwPlayerBotLoadReportTime), s_uPlayerBotLoadSliced,
+				s_uPlayerBotLoadLightUs / 1000,
 				standingMonsters, standingStones, standingNpcs);
 		for (int b = 0; b < 4; ++b)
 			s_uPlayerBotLoadPlanBucket[b] = s_uPlayerBotLoadPlanBucketUs[b] = 0;
 		s_uPlayerBotLoadPlanDeferred = s_uPlayerBotLoadPlanResumed = s_uPlayerBotLoadPlanCached = 0;
-		s_uPlayerBotLoadSliced = 0;
+		s_uPlayerBotLoadSliced = s_uPlayerBotLoadLightUs = 0;
 		s_uPlayerBotLoadPlans = s_uPlayerBotLoadScans = s_uPlayerBotLoadSaves = s_uPlayerBotLoadWatchdog = 0;
 		s_uPlayerBotLoadPlanUs = s_uPlayerBotLoadScanUs = s_uPlayerBotLoadTickUs = s_uPlayerBotLoadTickMaxUs = s_uPlayerBotLoadTicks = 0;
 		s_uPlayerBotLoadTargetSearches = s_uPlayerBotLoadTargetMisses = s_uPlayerBotLoadTargetUs = s_uPlayerBotLoadSnapshotUs = 0;
@@ -3226,9 +3410,13 @@ void CPlayerBotManager::Update()
 	// often, and the core's other work - a player's login above all - gets
 	// its share of the thread. A sweep is one visit to every bot; the heavy and
 	// light ticks below alternate by sweep, not by pass, or a bot reached every
-	// other pass would land on the light one every time.
+	// other pass would land on the light one every time. The bots a pass does
+	// not reach take their light tick after it (RunPlayerBotLightTick), and the
+	// pass leaves room for that by what it cost the last time - never less than
+	// a quarter of the budget for the full ticks.
 	static DWORD s_dwPlayerBotSweep = 0;
 	static DWORD s_dwPlayerBotResumePid = 0;
+	static DWORD s_dwPlayerBotLightPassUs = 0;
 	TPlayerBotMap::iterator itFirst = m_mapBots.begin();
 	if (s_dwPlayerBotResumePid != 0)
 		itFirst = m_mapBots.lower_bound(s_dwPlayerBotResumePid);
@@ -3236,13 +3424,18 @@ void CPlayerBotManager::Update()
 		++s_dwPlayerBotSweep;
 	s_dwPlayerBotResumePid = 0;
 	const DWORD dwTickBudgetUs = (DWORD)GetPlayerBotTickBudgetMs() * 1000U;
+	const DWORD dwFullTickBudgetUs =
+			s_dwPlayerBotLightPassUs + dwTickBudgetUs / 4 < dwTickBudgetUs
+			? dwTickBudgetUs - s_dwPlayerBotLightPassUs : dwTickBudgetUs / 4;
 	unsigned int uPassBots = 0;
+	TPlayerBotMap::iterator itStop = m_mapBots.end();
 	for (TPlayerBotMap::iterator it = itFirst; it != m_mapBots.end(); ++it)
 	{
 		if (dwTickBudgetUs != 0 && uPassBots >= PLAYERBOT_TICK_MIN_BOTS &&
-				PlayerBotClockUs() - dwTickStartUs > dwTickBudgetUs)
+				PlayerBotClockUs() - dwTickStartUs > dwFullTickBudgetUs)
 		{
 			s_dwPlayerBotResumePid = it->first;
+			itStop = it;
 			++s_uPlayerBotLoadSliced;
 			break;
 		}
@@ -3274,26 +3467,7 @@ void CPlayerBotManager::Update()
 		// combat look like holding Space without doubling pathfinding/target scans.
 		if ((it->first + s_dwPlayerBotSweep) % 2 != 0)
 		{
-			if (d->IsPhase(PHASE_GAME) && !ch->IsDead())
-			{
-				// Heavy target selection/path planning stays staggered, but following an
-				// already computed route is cheap. Advancing it every second prevents
-				// fast characters from stopping at a 7 m waypoint until their next
-				// full AI tick.
-				if (!state.vecRoute.empty() && state.uRouteIndex < state.vecRoute.size() &&
-						state.lRouteMapIndex == ch->GetMapIndex())
-					MovePlayerBot(ch, state.lRouteDestX, state.lRouteDestY, dwNow, 32, true,
-							state.bRouteAllowsHorse);
-				LPCHARACTER quickTarget = state.dwTargetVID != 0
-						? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
-				ExecutePlayerBotBasicAttack(ch, quickTarget, state, dwNow);
-				// This pass lands about half of all killing blows, and the full
-				// tick cannot count them later: it replaces a target it finds
-				// dead before it reaches the attack block, so the credit there
-				// only ever sees a live monster. Without this line the battle
-				// horse trial counted roughly every other kill.
-				NotePlayerBotBattleHorseKill(ch, state, quickTarget);
-			}
+			RunPlayerBotLightTick(d, ch, state, dwNow);
 			continue;
 		}
 
@@ -4183,6 +4357,30 @@ void CPlayerBotManager::Update()
 		NotePlayerBotBattleHorseKill(ch, state, target);
 
 	}
+
+	// The bots the pass above did not reach - before the pid it resumed at and
+	// from the pid it stopped at - still take the light half of their tick.
+	if (itFirst != m_mapBots.begin() || itStop != m_mapBots.end())
+	{
+		const DWORD dwLightStartUs = PlayerBotClockUs();
+		for (int half = 0; half < 2; ++half)
+		{
+			TPlayerBotMap::iterator from = half == 0 ? m_mapBots.begin() : itStop;
+			TPlayerBotMap::iterator to = half == 0 ? itFirst : m_mapBots.end();
+			for (TPlayerBotMap::iterator it = from; it != to; ++it)
+			{
+				LPDESC d = it->second;
+				LPCHARACTER ch = d ? d->GetCharacter() : NULL;
+				if (!ch)
+					continue;
+				RunPlayerBotLightTick(d, ch, s_mapPlayerBotAIStates[it->first], dwNow);
+			}
+		}
+		s_dwPlayerBotLightPassUs = PlayerBotClockUs() - dwLightStartUs;
+		s_uPlayerBotLoadLightUs += s_dwPlayerBotLightPassUs;
+	}
+	else
+		s_dwPlayerBotLightPassUs = 0;
 
 	// The census was taken over the pass that has just finished, so it is
 	// written here rather than at the top: one line, one minute, every bot of

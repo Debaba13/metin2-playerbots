@@ -229,6 +229,27 @@ namespace playerbot_empire_rules
 		}
 	}
 
+	// The operator's own number for each kingdom instead of a share of one
+	// budget (the launcher's "Indywidualne wartosci dla krolestw", Greess).
+	// Each kingdom takes what it was asked for, cut to the identities it has,
+	// and nothing it cannot take is handed to another: the operator named
+	// every number, so a kingdom short of identities is short, not generous.
+	inline void TakeKingdomCounts(const int* asked, const int* registered, int* out)
+	{
+		if (!out)
+			return;
+		for (int e = 0; e < EMPIRE_COUNT; ++e)
+			out[e] = 0;
+		if (!asked || !registered)
+			return;
+		for (int e = EMPIRE_SHINSOO; e <= EMPIRE_JINNO; ++e)
+		{
+			const int want = asked[e] > 0 ? asked[e] : 0;
+			const int have = registered[e] > 0 ? registered[e] : 0;
+			out[e] = want < have ? want : have;
+		}
+	}
+
 	// -------------------------------------------------------------------
 	//  The points a bot walks to, per kingdom
 	// -------------------------------------------------------------------

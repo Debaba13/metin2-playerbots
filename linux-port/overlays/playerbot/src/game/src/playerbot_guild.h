@@ -219,6 +219,11 @@ namespace
 
 	void RefreshPlayerBotStrengths(DWORD dwNow)
 	{
+		// The census, the tier floors and the tiers written for the guilds are
+		// the first channel's: two channels each counting half a kingdom would
+		// write two sets of tiers into one table.
+		if (g_bChannel != 1)
+			return;
 		if (s_dwNextPlayerBotStrengthRefresh == 0)
 		{
 			// The first census waits one interval: the minute after a start holds
@@ -803,6 +808,10 @@ namespace
 
 	void WritePlayerBotGuildStatus(DWORD dwNow)
 	{
+		// The report the panel reads is the first channel's, where the wars
+		// and the tiers are kept.
+		if (g_bChannel != 1)
+			return;
 		if (s_dwNextPlayerBotGuildStatusTime != 0 && dwNow < s_dwNextPlayerBotGuildStatusTime)
 			return;
 		s_dwNextPlayerBotGuildStatusTime = dwNow + PLAYERBOT_GUILD_STATUS_INTERVAL;
@@ -856,8 +865,9 @@ namespace
 		CGuild* guild = ch->GetGuild();
 		if (!guild)
 		{
+			// Guilds are founded on the first channel, where the census is.
 			int tier = GUILD_TIER_ORDINARY;
-			if (ShouldPlayerBotFoundGuild(ch, state, tier))
+			if (g_bChannel == 1 && ShouldPlayerBotFoundGuild(ch, state, tier))
 				state.bFoundedGuild = FoundPlayerBotGuild(ch, tier);
 			return;
 		}
@@ -883,6 +893,11 @@ namespace
 		}
 
 		ManagePlayerBotGuildExp(ch, state, guild, *info, dwNow);
+		// On the second channel a member offers its experience and nothing
+		// more: promotion, recruiting and the master's points follow the
+		// census, which is the first channel's.
+		if (g_bChannel != 1)
+			return;
 
 		if (guild->GetMasterPID() != ch->GetPlayerID())
 		{

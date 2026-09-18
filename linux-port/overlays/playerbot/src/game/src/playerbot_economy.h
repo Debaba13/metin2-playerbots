@@ -404,6 +404,43 @@ namespace
 		return false;
 	}
 
+	// The part of Iwakura's sheet no rule of its own looks after: items he
+	// prices by name above the heap line that are ITEM_USE of the special or
+	// the detachment kind (the horse and polymorph books, the stone scroll,
+	// the Cape of Courage, the rose) or a material or special no recipe
+	// consumes. They reached the junk rule's default and the merchant paid a
+	// few hundred yang for what the sheet prices at forty to a hundred and
+	// thirty-five thousand. The rest of the sheet keeps the rules it has -
+	// rings, gloves and uniques (the unique slots), bonus stones (never on a
+	// counter), refine scrolls, recipes, chests and keys, the shell and the
+	// pearls - because a price is no reason to overrule them. Built once
+	// from the two tables: the junk rule runs for every cell of every scan.
+	bool IsPlayerBotSheetGoods(LPITEM item)
+	{
+		static std::set<DWORD> s_goods;
+		static bool s_loaded = false;
+		if (!s_loaded)
+		{
+			s_loaded = true;
+			for (size_t i = 0; i < sizeof(PLAYERBOT_MATERIAL_PRICES) / sizeof(PLAYERBOT_MATERIAL_PRICES[0]); ++i)
+				if (PLAYERBOT_MATERIAL_PRICES[i].dwPrice > PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE)
+					s_goods.insert(PLAYERBOT_MATERIAL_PRICES[i].dwVnum);
+			for (size_t i = 0; i < sizeof(PLAYERBOT_EXTRA_MATERIAL_PRICES) / sizeof(PLAYERBOT_EXTRA_MATERIAL_PRICES[0]); ++i)
+				if (PLAYERBOT_EXTRA_MATERIAL_PRICES[i].dwPrice > PLAYERBOT_SHOP_BULK_MAX_BASE_PRICE)
+					s_goods.insert(PLAYERBOT_EXTRA_MATERIAL_PRICES[i].dwVnum);
+		}
+		if (!item || s_goods.find(item->GetVnum()) == s_goods.end())
+			return false;
+		const DWORD vnum = item->GetVnum();
+		if (vnum == PLAYERBOT_SHELLFISH_VNUM ||
+				(vnum >= PLAYERBOT_PEARL_FIRST_VNUM && vnum <= PLAYERBOT_PEARL_LAST_VNUM))
+			return false;
+		const BYTE type = item->GetType();
+		if (type == ITEM_USE)
+			return item->GetSubType() == USE_SPECIAL || item->GetSubType() == USE_DETACHMENT;
+		return type == ITEM_MATERIAL || type == ITEM_SPECIAL;
+	}
+
 	// How many units of a stackable go on one counter line. A private shop
 	// sells a line whole, so a stack of twenty scrolls on one line is twenty
 	// scrolls or nothing: what a player buys one at a time - potions,
@@ -593,10 +630,23 @@ namespace
 		if (!s_loaded)
 		{
 			s_loaded = true;
+			// Every recipe an item names (wRefineSet), whatever its id, besides
+			// the fixed range. The walk used to stop at PLAYERBOT_REFINE_RECIPE_MAX_ID
+			// while mt2009's refine_proto runs to 1362, so the thirteen materials
+			// only its upper recipes consume were junk to every bot - the Red
+			// Seed (30354, recipes 1089-1338) among them, 496 sold to the
+			// merchant in one day on the test world (18 September).
+			std::set<DWORD> recipeIds;
 			for (DWORD id = 1; id <= PLAYERBOT_REFINE_RECIPE_MAX_ID; ++id)
+				recipeIds.insert(id);
+			const std::vector<TItemTable>& protos = ITEM_MANAGER::instance().GetTable();
+			for (size_t i = 0; i < protos.size(); ++i)
+				if (protos[i].wRefineSet != 0)
+					recipeIds.insert(protos[i].wRefineSet);
+			for (std::set<DWORD>::const_iterator id = recipeIds.begin(); id != recipeIds.end(); ++id)
 			{
 				const TRefineTable* recipe =
-						CRefineManager::instance().GetRefineRecipe(id);
+						CRefineManager::instance().GetRefineRecipe(*id);
 				if (!recipe)
 					continue;
 				for (int m = 0; m < recipe->material_count; ++m)
@@ -1396,6 +1446,17 @@ namespace
 					CountPlayerBotFreeInventoryCells(ch) <= PLAYERBOT_BAG_PRESSURE_FREE_CELLS;
 		if (vnum >= 70038 && vnum <= 70060)
 			return false;
+
+		// What Iwakura's sheet prices by name and no rule above placed - the
+		// horse books (50060-50062), the polymorph books (50314-50316), the
+		// stone detachment scroll (25100) - is goods, the way a polymorph
+		// marble is: the counter's (ScorePlayerBotShopStock), and the
+		// merchant's only from a bag under pressure with no counter to sell
+		// from. The default below sold them all - on the test world some
+		// thousand of each in a day, for a few hundred yang against 40 000 to
+		// 135 000 on the sheet (Tieru, 18 September).
+		if (IsPlayerBotSheetGoods(item))
+			return IsPlayerBotBagUnderPressure(ch) && !PlayerBotCanOpenShop(ch);
 
 		// Keep at most one immediately usable upgrade for each wear slot.  The old
 		// test kept every item that scored above the currently worn one; at high

@@ -1178,6 +1178,9 @@ namespace
 	void ManagePlayerBotTowerRaids(DWORD dwNow)
 	{
 #if defined(PLAYERBOT_ENGINE_MT2009)
+		// One raid for the world, called on the first channel.
+		if (g_bChannel != 1)
+			return;
 		if (s_dwNextPlayerBotTowerCheck != 0 && dwNow < s_dwNextPlayerBotTowerCheck)
 			return;
 		s_dwNextPlayerBotTowerCheck = dwNow + PLAYERBOT_TOWER_CHECK_INTERVAL;

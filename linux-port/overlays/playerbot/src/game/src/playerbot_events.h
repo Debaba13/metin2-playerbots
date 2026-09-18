@@ -135,7 +135,10 @@ namespace {
 
 	bool IsPlayerBotEventLeader()
 	{
-		return SECTREE_MANAGER::instance().GetMap(PLAYERBOT_EVENTS_LEADER_MAP) != NULL;
+		// Joan's core on the first channel: with a second channel on, its
+		// game1 hosts map 21 too, and two leaders would say every notice twice.
+		return g_bChannel == 1 &&
+				SECTREE_MANAGER::instance().GetMap(PLAYERBOT_EVENTS_LEADER_MAP) != NULL;
 	}
 
 	const char* PlayerBotEventRateFlag(int kind, bool premium)

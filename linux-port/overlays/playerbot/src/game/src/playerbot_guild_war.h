@@ -151,6 +151,10 @@ namespace
 	// ended is noticed by UnderWar going false.
 	void ManagePlayerBotGuildWars(DWORD dwNow)
 	{
+		// A war is declared once for the world, by the first channel; the bots
+		// of a guild at war fight it on whichever channel they live on.
+		if (g_bChannel != 1)
+			return;
 		if (s_dwNextPlayerBotGuildWarCheck != 0 && dwNow < s_dwNextPlayerBotGuildWarCheck)
 			return;
 		s_dwNextPlayerBotGuildWarCheck = dwNow + PLAYERBOT_GUILD_WAR_CHECK_INTERVAL;
