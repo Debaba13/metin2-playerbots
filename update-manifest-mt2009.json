@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T09:58:47Z",
-  "statusMessage": "2.0.73: księgi i Kamienie Duchowe trafiają na lady po jednej sztuce, bot zostawia sobie rezerwę liczoną w sztukach i czyta księgi dopiero z doświadczeniem na odczyt. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T13:54:27Z",
+  "statusMessage": "2.0.74 (serwer 2.0.74, klient 2.0.14): cztery strony ekwipunku (przy pierwszym starcie serwer przenosi przedmioty w bazie - bez kopii nie ma powrotu do starszej wersji), Szkatułki tylko w trakcie eventu, szybsze logowanie na dużym świecie, zielone kamienie u botów poniżej 40 lvl. Serwer i klient muszą mieć tę samą wersję - w launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.73",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.73/metin2-server-update-2.0.73.zip",
-    "sha256": "E7467762D8C9C19F384A4A1F1D8D054497B932AE0991046FCCEAD9CADD98D47D"
+    "version": "2.0.74",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.74/metin2-server-update-2.0.74.zip",
+    "sha256": "990A2B3B5FE575A03BC85A25E4492BB7C845C47B5DA91DBB2C99358C879F7566"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.13",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.70/metin2-client-update-2.0.13.zip",
-    "sha256": "38569649C6D34E0DA3DD2D60705186998A9675BC55419BF14D672CAD40F8946C"
+    "version": "2.0.14",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.74/metin2-client-update-2.0.14.zip",
+    "sha256": "DB0BEEC36A46B1A4644B3015322943DD1F935788B12A224A624540B65639937A"
   }
 }
