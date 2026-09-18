@@ -17,6 +17,122 @@ every version here.
 
 ---
 
+## 2.0.75 — 2026-09-18
+
+Serwer 2.0.75, klient 2.0.15. W launcherze ZAINSTALUJ AKTUALIZACJE — przycisk
+porządkowania potrzebuje nowego serwera i nowego klienta.
+
+### „Scal i uporządkuj” — jedno kliknięcie, cały ekwipunek (Tieru; plan z audytu Codexa)
+
+Przycisk w oknie ekwipunku (dotąd „automatyczne łączenie”) wysyła teraz do
+serwera jedno polecenie. Serwer w ułamku sekundy:
+
+- łączy stosy tego samego przedmiotu, ale tylko identyczne — te same kamienie,
+  bonusy i wygląd — i tylko do limitu stosu danego przedmiotu; najpełniejszy
+  stos zostaje, a wyczerpane znikają tak jak przy ręcznym łączeniu;
+- układa wszystkie cztery strony od nowa według rodzaju: najpierw mikstury,
+  potem broń, zbroje i biżuteria, księgi, ulepszacze i kamienie, skrzynie
+  i klucze, inne przedmioty użytkowe, rybactwo i zbieractwo, przedmioty
+  z misji i cała reszta;
+- przepina skróty z paska na nowe miejsca przedmiotów.
+
+Nic nie jest tworzone od nowa: każdy przedmiot zachowuje swoje kamienie,
+bonusy i numer. Strona konia, pas, założony sprzęt, smocze kamienie i magazyn
+zostają nietknięte, a włączony Eliksir Słońca lub Księżyca zostaje na swoim
+polu. Przy prawie pełnym ekwipunku serwer próbuje kilku sposobów ułożenia
+i wybiera taki, który się mieści — nigdy nie wyrzuca niczego na ziemię.
+
+Porządkowanie nie działa podczas handlu, przy otwartym sklepie, magazynie,
+ulepszaniu i innych oknach (czat powie dlaczego), po śmierci, z przedmiotem
+trzymanym kursorem ani częściej niż co 2 sekundy. Wynik — ile przedmiotów
+przestawiono i ile stosów połączono — pojawia się na czacie dopiero wtedy,
+gdy serwer skończy. Drugie kliknięcie na uporządkowanym ekwipunku niczego nie
+rusza.
+
+Dotychczasowy przycisk wysyłał setki pojedynczych ruchów (wcześniej wyrzucał
+za to z gry) i potrafił tylko łączyć stosy.
+
+### Boty porządkują torby tak samo
+
+Boty na linii 2.x co mniej więcej pół godziny robią dokładnie to samo
+porządkowanie zamiast dotychczasowego przesuwania mikstur na początek, więc
+ich torby oglądane w panelu są ułożone jak po kliknięciu przycisku. Łączenie
+stosów co 5 minut zostaje bez zmian.
+
+### Liczba potworów w respie (Kiciamol)
+
+Na stronie **Stawki** panelu jest nowa karta **„Liczba potworów w respie”**:
+osobno dla Metinów i bossów, osobno dla zwykłych potworów, od ×1 do ×4
+(także ×1,5 i ×2,5). ×2 znaczy, że w każdym miejscu respu stoi dwa razy
+więcej potworów niż normalnie. Nie trzeba restartu, a ustawienie zostaje po
+restarcie. Dodatkowe potwory pojawiają się przy najbliższym odrodzeniu
+danego miejsca: zwykłe potwory w ciągu kilku minut, Metiny i bossowie po
+swoim czasie odradzania (zwykle 15–25 minut).
+
+Bez zmian zostają postacie niezależne (sklepikarze, portale, konie), żyły
+rud i krzaki ziół, lochy i jednorazowe respy z misji. Po zmniejszeniu
+mnożnika nadmiarowe potwory znikają dopiero wtedy, gdy ktoś je zabije.
+
+Uwaga: więcej potworów to więcej pracy dla serwera i botów.
+
+### „Czas odradzania” Metinów i bossów wreszcie działa
+
+Pole „Metiny i bossowie” w karcie „Czas odradzania” (od 2.0.64) nie
+działało: serwer sprawdzał, czy linia respu to boss albo Metin, zanim
+odczytał, co to za potwór, więc żadna linia nim nie była, a bossowie
+i Metiny odradzali się według pola zwykłych potworów. Teraz każde pole
+działa na swoją grupę. Linie zapisane jako „grupa grup” serwer sprawdza tak
+samo jak zwykłe grupy, więc Metin z takiej linii też liczy się jako Metin.
+Pole „Metiny i bossowie” obejmuje też żyły rud i krzaki ziół, które stoją
+w plikach Metinów.
+
+### Launcher: aktualizacja klienta przy włączonej grze (Ratorex)
+
+Gdy gra była uruchomiona (albo jej kopia wisiała w tle), aktualizacja
+klienta pobierała całą paczkę i dopiero przy podmianie pliku kończyła się
+komunikatem Windowsa „plik jest używany przez inny proces”. Launcher
+sprawdza to teraz przed pobieraniem — przy „aktualizuj wszystko” jeszcze
+przed aktualizacją serwera — i mówi wprost: zamknij grę, sprawdź Menedżer
+zadań, kliknij ponownie. Poprawka launchera działa od następnej
+aktualizacji po tej (aktualizację wykonuje zawsze poprzednia wersja).
+
+### Reset świata i kopia na dużym świecie (uxietoszef)
+
+NOWY ŚWIAT (reset) i KOPIA kończyły się błędem „Stream was too long”
+(„Strumień jest za długi”), gdy któryś zrzut bazy — zwykle historia w bazie
+`log` — przekraczał 2 GB. Reset zawsze najpierw robi kopię, więc na takim
+świecie nie dało się go zrobić (świat zostawał nietknięty). Kopia jest teraz
+pakowana w sposób, który nie ma tego limitu. Sprawdzone na pliku 2,4 GB,
+razem z przywróceniem kopii. Po aktualizacji wystarczy spróbować jeszcze
+raz — ta poprawka działa od razu, nie dopiero od następnej wersji.
+
+### Skrót z paska przy miksturach w pasie
+
+Gdy kończył się stos mikstur położony w pasie, skrót mógł przeskoczyć na
+zupełnie inny przedmiot w torbie (błąd z 2.0.74, gdy pas przesunął się razem
+z czterema stronami ekwipunku).
+
+### Sprawdzone przed wydaniem
+
+Na świecie testowym (1099 botów, cztery strony ekwipunku):
+
+- **Porządkowanie botów:** w pierwszych dziesięciu minutach 397 uporządkowanych
+  toreb (mediana 68 przedmiotów, 61 przestawionych), najdłuższe trwało poniżej
+  milisekundy. Serwer po każdym porządkowaniu przelicza przedmioty — ani razu
+  nie zgadzało się inaczej niż przed nim — a po restarcie baza nie miała ani
+  jednego podwójnie zajętego pola w 2505 torbach.
+- **Przycisk gracza:** sprawdzony testami modułu klienta (Python 2.7 i 3); w
+  samym kliencie jeszcze nie klikany.
+- **Liczba potworów w respie:** przy ×1 na mapach stało około 41 tys.
+  potworów, po ustawieniu ×2 w panelu 80 tys. po dwóch minutach. Przy
+  Metinach na ×2 i zwykłych potworach na ×1 Metinów przybywało w miarę
+  odradzania się kolejnych miejsc (113 → 231 w dwadzieścia minut), a żyły
+  rud i zioła wracały pojedynczo, tak jak powinny. Nadmiarowe zwykłe potwory
+  po powrocie z ×2 na ×1 schodziły same, przez zabijanie (81 tys. → 72 tys. w
+  dwadzieścia minut). Przy ×2 czas pracy botów na tym świecie wzrósł z około
+  13–14 do 16–18 sekund na minutę.
+- Wszystkie testy (C++ i Pythona na wersjach 2.7 i 3, testy launchera) przechodzą.
+
 ## 2.0.74 — 2026-09-18
 
 Serwer 2.0.74, klient 2.0.14. **Serwer i klient muszą mieć tę samą wersję.**
