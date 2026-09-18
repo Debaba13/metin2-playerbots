@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-17T22:11:48Z",
-  "statusMessage": "2.0.71: boty uczą się zielarstwa u Baek-Go i wytwarzają mikstury, bot z małym HP nie ucieka już w nieskończoność, a broń 30 poziomu ulepszają u kowala tylko do progu zależnego od średniej. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T08:40:05Z",
+  "statusMessage": "2.0.72: boty kupują księgi, Kamienie Duchowe i okazy dla Biologa, których brakuje im do rozwoju, czytają gotową księgę zamiast czekać, a sklepy offline przeceniają i dokładają towar na zmianę. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.71",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.71/metin2-server-update-2.0.71.zip",
-    "sha256": "F874202A3D1F8F3F773A8345269E7EFE7AB44D33059DFD4EB01BB96D0216B5DA"
+    "version": "2.0.72",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.72/metin2-server-update-2.0.72.zip",
+    "sha256": "AB9D645215243B07A670C4D4DA14F5333523852AAA7F213E91A9EFA01C8FCDFD"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
