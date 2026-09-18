@@ -17,6 +17,72 @@ every version here.
 
 ---
 
+## 2.0.72 — 2026-09-18
+
+Serwer 2.0.72, klient bez zmian (2.0.13).
+
+### Boty kupują to, czego brakuje im do rozwoju (Tieru; wdrożył Codex)
+
+Do tej pory bot kupował z lad materiały, sprzęt i kilka rzeczy strategicznych,
+a księgi umiejętności, Kamienie Duchowe i okazy dla Biologa zdobywał raczej
+przypadkiem. Teraz liczy, czego mu brakuje, i kupuje dokładnie tyle:
+
+- księgi umiejętności, która jest na poziomie M — do zapasu dwunastu;
+- Kamienie Duchowe, gdy ma umiejętność na G1–G10 — do trzech;
+- okazy do otwartej zbiórki Biologa (Ząb Orka, Księga Klątw, Pamiątka po
+  Demonie) — tyle, ile brakuje do oddania.
+
+Linia z lady jest kupowana tylko wtedy, gdy cała mieści się w tej potrzebie,
+więc bot nie wykupi stosu dwudziestu ksiąg, bo brakowało mu jednej. Na zakup
+rozwojowy przeznacza najwyżej 30% własnych wolnych pieniędzy i nie zapłaci
+więcej niż dwukrotność uczciwej ceny. Tuż przed zakupem jeszcze raz sprawdza
+cenę i to, czy wciąż czegoś potrzebuje — zmieniona cena albo rzecz już zdobyta
+odwołują zakup.
+
+Co jakiś czas bot wybiera się też na targ pierwszej wioski, kiedy na ladach są
+księgi, kamienie albo okazy, a jemu ich brakuje. Naraz robi to najwyżej 3% botów
+— bez tłumu przy bramach — a droppery, boty w drużynie gracza i boty w trakcie
+próby konia nie wybierają się wcale. Jeśli bot sam wystawił coś, czego teraz potrzebuje, zdejmuje to z własnej
+lady.
+
+Przeglądając duży sklep, bot nie zaczyna już za każdym razem od początku: dociera
+też do pozycji dalszych niż 64. na ladzie.
+
+### Księgi i trening arcymistrza
+
+- Gdy umiejętność główna czeka na kolejną księgę, bot czyta księgę innej swojej
+  umiejętności, zamiast nie czytać nic.
+- Przy włączonym przełączniku ksiąg w panelu bot nie zużywa już Zwoju Egzorcyzmu,
+  który i tak nic by mu nie dał.
+- Trening arcymistrza pomija umiejętność, na którą bota nie stać rangą, i trenuje
+  inną. Gdy żadnej, bot poluje, żeby rangę odrobić.
+
+### Sklepy offline botów
+
+- Przeceny i dokładanie towaru nie blokują się już nawzajem: bot przecenia dwie
+  linie, potem przychodzi kolej na nowy towar, i tak na zmianę. Wcześniej sklep,
+  któremu zawsze było co dołożyć, nie przeceniał niczego.
+- Przecena idzie co godzinę, a co 10 minut tylko wtedy, gdy w trakcie gry zmieniono
+  kurs yang w panelu. Restart serwera nie uruchamia już przeglądu wszystkich lad od
+  nowa: pierwsza wizyta bota przy sklepie po restarcie dokłada towar. Wszystkie
+  sklepy dzielą jedną operację na sekundę, a ten przegląd zabierał ją dokładaniu
+  towaru i zakupom botów przez pierwsze minuty po starcie.
+- Oferta, która stała na ladzie już przed restartem, jest przeceniana za zaleganie
+  od chwili, gdy bot pierwszy raz po restarcie ją przelicza.
+- Kamień Duchowy może trafić na ladę, jeśli bot ma go ponad własny zapas
+  (wcześniej nigdy).
+- W logu serwera co minutę jest linia `PLAYERBOT_OFFLINE: budget`: ile operacji na
+  sklepach offline boty dostały, a ile musiało poczekać.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy, 1099 botów, 15 minut po restarcie, w porównaniu z 2.0.71: towaru
+dokładanego na lady tyle samo (170 wobec 169 pozycji), wypraw na targ po rzeczy
+do rozwoju naraz najwyżej 32, zero resetów strażnika bezczynności i żadnego padu
+rdzenia. Boty
+kupiły mniej ksiąg (9 wobec 24), bo nie dokupują już ponad własny zapas —
+wcześniej liczyły tylko część ksiąg z własnej torby.
+
 ## 2.0.71 — 2026-09-18
 
 Serwer 2.0.71, klient bez zmian (2.0.13).
