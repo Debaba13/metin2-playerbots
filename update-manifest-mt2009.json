@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T13:54:27Z",
-  "statusMessage": "2.0.74 (serwer 2.0.74, klient 2.0.14): cztery strony ekwipunku (przy pierwszym starcie serwer przenosi przedmioty w bazie - bez kopii nie ma powrotu do starszej wersji), Szkatułki tylko w trakcie eventu, szybsze logowanie na dużym świecie, zielone kamienie u botów poniżej 40 lvl. Serwer i klient muszą mieć tę samą wersję - w launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-18T16:09:56Z",
+  "statusMessage": "2.0.75 (serwer 2.0.75, klient 2.0.15): przycisk Scal i uporządkuj w ekwipunku (boty porządkują torby tak samo), liczba potworów w respie od x1 do x4 w panelu, działające pole Metiny i bossowie w czasie odradzania, launcher sprawdza przed aktualizacją klienta, czy gra jest zamknięta, reset świata i kopia działają też na dużym świecie. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.74",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.74/metin2-server-update-2.0.74.zip",
-    "sha256": "990A2B3B5FE575A03BC85A25E4492BB7C845C47B5DA91DBB2C99358C879F7566"
+    "version": "2.0.75",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.75/metin2-server-update-2.0.75.zip",
+    "sha256": "748E71E5699DF053C3C2EE820C9EBDF1BC4D2FBCF46875D96348E3F08F8F8F04"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.14",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.74/metin2-client-update-2.0.14.zip",
-    "sha256": "DB0BEEC36A46B1A4644B3015322943DD1F935788B12A224A624540B65639937A"
+    "version": "2.0.15",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.75/metin2-client-update-2.0.15.zip",
+    "sha256": "B8D28C0EC34446582A5937B53C2C8B3DDCA3437DCF589FD3793BDDDB2A5661D4"
   }
 }
