@@ -5633,6 +5633,54 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   Each step now closes its visit and comes back two seconds on, and the first
   visit after a spawn restocks first (`nextReprice` 0), as it always did.
   Anything that mutates an ikashop board twice has to reopen it in between.
+- **A kind a bot keeps by count is counted over the bag, and its line is one
+  unit.** Codex's review of 2.0.72 found both halves. The soul stone's scorer
+  asked only the stones in the cells *before* a stack - the scrolls' old trap -
+  so a bot's single stack of ten against a keep of three was never goods; and
+  the offline stand's cut (`BotOfflinePrepareLine`) cut no book or stone, while
+  a buyer takes a line only when all of it fits what it is short of. And
+  `CountPlayerBotSkillBooksAhead` counted rows: a book stacks to ten on mt2009
+  (`world.item_proto` stack 10, like 50513), so "keep twelve" kept twelve
+  stacks. `playerbot_stall_rules.h` is the arithmetic, pure and tested against
+  a bag laid out the engine's way (`tests/playerbot_stall_rules_test.cpp`): a
+  stack is goods once it holds a unit over the keep (`HoldsSpare`), the offline
+  line is one unit of the spare (`LineTake`), and the classic stall - which
+  lists stacks whole, and on mt2009 is what creates a stand - lists one only
+  while what stays behind still holds the keep (`MayListWhole`). The keep is
+  `GetPlayerBotCountedGoodsKeep`, the number the buyer's side asks
+  (`GetPlayerBotProgressionNeed`), so no counter sells what its keeper would
+  walk to the market to buy back and `BotOfflineReclaimLine` has nothing to
+  ping-pong with. `PLAYERBOT_SHOP_COUNTED_SINGLE_LINES` lines of one kind stand
+  at a time, and a stone line longer than the stone keep comes home to be cut.
+  On m2zip before it: 10 363 books in bags, 2 196 of them stacks of two or
+  more, against 98 on the counters (91 singles, 5 pairs); 30 stones in the
+  whole world and none on a counter.
+- **A read the engine refuses is not a read.** `LearnSkillByBook` wants
+  `PLAYERBOT_BOOK_READ_EXP` in hand under the level cap, keeps the book when
+  it is short, and the use still returns true - so `PLAYERBOT_AI: read skill
+  book ... success=0` was mostly refusals: 7 095 such lines in twelve minutes
+  on m2zip on 18 September against 23 reads the engine rolled, and 78 of the
+  91 readers under the mark (droppers whose experience is locked at 25 and 33,
+  bots of forty in a second village where they may not hunt), each asking
+  again every eight seconds. The pass waits for the experience now
+  (`PlayerBotHasBookReadExp`, `book read waits for experience`). Count book
+  progress as the engine's own roll line (`LearnSkillByBook <name> table idx`)
+  and as `player.skill_level` - six bytes a skill: master type, level, next
+  read - never as the AI's read lines. And a class read costs those 20 000
+  whatever it rolls: with the BOOKS switch waving the day's wait away, a bot
+  that reads as fast as it earns spends its experience bar on books.
+- **A trip to the market is only as good as the counters it can read.**
+  `ShouldPlayerBotVisitProgressionMarket` asks the ledger, which counts books
+  by 50300 alone, whatever the skill and wherever the counter; the browse at
+  the end of the trip reads the counters of the map the bot stands on, for
+  the skill it is short of. On m2zip on 18 September 96 trips in half an hour ended in two
+  purchases: the bot reached its first village's ring, browsed for two
+  seconds and logged `trip over ... reason=nothing_on_offer`, and asked again
+  a few minutes later. The supply it needs is per skill and per map the trip
+  can reach (Codex's point 3), and `scratchpad/progress_2073.py` is the shape
+  of the measurement: a snapshot of `player.skill_level`, the Biologist's
+  `__status` (557528158 complete, -1726153001 the key) and the goods by window,
+  diffed over hours, beside the syslog of the same window.
 
 ## Engine facts worth not re-deriving
 
