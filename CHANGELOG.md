@@ -58,9 +58,9 @@ i nowego klienta.
   stoją na CH1, a bot nie przechodzi na inny kanał. Towar, którego nie
   sprzeda, przy pełnym plecaku oddaje handlarzowi albo odkłada do magazynu.
   Im większa część botów na CH2, tym mniej botów handluje.
-- Wojny gildii botów, rajdy Wieży Demonów, zakładanie gildii i eventy
-  czasowe prowadzi CH1. Boty z CH2 walczą w wojnach swojej gildii i oddają jej
-  doświadczenie jak dotąd.
+- Wojny gildii botów wypowiada CH1, a walczą w nich boty z obu kanałów.
+  Rajdy Wieży Demonów, zakładanie gildii i eventy czasowe prowadzi CH1.
+  Boty z CH2 oddają swojej gildii doświadczenie jak dotąd.
 - Po włączeniu z launchera otwierane są porty 13010–13012. Klient 2.0.16
   pokazuje CH2 na liście kanałów tylko wtedy, gdy serwer go uruchomił.
 - Zmiana działa po restarcie serwera. Ustawienie z panelu WWW przenosi boty

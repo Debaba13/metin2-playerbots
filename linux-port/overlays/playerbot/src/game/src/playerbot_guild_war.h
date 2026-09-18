@@ -54,15 +54,27 @@ namespace
 		return false;
 	}
 
-	// The guild this one is at war with, if the war is one of ours.
+	// The guild this one is at war with, if the war is one of ours. The first
+	// channel declares the wars and keeps the pair in s_mapPlayerBotGuildWars;
+	// the second channel never runs that pass and has no record, so there a
+	// field war between two guilds whose masters are both bots is ours - no
+	// bot master accepts a player's declaration, so there is no other kind.
 	CGuild* GetPlayerBotWarEnemy(CGuild* mine)
 	{
 		if (!mine)
 			return NULL;
 		const DWORD opp = mine->UnderAnyWar(GUILD_WAR_TYPE_FIELD);
-		if (opp == 0 || !IsPlayerBotGuildWarPair(mine->GetID(), opp))
+		if (opp == 0)
 			return NULL;
-		return CGuildManager::instance().FindGuild(opp);
+		if (g_bChannel == 1)
+			return IsPlayerBotGuildWarPair(mine->GetID(), opp) ? CGuildManager::instance().FindGuild(opp) : NULL;
+		CGuild* enemy = CGuildManager::instance().FindGuild(opp);
+		if (!enemy)
+			return NULL;
+		const CPlayerBotManager& manager = CPlayerBotManager::instance();
+		if (!manager.IsRegisteredBotPID(mine->GetMasterPID()) || !manager.IsRegisteredBotPID(enemy->GetMasterPID()))
+			return NULL;
+		return enemy;
 	}
 
 	struct TPlayerBotWarEntry

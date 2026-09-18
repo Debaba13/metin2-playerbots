@@ -5948,8 +5948,12 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   Measured on m2zip at a thousand and 40: 282/200/276 on channel 1, 52/133/57
   on channel 2, 334/333/333 in the world, no pid on both channels, no shop
   opened on channel 2. Medal
-  droppers, the events leader, guild wars, tower raids, the strength census,
-  founding and the guild report are channel 1's. Ports: compose publishes
+  droppers, the events leader, the declaration of guild wars, tower raids,
+  the strength census, founding and the guild report are channel 1's. A war
+  is fought on both channels, and channel 2 has no copy of the pair channel 1
+  keeps in `s_mapPlayerBotGuildWars`, so there `GetPlayerBotWarEnemy` takes
+  any field war between two guilds whose masters are both bots - the first
+  build read only that map, and channel 2's bots sat their guild's wars out. Ports: compose publishes
   `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, and the launcher
   widens both to 13000-13012 only while the channel is on, so a world that
   never asked publishes nothing new. The client lists 2 channels and
