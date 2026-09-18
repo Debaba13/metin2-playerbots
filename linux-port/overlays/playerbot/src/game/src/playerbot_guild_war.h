@@ -43,10 +43,71 @@ namespace
 	DWORD s_adwPlayerBotNextGuildWarTime[playerbot_empire_rules::EMPIRE_COUNT];
 	DWORD s_dwNextPlayerBotGuildWarCheck = 0;
 	unsigned int s_uPlayerBotGuildWarsFought = 0;
-	// Who fought last, per kingdom and per guild, for the pick below. Kept for
-	// the process: the first war after a restart may repeat a pair, no more.
+	// Who fought last, per kingdom and per guild, for the pick below: the
+	// guild's latest declaration in unix seconds, kept in
+	// player.playerbot_guild.last_war_at as well. Kept for the process alone
+	// it was gone at every restart - and every update is one - so the first
+	// war after each start went back to the pair of the smallest gap:
+	// Tuskaffki and Przelew24 again at 21:36 on 18 September, the first war
+	// after 2.0.77 went in.
 	std::map<BYTE, std::pair<DWORD, DWORD> > s_mapPlayerBotLastWarPair;
 	std::map<DWORD, DWORD> s_mapPlayerBotGuildLastWarAt;
+	bool s_bPlayerBotGuildWarMemoryLoaded = false;
+
+	// Once, before the first pick. A table from before the column (a core
+	// started ahead of its migrator) answers with an error, and the memory
+	// starts empty as it always used to; nothing else reads the column.
+	void LoadPlayerBotGuildWarMemory()
+	{
+		s_bPlayerBotGuildWarMemoryLoaded = true;
+		if (!s_bPlayerBotGuildInfoLoaded)
+			LoadPlayerBotGuildInfo();
+		std::unique_ptr<SQLMsg> msg(DBManager::instance().DirectQuery(
+				"SELECT guild_id, last_war_at FROM player.playerbot_guild WHERE last_war_at > 0"));
+		if (!msg.get() || msg->uiSQLErrno != 0 || !msg->Get() || !msg->Get()->pSQLResult)
+		{
+			sys_log(0, "PLAYERBOT_GUILD: no war memory in player.playerbot_guild (the migrator adds last_war_at); the first war may repeat a pair");
+			return;
+		}
+		MYSQL_ROW row;
+		unsigned int loaded = 0;
+		while (NULL != (row = mysql_fetch_row(msg->Get()->pSQLResult)))
+		{
+			DWORD gid = 0, at = 0;
+			if (row[0]) str_to_number(gid, row[0]);
+			if (row[1]) str_to_number(at, row[1]);
+			if (gid == 0 || at == 0)
+				continue;
+			s_mapPlayerBotGuildLastWarAt[gid] = at;
+			++loaded;
+		}
+		// A kingdom's last pair is its two guilds of the latest second: a
+		// declaration stamps both with one number, and a kingdom has one war
+		// at a time.
+		std::map<BYTE, DWORD> latest;
+		std::map<BYTE, std::vector<DWORD> > latestGuilds;
+		for (std::map<DWORD, DWORD>::const_iterator it = s_mapPlayerBotGuildLastWarAt.begin();
+				it != s_mapPlayerBotGuildLastWarAt.end(); ++it)
+		{
+			std::map<DWORD, TPlayerBotGuildInfo>::const_iterator info = s_mapPlayerBotGuildInfo.find(it->first);
+			if (info == s_mapPlayerBotGuildInfo.end())
+				continue;
+			const BYTE empire = info->second.bEmpire;
+			if (it->second > latest[empire])
+			{
+				latest[empire] = it->second;
+				latestGuilds[empire].clear();
+			}
+			if (it->second == latest[empire])
+				latestGuilds[empire].push_back(it->first);
+		}
+		for (std::map<BYTE, std::vector<DWORD> >::const_iterator it = latestGuilds.begin();
+				it != latestGuilds.end(); ++it)
+			if (it->second.size() == 2)
+				s_mapPlayerBotLastWarPair[it->first] = std::make_pair(it->second[0], it->second[1]);
+		sys_log(0, "PLAYERBOT_GUILD: war memory loaded guilds=%u kingdoms=%u",
+				loaded, (unsigned int)s_mapPlayerBotLastWarPair.size());
+	}
 
 	bool IsPlayerBotGuildWarPair(DWORD a, DWORD b)
 	{
@@ -198,6 +259,8 @@ namespace
 			return;
 		s_dwNextPlayerBotGuildWarCheck = dwNow + PLAYERBOT_GUILD_WAR_CHECK_INTERVAL;
 		const bool enabled = IsPlayerBotGuildWarsEnabled();
+		if (!s_bPlayerBotGuildWarMemoryLoaded)
+			LoadPlayerBotGuildWarMemory();
 
 		for (int empire = playerbot_empire_rules::EMPIRE_SHINSOO;
 				empire <= playerbot_empire_rules::EMPIRE_JINNO; ++empire)
@@ -281,10 +344,14 @@ namespace
 			}
 			a->RequestDeclareWar(b->GetID(), GUILD_WAR_TYPE_FIELD);
 			s_mapPlayerBotLastWarPair[(BYTE)empire] = std::make_pair(a->GetID(), b->GetID());
-			// Never zero, so "has fought" and "never fought" stay apart in the
-			// pick even in the first millisecond of the process.
-			s_mapPlayerBotGuildLastWarAt[a->GetID()] = dwNow | 1U;
-			s_mapPlayerBotGuildLastWarAt[b->GetID()] = dwNow | 1U;
+			// One second for both, which is how the next start finds the pair
+			// again (LoadPlayerBotGuildWarMemory).
+			const DWORD stamp = (DWORD)get_global_time();
+			s_mapPlayerBotGuildLastWarAt[a->GetID()] = stamp;
+			s_mapPlayerBotGuildLastWarAt[b->GetID()] = stamp;
+			DBManager::instance().Query(
+					"UPDATE player.playerbot_guild SET last_war_at=%u WHERE guild_id IN (%u, %u)",
+					stamp, a->GetID(), b->GetID());
 			TPlayerBotGuildWar war;
 			war.dwGuild1 = a->GetID();
 			war.dwGuild2 = b->GetID();
@@ -335,9 +402,36 @@ namespace
 		return tree && tree->GetAttributePtr() && !tree->IsAttr(x, y, ATTR_BLOCK | ATTR_OBJECT | ATTR_BANPK);
 	}
 
-	bool FindPlayerBotWarGround(long lMapIndex, long x, long y, long radius, long& outX, long& outY)
+	// No ATTR_BANPK within margin of the point, sampled on rings of 200 units
+	// in sixteen directions: the safe zone is one broad blob round the
+	// Town.txt point, not a scatter of cells a sample could step between.
+	bool IsPlayerBotWarGroundClearOfSafeZone(long lMapIndex, long x, long y, long margin)
 	{
-		if (IsPlayerBotWarGroundOpen(lMapIndex, x, y))
+		for (long r = 200; r <= margin; r += 200)
+		{
+			for (int k = 0; k < 16; ++k)
+			{
+				const double angle = k * (3.14159265358979 / 8.0);
+				const long px = x + (long)(r * cos(angle));
+				const long py = y + (long)(r * sin(angle));
+				LPSECTREE tree = SECTREE_MANAGER::instance().Get(lMapIndex, px, py);
+				if (tree && tree->GetAttributePtr() && tree->IsAttr(px, py, ATTR_BANPK))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	bool IsPlayerBotWarGroundFit(long lMapIndex, long x, long y, long margin)
+	{
+		return IsPlayerBotWarGroundOpen(lMapIndex, x, y) &&
+				(margin <= 0 || IsPlayerBotWarGroundClearOfSafeZone(lMapIndex, x, y, margin));
+	}
+
+	bool FindPlayerBotWarGround(long lMapIndex, long x, long y, long radius, long& outX, long& outY,
+			long margin = 0)
+	{
+		if (IsPlayerBotWarGroundFit(lMapIndex, x, y, margin))
 		{
 			outX = x;
 			outY = y;
@@ -350,7 +444,7 @@ namespace
 				const long step = (dx == -r || dx == r) ? 100 : 2 * r;
 				for (long dy = -r; dy <= r; dy += step)
 				{
-					if (IsPlayerBotWarGroundOpen(lMapIndex, x + dx, y + dy))
+					if (IsPlayerBotWarGroundFit(lMapIndex, x + dx, y + dy, margin))
 					{
 						outX = x + dx;
 						outY = y + dy;
@@ -381,18 +475,29 @@ namespace
 			sides.bKnown = false;
 			playerbot_empire_rules::TPoint town;
 			long cx = 0, cy = 0;
-			if (playerbot_empire_rules::GetTeleportArrival((int)empire, playerbot_empire_rules::TELEPORT_GUILD_MAP, town) &&
-					FindPlayerBotWarGround(lMapIndex, town.x, town.y, PLAYERBOT_GUILD_WAR_GROUND_SEARCH, cx, cy))
+			// The margin first (PLAYERBOT_GUILD_WAR_SAFE_MARGIN); a map with no
+			// such ground in reach still gets the nearest open cell, as before.
+			long margin = PLAYERBOT_GUILD_WAR_SAFE_MARGIN;
+			const bool haveTown = playerbot_empire_rules::GetTeleportArrival((int)empire,
+					playerbot_empire_rules::TELEPORT_GUILD_MAP, town);
+			bool found = haveTown &&
+					FindPlayerBotWarGround(lMapIndex, town.x, town.y, PLAYERBOT_GUILD_WAR_GROUND_SEARCH, cx, cy, margin);
+			if (!found && haveTown)
+			{
+				margin = 0;
+				found = FindPlayerBotWarGround(lMapIndex, town.x, town.y, PLAYERBOT_GUILD_WAR_GROUND_SEARCH, cx, cy);
+			}
+			if (found)
 			{
 				sides.bKnown = true;
 				for (int s = 0; s < 2 && sides.bKnown; ++s)
 				{
 					const long wantX = cx + (s == 0 ? -1 : 1) * PLAYERBOT_GUILD_WAR_RALLY_SPREAD;
-					if (!FindPlayerBotWarGround(lMapIndex, wantX, cy, PLAYERBOT_GUILD_WAR_GROUND_SEARCH, sides.x[s], sides.y[s]))
+					if (!FindPlayerBotWarGround(lMapIndex, wantX, cy, PLAYERBOT_GUILD_WAR_GROUND_SEARCH, sides.x[s], sides.y[s], margin))
 						sides.bKnown = false;
 				}
-				sys_log(0, "PLAYERBOT_GUILD: battlefield map=%ld town=(%ld,%ld) ground=(%ld,%ld) sides=(%ld,%ld)/(%ld,%ld) known=%d",
-						lMapIndex, town.x, town.y, cx, cy, sides.x[0], sides.y[0], sides.x[1], sides.y[1], (int)sides.bKnown);
+				sys_log(0, "PLAYERBOT_GUILD: battlefield map=%ld town=(%ld,%ld) ground=(%ld,%ld) sides=(%ld,%ld)/(%ld,%ld) known=%d safe_margin=%ld",
+						lMapIndex, town.x, town.y, cx, cy, sides.x[0], sides.y[0], sides.x[1], sides.y[1], (int)sides.bKnown, margin);
 			}
 			else
 				sys_err("PLAYERBOT_GUILD: no fightable ground near the Town.txt point of map %ld", lMapIndex);

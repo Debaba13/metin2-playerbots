@@ -1169,6 +1169,14 @@ namespace
 	// sie bic", Tieru, 17 September).
 	const int PLAYERBOT_GUILD_WAR_RALLY_SPREAD = 0;
 	const long PLAYERBOT_GUILD_WAR_GROUND_SEARCH = 6000;
+	// And the ground keeps this far from the map's safe zone. The nearest open
+	// cell to the Town.txt point is the zone's own edge - fifty units from
+	// ATTR_BANPK on metin2_map_guild_02 and a hundred on _03, measured on
+	// 18 September - and a war fought on the edge spills over it: four minutes
+	// into the Chunjo war eleven of sixty-seven bots stood where no blow lands.
+	// A bot's own spot is the ground and up to 400 units of pid, so eight
+	// hundred keeps the whole crowd out; the ground moves about a kilometre.
+	const long PLAYERBOT_GUILD_WAR_SAFE_MARGIN = 800;
 	// The Demon Tower raid (playerbot_demon_tower.h): one bot guild at a
 	// time on this core, the first a few minutes after a start and the next
 	// an interval after a raid ends; the members gather on the ground floor

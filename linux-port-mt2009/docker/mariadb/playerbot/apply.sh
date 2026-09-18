@@ -251,6 +251,11 @@ db -e "CREATE TABLE IF NOT EXISTS player.playerbot_migrations (name VARCHAR(64) 
 # restart, so its tier and kingdom live here; the core reads the table once
 # and writes a row when it founds or adopts a guild.
 db -e "CREATE TABLE IF NOT EXISTS player.playerbot_guild (guild_id INT UNSIGNED NOT NULL PRIMARY KEY, tier TINYINT UNSIGNED NOT NULL DEFAULT 3, empire TINYINT UNSIGNED NOT NULL DEFAULT 0, founder_pid INT UNSIGNED NOT NULL DEFAULT 0, founded_at DATETIME NOT NULL) ENGINE=InnoDB;"
+# And when each last went to war (playerbot_guild_war.h), in unix seconds, so
+# the pick that keeps a kingdom's last pair out of its next war survives the
+# restart every update makes.
+db -e "ALTER TABLE player.playerbot_guild ADD COLUMN IF NOT EXISTS last_war_at INT UNSIGNED NOT NULL DEFAULT 0;" \
+    || echo "playerbot-migrate: could not add last_war_at to player.playerbot_guild" >&2
 # The second channel's pins (playerbot_channel_rules.h): every bot that has
 # ever kept an offline shop lives on the first channel for good, because the
 # shops are the first channel's. The table only grows - each core adds the
