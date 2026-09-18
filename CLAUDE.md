@@ -6016,6 +6016,94 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   kingdom's number is the world's too (`ScaleToThisChannel` per kingdom):
   100/400/100 at 40 started 60/240/60 on channel 1 and 40/160/40 on
   channel 2.
+- **A player is a buyer the ledger cannot see, so every village keeps a
+  floor.** `DecidePlayerBotMaterialListing` listed a recipe material only
+  while the core's counters held less than five units per bot short of it,
+  with one probe stack when nobody was, and a player's purchases never reach
+  that count: on m2zip on 18 September 3 366 of ten minutes' decisions said
+  overstock against 255 that listed, the bags and safeboxes held about 1.27
+  million units of material against 105 thousand on the counters, and 167 of
+  the 564 pairs of a recipe material the bots held two hundred of and a
+  village had nothing on sale - Czarny Uniform 62 065 held and none in
+  Pyongmoo or Bakra, Ksiega Klatw and Zab Orka nowhere ("chomikuja", Hiob;
+  his item finder found no counter with the Orc Valley's or the desert's
+  materials in any kingdom). The ledger keeps the units by the map their
+  counter stands on as well (`s_mapMarketLocalSupply`, and
+  `AddPlayerBotMarketSupply` takes the map from all three writers: the classic
+  stall, the offline shop at the refresh, and each offline add at once), and
+  in a village the decision asks first whether that village's counters hold
+  `PLAYERBOT_MARKET_LOCAL_FLOOR_UNITS` of it (FLOOR, scored 480, counted in
+  the ledger line). Only what is over the bot's anvil reserve is ever goods,
+  so the floor sells nothing a bot needs. The floor is per village because
+  ikashop's item finder searches the searcher's own map
+  (`RecvShopSearchItemClientPacket` skips a shop on another map).
+  What it did to the counters was not measured before 2.0.77 shipped: the
+  release went out at once because 2.0.76 had broken the support bundle,
+  and a keeper adds one line per service visit, so a village fills over
+  hours - measure it as `scratchpad/market_coverage.py` of session 82d3ab90
+  does (pairs of a recipe material and a village with nothing on sale).
+- **The offline mutation budget is a bucket.** One token every
+  `PLAYERBOT_OFFLINE_MUTATION_MS` (500), `PLAYERBOT_OFFLINE_MUTATION_BURST`
+  (five) saved. It was one a second with nothing saved, so two service visits
+  in the same second had one refused while the seconds before had gone
+  unused: 35 to 47 granted a minute against 25 to 434 refused on m2zip. A
+  visit costs one token and adds at most one line, so the visits are the
+  ceiling now, not the budget: 59 to 71 granted a minute and 0 to 2 refused
+  in the first minutes after the change. Read the db core's queue before
+  raising it again.
+- **The Red Forest's arrival and exit stood on blocked cells.** Decoded in
+  2.0.77 with the lzo that `m2-eterpack:dev` carries: the arrival is rescued
+  a cell away by the engine, but the exit's nearest open cell was 625 units
+  off, beyond every snap, so each bot that wanted to leave map 68 planned the
+  same unreachable walk every twenty seconds - 657 of the core's 1 018
+  unreachable lines in half an hour, 22 of the 25 bots on the map - and left
+  only by a direct transfer. None in the minutes after the move, and all
+  unreachable lines from 34 a minute to 5. One hub of each forest stood on a
+  blocked cell too. Decode a map before trusting a point taken from its regen
+  file: `scratchpad/pick_points_2077.py` of session 82d3ab90 is the shape
+  (the area the regen stands on, 4-connected, BLOCK|OBJECT at the cell centre
+  like the navigation grid, three open cells all round).
+- **A war foe in the safe zone is no foe, and a pair is not a kingdom's war
+  for ever.** `FindPlayerBotGuildWarFoe` took the nearest enemy wherever it
+  stood, and `battle_is_attackable` refuses anybody on ATTR_BANPK, struck or
+  striker, so an enemy inside the guild map's safe zone drew its foes in to
+  swing at nothing ("sporo stalo w bezpiecznej czesci", gregory_955).
+  `IsPlayerBotWarTargetable` filters the search and the held foe, and a bot
+  standing in the zone walks to the rally, which is open ground by
+  construction. And the pick put the tier gap first and let the rotation by
+  the minute only break ties, so a kingdom with exactly two top-tier guilds
+  fought one war every two hours: Tuskaffki against Przelew24 for a day on
+  m2zip with seven more guilds ready. The kingdom's last pair sits a war out
+  while a third guild is ready, and within one gap the pair whose latest war
+  is oldest goes first (`s_mapPlayerBotLastWarPair`,
+  `s_mapPlayerBotGuildLastWarAt`, kept for the process). The panel already
+  showed a running war's score; gregory asked for one not knowing it.
+- **A Compose that pulls what the project builds, and a diagnosis that read
+  any 404.** seban-collector and seban-item-grants run metin2/seban-panel,
+  which the seban-panel service builds; an older Compose pulls it from Docker
+  Hub first and ends the start in code 1 ("pull access denied", DUDU on a
+  VPS, archonek updating to 2.0.76 on Windows) - Compose 5.5 on this machine
+  never tries. `pull_policy: never` on both (the source is
+  linux-port/docker/docker-compose.yml; composify renders it). And
+  `Get-M2LauncherErrorGuidance` took "404" anywhere in a failed action's
+  output for an unpublished update channel - a panel request for a missing
+  icon is enough - so archonek was told the manifest was missing while it
+  answered 200. The 404 must share a line with update-manifest now, and
+  "pull access denied for metin2/" has its own remedy (LOCAL_IMAGE_PULLED).
+  The gate that checks a release's changes reach a player
+  (`check_release_covers_changes_mt2009.py`) also had to learn that
+  linux-port/docker/docker-compose.yml reaches the 2.x line only through
+  composify.
+- **`[string]` of a command that printed nothing is `$null` in Windows
+  PowerShell 5.1.** 2.0.76 probed for the second channel's files with
+  `$probe = [string](docker compose ... exec ... ls ...)` and asked
+  `$probe.Trim()`, so on every server without the channel - nearly all of
+  them - the support bundle ended in "You cannot call a method on a
+  null-valued expression" (archonek and Urtopy within the hour, both as
+  "Logs (kod 1)"). Join and ask instead:
+  `[string]::IsNullOrWhiteSpace([string](@($probe) -join ''))`; `"$x".Trim()`
+  is safe too, a bare `.Trim()` on a cast never is. Tested under
+  StrictMode 2.0 both ways, and the whole bundle end to end on m2zip.
 
 ## Engine facts worth not re-deriving
 
