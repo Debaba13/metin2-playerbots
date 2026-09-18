@@ -121,6 +121,12 @@ linux-port-mt2009/docker/game/src/server/game/src/item.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/main.cpp
+# Not ours to change, and shipped for that reason: a fork's companion system
+# rewrote it to call CPlayerBotManager::GetCompanionOwner, which this manager
+# never had, and an update replaces the manager and leaves this file - so
+# every update from 2.0.74 on failed to build for archonek (18 September).
+# The stock copy puts it back on the next click.
+linux-port-mt2009/docker/game/src/server/game/src/messenger_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/mob_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/p2p.cpp
 linux-port-mt2009/docker/game/src/server/game/src/p2p.h

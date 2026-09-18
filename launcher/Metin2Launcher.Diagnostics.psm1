@@ -60,6 +60,22 @@ function Get-M2LauncherErrorGuidance {
         $port = $Matches.port
     }
 
+    # An engine file a mod rewrote to call into the bot manager for something
+    # it never had: an update replaces our files and leaves that one, and the
+    # build dies on it at every click - archonek on 18 September, every update
+    # from 2.0.74 on, with messenger_manager.cpp and GetCompanionOwner from a
+    # fork's companion system, while this function answered with nothing that
+    # named the file. Asked first: the compiler's line is the whole answer.
+    if ($value -match '(?i)([A-Za-z0-9_]+\.(?:cpp|h)):\d+:\d+: error: [^\r\n]*CPlayerBotManager[^\r\n]*has no member named') {
+        $modFile = $Matches[1]
+        return [pscustomobject]@{
+            Code = 'ENGINE_FILE_FROM_MOD'
+            Title = "Plik silnika $modFile pochodzi z innej przeróbki"
+            Message = "Budowa rdzenia gry zatrzymała się na pliku ${modFile}: woła funkcję botów, której w tej wersji nie ma. Ten plik pochodzi z cudzej przeróbki (modu) i aktualizacja go nie podmieniła. Baza i postęp są w porządku."
+            Remedy = "Przywróć fabryczny plik ${modFile}: skopiuj go z pełnej paczki serwera do folderu serwera, do podfolderu linux-port\docker\game\src\server\game\src, i kliknij ZAINSTALUJ AKTUALIZACJE albo GRAJ. Jeśli nie masz pełnej paczki, wyślij logi na Discorda (ZBIERZ / WYŚLIJ LOGI)."
+        }
+    }
+
     # Not a busy port: Windows itself refused the bind. Hyper-V and WSL reserve
     # random port ranges after a restart ("excluded port ranges"), and when
     # 11000 or 13000 falls inside one, compose fails one second after the
