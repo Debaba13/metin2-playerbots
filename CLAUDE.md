@@ -4425,7 +4425,12 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   was called for both outcomes on one path and named the piece the refine was
   asked of, so a scroll's downgrade was shouted as luck ("+4 na +3", Tieru,
   15 September). It is called on a success only, takes the result's vnum and
-  names it from the item table, and still speaks from +7.
+  names it from the item table, and still speaks from +7. The table's name
+  carries the grade ("Smoczy Noz+7"), so a line that said the grade too said it
+  twice ("no i mam +7 na Pajecza Wlocznia+7", archonek, 19 September):
+  `PlayerBotRefineBaseName` takes it off, every line reads name, "z +6 na +7",
+  reaction - the name first, because it cannot be declined after "na" - and the
+  verbs stay out of the past tense, whose gender the piece does not tell.
 - **Plaszcz Uciekiniera and Symb. Krola Przepowiedni stay on the ground.**
   Both are uniques without a line (70048 hides the alignment title, 70050 is
   `UNIQUE_ITEM_FASTER_ALIGNMENT_UP_BY_TIME`) that drop and come off the rod
