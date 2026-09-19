@@ -17,6 +17,72 @@ every version here.
 
 ---
 
+## 2.0.84 — 2026-09-19
+
+Serwer 2.0.84 i klient 2.0.19. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe
+Auto Łowy są w kliencie.
+
+### Drugi kanał dostaje swoich botów (SIZOWSKI, Xewi, Mkls)
+
+- Z włączonym drugim kanałem CH2 dostaje tylu botów, ile ustawia suwak
+  (domyślnie 40%). Wcześniej każdy bot, który miał kiedyś sklep offline, był
+  na stałe przypisany do CH1. Na świecie, który już trochę pograł, sklep ma
+  prawie każdy bot, więc CH2 dostawał kilkadziesiąt botów zamiast kilkuset.
+- Sklepy dalej stoją tylko na CH1. Bot z CH2, który chce otworzyć albo
+  obsłużyć swój sklep albo coś kupić, przechodzi na CH1, a wolny bot z CH1
+  przechodzi na jego miejsce na CH2. Przejście to wylogowanie z jednego
+  kanału i zalogowanie na drugim. Bot nigdy nie jest na obu kanałach naraz.
+- Bot z CH2 obsługuje swój sklep co 45–75 minut, a nie co kwadrans:
+  przejście między kanałami kosztuje więcej niż zwykła zmiana mapy.
+- Ustawiony udział to najmniej tyle botów na CH2. Gdy nikt nie czeka na
+  przejście, CH2 może przejąć do 10 punktów więcej. Dropki medali zostają na
+  CH1.
+- Projekt przejść między kanałami przysłał SIZOWSKI. Dziękujemy!
+
+### Serwer wstaje po nagłym wyłączeniu komputera (Greess)
+
+- Gdy komputer wyłączy się nagle w trakcie aktualizacji, plik
+  linux-port\docker\.env potrafi zostać wypełniony zerami. Serwer nie
+  startował wtedy wcale (w logu: „unexpected character "\x00"”), a hasła do
+  bazy postaci były tylko w tym pliku.
+- Launcher sam naprawia taki plik przy następnym starcie albo aktualizacji:
+  przywraca kopię z ostatniego udanego startu, a gdy jej nie ma, odczytuje
+  ustawienia i hasła z kontenerów serwera. Uszkodzony plik zostaje obok jako
+  kopia. Postacie i baza zostają nietknięte.
+- Plik .env jest teraz zapisywany tak, żeby nagłe wyłączenie komputera go nie
+  zniszczyło, a przy każdym starcie launcher zostawia jego kopię
+  (.env.last-good).
+
+### Kamienie Duszy według tierów Iwakury
+
+- Boty wkładają Kamienie Duszy według nowej listy Iwakury: tylko +3 i +4, i
+  tylko te, które do expienia ocenił co najmniej na 3. Kamień +3 albo +4
+  trafia do przedmiotu od +6 w górę, a przedmiot +8 i +9 czeka na +4.
+  Kamienie klasowe (Wojownika, Sury, Ninja, Szamana) są tylko do PvP i boty
+  ich nie wkładają.
+- Kamienie +0, +1 i +2 bot wkłada tylko wtedy, gdy mu wypadną, i tylko do
+  słabego przedmiotu: do 21 poziomu i najwyżej +6. Rodzaj kamienia musi mieć
+  u Iwakury ocenę co najmniej 3. Takich kamieni boty nie kupują.
+- Na targu boty kupują tylko Kamienie Duszy +3 i +4.
+- Przy wyborze ekwipunku liczą się włożone kamienie, więc bot nie zamieni
+  przedmiotu z dobrymi kamieniami na goły.
+
+### Nowe nicki od Iwakury
+
+- Lista nicków urosła do 1800. Bot, który ma już nick, zostaje przy nim.
+  Nowe nicki dostają tylko boty, które jeszcze nie mają nicku.
+
+### Auto Łowy od Colide'a, wersja druga (klient 2.0.19)
+
+- 12 przedmiotów na czasie, w dwóch rzędach.
+- Podnoszenie ma własne, przesuwane okno „Auto Łowy – Łupy”, więc oba okna
+  mieszczą się na ekranie 800×600.
+- Ustawienia zapisane w poprzedniej wersji zostają.
+
+### Klient 2.0.19
+
+- Auto Łowy w drugiej wersji od Colide'a (opis wyżej).
+
 ## 2.0.83 — 2026-09-19
 
 Serwer 2.0.83 i klient 2.0.18. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe okno
