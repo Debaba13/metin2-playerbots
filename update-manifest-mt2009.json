@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-18T22:27:03Z",
-  "statusMessage": "2.0.79 (serwer 2.0.79, klient 2.0.16 bez zmian): bez klątwy małp w Lochach Małp; przedmioty ustawione w panelu na „stall” trafiają na ladę najwyżej w 3 liniach. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-19T09:59:34Z",
+  "statusMessage": "2.0.80 (serwer 2.0.80, klient 2.0.17): nowe okno Auto Łowów od Colide'a; serwer buduje się mimo cofniętego zegara Windows; COOP w testach u patronów (na hasło). W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.79",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.79/metin2-server-update-2.0.79.zip",
-    "sha256": "CEE7FE686E6EC571F20F36B738EFCD75D56374CBD1BBC6078CE963C0E49186DF"
+    "version": "2.0.80",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.80/metin2-server-update-2.0.80.zip",
+    "sha256": "7FC60839EA94BBA110CAE985D973618399BEB70518728817E10D41349D0B5D4A"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.16",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.76/metin2-client-update-2.0.16.zip",
-    "sha256": "21044DCD27FB3C810A719A4419755CCCF2EA70067B44E784C50B57290C2930DF"
+    "version": "2.0.17",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.80/metin2-client-update-2.0.17.zip",
+    "sha256": "8F76491634F8E70306B6EEA4874F6E37C498E5D06D651D011C19689885DCFBE8"
   }
 }
