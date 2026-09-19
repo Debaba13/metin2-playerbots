@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-19T09:59:34Z",
-  "statusMessage": "2.0.80 (serwer 2.0.80, klient 2.0.17): nowe okno Auto Łowów od Colide'a; serwer buduje się mimo cofniętego zegara Windows; COOP w testach u patronów (na hasło). W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-19T11:01:20Z",
+  "statusMessage": "2.0.81 (serwer 2.0.81, klient bez zmian 2.0.17): tereny gildii z paczki można kupić; dropki nie robią próby konia; w Wieży Demonów boty biją kilka potworów naraz; poprawiony restart launchera po aktualizacji. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.80",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.80/metin2-server-update-2.0.80.zip",
-    "sha256": "7FC60839EA94BBA110CAE985D973618399BEB70518728817E10D41349D0B5D4A"
+    "version": "2.0.81",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.81/metin2-server-update-2.0.81.zip",
+    "sha256": "A19402A6F1C4027FEED247EC5F7CECF7B1CE76DADEB0F632BFA217DD5B978472"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
