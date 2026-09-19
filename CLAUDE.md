@@ -6358,6 +6358,33 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   stayed 4: the new keys only take their defaults, and a file of 2.0.18 reads
   as it was (`tests/uiautohunt_test.py` checks both, and the two windows' places
   on an 800x600 screen).
+- **A crash can zero-fill the .env, and the database's passwords were only
+  there.** Greess, 19 September: the machine went down during a client update
+  four minutes after the launcher had rewritten .env (it appended new keys),
+  and came back with the file's 21 395 bytes all zero - NTFS had kept the
+  length and not the data - and the launcher's own log with the same hole at
+  the same minute. Compose refused line 1 ("unexpected character  "), the
+  old launcher appended the example's defaults to a file it could no longer
+  read (a fresh panel password among them), and every GRAJ failed on the same
+  line. start-server.ps1 now writes .env and .m2install.json durably
+  (`Write-FileDurable`: a file beside it, `Flush($true)`, `File.Replace`),
+  leaves `.env.last-good` after every identity step that holds both database
+  passwords, and `Repair-DotEnvAfterCrash` - asked before .env is read - keeps
+  the damaged file as `.env.damaged-<stamp>`, puts the last-good copy back,
+  and otherwise reads the values back from the installation's containers:
+  Compose put the whole .env into them at their last start, and a start that
+  could not read the file recreated none of them (`MARIADB_ROOT_PASSWORD` is
+  the root password, `TZ` the zone, the two bind addresses come from the
+  published ports; container values win over the appended defaults). It never
+  invents a password while the database volume exists. On m2zip, on a
+  zero-filled copy of its .env: both database passwords, both panel passwords,
+  the bot count, the second channel's settings and the bind addresses came
+  back equal (`tests/start_server_env_repair_test.ps1` covers every branch
+  with Docker stubbed). An update reaches a broken install: `Update-Server`
+  applies the package and then runs the new start-server.ps1 (`-IdentityOnly`)
+  before any compose call. And a .NET trap met on the way: `StartsWith` with
+  U+FEFF compares culture-sensitively, the character is ignorable, and so
+  every string "starts with" a byte order mark - test the first character.
 - **The package's player dump brought another server's guild lands.**
   `initdb.d/dumps/player.sql` holds 28 `player.guild_land` rows and 62
   `player.object` buildings from the server the package was taken from, and
