@@ -5016,6 +5016,10 @@ namespace
 	const int PLAYERBOT_GAMBLE_MIN_TIER = 3;
 	// At most this many pieces taken out of the safebox for one session.
 	const int PLAYERBOT_GAMBLE_SAFEBOX_TAKE = 4;
+	// And at most this many bases in the bag before it stops buying more off
+	// the counters ("Jesli brakuje mu bazy lub ulepszaczy, przeszukuje sklepy
+	// offline na rynku").
+	const int PLAYERBOT_GAMBLE_MARKET_BASES = 3;
 
 	// The stone hunter (Pogromca, playerbot_anti_pk.h and the target section):
 	// how often a bot busy with a monster looks round for a stone, and how
@@ -5073,6 +5077,59 @@ namespace
 	const int PLAYERBOT_ZIELARZ_SPEND_PERCENT = 10;
 	// And the water's rubbish goes to the Fisherman once the bag is this full.
 	const int PLAYERBOT_RYBAK_JUNK_SELL_PERCENT = 70;
+
+	// Iwakura's Towarzysz (playerbot_companions.h): a companion looks for a
+	// person to play with as well as a bot ("graczy badz innych botow na
+	// zblizonym poziomie, +/- kilka poziomow"). A person is asked by a bot at
+	// most once in PLAYERBOT_COMPANION_HUMAN_ASK_GAP by anybody, a refusal -
+	// no answer in the engine's ten seconds, or a no - leaves them alone for
+	// PLAYERBOT_COMPANION_HUMAN_DECLINED_GAP, the same bot asks the same person
+	// once in PLAYERBOT_COMPANION_HUMAN_PAIR_GAP, and a bot asks anybody once
+	// in PLAYERBOT_COMPANION_ASK_GAP. The game options' "block party invites"
+	// and "block party requests" are the engine's own and refuse it as they
+	// refuse a player.
+	const int PLAYERBOT_COMPANION_HUMAN_LEVEL_RANGE = 5;
+	const int PLAYERBOT_COMPANION_HUMAN_RANGE = 1800;
+	const DWORD PLAYERBOT_COMPANION_HUMAN_ASK_GAP = 20 * 60 * 1000;
+	const DWORD PLAYERBOT_COMPANION_HUMAN_DECLINED_GAP = 45 * 60 * 1000;
+	const DWORD PLAYERBOT_COMPANION_HUMAN_PAIR_GAP = 3 * 60 * 60 * 1000;
+	const DWORD PLAYERBOT_COMPANION_ASK_GAP = 10 * 60 * 1000;
+	// The engine's invitation lives ten seconds; the answer is read after it.
+	const DWORD PLAYERBOT_COMPANION_ASK_ANSWER_MS = 12000;
+	// A companion Shaman's pass over its party's buffs.
+	const DWORD PLAYERBOT_COMPANION_BUFF_INTERVAL = 3000;
+
+	// Iwakura's Najemnik (playerbot_companions.h). The look round for a bot
+	// that keeps dying, from a bot that is hunting; the walk to it, given up
+	// after PLAYERBOT_MERC_APPROACH_MS; the distance the offer is made at; how
+	// long a bot's distress is remembered; how many contracts a core carries
+	// (in thousandths of the live bots, never under PLAYERBOT_MERC_CONTRACTS_MIN);
+	// the distance the client keeps from its mercenary; how long a paused
+	// contract waits for its mercenary and how long any contract lives,
+	// paused or not; and the rests after one - the mercenary's, and the
+	// client's before it is carried again.
+	const DWORD PLAYERBOT_MERC_SCAN_MIN_MS = 45000;
+	const DWORD PLAYERBOT_MERC_SCAN_MAX_MS = 90000;
+	const int PLAYERBOT_MERC_MIN_LEVEL = 20;
+	const DWORD PLAYERBOT_MERC_APPROACH_MS = 3 * 60 * 1000;
+	const int PLAYERBOT_MERC_OFFER_DISTANCE = 1200;
+	const DWORD PLAYERBOT_MERC_DISTRESS_MS = 20 * 60 * 1000;
+	const int PLAYERBOT_MERC_CONTRACTS_PER_MILLE = 20;
+	const int PLAYERBOT_MERC_CONTRACTS_MIN = 2;
+	const int PLAYERBOT_MERC_CARRY_RANGE = 2200;
+	const DWORD PLAYERBOT_MERC_FOLLOW_INTERVAL = 2000;
+	const DWORD PLAYERBOT_MERC_PAUSE_MAX_MS = 30 * 60 * 1000;
+	const DWORD PLAYERBOT_MERC_WALL_MAX_MS = 3 * 60 * 60 * 1000;
+	const int PLAYERBOT_MERC_REJOIN_DISTANCE = 1500;
+	const DWORD PLAYERBOT_MERC_CHECK_INTERVAL = 5000;
+	const DWORD PLAYERBOT_MERC_COOLDOWN_MIN_MS = 20 * 60 * 1000;
+	const DWORD PLAYERBOT_MERC_COOLDOWN_MAX_MS = 40 * 60 * 1000;
+	const DWORD PLAYERBOT_MERC_CLIENT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+	const DWORD PLAYERBOT_MERC_REFUSED_COOLDOWN_MS = 5 * 60 * 1000;
+
+	// Iwakura's Useful Items List (playerbot_lpp.h): under this many free
+	// single cells in the box the list stops keeping the bag's pieces.
+	const int PLAYERBOT_LPP_BOX_MIN_FREE_CELLS = 9;
 
 	// Why a bot is fighting a player (playerbot_anti_pk.h): the status line
 	// says it, so it lives here with the state.
@@ -5190,6 +5247,43 @@ namespace
 		// The Zielarz's purse at Baek-Go's board, of which a visit spends at
 		// most PLAYERBOT_ZIELARZ_SPEND_PERCENT.
 		long long llHerbGoldStart;
+		// The companion's phase (playerbot_companions.h): its draw against the
+		// PARTY slider, until when the draw holds while the bot is solo, the
+		// solo stretch after a party, whether it was in a party at the last
+		// look, and the person it last asked to play with - who, how and when,
+		// and when it may ask anybody again.
+		WORD wCompanionDraw;
+		DWORD dwCompanionPhaseEnd;
+		DWORD dwCompanionBreakUntil;
+		bool bWasInParty;
+		DWORD dwAskedHumanPid;
+		DWORD dwAskedHumanAt;
+		BYTE bAskedHow;
+		DWORD dwNextHumanAsk;
+		// The mercenary: the client it is walking to and until when, the clock
+		// of its look round for one, and its rest after a contract.
+		DWORD dwMercClientPid;
+		DWORD dwMercApproachUntil;
+		DWORD dwNextMercScan;
+		DWORD dwMercCooldownUntil;
+		// The bag's eighty percent as the last planning pass found it: the
+		// party finder asks it of every bot in sight, and walking every bag
+		// in sight for it would cost more than the rest of the finder.
+		bool bBagFull;
+		// The Useful Items List (playerbot_lpp.h): what the storekeeper holds
+		// of each kept family (a gear family by its +0 vnum, a soul stone by
+		// its own) as the last visit found the box, and whether a visit has
+		// looked since the bot entered the game. Until one has, the box counts
+		// as empty, which keeps more rather than less.
+		std::map<DWORD, BYTE> mapLppStored;
+		bool bLppStoredKnown;
+		// The stored pieces the list let go to the market (by item id), which
+		// the dead-stock rule must not send back down.
+		std::set<DWORD> setLppReleased;
+		// The box had no room left at the last visit: the list stops keeping
+		// the bag's pieces (they sell as they always did) until a visit finds
+		// room again, or a full box would leave a full bag for good.
+		bool bLppBoxFull;
 
 		TPlayerBotPersona() : bRestored(false), bDirty(false), dwLastTick(0), dwNextSave(0),
 			bPersona(playerbot_persona::PERSONA_GRINDER), dwPersonaSince(0), dwNextDecide(0),
@@ -5204,7 +5298,12 @@ namespace
 			dwFoeSince(0), dwNextRivalScan(0), dwCapitulatedUntil(0), lAvoidSpotMap(0),
 			lAvoidSpotX(0), lAvoidSpotY(0), dwAvoidSpotUntil(0), dwFishingSpellUntil(0),
 			dwPogromcaStoneVID(0), bPogromcaDeaths(0), bPogromcaClearing(false),
-			dwNextStoneProbe(0), llHerbGoldStart(0) {}
+			dwNextStoneProbe(0), llHerbGoldStart(0),
+			wCompanionDraw(playerbot_persona::COMPANION_DRAW_NONE), dwCompanionPhaseEnd(0),
+			dwCompanionBreakUntil(0), bWasInParty(false), dwAskedHumanPid(0), dwAskedHumanAt(0),
+			bAskedHow(0), dwNextHumanAsk(0), dwMercClientPid(0), dwMercApproachUntil(0),
+			dwNextMercScan(0), dwMercCooldownUntil(0), bBagFull(false), bLppStoredKnown(false),
+			bLppBoxFull(false) {}
 	};
 
 	enum EPlayerBotAmbition

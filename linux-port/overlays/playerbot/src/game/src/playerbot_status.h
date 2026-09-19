@@ -228,6 +228,11 @@ namespace
 		}
 	}
 
+	// Either side of a mercenary's contract, and the walk to offer one
+	// (playerbot_companions.h).
+	bool BuildPlayerBotMercStatus(LPCHARACTER ch, const TPlayerBotAIState& state, const char* prefix,
+			char* status, size_t statusSize);
+
 	void BuildPlayerBotStatusText(LPCHARACTER ch, const TPlayerBotAIState& state,
 			char* status, size_t statusSize)
 	{
@@ -347,6 +352,12 @@ namespace
 				return;
 			}
 		}
+
+		// A contract says whom the bot is with, unless it is fighting: then the
+		// fight says what it is fighting.
+		if (state.bCurrentAction != BOT_ACTION_FIGHT &&
+				BuildPlayerBotMercStatus(ch, state, prefix, status, statusSize))
+			return;
 
 		LPCHARACTER target = state.dwTargetVID != 0
 				? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;

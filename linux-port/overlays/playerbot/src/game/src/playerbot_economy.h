@@ -1101,6 +1101,9 @@ namespace
 				item->GetRefineLevel() < PLAYERBOT_SHOP_LOW_GEAR_CAP_BELOW_REFINE;
 	}
 
+	// Iwakura's Useful Items List (playerbot_lpp.h).
+	bool IsPlayerBotLppKeptItem(LPCHARACTER ch, LPITEM item);
+
 	bool IsPlayerBotJunkItem(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item || item->IsEquipped() || item->isLocked())
@@ -1116,6 +1119,11 @@ namespace
 			if (policy != PLAYERBOT_ITEM_POLICY_NONE)
 				return false;
 		}
+
+		// A piece Iwakura's list keeps for the storekeeper is never the
+		// merchant's, whatever the rules below would make of it.
+		if (IsPlayerBotLppKeptItem(ch, item))
+			return false;
 
 		const DWORD vnum = item->GetVnum();
 

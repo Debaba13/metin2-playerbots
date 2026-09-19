@@ -88,6 +88,17 @@ namespace
 				GetPlayerBotBookKeepLimit(ch, skillVnum);
 	}
 
+	// Iwakura's Useful Items List (playerbot_lpp.h, after the gambler): what
+	// the bot keeps rather than sells, what goes to the box, what comes out.
+	bool IsPlayerBotLppKeptItem(LPCHARACTER ch, LPITEM item);
+	bool IsPlayerBotLppStoredSurplus(LPCHARACTER ch, LPITEM item);
+	bool IsPlayerBotLppHerb(LPITEM item);
+	void CollectPlayerBotSafeboxLpp(LPCHARACTER ch, const TPlayerBotAIState& state, std::vector<WORD>& cells);
+	void RefreshPlayerBotLppStored(LPCHARACTER ch, TPlayerBotPersona& p, CSafebox* box);
+	void NotePlayerBotLppReleased(TPlayerBotPersona& p, DWORD itemId);
+	bool IsPlayerBotLppReleased(LPCHARACTER ch, DWORD itemId);
+	bool IsPlayerBotZielarz(LPCHARACTER ch);
+
 	// The surplus books beyond what the bag keeps as counter goods, oldest
 	// cells first. Empty unless the bag is under pressure: a bag with room is
 	// a counter with stock.
@@ -144,6 +155,11 @@ namespace
 				continue;
 			if (item->GetRefineLevel() <= PLAYERBOT_SHOP_UNSOLD_SCRAP_MAX_REFINE)
 				continue;   // the merchant's rule has that one
+			// A piece Iwakura's list let go from the box is for the market,
+			// whatever it takes; sending it back down would make the two rules
+			// a loop.
+			if (IsPlayerBotLppReleased(ch, item->GetID()))
+				continue;
 			std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
 			if (unsold == state.mapStallUnsold.end() || unsold->second < PLAYERBOT_SHOP_UNSOLD_SAFEBOX_STANDS)
 				continue;
@@ -227,6 +243,9 @@ namespace
 		if (!cells.empty())
 			return true;
 		CollectPlayerBotSafeboxKeys(ch, cells);
+		if (!cells.empty())
+			return true;
+		CollectPlayerBotSafeboxLpp(ch, state, cells);
 		return !cells.empty();
 	}
 
@@ -255,7 +274,8 @@ namespace
 	// bag's own tests run at the anvil - and the materials its bag pieces'
 	// next steps consume.
 	int WithdrawPlayerBotSafebox(LPCHARACTER ch, CSafebox* box,
-			const std::set<DWORD>* pJustDeposited = NULL, TPlayerBotPersona* pGambler = NULL)
+			const std::set<DWORD>* pJustDeposited = NULL, TPlayerBotPersona* pGambler = NULL,
+			TPlayerBotPersona* pPersona = NULL)
 	{
 		if (!ch || !box)
 			return 0;
@@ -344,12 +364,44 @@ namespace
 						(PLAYERBOT_BAG_CELLS - freeAfter) * 100 < PLAYERBOT_BAG_CELLS * PLAYERBOT_BAG_FULL_PERCENT;
 				why = "gamble";
 			}
+			else if (!pGambler && IsPlayerBotPersonaEnabled() &&
+					(item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR))
+			{
+				// Iwakura's list lets a stored piece go - outgrown, or a plain
+				// copy of a family now worn at +9 - and it goes to the market
+				// ("zwalnia miejsce w magazynie, wystawiajac stare zapasy na
+				// rynek"), into a bag that stays clear of pressure.
+				const int freeAfter = CountPlayerBotFreeInventoryCells(ch) - (int)item->GetSize();
+				wanted = IsPlayerBotLppStoredSurplus(ch, item) &&
+						freeAfter > PLAYERBOT_BAG_PRESSURE_FREE_CELLS &&
+						(PLAYERBOT_BAG_CELLS - freeAfter) * 100 < PLAYERBOT_BAG_CELLS * PLAYERBOT_BAG_FULL_PERCENT;
+				why = "lpp_released";
+			}
+			else if (item->GetType() == ITEM_METIN && IsPlayerBotPersonaEnabled())
+			{
+				// A soul stone the list kept, now that the bot has a socket for it.
+				wanted = CanPlayerBotSeatSoulStone(ch, item->GetVnum(), (DWORD)item->GetValue(5));
+				why = "lpp_stone";
+			}
 			else if (item->GetType() == ITEM_MATERIAL && IsPlayerBotNonGearMaterial(item->GetVnum()))
 			{
 				// The herbs an older version put down as materials: out, and to
 				// the merchant on the next visit (IsPlayerBotNonGearMaterial).
-				wanted = true;
-				why = "herb";
+				// Under Iwakura's system the herbs are kept ("zachowujac je w
+				// ekwipunku, a nastepnie w magazynie") for the brews of Baek-Go's
+				// board, and come out for the bot that brews them, into a bag
+				// that stays clear of pressure.
+				if (IsPlayerBotPersonaEnabled())
+				{
+					const int freeAfter = CountPlayerBotFreeInventoryCells(ch) - (int)item->GetSize();
+					wanted = IsPlayerBotZielarz(ch) && freeAfter > PLAYERBOT_BAG_PRESSURE_FREE_CELLS;
+					why = "zielarz";
+				}
+				else
+				{
+					wanted = true;
+					why = "herb";
+				}
 			}
 			else if (item->GetType() == ITEM_TREASURE_KEY)
 			{
@@ -375,6 +427,8 @@ namespace
 			sys_log(0, "PLAYERBOT_TOWN: safebox withdraw pid=%u name=%s vnum=%u count=%u reason=%s",
 					ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
 					(unsigned int)item->GetCount(), why);
+			if (pPersona && !strcmp(why, "lpp_released"))
+				NotePlayerBotLppReleased(*pPersona, item->GetID());
 			if (pGambler && (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR))
 				++pGambler->bGambleSafeboxTaken;
 			++taken;
@@ -494,6 +548,11 @@ namespace
 		std::vector<WORD> keys;
 		CollectPlayerBotSafeboxKeys(ch, keys);
 		cells.insert(cells.end(), keys.begin(), keys.end());
+		// And what Iwakura's list keeps for later (playerbot_lpp.h).
+		const size_t lppFrom = cells.size();
+		std::vector<WORD> lpp;
+		CollectPlayerBotSafeboxLpp(ch, state, lpp);
+		cells.insert(cells.end(), lpp.begin(), lpp.end());
 		int deposited = 0;
 		for (size_t i = 0; i < cells.size(); ++i)
 		{
@@ -548,7 +607,16 @@ namespace
 				char szHint[128];
 				snprintf(szHint, sizeof(szHint), "%s %u", item->GetName(), (unsigned int)item->GetCount());
 				LogManager::instance().ItemLog(ch, item, "SAFEBOX PUT", szHint);
-				if (i >= books)
+				if (i >= lppFrom)
+				{
+					sys_log(0, "PLAYERBOT_LPP: to safebox pid=%u name=%s vnum=%u+%u count=%u level=%u",
+							ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
+							(unsigned int)std::max(0, item->GetRefineLevel()), (unsigned int)item->GetCount(),
+							(unsigned int)ch->GetLevel());
+					state.mapStallUnsold.erase(item->GetID());
+					state.mapStockFirstListed.erase(item->GetID());
+				}
+				else if (i >= books)
 				{
 					// The registry says how long this piece was for sale.
 					std::map<DWORD, BYTE>::const_iterator unsold = state.mapStallUnsold.find(item->GetID());
@@ -2139,6 +2207,10 @@ namespace
 		}
 		// A retired item is nobody's goods (IsPlayerBotRetiredItem).
 		if (IsPlayerBotRetiredItem(item->GetVnum()))
+			return -1;
+		// Nor is a piece Iwakura's list keeps for the storekeeper
+		// (playerbot_lpp.h): only its copies past the keep are for sale.
+		if (ch && IsPlayerBotLppKeptItem(ch, item))
 			return -1;
 		// A Kamien Duchowy is every bot's own to train with, up to its keep
 		// (GetPlayerBotCountedGoodsKeep); a stack holding a stone over the keep
@@ -4228,7 +4300,7 @@ namespace
 				// back the one material it came for. A gambler also takes its
 				// pieces and their materials, once a session.
 				const int taken = WithdrawPlayerBotSafebox(ch, box, &justDeposited,
-						IsPlayerBotGambling(state, dwNow) ? &state.persona : NULL);
+						IsPlayerBotGambling(state, dwNow) ? &state.persona : NULL, &state.persona);
 #if defined(PLAYERBOT_ENGINE_MT2009)
 				// The box poured together and laid out the way a player's
 				// "Scal i uporzadkuj" does it (ArrangeSafebox, playerbot_arrange.cpp):
@@ -4243,6 +4315,9 @@ namespace
 				const int rearranged = 0;
 				const int arrangeCode = -1;
 #endif
+				// What the box now holds of the list's families, for the choices
+				// made away from it (playerbot_lpp.h).
+				RefreshPlayerBotLppStored(ch, state.persona, box);
 				ch->CloseSafebox();
 				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d topped_up=%d stacked=%d arranged=%d arrange_code=%d",
 						ch->GetPlayerID(), ch->GetName(), deposited, taken, CountPlayerBotSkillBooks(ch),

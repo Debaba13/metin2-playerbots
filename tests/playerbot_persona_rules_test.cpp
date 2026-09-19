@@ -411,6 +411,168 @@ int main()
 		assert(hits == 80);
 	}
 
+	// --- the companion's draw ------------------------------------------------------
+	{
+		// An unrolled draw admits nobody, even where the whole map is the base.
+		assert(!IsCompanionDraw(COMPANION_DRAW_NONE, 1000));
+		assert(IsCompanionDraw(999, 1000));
+		// At the neutral slider a village admits a fifth: draws 0..199.
+		assert(IsCompanionDraw(CompanionDraw(199, false, false, false), 200));
+		assert(!IsCompanionDraw(CompanionDraw(200, false, false, false), 200));
+		// A Shaman's draw is cut to 35%: 571 lands at 199 and passes, 572 at
+		// 200 and does not - better than half the phases against a fifth.
+		assert(CompanionDraw(571, true, false, false) == 199);
+		assert(IsCompanionDraw(CompanionDraw(571, true, false, false), 200));
+		assert(!IsCompanionDraw(CompanionDraw(572, true, false, false), 200));
+		int shaman = 0, other = 0;
+		for (uint32_t roll = 0; roll < 1000; ++roll)
+		{
+			shaman += IsCompanionDraw(CompanionDraw(roll, true, false, false), 200) ? 1 : 0;
+			other += IsCompanionDraw(CompanionDraw(roll, false, false, false), 200) ? 1 : 0;
+		}
+		assert(other == 200 && shaman == 572);
+		// The roll wraps into the range, and the cuts compound.
+		assert(CompanionDraw(1999, false, false, false) == 999);
+		assert(CompanionDraw(999, true, true, true) == 999u * 35u / 100u * 60u / 100u * 25u / 100u);
+		// A slider at zero admits nobody at all.
+		assert(!IsCompanionDraw(0, 0));
+	}
+
+	// --- the mercenary -------------------------------------------------------------
+	{
+		// The power of a bag of pieces: level limit, three a plus, six a tier
+		// step away from the neutral three; a family his list leaves out is
+		// neutral, and an empty slot is nothing.
+		TMercGear g;
+		assert(MercGearPower(g) == 0);
+		g.piece[0] = TMercPiece(7, 45, 5);   // 45 + 21 + 12
+		g.piece[1] = TMercPiece(5, 42, 0);   // 42 + 15
+		g.piece[5] = TMercPiece(2, 30, 1);   // 30 + 6 - 12
+		assert(MercGearPower(g) == 78 + 57 + 24);
+		TMercGear worn;
+		worn.piece[0] = TMercPiece(0, 1, 1);  // 1 - 12 would be negative alone
+		assert(MercGearPower(worn) == 0);
+
+		// A level lead of three and not past the engine's thirty.
+		assert(!MercOutclasses(47, 400, 45, 200));
+		assert(MercOutclasses(48, 400, 45, 200));
+		assert(MercOutclasses(75, 400, 45, 200));
+		assert(!MercOutclasses(76, 400, 45, 200));
+		// Much better gear: a quarter more and thirty points at least.
+		assert(!MercOutclasses(60, 249, 45, 200));
+		assert(MercOutclasses(60, 250, 45, 200));
+		assert(!MercOutclasses(60, 60, 45, 40));   // 50% more, but only 20 points
+		assert(MercOutclasses(60, 70, 45, 40));
+		// A client with nothing on is outclassed by anybody geared.
+		assert(MercOutclasses(40, 30, 30, 0));
+
+		// The client keeps a quarter of its purse and its reserve.
+		const long long hour = 250000;
+		assert(!MercClientCanPay(333333, 0, hour));     // 75.00008% of the purse
+		assert(MercClientCanPay(333334, 0, hour));
+		assert(!MercClientCanPay(1000000, 800000, hour));
+		assert(MercClientCanPay(1000000, 750000, hour));
+		assert(!MercClientCanPay(1000000, 0, 0));
+		// m2zip's yang rate: 7.5 million an hour against a purse of 12 million.
+		assert(MercClientCanPay(12039830, 0, 7500000));
+
+		// The goal: three levels, a full bag, or its own gear raised.
+		assert(!MercClientGoalReached(2, false, MERC_CLIENT_GEAR_GAIN - 1));
+		assert(MercClientGoalReached(3, false, 0));
+		assert(MercClientGoalReached(0, true, 0));
+		assert(MercClientGoalReached(0, false, MERC_CLIENT_GEAR_GAIN));
+		// At the hour it pays again only still in need, able, and outclassed.
+		assert(MercClientRenews(false, true, true));
+		assert(!MercClientRenews(true, true, true));
+		assert(!MercClientRenews(false, false, true));
+		assert(!MercClientRenews(false, true, false));
+		// The same three deaths in half an hour a Conqueror counts.
+		assert(MERC_CLIENT_DEATHS == WEAK_DEATHS);
+	}
+
+	// --- the Useful Items List --------------------------------------------------
+	{
+		// The keeps: two of a weapon or an armour, three of a small piece, one
+		// of another class's, one of his level-15 and level-20 weapons.
+		TLppPiece sword;
+		sword.kind = LPP_WEAPON;
+		sword.level = 75;
+		sword.band = 3;
+		sword.ownClass = true;
+		assert(LppLimit(sword, false) == 2);
+		TLppPiece ring = sword;
+		ring.kind = LPP_JEWEL;
+		ring.small = true;
+		assert(LppLimit(ring, false) == 3);
+		TLppPiece foreign = sword;
+		foreign.ownClass = false;
+		assert(LppLimit(foreign, false) == 1);
+		TLppPiece young = sword;
+		young.onlyOne = true;
+		assert(LppLimit(young, false) == 1);
+		// Worn at +9: no backups of the family - but the pieces kept for their
+		// lines are not backups.
+		assert(LppLimit(sword, true) == 0);
+		TLppPiece value = sword;
+		value.kind = LPP_VALUE;
+		assert(LppLimit(value, true) == 2);
+		assert(LppLimit(TLppPiece(), false) == 0);
+
+		// A weapon of his first band is outgrown once the next band is worn and
+		// it is twenty levels behind - the bell of 36 is still kept at 40.
+		TLppPiece bell;
+		bell.kind = LPP_WEAPON;
+		bell.band = 1;
+		bell.level = 36;
+		bell.nextBandLevel = 30;
+		bell.ownClass = true;
+		assert(!LppObsolete(bell, 29));
+		assert(!LppObsolete(bell, 40));
+		assert(!LppObsolete(bell, 56));
+		assert(LppObsolete(bell, 57));
+		TLppPiece blade = bell;
+		blade.level = 15;
+		assert(!LppObsolete(blade, 29));
+		assert(LppObsolete(blade, 36));
+		// The last band never.
+		assert(!LppObsolete(sword, 120));
+		// Anything else twenty levels under the bot; a target never.
+		TLppPiece jewel = ring;
+		jewel.level = 30;
+		assert(!LppObsolete(jewel, 50));
+		assert(LppObsolete(jewel, 51));
+		TLppPiece shield;
+		shield.kind = LPP_SHIELD;
+		shield.level = 61;
+		shield.target = true;
+		shield.small = true;
+		shield.ownClass = true;
+		assert(!LppObsolete(shield, 120));
+
+		// Keeping: not outgrown, and fewer better copies kept than the limit.
+		assert(LppKeeps(sword, 80, false, 0));
+		assert(LppKeeps(sword, 80, false, 1));
+		assert(!LppKeeps(sword, 80, false, 2));
+		assert(!LppKeeps(sword, 80, true, 0));
+		assert(!LppKeeps(blade, 36, false, 0));
+		assert(LppKeeps(shield, 90, false, 2));
+		assert(!LppKeeps(shield, 90, false, 3));
+
+		// "Wysoka Wartosc": a tier 5-6 line rolled half-way up at least.
+		assert(LppValueLine(6, 1000, 2000));
+		assert(!LppValueLine(6, 999, 2000));
+		assert(!LppValueLine(4, 2000, 2000));
+		assert(!LppValueLine(5, 10, 0));
+		assert(!LppValueLine(5, 0, 10));
+
+		// Soul stones: every +4, a +3 of PvE tier 3, five of each.
+		assert(LppKeepsStone(4, 1, 0));
+		assert(LppKeepsStone(3, 3, 4));
+		assert(!LppKeepsStone(3, 3, 5));
+		assert(!LppKeepsStone(3, 2, 0));
+		assert(!LppKeepsStone(2, 6, 0));
+	}
+
 	// --- which personality claims the bot ----------------------------------------
 	{
 		TPersonaSignals s;
@@ -431,6 +593,11 @@ int main()
 		assert(DecidePersona(s) == PERSONA_RYBAK);
 		s.inParty = true;
 		assert(DecidePersona(s) == PERSONA_TOWARZYSZ);
+		// A hired client is in the mercenary's party and is not a companion:
+		// it plays by what it was doing, here the rod.
+		s.hired = true;
+		assert(DecidePersona(s) == PERSONA_RYBAK);
+		s.hired = false;
 		s.mercenary = true;
 		assert(DecidePersona(s) == PERSONA_NAJEMNIK);
 		// The ids the status file and the client carry.

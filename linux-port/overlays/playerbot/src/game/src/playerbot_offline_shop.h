@@ -58,6 +58,9 @@ namespace {
             // A bot in a player's party does not warp off to its counter every
             // ten minutes; the stand keeps selling until the party ends.
             (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty())) ||
+            // Nor off a mercenary's contract, or away from a person it leads
+            // (playerbot_companions.h).
+            IsPlayerBotHeldForCompany(ch) ||
             // Nor out of the Demon Tower, nor off a raid on its way there.
             IsPlayerBotOnTowerBusiness(ch, state) ||
             // Nor out of a Monkey Dungeon: a visit is half an hour in rooms
@@ -268,9 +271,15 @@ namespace {
     // what stays of that gear, for the add that follows. An item the operator
     // put on "stall" is never taken home to be scrapped or cut, but it is
     // still one of a counter's lines of a kind (the two caps first below).
-    DWORD BotOfflineUnwantedLine(LPCHARACTER ch, NativeShop shop, int& lowGear) {
+    DWORD BotOfflineUnwantedLine(LPCHARACTER ch, NativeShop shop, int& lowGear,
+            const char** why = NULL) {
         lowGear = 0;
         DWORD unwanted = 0;
+        // Which rule sent it home: the take-off line says so, or a counter's
+        // traffic cannot be told apart in a log (Iwakura's list, the caps, the
+        // packs, the dyes, the level-30 anvil).
+        const char* reason = "";
+        if (why) *why = reason;
         if (!shop) return 0;
         // Moonlight chests stand on a counter in packs, and only on the counter
         // of a bot that sells them (IsPlayerBotSurplusChest): a line of eleven
@@ -286,6 +295,13 @@ namespace {
             if (!line) continue;
             LPITEM preview = BotOfflinePreview(*line);
             if (!preview) continue;
+            // A piece Iwakura's list keeps for the storekeeper comes home, one a
+            // visit, and goes down on the next Trader's visit (playerbot_lpp.h).
+            if (IsPlayerBotLppKeptItem(ch, preview)) {
+                if (!unwanted) { unwanted = id; reason = "lpp"; }
+                M2_DELETE(preview);
+                continue;
+            }
             // A counter shows PLAYERBOT_SHOP_MARBLE_LINES marbles, never two of
             // one monster; the ones that went up before 2.0.78 - up to
             // thirty-one on one counter, and none ever sold - come home one a
@@ -299,7 +315,7 @@ namespace {
             if (preview->GetType() == ITEM_POLYMORPH) {
                 if (!marbleMobs.insert(preview->GetSocket(0)).second ||
                         ++marbles > PLAYERBOT_SHOP_MARBLE_LINES) {
-                    if (!unwanted) unwanted = id;
+                    if (!unwanted) { unwanted = id; reason = "marble"; }
                 }
                 M2_DELETE(preview);
                 continue;
@@ -309,7 +325,7 @@ namespace {
             // "stall" or not.
             if (IsPlayerBotSameVnumCapped(preview) &&
                     ++sameVnum[preview->GetVnum()] > PLAYERBOT_SHOP_SAME_VNUM_LINES) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "same_vnum"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -319,7 +335,7 @@ namespace {
             if (IsPlayerBotFishedHairDye(preview->GetVnum()) &&
                     GetPlayerBotItemPolicy(preview) == PLAYERBOT_ITEM_POLICY_NONE &&
                     !IsPlayerBotHairDyeKeptForSaleId(id)) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "hair_dye"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -330,14 +346,14 @@ namespace {
             if (ch && PlayerBotRefinesLevel30ForSale(ch, preview, id) &&
                     preview->GetRefineLevel() < GetPlayerBotLevel30SaleTarget(preview) &&
                     CanPlayerBotPayRefineStep(ch, preview)) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "level30_anvil"; }
                 M2_DELETE(preview);
                 continue;
             }
             if (preview->GetVnum() == PLAYERBOT_MOONLIGHT_CHEST_VNUM &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL &&
                     (!sellsChests || (int)preview->GetCount() > PLAYERBOT_CHEST_LINE_UNITS)) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "chest_pack"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -348,7 +364,7 @@ namespace {
             if (preview->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM &&
                     (int)preview->GetCount() > PLAYERBOT_GRAND_MASTER_STONE_KEEP &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "gm_stone"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -357,7 +373,7 @@ namespace {
             if (IsPlayerBotSafeRefineScroll(preview->GetVnum()) &&
                     (int)preview->GetCount() > PLAYERBOT_SHOP_SCROLL_LINE_UNITS &&
                     GetPlayerBotItemPolicy(preview) != PLAYERBOT_ITEM_POLICY_STALL) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "scroll_pack"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -370,7 +386,7 @@ namespace {
                       (int)preview->GetCount() < PLAYERBOT_SHOP_BULK_MIN_UNITS) ||
                      (IsPlayerBotTradeableMaterial(preview) &&
                       (int)preview->GetCount() > PLAYERBOT_SHOP_HOARD_PACK_UNITS))) {
-                if (!unwanted) unwanted = id;
+                if (!unwanted) { unwanted = id; reason = "hoard_pack"; }
                 M2_DELETE(preview);
                 continue;
             }
@@ -379,26 +395,28 @@ namespace {
                 const bool capped = CountsAgainstPlayerBotLowGearCap(preview);
                 if (preview->GetRefineLevel() < GetPlayerBotLowGearMinRefine(preview) ||
                         (capped && lowGear >= PLAYERBOT_SHOP_LOW_GEAR_MAX_LINES)) {
-                    if (!unwanted) unwanted = id;
+                    if (!unwanted) { unwanted = id; reason = "low_gear"; }
                 } else if (capped) {
                     ++lowGear;
                 }
             }
             M2_DELETE(preview);
         }
+        if (why) *why = reason;
         return unwanted;
     }
     // One line back into the owner's bag, through the journal like every other
     // mutation. A bag with no room refuses it synchronously and the next visit
     // asks again. True when the request reached the DB core.
-    bool BotOfflineTakeOff(LPCHARACTER ch, TPlayerBotAIState& state, DWORD itemid, int lowGear, DWORD now) {
+    bool BotOfflineTakeOff(LPCHARACTER ch, TPlayerBotAIState& state, DWORD itemid, int lowGear, DWORD now,
+            const char* why = "") {
         using namespace playerbot_offline;
         if (!Begin(ch->GetPlayerID(), Remove, itemid, now)) return false;
         ikashop::GetManager().RecvShopRemoveItemClientPacket(ch, itemid);
         if (!EndCall(ch->GetPlayerID())) return false;
         state.offlineShop.listed.erase(itemid);
-        sys_log(0, "PLAYERBOT_OFFLINE: took off pid=%u name=%s item=%u low_gear_kept=%d",
-            ch->GetPlayerID(), ch->GetName(), itemid, lowGear);
+        sys_log(0, "PLAYERBOT_OFFLINE: took off pid=%u name=%s item=%u low_gear_kept=%d reason=%s",
+            ch->GetPlayerID(), ch->GetName(), itemid, lowGear, why);
         return true;
     }
     // A piece on the owner's own counter it should be wearing: better, by the
@@ -829,8 +847,9 @@ namespace {
             // An expired stand needs no edit mode to give a line back, and one
             // it would no longer take comes off before the stand is renewed.
             int lowGear = 0;
-            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGear);
-            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGear, now)) {
+            const char* why = "";
+            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGear, &why);
+            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGear, now, why)) {
                 BotOfflineFinishVisit(ch, state, now);
                 return false;
             }
@@ -889,8 +908,9 @@ namespace {
         // no room for the piece refuses, and then the visit adds instead.
         int lowGearOnCounter = 0;
         {
-            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGearOnCounter);
-            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGearOnCounter, now)) {
+            const char* why = "";
+            const DWORD unwanted = BotOfflineUnwantedLine(ch, shop, lowGearOnCounter, &why);
+            if (unwanted && BotOfflineTakeOff(ch, state, unwanted, lowGearOnCounter, now, why)) {
                 BotOfflineFinishVisit(ch, state, now);
                 return false;
             }

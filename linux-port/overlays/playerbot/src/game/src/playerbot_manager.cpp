@@ -121,6 +121,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_town.h"
 // Iwakura's gambler: the session a town visit turns into at its end.
 #include "playerbot_gambler.h"
+// Iwakura's Useful Items List: what a bot keeps at the storekeeper rather than
+// sells, and when it lets it go.
+#include "playerbot_lpp.h"
 #include "playerbot_shop_signs.h"
 #include "playerbot_offline_shop.h"
 #include "playerbot_itemshop.h"
@@ -138,6 +141,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 // whoever struck the bot or is breaking its stone for another kingdom.
 #include "playerbot_anti_pk.h"
 #include "playerbot_demon_tower.h"
+// Iwakura's social personalities: the companion's phase and its invitations
+// to people, a companion Shaman's party buffs, and the mercenary's contracts.
+#include "playerbot_companions.h"
 #include "playerbot_lure.h"
 #include "playerbot_admin.h"
 
@@ -278,6 +284,22 @@ namespace
 		if (bFrontier && state.bBotRole != BOT_ROLE_PARTY_FIGHTER &&
 				ch->GetLevel() < PLAYERBOT_ORC_VALLEY_PARTY_MIN_LEVEL)
 			return false;
+		// Under Iwakura's personalities the share is the same slider's, drawn
+		// afresh at every companion phase (playerbot_companions.h); a bot on
+		// a mercenary's contract is in the contract's party and no other, the
+		// few minutes after a party are played alone, and a bag at eighty
+		// percent - which ends a companion's party - does not start one: the
+		// first measurement had seventeen bots in three minutes joining and
+		// leaving for it on the next check.
+		if (IsPlayerBotPersonaEnabled() && state.persona.bRestored)
+		{
+			const TPlayerBotPersona& p = state.persona;
+			if (IsPlayerBotOnMercContract(ch->GetPlayerID()) || p.bBagFull ||
+					(p.dwCompanionBreakUntil != 0 && get_dword_time() < p.dwCompanionBreakUntil))
+				return false;
+			return playerbot_persona::IsCompanionDraw(p.wCompanionDraw,
+					GetPlayerBotPartyCohortPerMille(bFrontier));
+		}
 		return GetPlayerBotPartyDraw(ch->GetPlayerID(), state) <
 				GetPlayerBotPartyCohortPerMille(bFrontier);
 	}
@@ -1270,6 +1292,11 @@ namespace
 		state.dwNextPartyCheckTime = dwNow + PLAYERBOT_PARTY_CHECK_INTERVAL + number(0, 3000);
 
 		LPPARTY pParty = ch->GetParty();
+		// Iwakura's companion (playerbot_companions.h): the phase's draw, the
+		// minutes alone after a party, and the answer to an invitation the bot
+		// made to a person - read whatever party the bot is in now, a person's
+		// included, or a yes that put it in one would never be counted.
+		const bool bPersona = UpdatePlayerBotCompanionPhase(ch, state, dwNow);
 		// A party a player leads is the player's, and none of the rules below
 		// are about it. The cohort draw, the five-to-fifteen-minute rotation and
 		// the straggler radius all exist to stop bot parties ossifying around
@@ -1282,6 +1309,21 @@ namespace
 		// to nie one sa liderem", Dearminder, 15 September).
 		if (pParty && IsPlayerBotHumanLedParty(pParty))
 			return;
+		// A mercenary's contract keeps its own party, by its own rules.
+		if (IsPlayerBotOnMercContract(ch->GetPlayerID()))
+			return;
+		// Iwakura's companion leaves at eighty percent of its bag and goes to
+		// empty it ("opuszcza grupe i naturalnie przechodzi w osobowosc
+		// Handlarza"). Asked before the cohort, which a full bag also leaves,
+		// so the line says why.
+		if (bPersona && pParty && state.persona.bBagFull)
+		{
+			pParty->Quit(ch->GetPlayerID());
+			state.dwPartyExpireTime = 0;
+			sys_log(0, "PLAYERBOT_AI: left party, bag full pid=%u name=%s",
+					ch->GetPlayerID(), ch->GetName());
+			return;
+		}
 		// Party play is an explicit, deterministic cohort. Archer weighting is
 		// decided at login, while the total cohort remains close to ten percent.
 		if (!IsPlayerBotPartyEligible(ch, state))
@@ -1299,6 +1341,11 @@ namespace
 
 		if (pParty)
 		{
+			// Iwakura's companion has no timer on its party: the bag (above),
+			// the levels drifting apart and the others walking off end it (below),
+			// as the document says.
+			if (bPersona)
+				state.dwPartyExpireTime = 0;
 			// Check if party duration expired (dynamic rotation: 5-15 mins)
 			if (state.dwPartyExpireTime != 0 && dwNow >= state.dwPartyExpireTime)
 			{
@@ -1341,17 +1388,28 @@ namespace
 			// Always enforce equal exp distribution
 			if (pParty->GetExpDistributionMode() != PARTY_EXP_DISTRIBUTION_PARITY)
 				pParty->SetParameter(PARTY_EXP_DISTRIBUTION_PARITY);
+			// A companion leading bots with room asks a person nearby too.
+			if (bPersona && pParty->GetLeaderPID() == ch->GetPlayerID())
+				AskPlayerBotHumanCompanion(ch, state, dwNow);
 			return;
 		}
 
 		// A stretch of hunting alone, less often where a party is the point.
+		// Iwakura's companion is a phase with its own stretches alone, drawn
+		// above, and does not also roll this one.
 		const int soloPercent = IsPlayerBotFrontierMapIndex(ch->GetMapIndex())
 				? PLAYERBOT_PARTY_SOLO_PERCENT_FRONTIER : PLAYERBOT_PARTY_SOLO_PERCENT;
-		if (number(1, 100) <= soloPercent)
+		if (!bPersona && number(1, 100) <= soloPercent)
 		{
 			state.dwNextPartyCheckTime = dwNow + number(60000, 180000);
 			return;
 		}
+
+		// A companion asks a person nearby before it looks for bots
+		// ("graczy badz innych botow"); the rationing is the person's, not the
+		// bot's, so most checks find nobody to ask and go on to the bots.
+		if (bPersona && AskPlayerBotHumanCompanion(ch, state, dwNow))
+			return;
 
 		// Find a nearby bot with an open party or start one
 		struct TPartyFinder
@@ -1473,7 +1531,7 @@ namespace
 			finder.m_pTargetParty->Join(ch->GetPlayerID());
 			finder.m_pTargetParty->Link(ch);
 			finder.m_pTargetParty->SetParameter(PARTY_EXP_DISTRIBUTION_PARITY);
-			state.dwPartyExpireTime = dwNow + number(300000, 900000); // 5 to 15 mins
+			state.dwPartyExpireTime = bPersona ? 0 : dwNow + number(300000, 900000); // 5 to 15 mins, none for a companion
 			LPCHARACTER joinedLeader = finder.m_pTargetParty->GetLeaderCharacter();
 			sys_log(0, "PLAYERBOT_AI: joined party pid=%u name=%s members=%d empire=%u leader_empire=%u",
 					ch->GetPlayerID(), ch->GetName(), finder.m_pTargetParty->GetMemberCount(),
@@ -1488,7 +1546,7 @@ namespace
 				newParty->SetParameter(PARTY_EXP_DISTRIBUTION_PARITY);
 				newParty->Join(finder.m_pSoloCandidate->GetPlayerID());
 				newParty->Link(finder.m_pSoloCandidate);
-				state.dwPartyExpireTime = dwNow + number(300000, 900000); // 5 to 15 mins
+				state.dwPartyExpireTime = bPersona ? 0 : dwNow + number(300000, 900000); // 5 to 15 mins, none for a companion
 				RememberPlayerBotEncounter(ch, finder.m_pSoloCandidate,
 						PLAYERBOT_FRIEND_PARTY_POINTS, dwNow);
 				sys_log(0, "PLAYERBOT_AI: created party pid=%u name=%s partner_pid=%u affinity=%d empire=%u partner_empire=%u",
@@ -2134,8 +2192,10 @@ namespace
 		// select the same idle party state again.  Break only a party which has
 		// already tripped the 90-second inactivity watchdog, then keep this bot
 		// solo briefly so it can acquire an independent destination/target.
-		// A player's party is not one of those: the player ends it.
-		if (ch->GetParty() && !IsPlayerBotHumanLedParty(ch->GetParty()))
+		// A player's party is not one of those: the player ends it. Nor is a
+		// mercenary's contract, which ends by its own clock and its own terms.
+		if (ch->GetParty() && !IsPlayerBotHumanLedParty(ch->GetParty()) &&
+				!IsPlayerBotOnMercContract(ch->GetPlayerID()))
 		{
 			ch->GetParty()->Quit(ch->GetPlayerID());
 			state.dwPartyExpireTime = 0;
@@ -4621,6 +4681,13 @@ void CPlayerBotManager::Update()
 		ManagePlayerBotPvpChallenge(ch, state, dwNow);
 		ManagePlayerBotKingdomHostility(ch, state, dwNow);
 		ManagePlayerBotParty(ch, state, dwNow);
+		// Iwakura's mercenary (playerbot_companions.h): a contract's upkeep for
+		// either side, the way back to a client after a pause, the client
+		// keeping up, and the walk to a bot in distress. Above every errand and
+		// the world travel, which a running contract holds on its map; it
+		// claims the tick only while it walks, and never in a fight.
+		if (ManagePlayerBotMercenary(ch, state, dwNow))
+			continue;
 		// A bot in a player's party keeps its errands and runs none of them
 		// while it is there. A Biologist or a merchant it had been walking to
 		// took it away from the player, the follow pass fetched it back, and
@@ -4987,6 +5054,9 @@ void CPlayerBotManager::Update()
 		// A player's Shaman buffs the player before itself.
 		if (ManagePlayerBotBuffHumanLeader(ch, state, dwNow))
 			continue;
+		// And Iwakura's companion Shaman the rest of its party, persons first.
+		if (ManagePlayerBotBuffCompanions(ch, state, dwNow))
+			continue;
 		// A crafted potion before the buffs: ten minutes of attack value or
 		// defence, spent only on a boss or a Metin stone (playerbot_herbalism.h).
 		if (DrinkPlayerBotCraftedPotion(ch, curTarget, dwNow))
@@ -5293,6 +5363,7 @@ void CPlayerBotManager::Update()
 		ReportPlayerBotPartyCensus();
 	}
 	ReportPlayerBotPersonaCensus();
+	ReportPlayerBotMercCensus(get_dword_time());
 
 	// Publish one compact, atomic snapshot per game core. The web panel reads
 	// these files from the shared read-only game-var volume, so it sees the real

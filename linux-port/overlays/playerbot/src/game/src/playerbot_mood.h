@@ -98,12 +98,18 @@ namespace
 		return it == s_mapPlayerBotAIStates.end() ? NULL : &it->second.persona;
 	}
 
+	// A mercenary's contract, either side (playerbot_companions.h).
+	bool IsPlayerBotOnMercContract(DWORD pid);
+
 	// Playing alone, in the document's sense: no party, no dungeon, no raid,
 	// no war, no duel. Everywhere else the bot plays NORMALNY whatever it
 	// feels ("zachowanie zostaje sztywno zablokowane na poziomie NORMALNY").
+	// A mercenary's contract counts as company for its whole length, the
+	// pause included ("blokuje nastroj obu botow ... na czas trwania
+	// kontraktu"), though the party is apart while the mercenary is in town.
 	bool IsPlayerBotPlayingAlone(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
 	{
-		if (!ch || ch->GetParty() != NULL)
+		if (!ch || ch->GetParty() != NULL || IsPlayerBotOnMercContract(ch->GetPlayerID()))
 			return false;
 		if (ch->GetMapIndex() >= PLAYERBOT_INSTANCE_MAP_INDEX_MIN)
 			return false;

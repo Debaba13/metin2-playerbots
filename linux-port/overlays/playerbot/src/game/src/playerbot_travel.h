@@ -898,6 +898,9 @@ namespace
 
 	// Defined beside the party pass in playerbot_manager.cpp.
 	bool IsPlayerBotHumanLedParty(LPPARTY party);
+	// A contract's client, a mercenary whose contract runs, and a bot leading
+	// a party with a person in it keep their map (playerbot_companions.h).
+	bool IsPlayerBotHeldForCompany(LPCHARACTER ch);
 
 	bool TransitionPlayerBotMap(LPCHARACTER ch, TPlayerBotAIState& state,
 			long targetMap, long targetX, long targetY, DWORD dwNow, const char* reason)
@@ -1427,6 +1430,15 @@ namespace
 		// departure waits for the party to end; a crossing that was under way
 		// is dropped rather than resumed from wherever the player has led.
 		if (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty()))
+		{
+			state.lDesertCrossingTo = 0;
+			return false;
+		}
+		// A mercenary's contract is played on the client's map: the client
+		// stays for it, and the mercenary until the town wants it - a paused
+		// contract lets it go and brings it back itself. A party a bot leads
+		// with a person in it keeps its map the way a person's party does.
+		if (IsPlayerBotHeldForCompany(ch))
 		{
 			state.lDesertCrossingTo = 0;
 			return false;

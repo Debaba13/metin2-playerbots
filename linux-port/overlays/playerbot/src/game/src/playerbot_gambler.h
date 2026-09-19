@@ -611,6 +611,49 @@ namespace
 		}
 		return true;
 	}
+
+	// The gambler's second source, after the storekeeper: the counters. "Jesli
+	// brakuje mu bazy lub ulepszaczy, przeszukuje sklepy offline na rynku i
+	// skupuje je po najnizszych cenach" - what it wants of an offer is a base
+	// it could work (the item's own test; the bag's run at the anvil) while it
+	// has fewer than PLAYERBOT_GAMBLE_MARKET_BASES to hand, or a material one
+	// of its pieces' next steps consumes. The market's own rules price it.
+	bool WantsPlayerBotGambleOffer(LPCHARACTER ch, LPITEM offer)
+	{
+		if (!ch || !offer || !IsPlayerBotPersonaEnabled())
+			return false;
+		TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+		const DWORD dwNow = get_dword_time();
+		if (it == s_mapPlayerBotAIStates.end() || !IsPlayerBotGambling(it->second, dwNow))
+			return false;
+		const TPlayerBotPersona& p = it->second.persona;
+		if (playerbot_persona::BudgetLeft(p.llGambleGoldStart,
+				playerbot_persona::GAMBLE_BUDGET_PERCENT, p.llGambleSpent) <= 0)
+			return false;
+		if (offer->GetType() == ITEM_WEAPON || offer->GetType() == ITEM_ARMOR)
+		{
+			std::vector<LPITEM> bases;
+			CollectPlayerBotGambleBases(ch, bases);
+			return (int)bases.size() < PLAYERBOT_GAMBLE_MARKET_BASES && IsPlayerBotGambleStock(ch, offer);
+		}
+		std::set<DWORD> materials;
+		CollectPlayerBotGambleMaterials(ch, materials);
+		return materials.find(offer->GetVnum()) != materials.end();
+	}
+
+	// Anything a gambler buys comes out of the session's budget, the fees and
+	// the burned pieces beside it ("Kazdy zakup ulepszacza, oplata u Kowala,
+	// zuzycie Zwoju Blogoslawienstwa czy spalenie przedmiotu bezposrednio
+	// obciaza wydzielony budzet").
+	void NotePlayerBotGamblePurchase(LPCHARACTER ch, long long paid)
+	{
+		if (!ch || paid <= 0)
+			return;
+		TPlayerBotAIStateMap::iterator it = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+		if (it == s_mapPlayerBotAIStates.end() || !IsPlayerBotGambling(it->second, get_dword_time()))
+			return;
+		it->second.persona.llGambleSpent += paid;
+	}
 }
 
 #endif

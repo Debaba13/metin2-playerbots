@@ -189,6 +189,10 @@ namespace
 		if (PlayerBotNeedsRefineMaterial(ch, offer->GetVnum()))
 			return true;
 
+		// Iwakura's gambler buys what its session runs on (playerbot_gambler.h).
+		if (WantsPlayerBotGambleOffer(ch, offer))
+			return true;
+
 		// A skill book for a skill this bot is actually raising.
 		//
 		// There was no branch for these at all, so no bot ever bought one off a
@@ -515,6 +519,8 @@ namespace
 				pick.dwSkillVnum);
 		if (pick.dwVnum == PLAYERBOT_MOONLIGHT_CHEST_VNUM)
 			NotePlayerBotChestBought(ch->GetPlayerID(), get_dword_time());
+		// A gambler's purchase is charged to the session's budget.
+		NotePlayerBotGamblePurchase(ch, paid);
 		sys_log(0, "PLAYERBOT_MARKET: bought pid=%u name=%s from=%s slot=%u vnum=%u refine=%u count=%u asked=%u paid=%lld gold=%lld",
 				ch->GetPlayerID(), ch->GetName(), pick.keeper->GetName(),
 				(unsigned int)pick.bSlot, pick.dwVnum, (unsigned int)pick.bRefine,
@@ -785,7 +791,8 @@ namespace
 				dwNow >= state.dwMarketM2AllowedUntil &&
 				state.lDepartureMap == 0 && GetPlayerBotFrontierMapForLevel(ch) == 0 &&
 				state.bLongTermGoal != BOT_GOAL_HORSE &&
-				!(ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty())))
+				!(ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty())) &&
+				!IsPlayerBotHeldForCompany(ch))
 		{
 			state.bMarketTrip = true;
 			state.bMarketToJoan = true;

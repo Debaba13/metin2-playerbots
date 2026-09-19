@@ -113,6 +113,14 @@ dependency order at the top of `playerbot_manager.cpp`:
 | `playerbot_targeting.h` | Choosing what to hit and hitting it, including the claim that keeps hundreds of bots off the same monster. |
 | `playerbot_guild_war.h` | The bots' guild wars: the pair picked per kingdom, the engine's field war declared and accepted, the rally on the guild map and the fight there. After targeting.h because the blows are its. |
 | `playerbot_demon_tower.h` | The bots' Demon Tower: one guild's raid at a time (the call, the gathering by the stone, the stone broken together), and the floors for whoever the jump takes - the scan of the floor, the duel-shaped fight, the keys used and handed in, the smith passed. After guild_war.h because the fight and the kingdom names are its. |
+| `playerbot_persona_rules.h` | Iwakura's personality system as pure policy: the moods, the Grinder's tiers and the Law of Advancement, the gambler's ambitions, the Anti-PK window, the companion's draw, the mercenary's terms and the Useful Items List. No engine types, unit-tested (`tests/playerbot_persona_rules_test.cpp`). Included first, with the other rules headers. |
+| `playerbot_persona_tables.h` | Rendered from his document by `tools/generate_iwakura_persona.py`: the valuables whose drop lifts a mood, and the LPP's weapons by level band, target shields and target armours. |
+| `playerbot_mood.h` | The Bot Mood System: what a mood is worth to whom, the drought, the euphoria, and the mood a bot plays by (NORMALNY in company, its own alone). |
+| `playerbot_persona.h` | Which personality claims a bot now, its Grinder tier and lock, the Law of Advancement, the two habits of a weak mood (the pause and the AFK stop), and the census. |
+| `playerbot_gambler.h` | The gambler's session: the pieces it takes to the anvil, the ambition rolled for each, the budget, and what it does with what survives. |
+| `playerbot_lpp.h` | Iwakura's Useful Items List: what a bot keeps at the storekeeper rather than sells, what the box holds, and what it lets go. |
+| `playerbot_anti_pk.h` | The Anti-PK protocol and the stone hunter's quarrel: who struck the bot, who it fights back, and the capitulation after five deaths on one spot. |
+| `playerbot_companions.h` | The two social personalities: the companion's phase and its invitations to people, a companion Shaman's party buffs, and the mercenary's contracts. After demon_tower.h. |
 | `playerbot_manager.cpp` | Personality, party, upkeep, the watchdog - and `CPlayerBotManager` with the tick. |
 
 These are fragments, not normal headers: each defines objects, relies on the
@@ -256,6 +264,84 @@ Read the two lines the core logs at startup before believing any count:
 PLAYERBOT_AUTH: loaded 511 registered bot identities
 PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
 ```
+
+### Iwakura's personalities, and the switch that turns them off
+
+Iwakura's "SYSTEM OSOBOWOSCI v2.0" (19 September, `data/iwakura_osobowosci.txt`,
+rendered in part by `tools/generate_iwakura_persona.py`) replaces the drawn
+personality with one the bot's own situation decides, every two seconds. The
+whole of it hangs on the `PERSONA` key of the weights file - a tick box on the
+classic panel's AI page, **on by default**; off is exactly the old behaviour,
+which is why every rule below asks `IsPlayerBotPersonaEnabled()` first. The old
+personality stays as a hidden character that only biases chances
+(`bDrawnPersonality`), and the Metin, M2 and M3 droppers are gone: what they
+did is the Grinder's tier locks. The operator's medal-dropper cohort stays.
+
+`DecidePersona` (pure, in `playerbot_persona_rules.h`) is the order a bot is
+claimed in: a mercenary's contract, then a party (Towarzysz), the rod, the
+pickaxe, a stone under the hammer, the gambler's session, the anvil for itself
+(Perfekcjonista), the bag at eighty percent (Handlarz), and last the Grinder or
+- with the Law of Advancement met - the Zdobywca. `PLAYERBOT_PERSONA: census`
+counts them every ten minutes with the moods beside them; the status file, both
+panels and the title over a bot's head read the same answer.
+
+The moods (BMS, `playerbot_mood.h`) are SLABY, NORMALNY and BARDZO DOBRY: a
+drought of anything worth having lowers one, a valuable drop or a refine that
+lands raises it, a refine that burns a piece at +8 or +9 lowers it by one
+(Iwakura's addition of the same evening), five deaths at a player's hands lock
+it at SLABY for forty-five minutes. A party, a dungeon, a raid, a war, a duel
+and a mercenary's contract are all "company", and in company a bot plays
+NORMALNY whatever it feels. Only a SLABY bot takes the two habits - a pause of
+two to eight seconds between packs, and a stop of two to five minutes every ten
+to thirty - and only a SLABY bot rests in town (the REST slider still sets the
+share of those).
+
+Four things the personalities changed that are easy to trip over later:
+
+- **A weight that only ranks something ranks nothing.** The PARTY slider now
+  sets the share of *time* a bot spends as a companion: the cohort draw is
+  rolled afresh at every phase (45-90 minutes solo, then a new draw; 3-8
+  minutes alone after a party ends), a Shaman's draw is cut to 35% of the roll
+  and a party fighter's to 25%, and a party has no timer at all any more - it
+  ends the document's way, at eighty percent of the bag, when the levels drift
+  by more than six, or when the others walk off. A bag already at eighty
+  percent does not start one either: the first measurement had seventeen bots
+  in three minutes joining and leaving on the next check.
+- **A companion asks people, and people are rationed.** A person with no party
+  is invited, a person's party with room is asked to be let into, and both are
+  refused by the game options' own "block party invites" and "block party
+  requests". A person is asked once in twenty minutes by anybody, once in
+  forty-five after a refusal, and once in three hours by the same bot; a bot
+  asks anybody once in ten minutes. Nothing of this has been seen with a real
+  person yet - the test world has none - and `PLAYERBOT_PARTY: asked a player`
+  is the line to look for.
+- **The mercenary is a contract, not a mood.** A bot that dies to monsters
+  three times in half an hour is in distress; a stronger bot of its kingdom on
+  the same map - three levels up at least, within the engine's thirty, and much
+  better gear by level, pluses and Iwakura's tiers - walks up and offers to
+  carry it for an hour at 250 000 through the yang curve. The client keeps a
+  quarter of its purse: the first cut kept seven tenths and, at m2zip's yang
+  rate of 3000% (7.5 million an hour), not one of the seven bots in distress
+  could have hired anybody. Neither side changes map while it runs, the
+  mercenary's full bag pauses it (the party is kept, the clock stops, the
+  mercenary warps back to the client the way a bot follows a player), and the
+  party rules, the watchdog's break-up and the map-change quit all stand down
+  for it. `PLAYERBOT_MERC: census` counts the contracts and
+  `PLAYERBOT_MERC: nobody to carry` says which of the reasons stopped one.
+- **The Useful Items List is a keep, not a ranking.** A piece the list keeps -
+  jewellery and boots of tier 3-6, the weapons of his level bands, the level-61
+  shields and the level-66 armours, and anything carrying a tier 5-6 line
+  rolled at least half-way up - is neither merchant scrap nor counter goods,
+  and one already standing on a counter comes home at the next service visit.
+  Two of a weapon or an armour and three of a small piece for the bot's own
+  class, one for another class; a family worn at +9 needs no plain backups. The
+  level-30 weapons are **not** in it: they have the operator's own rules (the
+  anvil's share, the grind for sale) and keeping them twice would fight those.
+  What the box holds is remembered from the last visit
+  (`TPlayerBotPersona::mapLppStored`), a box with fewer than nine free cells
+  stops the list keeping anything new - or a full box would leave a full bag
+  for good - and a piece the list lets go is remembered as released, because
+  the dead-stock rule would otherwise send it straight back down.
 
 ### Traps this file has already sprung
 

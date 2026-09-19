@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <map>
 #include <vector>
 #include <cstdint>
@@ -55,6 +56,10 @@ bool IsPlayerBotOnBattleHorseTrial(LPCHARACTER){return horse;}
 bool IsPlayerBotOnMilitaryHorseTrial(LPCHARACTER){return false;}
 DWORD PlayerBotNavHash(DWORD v){return v;}
 int GetPlayerBotReservedGold(LPCHARACTER){return 500;}
+// Iwakura's Student buys at the market only once the big three stand at +7,
+// and only while his personalities are switched on.
+bool personaOn=false; bool IsPlayerBotPersonaEnabled(){return personaOn;}
+bool bigThree=false; bool IsPlayerBotBigThreeAtPlus(LPCHARACTER,int){return bigThree;}
 #include "../linux-port/overlays/playerbot/src/game/src/playerbot_progression_needs.h"
 int main(){
     Character c; c.mastery[1]=SKILL_MASTER;
@@ -110,4 +115,16 @@ int main(){
     assert(ShouldPlayerBotVisitProgressionMarket(&c,s1,t));
     assert(!ShouldPlayerBotVisitProgressionMarket(&c2,s2,t));
     assert(CountPlayerBotProgressionTrips(t+PLAYERBOT_PROGRESSION_TRIP_MS)==0);
+
+    // The Student's gate: with the personalities on, nothing is bought at the
+    // market until the weapon, the armour and the shield stand at +7.
+    alive=1000; s_mapPlayerBotProgressionTrip.clear();
+    Item book; book.type=ITEM_SKILLBOOK; book.skill=1; book.vnum=50300; book.count=1;
+    assert(GetPlayerBotProgressionNeed(&c,&book)>0);
+    personaOn=true; bigThree=false;
+    assert(GetPlayerBotProgressionNeed(&c,&book)==0);
+    bigThree=true;
+    assert(GetPlayerBotProgressionNeed(&c,&book)>0);
+    personaOn=false;
+    std::printf("playerbot_progression_needs: all tests passed\n");
 }

@@ -623,6 +623,255 @@ namespace playerbot_persona
 	}
 
 	// ---------------------------------------------------------------------
+	// The companion (Towarzysz). The PARTY slider sets the share of the
+	// population that plays in a party, as it always has; under Iwakura's
+	// system that share is drawn afresh at every phase ("im wyzsza wartosc na
+	// tym suwaku, tym czesciej boty decyduja sie na zmiane osobowosci na
+	// Towarzysza"), so every bot is a companion some of the time rather than
+	// one bot in five for life. A draw is 0..999 and admits the bot while it
+	// is under the slider's share in thousandths. A Shaman's draw is cut to a
+	// third ("znacznie wyzsza wrodzona szansa"), and so, less, are the drawn
+	// companion character's and the party fighter's. A phase holds 45 to 90
+	// minutes while the bot is solo and stands still while it is in a party,
+	// which ends by the document's own conditions; the few minutes after a
+	// party are played alone.
+	// ---------------------------------------------------------------------
+	const uint32_t COMPANION_PHASE_MIN_MS = 45u * 60u * 1000u;
+	const uint32_t COMPANION_PHASE_MAX_MS = 90u * 60u * 1000u;
+	const uint32_t COMPANION_BREAK_MIN_MS = 3u * 60u * 1000u;
+	const uint32_t COMPANION_BREAK_MAX_MS = 8u * 60u * 1000u;
+	const unsigned int COMPANION_DRAW_RANGE = 1000u;
+	// A draw nobody has rolled yet admits nobody.
+	const uint16_t COMPANION_DRAW_NONE = 1000u;
+	const unsigned int COMPANION_SHAMAN_DRAW_PERCENT = 35u;
+	const unsigned int COMPANION_CHARACTER_DRAW_PERCENT = 60u;
+	const unsigned int COMPANION_FIGHTER_DRAW_PERCENT = 25u;
+
+	inline uint16_t CompanionDraw(uint32_t roll, bool shaman, bool companionCharacter, bool partyFighter)
+	{
+		uint32_t draw = roll % COMPANION_DRAW_RANGE;
+		if (shaman)
+			draw = draw * COMPANION_SHAMAN_DRAW_PERCENT / 100u;
+		if (companionCharacter)
+			draw = draw * COMPANION_CHARACTER_DRAW_PERCENT / 100u;
+		if (partyFighter)
+			draw = draw * COMPANION_FIGHTER_DRAW_PERCENT / 100u;
+		return (uint16_t)draw;
+	}
+
+	inline bool IsCompanionDraw(uint16_t draw, int cohortPerMille)
+	{
+		return draw < COMPANION_DRAW_NONE && (int)draw < cohortPerMille;
+	}
+
+	// ---------------------------------------------------------------------
+	// The mercenary (Najemnik). A bot that keeps dying to monsters - three
+	// deaths in half an hour, the same count that tells a Conqueror it has
+	// outgrown its gear - is somebody a stronger bot of its kingdom on the
+	// same map may carry for money: a higher level ("wyzszy poziom") and much
+	// better gear ("znacznie lepszy ekwipunek - wyzsze Tiery/plusy"), within
+	// the thirty levels the engine lets a party span. An hour costs 250 000
+	// through the yang curve, paid up front; the client keeps a quarter of its
+	// purse for its potions (the first cut kept seven tenths, and at a yang
+	// rate of 3000% - 7.5 million an hour - no bot under forty could hire
+	// anybody: the seven in distress on m2zip found no offer between them).
+	// At the hour it pays again unless it has had
+	// what it came for - three levels, a full bag, or its own gear raised -
+	// or can no longer pay, or the mercenary no longer outclasses it.
+	// ---------------------------------------------------------------------
+	const uint32_t MERC_CONTRACT_MS = 60u * 60u * 1000u;
+	const uint32_t MERC_BASE_PRICE = 250000u;
+	const int MERC_LEVEL_LEAD = 3;
+	const int MERC_PARTY_LEVEL_GAP = 30;
+	const int MERC_GEAR_LEAD_PERCENT = 25;
+	const int MERC_GEAR_LEAD_MIN = 30;
+	// A piece's weight: its level limit, three points a plus, six a step of
+	// Iwakura's tier away from the neutral three (a family his list does not
+	// carry counts as neutral).
+	const int MERC_POWER_PER_PLUS = 3;
+	const int MERC_POWER_PER_TIER = 6;
+	const int MERC_NEUTRAL_TIER = 3;
+	const int MERC_CLIENT_PURSE_PERCENT = 75;
+	const int MERC_CLIENT_GOAL_LEVELS = 3;
+	const int MERC_CLIENT_GEAR_GAIN = 12;
+	const unsigned int MERC_CLIENT_DEATHS = WEAK_DEATHS;
+
+	struct TMercPiece
+	{
+		bool present;
+		uint8_t plus;
+		uint8_t levelLimit;
+		uint8_t tier;
+		TMercPiece() : present(false), plus(0), levelLimit(0), tier(0) {}
+		TMercPiece(uint8_t p, uint8_t limit, uint8_t t) : present(true), plus(p), levelLimit(limit), tier(t) {}
+	};
+
+	// Weapon, body, helmet, shield, shoes, bracelet, necklace, earrings.
+	const unsigned int MERC_GEAR_SLOTS = 8u;
+	struct TMercGear
+	{
+		TMercPiece piece[MERC_GEAR_SLOTS];
+	};
+
+	inline int MercGearPower(const TMercGear& g)
+	{
+		int power = 0;
+		for (unsigned int i = 0; i < MERC_GEAR_SLOTS; ++i)
+		{
+			const TMercPiece& p = g.piece[i];
+			if (!p.present)
+				continue;
+			power += (int)p.levelLimit + MERC_POWER_PER_PLUS * (int)p.plus;
+			if (p.tier != 0)
+				power += MERC_POWER_PER_TIER * ((int)p.tier - MERC_NEUTRAL_TIER);
+		}
+		return power < 0 ? 0 : power;
+	}
+
+	inline bool MercOutclasses(int mercLevel, int mercPower, int clientLevel, int clientPower)
+	{
+		if (mercLevel < clientLevel + MERC_LEVEL_LEAD || mercLevel - clientLevel > MERC_PARTY_LEVEL_GAP)
+			return false;
+		return mercPower >= clientPower + MERC_GEAR_LEAD_MIN &&
+				(long long)mercPower * 100 >= (long long)clientPower * (100 + MERC_GEAR_LEAD_PERCENT);
+	}
+
+	inline bool MercClientCanPay(long long gold, long long reserve, long long price)
+	{
+		return price > 0 && gold - reserve >= price &&
+				price * 100 <= gold * MERC_CLIENT_PURSE_PERCENT;
+	}
+
+	inline bool MercClientGoalReached(int levelsGained, bool bagFull, int gearGain)
+	{
+		return levelsGained >= MERC_CLIENT_GOAL_LEVELS || bagFull || gearGain >= MERC_CLIENT_GEAR_GAIN;
+	}
+
+	inline bool MercClientRenews(bool goalReached, bool canPay, bool stillOutclassed)
+	{
+		return !goalReached && canPay && stillOutclassed;
+	}
+
+	// ---------------------------------------------------------------------
+	// The Useful Items List (LPP): what a bot keeps at the storekeeper rather
+	// than sells. Jewellery and boots of tier 3 to 6; the weapons his level
+	// bands name, of tier 3 at least; the level-61 shields with resistances
+	// and the armours of his "70 lvl"; and any piece with a line of tier 5 or 6
+	// rolled at least half-way up ("Wysoka Wartosc" - a line of that class at
+	// the bottom of its roll is not what he means by one). Of each family
+	// the bot keeps two of a weapon or an armour and three of a piece of
+	// jewellery or a shield for its own class, one for another class (the
+	// gambler's trade), and one of his level-15 and level-20 weapons. A family
+	// the bot already wears at +9 needs no backups ("Zasada Osiagnietej
+	// Perfekcji"): its plain copies go to the market, the ones worth keeping
+	// for their lines stay. And what the bot has outgrown goes to the market
+	// too ("Dezaktualizacja sprzetu"): a weapon of a band the bot has passed,
+	// anything else twenty levels under it; the target shields and armours
+	// and the last band's weapons never.
+	// ---------------------------------------------------------------------
+	enum ELppKind
+	{
+		LPP_NONE = 0,
+		LPP_JEWEL,
+		LPP_WEAPON,
+		LPP_SHIELD,
+		LPP_ARMOUR,
+		LPP_VALUE
+	};
+	const int LPP_JEWEL_MIN_TIER = 3;
+	const int LPP_WEAPON_MIN_TIER = 3;
+	const int LPP_VALUE_MIN_BONUS_TIER = 5;
+	const int LPP_VALUE_MIN_ROLL_PERCENT = 50;
+	const int LPP_OWN_GEAR_LIMIT = 2;
+	const int LPP_OWN_SMALL_LIMIT = 3;
+	const int LPP_OTHER_CLASS_LIMIT = 1;
+	const int LPP_ONLY_ONE_LIMIT = 1;
+	const int LPP_OUTGROWN_LEVELS = AWANS_LEVEL_WINDOW;
+	const uint8_t LPP_PERFECT_PLUS = 9;
+
+	struct TLppPiece
+	{
+		uint8_t kind;
+		uint8_t level;
+		// A weapon's band on his list: 1 for "5-29 lvl", 2 for "30 lvl+", 3
+		// for "65 lvl+"; and the level of the next band's weapons, at which a
+		// band is passed (0 for the last).
+		uint8_t band;
+		uint8_t nextBandLevel;
+		bool onlyOne;
+		// Its class may wear it (the anti-flags); jewellery and a shield are
+		// the small pieces with the larger keep.
+		bool ownClass;
+		bool small;
+		// A target piece is never outgrown: the shields and armours he names
+		// are what a bot keeps an armour or a shield for.
+		bool target;
+		TLppPiece() : kind(LPP_NONE), level(0), band(0), nextBandLevel(0), onlyOne(false),
+			ownClass(false), small(false), target(false) {}
+	};
+
+	inline int LppLimit(const TLppPiece& p, bool wornAtNine)
+	{
+		if (p.kind == LPP_NONE)
+			return 0;
+		if (wornAtNine && p.kind != LPP_VALUE)
+			return 0;
+		if (!p.ownClass)
+			return LPP_OTHER_CLASS_LIMIT;
+		if (p.onlyOne)
+			return LPP_ONLY_ONE_LIMIT;
+		return p.small ? LPP_OWN_SMALL_LIMIT : LPP_OWN_GEAR_LIMIT;
+	}
+
+	inline bool LppObsolete(const TLppPiece& p, int botLevel)
+	{
+		if (p.kind == LPP_NONE)
+			return true;
+		if (p.target)
+			return false;
+		if (p.kind == LPP_WEAPON)
+		{
+			// A band is passed when the next band's weapons can be worn - and
+			// not before the piece itself is twenty levels behind: his first
+			// band names two bells of level 32 and 36 in this world.
+			return p.nextBandLevel != 0 && botLevel >= (int)p.nextBandLevel &&
+					botLevel > (int)p.level + LPP_OUTGROWN_LEVELS;
+		}
+		return botLevel > (int)p.level + LPP_OUTGROWN_LEVELS;
+	}
+
+	// Whether this piece keeps its place, with `keptAhead` better copies of its
+	// family kept already (in the box, and ahead of it in the bag).
+	inline bool LppKeeps(const TLppPiece& p, int botLevel, bool wornAtNine, int keptAhead)
+	{
+		return !LppObsolete(p, botLevel) && keptAhead < LppLimit(p, wornAtNine);
+	}
+
+	// A line that makes a piece "Wysoka Wartosc": tier 5 or 6 on his list and
+	// rolled at least LPP_VALUE_MIN_ROLL_PERCENT of the way to its top.
+	inline bool LppValueLine(int bonusTier, long value, long maxRoll)
+	{
+		return bonusTier >= LPP_VALUE_MIN_BONUS_TIER && maxRoll > 0 && value > 0 &&
+				(long long)value * 100 >= (long long)maxRoll * LPP_VALUE_MIN_ROLL_PERCENT;
+	}
+
+	// The soul stones he keeps: +3 of PvE tier 3 at least, for the early gear
+	// before the scrolls, and every +4 ("najcenniejsze zasoby"), for the final
+	// set - a class stone's +4 too, which waits for a PvP weapon; a few of each.
+	const int LPP_STONE_MIN_GRADE = 3;
+	const int LPP_STONE_TOP_GRADE = 4;
+	const int LPP_STONE_MIN_PVE_TIER = 3;
+	const int LPP_STONE_KEEP = 5;
+
+	inline bool LppKeepsStone(int grade, int pveTier, int heldAhead)
+	{
+		if (heldAhead >= LPP_STONE_KEEP)
+			return false;
+		return grade >= LPP_STONE_TOP_GRADE ||
+				(grade >= LPP_STONE_MIN_GRADE && pveTier >= LPP_STONE_MIN_PVE_TIER);
+	}
+
+	// ---------------------------------------------------------------------
 	// Which personality claims the bot. A contract is the strongest claim, a
 	// party the next - both are commitments to somebody else - then the two
 	// sessions that hold a tool in the weapon hand, the stone under the
@@ -633,6 +882,9 @@ namespace playerbot_persona
 	{
 		bool mercenary;   // hired and paid for, as the strong side
 		bool inParty;     // a party of any kind, the mercenary's excepted
+		// The weaker side of a contract: in the mercenary's party, and not a
+		// companion - it paid for that party and plays by its own lights.
+		bool hired;
 		bool fishing;
 		bool mining;
 		bool stoneFight;
@@ -640,7 +892,7 @@ namespace playerbot_persona
 		bool perfecting;
 		bool trading;
 		bool advanced;
-		TPersonaSignals() : mercenary(false), inParty(false), fishing(false), mining(false),
+		TPersonaSignals() : mercenary(false), inParty(false), hired(false), fishing(false), mining(false),
 			stoneFight(false), gambling(false), perfecting(false), trading(false), advanced(false) {}
 	};
 
@@ -648,7 +900,7 @@ namespace playerbot_persona
 	{
 		if (s.mercenary)
 			return PERSONA_NAJEMNIK;
-		if (s.inParty)
+		if (s.inParty && !s.hired)
 			return PERSONA_TOWARZYSZ;
 		if (s.fishing)
 			return PERSONA_RYBAK;

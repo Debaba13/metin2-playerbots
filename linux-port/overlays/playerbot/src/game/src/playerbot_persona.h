@@ -244,6 +244,11 @@ namespace
 	// The Anti-PK protocol's and the stone hunter's half of a death
 	// (playerbot_anti_pk.h, after the fight it is about).
 	void NotePlayerBotAntiPkDeath(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow, bool byPlayer);
+	// The mercenary's side of the same count, and the two sides of a contract
+	// the personality is decided by (playerbot_companions.h).
+	void NotePlayerBotDistress(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow);
+	bool IsPlayerBotMercenaryOnContract(DWORD pid);
+	bool IsPlayerBotHiredClient(DWORD pid);
 
 	// A death, noticed on the tick it happened. A Conqueror dying to monsters
 	// three times in half an hour has outgrown its gear: it becomes a Grinder
@@ -257,7 +262,12 @@ namespace
 		NotePlayerBotAntiPkDeath(ch, state, dwNow, byPlayer);
 		if (byPlayer)
 			return;
-		if (!playerbot_persona::NoteDeath(p.deaths) || !p.bAdvanced)
+		const bool weak = playerbot_persona::NoteDeath(p.deaths);
+		// Three deaths to monsters in half an hour is a bot that visibly cannot
+		// cope, which a stronger one of its kingdom may offer to carry.
+		if (weak)
+			NotePlayerBotDistress(ch, state, dwNow);
+		if (!weak || !p.bAdvanced)
 			return;
 		p.bAdvanced = false;
 		p.bLockLevel = (BYTE)std::min<int>(255, ch->GetLevel());
@@ -285,6 +295,8 @@ namespace
 		TPlayerBotPersona& p = state.persona;
 		playerbot_persona::TPersonaSignals s;
 		s.inParty = ch->GetParty() != NULL;
+		s.mercenary = IsPlayerBotMercenaryOnContract(ch->GetPlayerID());
+		s.hired = IsPlayerBotHiredClient(ch->GetPlayerID());
 		s.fishing = state.bFishingSession;
 		s.mining = IsPlayerBotMiningNow(ch->GetPlayerID(), dwNow);
 		LPCHARACTER target = state.dwTargetVID != 0
@@ -296,7 +308,8 @@ namespace
 		// Perfectionist; everything else in town is the Trader emptying its bag.
 		s.gambling = IsPlayerBotGambling(state, dwNow);
 		s.perfecting = (state.bVisitingShop && state.bTownNeedBlacksmith) || state.bMarketTrip;
-		s.trading = IsPlayerBotBagFull(ch) || state.bVisitingShop ||
+		p.bBagFull = IsPlayerBotBagFull(ch);
+		s.trading = p.bBagFull || state.bVisitingShop ||
 				state.bCurrentAction == BOT_ACTION_STALL || ch->GetMyShop() != NULL;
 #if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
 		s.trading = s.trading || state.offlineShop.visiting;
