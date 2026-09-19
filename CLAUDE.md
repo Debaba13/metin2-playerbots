@@ -6277,6 +6277,66 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   - the search walks every cell of four pages. His layout has no field for the
   delay before standing up; the value stays in the file (15 s by default). He
   is in the README's credits and in the release notes.
+- **The package's player dump brought another server's guild lands.**
+  `initdb.d/dumps/player.sql` holds 28 `player.guild_land` rows and 62
+  `player.object` buildings from the server the package was taken from, and
+  not one `player.guild` row. `building::CManager::FinalizeBoot` stands the land
+  agent (NPC 20040) only on a land whose owner is zero, so those lands were
+  never for sale, their buildings stood on ground nobody held, and a bot guild
+  founded later under one of those ids (2, 3, 5, ...) owned a land and
+  buildings it never paid for ("stoja juz budynki, pomimo ze teren nie jest
+  zajety", Mat, 19 September; NerrVoVy cleared his by hand in Navicat). The
+  migrator takes the dump's exact rows off once (`package_guild_lands_2081`,
+  `PACKAGE_GUILD_LANDS`/`_OBJECTS` in migratorify.py) - what the engine's own
+  `ClearLand` does - and leaves a land a player bought and the buildings put
+  up since (ids past 62). Run in a transaction rolled back on m2coop's
+  database: 28 lands and 62 buildings, nothing else.
+- **A rendered file edited by hand is reverted by the next render, without a
+  word.** mt2009's apply.sh says DO NOT EDIT and is rendered by
+  `port/migratorify.py`, yet 6629944 (the guild tiers, the channel pins),
+  43ca602 (the difficulty) and the fishing pass and teleport ring lines were
+  written into the rendered file, and rendering it for 2.0.81 dropped all of
+  them. They live in migratorify.py now. Before committing a render, diff it
+  against the file it replaces: the only difference should be the change meant.
+- **A dropper takes no trial.** `IsPlayerBotTrialExempt` sits in both "on
+  trial" predicates (playerbot_battle_horse.h): GG1249125 and MORDEGAPOTEGA,
+  Metin droppers of thirty-six with a horse at ten, read "Zdobywam konia
+  bojowego na pustyni (0/100)" on the guild map they farm, and the frontier
+  draw pointed them at the desert (Urtopy, 18 September). A report of "bots in
+  M3 at 32-39 doing no Biologist" is the droppers' own band - the locks are 40
+  (Metin), 36 (M2), 33 (medal) and 30 (M3), plus
+  `PLAYERBOT_DROPPER_OUTGROWN_LEVELS` - beside the level-30 weapon hunt, which
+  runs to forty; a world of forty bots shows them plainly. The classic panel
+  reads "nie dotyczy" for a dropper's Biologist (`BOT_DROPPER_PERSONALITIES`)
+  instead of a 0/7 that looks like a bot stuck for good.
+- **The tower's pack spreads its blows, not itself.** One demon for sixteen
+  bots stopped them dying one by one on the seventh floor and made every floor
+  a queue ("atakuja po jednym przeciwniku", Nagash, 19 September).
+  `PickPlayerBotTowerObjective` gives each bot one of the ordinary monsters
+  nearest the pack by a slot drawn from its pid - about
+  `PLAYERBOT_TOWER_BOTS_PER_MONSTER` to each, and only within
+  `PLAYERBOT_TOWER_SPREAD_RANGE` beyond the nearest - and keeps it while it
+  stands; a stone, or a boss once he is the nearest, stays everybody's.
+  Compiled on both engines, not yet watched in a raid.
+- **"Cofki" is a character pulled back while it runs, not a rollback in the
+  database.** Kiciamol's bundle of 19 September: his character's gold grew
+  across every login and no core died; on the chat seban asked "czy cofa cie,
+  jak biegniesz" and it did. His world was `unified`, 838 bots and 83 thousand
+  monsters (the respawn count at about x2) on game1 alone; the bots' pass took
+  16 s of every 60 there with passes up to 127 ms, and the monsters' own AI
+  comes on top of that and is in no log line. Ask which one a player means
+  before reading a bundle for lost data.
+- **A restart that starts a console program and exits in the same breath can
+  kill it.** The launcher's restart after an update ran the .bat and closed its
+  window at once, and on Windows 11 the new cmd.exe died with 0xc0000142
+  (Urtopy, 19 September, the launcher started from its desktop shortcut).
+  `Restart-Launcher` keeps the old window up to four seconds, logs the exit
+  code of a start that died and tries powershell.exe once more. That fallback
+  had always passed `$PSCommandPath` unquoted, which Windows PowerShell 5.1's
+  Start-Process joins with spaces - and the install folder is "Metin2
+  Singleplayer" - so it could never have started anything. Checked with a
+  harness (a .bat exiting 0xC0000142, then a script in a folder with a space);
+  like every launcher fix it reaches a player one update late.
 
 ## Engine facts worth not re-deriving
 
