@@ -620,6 +620,44 @@ function Assert-KingdomsDefault {
     return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_KINGDOMS_DEFAULTED' -Value '1')
 }
 
+function Assert-WorldLayoutDefault {
+    # Split is three kingdoms on three cores, and a bot has no client, so it
+    # cannot cross between them: every shared map - Orc Valley, the desert,
+    # Sohan, both Spider Dungeons - is Chunjo's core, and Shinsoo and Jinno
+    # wedge at about thirty-six. The answer has been an operator switch since
+    # 2.0.30 and hardly anybody knew of it: on 19 September players were
+    # passing each other screenshots of the line to paste into .env by hand,
+    # and Iwakura's word on it was "unified powinno byc domyslnie tbh".
+    #
+    # So it is, once, the way the three kingdoms were: unified unless this
+    # world is big enough to want the parallelism back. One core carrying
+    # everything was measured at 9.4 s of every 60 at 1500 bots, so a world
+    # asking for more than that keeps split and is left alone.
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content,
+        [Parameter(Mandatory = $true)][string]$EnvPath
+    )
+    $marker = Join-Path (Split-Path -Parent $EnvPath) 'ENGINE'
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return $Content }
+    if ((Get-Content -LiteralPath $marker -Raw).Trim() -eq 'r40250') { return $Content }
+    if ([Regex]::IsMatch($Content, '(?m)^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=')) { return $Content }
+    $bots = 0
+    $count = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_COUNT=(.*)$')
+    if ($count.Success) { [int]::TryParse($count.Groups[1].Value.Trim(), [ref]$bots) | Out-Null }
+    if ($bots -gt 1500) {
+        Write-Host "Uklad swiata: zostaje split - ten swiat prosi o $bots botow, a przy takiej liczbie jeden rdzen bylby za wolny." -ForegroundColor Gray
+        return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED' -Value '1')
+    }
+    $current = [Regex]::Match($Content, '(?m)^M2_PLAYERBOT_WORLD_LAYOUT=(.*)$')
+    if (-not $current.Success -or $current.Groups[1].Value.Trim() -ne 'unified') {
+        Write-Host 'Uklad swiata: M2_PLAYERBOT_WORLD_LAYOUT przelaczony na unified.' -ForegroundColor Cyan
+        Write-Host '  Wszystkie trzy krolestwa i caly front na jednym rdzeniu, wiec boty Shinsoo i Jinno' -ForegroundColor Gray
+        Write-Host '  przestaja konczyc na ~36 poziomie. Wroc na split w .env, jesli wolisz po staremu.' -ForegroundColor Gray
+    }
+    $Content = Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT' -Value 'unified'
+    return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED' -Value '1')
+}
+
 function Get-M2HostTimeZoneName {
     # The tz database name of this Windows' own zone, for the containers' TZ.
     # Windows keeps ids of its own ("Central European Standard Time") and the
@@ -789,6 +827,9 @@ function Initialize-InstallationIdentity {
     # Before the example's keys are added, because the marker it sets is one
     # of them: an older .env is switched to all three kingdoms exactly once.
     $content = Assert-KingdomsDefault -Content $content -EnvPath $envPath
+    # And, the same shape again, the world those three kingdoms live on: one
+    # core unless this world is too big for one.
+    $content = Assert-WorldLayoutDefault -Content $content -EnvPath $envPath
     # The same shape for the clock's zone: the example's UTC becomes this
     # machine's own, once.
     $content = Assert-TimezoneDefault -Content $content

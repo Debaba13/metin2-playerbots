@@ -778,6 +778,11 @@ namespace
 			return std::max(1, GetPlayerBotRefineMaterialReserve(ch, item->GetVnum()));
 		if (item->GetType() == ITEM_TREASURE_KEY)
 			return PLAYERBOT_TREASURE_KEY_KEEP;
+		// The medal dropper is the medal shop and keeps one back; everybody else
+		// keeps the ladder's two (PLAYERBOT_HORSE_MEDAL_KEEP) and lists the rest.
+		if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
+			return ch && GetPlayerBotPersonalityByPID(ch->GetPlayerID()) ==
+					BOT_PERSONALITY_MEDAL_DROPPER ? 1 : PLAYERBOT_HORSE_MEDAL_KEEP;
 		// Nobody keeps a root back: the heap is the whole of what it is for.
 		if (IsPlayerBotBulkGoods(item))
 			return 0;

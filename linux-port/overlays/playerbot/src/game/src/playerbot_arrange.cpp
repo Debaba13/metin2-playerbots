@@ -301,6 +301,40 @@ void Rescue(LPCHARACTER ch, LPITEM item)
 			ch->GetPlayerID(), ch->GetName(), item->GetID(), item->GetName());
 }
 
+// One cell of the bag, said again to the client exactly as CHARACTER::SetItem
+// says it: ITEM_SET for what stands there, ITEM_DEL for a cell that is empty.
+// Only ever a copy of what the server holds, so it cannot introduce a state of
+// its own; the whole point is that the client ends the operation agreeing.
+void RestateCell(LPCHARACTER ch, WORD cell)
+{
+	LPDESC desc = ch->GetDesc();
+	if (!desc)
+		return;
+	LPITEM item = ch->GetInventoryItem(cell);
+	if (item) {
+		TPacketGCItemSet pack;
+		memset(&pack, 0, sizeof(pack));
+		pack.header = HEADER_GC_ITEM_SET;
+		pack.Cell = TItemPos(INVENTORY, cell);
+		pack.count = item->GetCount();
+		pack.vnum = item->GetVnum();
+		pack.flags = item->GetFlag();
+		pack.anti_flags = item->GetAntiFlag();
+#ifdef ENABLE_HIGHLIGHT_NEW_ITEM
+		pack.highlight = false;
+#endif
+		thecore_memcpy(pack.alSockets, item->GetSockets(), sizeof(pack.alSockets));
+		thecore_memcpy(pack.aAttr, item->GetAttributes(), sizeof(pack.aAttr));
+		desc->Packet(&pack, sizeof(pack));
+		return;
+	}
+	TPacketGCItemDelDeprecated pack;
+	memset(&pack, 0, sizeof(pack));
+	pack.header = HEADER_GC_ITEM_DEL;
+	pack.Cell = TItemPos(INVENTORY, cell);
+	desc->Packet(&pack, sizeof(pack));
+}
+
 }  // namespace
 
 TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
@@ -535,6 +569,46 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 		slot.pos = (WORD)cell->second;
 		ch->SetQuickslot((BYTE)i, slot);
 	}
+
+	// The bag as the server holds it, said once more to the client and checked
+	// against the engine's own grid.
+	//
+	// A move is a pair of packets - ITEM_DEL for the cell left, ITEM_SET for
+	// the cell taken (CHARACTER::SetItem sends both) - so a client that read
+	// every one of them needs nothing here. What the pairs cannot repair is a
+	// client that missed one, and a bag laid out in one operation sends
+	// dozens: "w te ktore staly sie puste w wyniku sortowania juz nie [moge
+	// przeniesc] ... wystarczy przelogowac postac" (Dearminder, 19 September)
+	// is exactly that shape, and a relog is what makes it go away, because a
+	// relog is the server saying the whole bag again. So the operation ends by
+	// saying it: the cells it touched, and only those, are restated from what
+	// the server holds. Cheap - a click a player makes by hand, at most a few
+	// dozen cells - and it cannot be wrong, because it is a copy of the truth.
+	//
+	// The grid is checked with it. bItemGrid is what GetEmptyInventory reads,
+	// and a stale cell there is a cell no purchase, no pickup and no safebox
+	// checkout can ever use again; SetItem maintains it, so this has nothing to
+	// repair while that holds - and says so in syserr on the day it does not.
+	if (ch->GetDesc()) {
+		std::set<WORD> restate;
+		for (size_t i = 0; i < movers.size(); ++i)
+			restate.insert(movers[i].second);
+		for (std::map<int, uint32_t>::const_iterator it = idAtCell.begin(); it != idAtCell.end(); ++it)
+			if (it->first >= 0 && it->first < (int)INVENTORY_DEFAULT_MAX_NUM)
+				restate.insert((WORD)it->first);
+		for (std::set<WORD>::const_iterator it = restate.begin(); it != restate.end(); ++it)
+			RestateCell(ch, *it);
+	}
+	int gridHoles = 0;
+	for (WORD cell = 0; cell < INVENTORY_DEFAULT_MAX_NUM; ++cell) {
+		if (ch->GetInventoryItem(cell))
+			continue;
+		if (!ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
+			++gridHoles;
+	}
+	if (gridHoles)
+		sys_err("INVENTORY_ARRANGE: pid=%u name=%s %d empty cell(s) still marked taken in the grid",
+				ch->GetPlayerID(), ch->GetName(), gridHoles);
 
 	std::map<DWORD, uint64_t> unitsAfter;
 	for (WORD cell = 0; cell < INVENTORY_DEFAULT_MAX_NUM; ++cell) {

@@ -2091,6 +2091,13 @@ namespace
 		// Iwakura's Grinder on its first horse: "a nadmiar medali sprzedaje".
 		if (ch && ch->GetHorseLevel() >= 1 && IsPlayerBotGrinderRider(ch))
 			return true;
+		// Anything over the keep is goods for everybody. Without this a bot on a
+		// horse of exactly ten past level thirty-five - a battle-horse candidate,
+		// which may spend no medal at all - was refused by both halves of the
+		// rule and carried whatever it found: forty medals in one player's bag.
+		if (ch && (int)ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) >
+				PLAYERBOT_HORSE_MEDAL_KEEP)
+			return true;
 		return ch && ch->GetHorseLevel() >= 10 &&
 				ch->GetLevel() < GetPlayerBotNextHorseRequiredLevel(ch->GetHorseLevel());
 	}

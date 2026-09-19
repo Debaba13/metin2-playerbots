@@ -177,7 +177,7 @@ services:
       # shared frontier lives only on game1. unified: all three kingdoms and the
       # frontier on game1, so every bot reaches 1..104 (m2-render-config reads
       # this). One core carries every bot then - keep the population modest.
-      M2_PLAYERBOT_WORLD_LAYOUT: "${M2_PLAYERBOT_WORLD_LAYOUT:-split}"
+      M2_PLAYERBOT_WORLD_LAYOUT: "${M2_PLAYERBOT_WORLD_LAYOUT:-unified}"
       # Only said in the start log here; the migrate service is what acts on it.
       M2_DIFFICULTY: "${M2_DIFFICULTY:-easy}"
       TZ: "${M2_TZ:-UTC}"

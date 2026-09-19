@@ -3383,6 +3383,15 @@ namespace
 	const int PLAYERBOT_SHOP_STANDS_IN_ROW = 3;
 	const DWORD PLAYERBOT_SHOP_REOPEN_MS = 3000;
 	const DWORD PLAYERBOT_HORSE_MEDAL_VNUM = 50050;
+	// What a bot keeps back of them whatever else it may do with medals. A horse
+	// at exactly ten waiting on the battle-horse trial may spend none (one more
+	// medal makes it eleven and no NPC in this world puts that back) and, until
+	// now, sell none either: CanPlayerBotSellHorseMedals asked for a level under
+	// the next milestone, which a battle-horse candidate is by definition past.
+	// So "10 lv konia, ponad 40 medali w plecaku" (Greess, 19 September) was a
+	// bag that filled for ever. Two are kept for the ladder that starts again
+	// after the trial; the rest are goods like anything else.
+	const int PLAYERBOT_HORSE_MEDAL_KEEP = 2;
 	const BYTE PLAYERBOT_HORSE_REQUIRED_LEVEL = 25;
 	const char* PLAYERBOT_HORSE_MEDALS_FLAG = "playerbot.horse_medals_delivered";
 	const char* PLAYERBOT_HORSE_MEDALS_LOOTED_FLAG = "playerbot.horse_medals_looted";

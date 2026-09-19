@@ -212,6 +212,34 @@ migrate_timezone() {
     printf 'M2_TZ_DEFAULTED=1\n' >> "$_env"
 }
 
+# Split puts each kingdom on its own core and no bot can cross between them, so
+# Shinsoo and Jinno stop at about thirty-six; unified has been the switch out of
+# that since 2.0.30 and hardly anybody knew of it. Flipped exactly once, the way
+# the three kingdoms were - unless this world asks for more bots than one core
+# was measured to carry (9.4 s of every 60 at 1500), where split stays.
+migrate_world_layout() {
+    _env="$COMPOSE_DIR/.env"
+    [ -f "$_env" ] || return 0
+    grep -q '^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=' "$_env" && return 0
+    _bots=$(kv "$_env" PLAYERBOT_AUTOSPAWN_COUNT | tr -d ' \r')
+    case "$_bots" in
+        ''|*[!0-9]*) _bots=0 ;;
+    esac
+    [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
+    if [ "$_bots" -gt 1500 ]; then
+        note "   the world layout stays split: this world asks for $_bots bots"
+        printf 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1\n' >> "$_env"
+        return 0
+    fi
+    if grep -q '^M2_PLAYERBOT_WORLD_LAYOUT=' "$_env"; then
+        sed -i 's|^M2_PLAYERBOT_WORLD_LAYOUT=.*|M2_PLAYERBOT_WORLD_LAYOUT=unified|' "$_env"
+    else
+        printf 'M2_PLAYERBOT_WORLD_LAYOUT=unified\n' >> "$_env"
+    fi
+    note "   the world layout: M2_PLAYERBOT_WORLD_LAYOUT=unified (every kingdom reaches the frontier)"
+    printf 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1\n' >> "$_env"
+}
+
 # A new key in .env.example reaches nobody who already installed: .env is
 # written at install and never rewritten, and only the Windows launcher
 # (Add-MissingDotEnvKeys) ever appended the keys a release added - a Linux
@@ -296,6 +324,9 @@ run_update() {
     note "   the folder now says version $(installed_version)"
     migrate_timezone
     add_missing_env_keys
+    # After the keys, so a world that had no layout line at all gets the
+    # example's and then this.
+    migrate_world_layout
     stage_panel_context || { fail "the panel's build context could not be staged from files/"; return 1; }
     step "building and starting the new version (docker compose up -d --build)"
     # By hand the build talks to the terminal; under the panel it goes to the

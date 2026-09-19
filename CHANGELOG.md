@@ -17,6 +17,37 @@ every version here.
 
 ---
 
+## 2.0.85 — 2026-09-20
+
+Serwer 2.0.85. Klient bez zmian (2.0.19).
+
+### Wszystkie trzy krolestwa na jednym swiecie, domyslnie
+
+- `M2_PLAYERBOT_WORLD_LAYOUT` jest teraz ustawiony na `unified` — takze na
+  serwerach, ktore juz stoja (raz, przy najblizszym starcie). Wczesniej kazde
+  krolestwo dostawalo osobny rdzen, a bot nie potrafi przejsc miedzy rdzeniami:
+  caly front — Dolina Orkow, Pustynia, Sohan, Lochy Pajakow — hostuje rdzen
+  Chunjo, wiec boty Shinsoo i Jinno konczyly na okolicach 36 poziomu i nie mialy
+  gdzie polowac. Przelacznik istnial od 2.0.30 i prawie nikt o nim nie wiedzial:
+  gracze przesylali sobie zrzuty ekranu z linijka do wklejenia do `.env`.
+- Swiat, ktory prosi o wiecej niz 1500 botow, zostaje na `split` — przy takiej
+  liczbie jeden rdzen bylby za wolny. Wlasny wybor w `.env` jest respektowany;
+  zmiana jest jednorazowa i zapisuje `M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1`.
+
+### Poprawki
+
+- **Sortowanie ekwipunku nie zostawia juz slotow, ktorych nie da sie uzyc**
+  (Dearminder). Po „Scal i uporzadkuj" miejsca zwolnione przez sortowanie
+  potrafily zostac dla klienta zajete — nie dalo sie tam nic przeniesc
+  z magazynu, a pomagalo dopiero przelogowanie. Serwer na koniec operacji
+  podaje klientowi jeszcze raz stan kazdej komorki, ktorej dotknal, i
+  sprawdza przy okazji wlasna siatke zajetosci.
+- **Boty nie chomikuja juz medali konnych** (Greess). Bot z koniem na
+  dziesiatym poziomie i powyzej 35 poziomu postaci nie mogl ani wydac medalu
+  (czeka na probe konia bojowego), ani go sprzedac — wiec zbieral je bez konca;
+  jeden z graczy pokazal ponad czterdziesci sztuk w plecaku. Teraz wszystko
+  ponad dwa medale trafia na sklep jak kazdy inny towar.
+
 ## 2.0.84 — 2026-09-19
 
 Serwer 2.0.84 i klient 2.0.19. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe

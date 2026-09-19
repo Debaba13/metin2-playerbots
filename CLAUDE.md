@@ -6572,6 +6572,47 @@ Four things the personalities changed that are easy to trip over later:
   `PickPlayerBotTowerObjective`) is the next step if a war should look less like
   an execution; the escape walk in `HandlePostDeathRecovery` also left some bots
   where they fell (43 deaths on the spot of the previous one).
+- **A bag laid out in one operation is dozens of packets, and the client only
+  has to miss one.** `CHARACTER::SetItem` sends ITEM_DEL for the cell an item
+  leaves and ITEM_SET for the cell it takes, so `ArrangeInventory` is already
+  correct packet for packet - and "w te ktore staly sie puste w wyniku
+  sortowania juz nie [moge przeniesc] ... wystarczy przelogowac postac"
+  (Dearminder, 19 September) is what it looks like when one of them does not
+  land: a relog is the server saying the whole bag again. So the operation ends
+  by restating every cell it touched (`RestateCell`, a copy of what the server
+  holds - ITEM_SET or ITEM_DEL, never a state of its own) and counts the empty
+  cells the engine's own `bItemGrid` still calls taken, which is what
+  `GetEmptyInventory` reads and therefore what a safebox checkout, a purchase
+  and a pickup all ask. Note the numbering while reading either side: header 20
+  is `HEADER_GC_ITEM_DEL` to the server and `HEADER_GC_ITEM_SET` (the short
+  struct, no flags) to the client, and 21 is `HEADER_GC_ITEM_SET` to the server
+  and `HEADER_GC_ITEM_SET2` to the client - the structures match pairwise, so
+  the wire is sound and only the names disagree.
+- **A medal nobody may spend is a medal nobody may sell, unless something says
+  so.** `CanPlayerBotSellHorseMedals` wanted a level *under* the next horse
+  milestone, and a battle-horse candidate - a horse at exactly ten, level
+  thirty-five or more - is past it by definition while `CanPlayerBotAdvanceHorse`
+  forbids it to spend one (an eleventh level can never be undone). Both halves
+  refused, so the bag filled for ever: "10 lv konia, ponad 40 medali w plecaku"
+  (Greess, 19 September), and on the test world 37 627 medals in 2 104 bag
+  stacks against 5 346 on the counters, 478 bots holding more than two.
+  `PLAYERBOT_HORSE_MEDAL_KEEP` (two, for the ladder that starts again after the
+  trial) is what stays; everything over it is goods, and
+  `GetPlayerBotStallBaseKeep` leaves that much in the base stack so the cut
+  lines agree - the medal dropper keeps one, being the medal shop. Any rule of
+  the shape "may spend" beside one of the shape "may sell" wants reading
+  together: the pair can refuse both ways at once.
+- **Split is the level wall, and it was a switch almost nobody knew of.**
+  `M2_PLAYERBOT_WORLD_LAYOUT` has offered `unified` since 2.0.30, and on
+  19 September players were passing each other screenshots of the line to paste
+  into `.env` by hand while Shinsoo and Jinno stopped at thirty-six
+  (Hiob to LIGI VAN ASTREA; Iwakura: "unified powinno byc domyslnie tbh"). It is
+  the default since 2.0.85, for a new install and - once, the way the three
+  kingdoms were - for one that already stands: `Assert-WorldLayoutDefault`
+  (start-server.ps1) and `migrate_world_layout` (update.sh) write it with
+  `M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1`, so a later `split` is the operator's
+  and is kept. A world asking for more than 1500 bots is left on `split`: one
+  core carrying everything was measured at 9.4 s of every 60 at that size.
 - **An open safebox blocked every move in the bag, and its packets carry no
   count.** blasty's proposal of 19 September (Tieru: "Jasne"): the bag's
   "Scal i uporzadkuj" for the safebox, and a stack split or poured across the
