@@ -6590,7 +6590,9 @@ Four things the personalities changed that are easy to trip over later:
   against `INVENTORY_DEFAULT_MAX_NUM` instead, every bot without the full four
   pages reads as having half a page of holes, and the first run of this said
   314 of 566 bags were broken when none of them was. The point you verify must
-  be the point the engine samples, for a count as much as for a coordinate. Note the numbering while reading either side: header 20
+  be the point the engine samples, for a count as much as for a coordinate.
+  Measured right: 601 sorts on the test world and not one cell out of step, so
+  the server's grid is sound and the client is what had to be told again. Note the numbering while reading either side: header 20
   is `HEADER_GC_ITEM_DEL` to the server and `HEADER_GC_ITEM_SET` (the short
   struct, no flags) to the client, and 21 is `HEADER_GC_ITEM_SET` to the server
   and `HEADER_GC_ITEM_SET2` to the client - the structures match pairwise, so
