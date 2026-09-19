@@ -1437,6 +1437,7 @@ def main(root):
     apply_safebox_hands(game)
     apply_safebox_commands(game)
     apply_channel_connection(game)
+    apply_player_struck(game)
     print('playerbotify: done')
 
 
@@ -4218,6 +4219,36 @@ def apply_channel_connection(game):
          '\ts_stChannelSqlDb = db_db[COMMON_SQL_INDEX];\n'
          '\ts_iChannelSqlPort = mysql_db_port[COMMON_SQL_INDEX];\n',
          marker='s_stChannelSqlHost = db_host[COMMON_SQL_INDEX];')
+
+
+def apply_player_struck(game):
+    # Iwakura's Anti-PK protocol (playerbot_anti_pk.h): a bot struck by a
+    # player fights back, and its party answers for it. The engine keeps no
+    # record of who struck a player - m_dwKillerPID is private and set only at
+    # the moment of death - so CHARACTER::Damage tells the manager, for a
+    # player's blow at a bot or at a person in a party (a party with bots in
+    # it answers for its person). Placed after the system damage's own return
+    # (poison ticks and the like carry no fight) and before anything that
+    # could turn the blow away: a blow aimed is a blow taken, whatever the
+    # dodge. A monster's blow and a player's blow at a monster fail the first
+    # two tests, so the hot path pays two comparisons.
+    p = os.path.join(game, 'char_battle.cpp')
+    edit(p,
+         '#include "char_ai.h"\n',
+         '#include "char_ai.h"\n'
+         '#include "playerbot_manager.h"\n',
+         marker='#include "char_ai.h"\n#include "playerbot_manager.h"\n')
+    edit(p,
+         '\tif (DAMAGE_TYPE_MAGIC == type && pAttacker)\n',
+         '\t// Playerbot: a player\'s blow at a bot, or at a person in a party, is\n'
+         '\t// told to the manager - the Anti-PK protocol\'s only way of knowing who\n'
+         '\t// attacks a bot (playerbotify apply_player_struck).\n'
+         '\tif (pAttacker && pAttacker != this && pAttacker->IsPC() && IsPC() && GetDesc() &&\n'
+         '\t\t\t(GetDesc()->IsBot() || GetParty()))\n'
+         '\t\tCPlayerBotManager::instance().OnPlayerStruck(this, pAttacker);\n'
+         '\n'
+         '\tif (DAMAGE_TYPE_MAGIC == type && pAttacker)\n',
+         marker='\t// Playerbot: a player\'s blow at a bot, or at a person in a party, is\n')
 
 
 if __name__ == '__main__':

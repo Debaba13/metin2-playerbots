@@ -198,6 +198,10 @@ namespace
 		std::set<DWORD> wanted;
 		CollectPlayerBotWantedMaterials(ch, wanted);
 
+		// Ground a capitulation gave up is not chosen for as long as it is
+		// given up (the Anti-PK protocol, playerbot_anti_pk.h).
+		TPlayerBotAIStateMap::const_iterator ownState = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+
 		int bestScore = INT_MIN;
 		size_t best = 0;
 		bool bFound = false;
@@ -207,6 +211,9 @@ namespace
 			if (i == excludeIndex || level < hub.bMinLevel || level > hub.bMaxLevel)
 				continue;
 			if (hub.bNeedsParty && !bLeadsParty)
+				continue;
+			if (ownState != s_mapPlayerBotAIStates.end() &&
+					IsPlayerBotAvoidedSpot(ownState->second, ch->GetMapIndex(), hub.x, hub.y, dwNow))
 				continue;
 			// A boss hub is worth going to while the boss stands, and nothing when
 			// he is down; the crowd already on him is not a reason to stay away.
@@ -631,8 +638,11 @@ namespace
 				if (partyCamps == NULL || campTotal <= 0)
 					return;
 				int campChoices[16];
-				const int campCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
+				int campCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
 						partyCamps, campTotal, campChoices, 16);
+				// Not the ground a capitulation gave up (playerbot_anti_pk.h).
+				campCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), partyCamps,
+						campChoices, campCount, dwNow);
 				if (campCount <= 0)
 					return;
 
@@ -683,8 +693,10 @@ namespace
 				int hubChoices[64];
 				// The active herb row's level while its monster is wanted, the
 				// bot's own otherwise (GetPlayerBotVillageHuntLevel).
-				const int hubCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
+				int hubCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
 						hubs, hubTotal, hubChoices, 64);
+				hubCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), hubs,
+						hubChoices, hubCount, dwNow);
 				if (hubCount <= 0)
 					return;
 				int hubIdx = hubChoices[((pid / 2) + state.uMetinHotspotIndex) % hubCount];
@@ -772,8 +784,10 @@ namespace
 				// outgrown-prey rule in the combat policy is what lets them leave.
 				const TPlayerBotVillageHub* hubs = ground->hubs;
 				int hubChoices[32];
-				const int hubCount = CollectPlayerBotM2HubsForLevel(ch->GetLevel(),
+				int hubCount = CollectPlayerBotM2HubsForLevel(ch->GetLevel(),
 						hubs, (int)ground->hubCount, hubChoices, 32);
+				hubCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), hubs,
+						hubChoices, hubCount, dwNow);
 				if (hubCount <= 0)
 					return;
 				const size_t hubIndex =

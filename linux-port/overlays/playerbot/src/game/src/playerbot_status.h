@@ -332,6 +332,21 @@ namespace
 			snprintf(status, statusSize, "%sOdpoczywam po smierci", prefix);
 			return;
 		}
+		// The two habits of a SLABY mood (playerbot_persona.h): a player
+		// looking at a bot standing still is told why.
+		{
+			const DWORD now = get_dword_time();
+			if (state.persona.dwAfkUntil != 0 && now < state.persona.dwAfkUntil)
+			{
+				snprintf(status, statusSize, "%sAFK - zaraz wracam", prefix);
+				return;
+			}
+			if (state.persona.dwPauseUntil != 0 && now < state.persona.dwPauseUntil)
+			{
+				snprintf(status, statusSize, "%sChwila przerwy", prefix);
+				return;
+			}
+		}
 
 		LPCHARACTER target = state.dwTargetVID != 0
 				? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
@@ -376,6 +391,33 @@ namespace
 								target->GetName());
 					else if (distance > range)
 						snprintf(status, statusSize, "%sGonie %s", prefix, target->GetName());
+					else
+						snprintf(status, statusSize, "%sWalcze z %s", prefix, target->GetName());
+				}
+				else if (target && target->IsPC())
+				{
+					// A player: the Anti-PK protocol says why (playerbot_anti_pk.h);
+					// otherwise a duel or a war, which this line used to call
+					// "looking for an opponent" in the middle of the fight.
+					if (state.persona.dwFoeVID == (DWORD)target->GetVID())
+						switch (state.persona.bFoeReason)
+						{
+							case BOT_FOE_STRUCK:
+								snprintf(status, statusSize, "%sBronie sie przed %s", prefix, target->GetName());
+								break;
+							case BOT_FOE_PARTY:
+								snprintf(status, statusSize, "%sBronie druzyny przed %s", prefix, target->GetName());
+								break;
+							case BOT_FOE_GRUDGE:
+								snprintf(status, statusSize, "%sWracam po rewanz na %s", prefix, target->GetName());
+								break;
+							case BOT_FOE_STONE_RIVAL:
+								snprintf(status, statusSize, "%sOdganiam %s od Metina", prefix, target->GetName());
+								break;
+							default:
+								snprintf(status, statusSize, "%sWalcze z %s", prefix, target->GetName());
+								break;
+						}
 					else
 						snprintf(status, statusSize, "%sWalcze z %s", prefix, target->GetName());
 				}
@@ -693,9 +735,15 @@ namespace
 			return;
 		}
 
+		// Under Iwakura's personalities the title is the one that claims the
+		// bot now, at PERSONA_TITLE_BASE + its id: a client that does not know
+		// those ids draws nothing, rather than an old personality's name.
+		const unsigned int titleId = (IsPlayerBotPersonaEnabled() && state.persona.bRestored)
+				? playerbot_persona::PERSONA_TITLE_BASE + (unsigned int)state.persona.bPersona
+				: (unsigned int)state.bPersonality;
 		char command[64];
 		int commandLen = snprintf(command, sizeof(command), "PlayerBotTitle %u %u",
-				(unsigned int)ch->GetVID(), (unsigned int)state.bPersonality);
+				(unsigned int)ch->GetVID(), titleId);
 		if (commandLen <= 0 || commandLen >= (int)sizeof(command))
 			return;
 		++commandLen;   // the trailing NUL every chat packet carries

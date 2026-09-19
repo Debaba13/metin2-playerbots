@@ -5,6 +5,7 @@
 #include "playerbot_world_rules.h"
 #include "playerbot_event_rules.h"
 #include "playerbot_stall_rules.h"
+#include "playerbot_persona_rules.h"
 
 #include "char.h"
 #include "skill.h"
@@ -80,10 +81,14 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_types.h"
 #include "playerbot_price_tables.h"
 #include "playerbot_item_tiers.h"
+#include "playerbot_persona_tables.h"
 #include "playerbot_weapon_atlas.h"
 #include "playerbot_log.h"
 #include "playerbot_config.h"
 #include "playerbot_events.h"
+// Iwakura's Bot Mood System: the moods and the notes the loot, the chests,
+// the fishing and the blacksmith send it - early, so any of them may.
+#include "playerbot_mood.h"
 #include "playerbot_swing_timing.h"
 #include "playerbot_navigation.h"
 #include "playerbot_world_memory.h"
@@ -104,6 +109,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_bonus.h"
 #include "playerbot_travel.h"
 #include "playerbot_planner.h"
+// Which of Iwakura's personalities claims a bot, the Grinder's lock and the
+// Law of Advancement, and SLABY's pause and stop.
+#include "playerbot_persona.h"
 #include "playerbot_guild.h"
 // Iwakura's names for a counter and the rules that pick one - pure, and asked
 // by the town for a stand's name - then, after the town, what a real counter's
@@ -111,6 +119,8 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 // asking price.
 #include "playerbot_shop_name_rules.h"
 #include "playerbot_town.h"
+// Iwakura's gambler: the session a town visit turns into at its end.
+#include "playerbot_gambler.h"
 #include "playerbot_shop_signs.h"
 #include "playerbot_offline_shop.h"
 #include "playerbot_itemshop.h"
@@ -124,6 +134,9 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 #include "playerbot_status.h"
 #include "playerbot_targeting.h"
 #include "playerbot_guild_war.h"
+// Iwakura's Anti-PK protocol and the stone hunter: the war's fight, turned on
+// whoever struck the bot or is breaking its stone for another kingdom.
+#include "playerbot_anti_pk.h"
 #include "playerbot_demon_tower.h"
 #include "playerbot_lure.h"
 #include "playerbot_admin.h"
@@ -383,14 +396,24 @@ namespace
 	// operator's medal droppers once that cohort is switched off or given a
 	// higher level (CPlayerBotManager::SpawnMedalDropperCohort), since nothing
 	// else would ever take it off.
-	void ManagePlayerBotExpLock(LPCHARACTER ch, const TPlayerBotAIState& state)
+	void ManagePlayerBotExpLock(LPCHARACTER ch, TPlayerBotAIState& state)
 	{
 		if (!ch)
 			return;
 		BYTE lockLevel = GetPlayerBotExpLockLevel(state.bPersonality);
 		// The operator's medal droppers stop where the operator said.
-		if (CPlayerBotManager::instance().IsMedalDropperCohortPID(ch->GetPlayerID()))
+		const bool cohort = CPlayerBotManager::instance().IsMedalDropperCohortPID(ch->GetPlayerID());
+		// Under Iwakura's personalities everybody else holds where its Grinder
+		// holds (GetPlayerBotPersonaLockLevel) - and nothing is decided before
+		// the bot's quest flags have said where that is, or every spawn would
+		// lift a lock and put it back a few seconds later.
+		const bool persona = !cohort && IsPlayerBotPersonaEnabled();
+		if (persona && !state.persona.bRestored)
+			return;
+		if (cohort)
 			lockLevel = CPlayerBotManager::instance().GetMedalDropperCohortLevel();
+		else if (persona)
+			lockLevel = GetPlayerBotPersonaLockLevel(ch, state);
 		const bool shouldLock = lockLevel != 0 && ch->GetLevel() >= lockLevel;
 #if defined(PLAYERBOT_ENGINE_MT2009)
 		const bool locked = ch->FindAffect(AFFECT_EXP_BLOCK) != NULL;
@@ -405,8 +428,8 @@ namespace
 			return;
 		}
 		ch->AddAffect(AFFECT_EXP_BLOCK, POINT_NONE, 0, 0, INFINITE_AFFECT_DURATION, 0, true, true);
-		sys_log(0, "PLAYERBOT_AI: exp locked for a dropper pid=%u name=%s level=%u lock=%u personality=%u",
-				ch->GetPlayerID(), ch->GetName(), (unsigned)ch->GetLevel(),
+		sys_log(0, "PLAYERBOT_AI: exp locked for a %s pid=%u name=%s level=%u lock=%u personality=%u",
+				persona ? "grinder" : "dropper", ch->GetPlayerID(), ch->GetName(), (unsigned)ch->GetLevel(),
 				(unsigned)lockLevel, (unsigned)state.bPersonality);
 #else
 		// r40250 has no AFFECT_EXP_BLOCK at all - PointChange there knows no
@@ -2054,7 +2077,11 @@ namespace
 				state.dwTownLingerUntil != 0 || IsPlayerBotBesideHumanLeader(ch) ||
 				// waiting for a floor's script in the Demon Tower, or for the
 				// raid to gather on its ground floor (playerbot_demon_tower.h)
-				state.lTowerInstance != 0 || state.dwTowerRaidGuild != 0 || state.bTowerSummoned)
+				state.lTowerInstance != 0 || state.dwTowerRaidGuild != 0 || state.bTowerSummoned ||
+				// away from the keyboard, or pausing between two packs, in a
+				// SLABY mood (playerbot_persona.h): standing still is the point
+				(state.persona.dwAfkUntil != 0 && dwNow < state.persona.dwAfkUntil) ||
+				(state.persona.dwPauseUntil != 0 && dwNow < state.persona.dwPauseUntil))
 		{
 			state.dwLastMeaningfulActivityTime = dwNow;
 			state.lLastX = ch->GetX();
@@ -3250,14 +3277,20 @@ void CPlayerBotManager::OnPlayerLoaded(LPDESC d)
 			state.bBotRole = BOT_ROLE_METIN_HUNTER;
 		else
 			state.bBotRole = BOT_ROLE_MOB_GRINDER;
-		state.bPersonality = GetPlayerBotStablePersonality(
+		state.persona.bDrawnPersonality = GetPlayerBotStablePersonality(
 				d->GetCharacter(), state.bBotRole);
+		// Under Iwakura's personalities the draw is the bot's character, and a
+		// dropper's gives way to the Grinder's tiers (GetPlayerBotCharakter).
+		state.bPersonality = IsPlayerBotPersonaEnabled()
+				? GetPlayerBotCharakter(state.persona.bDrawnPersonality)
+				: state.persona.bDrawnPersonality;
 		// The operator's medal droppers are that and nothing else, whatever
 		// their pid draws: no party role, no stone hunting.
 		if (IsMedalDropperCohortPID(dwPID))
 		{
 			state.bBotRole = BOT_ROLE_MOB_GRINDER;
 			state.bPersonality = BOT_PERSONALITY_MEDAL_DROPPER;
+			state.persona.bDrawnPersonality = BOT_PERSONALITY_MEDAL_DROPPER;
 		}
 		state.bAmbition = GetPlayerBotStableAmbition(
 				d->GetCharacter(), state.bPersonality);
@@ -4066,6 +4099,35 @@ void CPlayerBotManager::Update()
 	// the last tick, and every bot planned below must see the same numbers.
 	RefreshPlayerBotWeights(dwNow);
 	RefreshPlayerBotItemPolicy(dwNow);
+	// The PERSONA switch moved: every bot goes back to the personality it
+	// drew, or on to the character that draw leans to, on this tick - and so
+	// do its ambition and, through ManagePlayerBotExpLock, its lock.
+	{
+		static int s_iPlayerBotPersonaSwitchSeen = -1;
+		const int personaNow = IsPlayerBotPersonaEnabled() ? 1 : 0;
+		if (s_iPlayerBotPersonaSwitchSeen != -1 && s_iPlayerBotPersonaSwitchSeen != personaNow)
+		{
+			unsigned int changed = 0;
+			for (TPlayerBotMap::iterator it = m_mapBots.begin(); it != m_mapBots.end(); ++it)
+			{
+				LPCHARACTER c = it->second ? it->second->GetCharacter() : NULL;
+				TPlayerBotAIStateMap::iterator st = s_mapPlayerBotAIStates.find(it->first);
+				if (!c || st == s_mapPlayerBotAIStates.end() || IsMedalDropperCohortPID(it->first))
+					continue;
+				TPlayerBotAIState& s = st->second;
+				const BYTE want = personaNow ? GetPlayerBotCharakter(s.persona.bDrawnPersonality)
+						: s.persona.bDrawnPersonality;
+				if (s.bPersonality == want)
+					continue;
+				s.bPersonality = want;
+				s.bAmbition = GetPlayerBotStableAmbition(c, want);
+				++changed;
+			}
+			sys_log(0, "PLAYERBOT_PERSONA: switch %s, %u characters changed", personaNow ? "on" : "off", changed);
+		}
+		s_iPlayerBotPersonaSwitchSeen = personaNow;
+	}
+	BeginPlayerBotPersonaCensus(dwNow);
 	ManagePlayerBotNight(dwNow);
 	// The timed events: chest windows, rate windows, "activate now" - and the
 	// notices that go with them (playerbot_events.h).
@@ -4215,6 +4277,8 @@ void CPlayerBotManager::Update()
 			ManagePlayerBotPersonalityTitle(ch, state, dwNow);
 #endif
 		}
+		// Every bot of the pass, before the light/full split halves them.
+		NotePlayerBotPersonaCensus(state, dwNow);
 
 		// Keep expensive decisions staggered over two ticks, but let an already
 		// engaged bot continue its basic combo on the intervening tick.  This makes
@@ -4252,6 +4316,10 @@ void CPlayerBotManager::Update()
 
 		if (!d->IsPhase(PHASE_GAME))
 			continue;
+
+		// The mood's clocks (playerbot_mood.h): its quest flags read once they
+		// have arrived, the rotation, the drought, the end of a lock.
+		AdvancePlayerBotMood(ch, state, dwNow);
 
 #if defined(PLAYERBOT_ENGINE_MT2009)
 		// A bot that asked to be moved to the shop channel for a stand waits in
@@ -4309,6 +4377,12 @@ void CPlayerBotManager::Update()
 		if (ManagePlayerBotGuildWar(ch, state, dwNow))
 			continue;
 
+		// A player who struck the bot, or its party, or is breaking its stone
+		// for another kingdom (playerbot_anti_pk.h): ahead of every errand,
+		// the way a duel is - "natychmiast przerywa swoje dotychczasowe zajecie".
+		if (ManagePlayerBotPersonaFoe(ch, state, dwNow))
+			continue;
+
 		// Before anything that can claim the tick. An open stall is engine state
 		// with a deadline this manager owns, so releasing it must not depend on
 		// which subsystem happens to win the tick - that dependency is why stalls
@@ -4338,6 +4412,14 @@ void CPlayerBotManager::Update()
 		// teleport healthy bots; only 90 seconds without travel, attacks or skills
 		// clears transient state so the next tick can choose a fresh goal.
 		if (ResetPlayerBotIfInactive(ch, state, dwNow))
+			continue;
+
+		// SLABY's stop from the keyboard, between two things and never in the
+		// middle of one (playerbot_persona.h). Below the duel, the war and the
+		// stand's service, which a player away from the keys would not answer
+		// either - but those are a company's, and in company the bot plays
+		// NORMALNY and never goes.
+		if (ManagePlayerBotMoodAfk(ch, state, dwNow))
 			continue;
 
 		if (playerbot_empire_rules::IsKingdomMap(ch->GetMapIndex()) ||
@@ -4563,6 +4645,9 @@ void CPlayerBotManager::Update()
 			continue;
 		RollPlayerBotMetinExpedition(ch, state, dwNow);
 		PlanPlayerBotLongTermGoal(ch, state, dwNow);
+		// Which of Iwakura's personalities claims the bot, and whether its
+		// Grinder has met the Law of Advancement.
+		ManagePlayerBotPersona(ch, state, dwNow);
 
 		// Trigger Town Visit (Full inventory, out of potions, or missing weapon)
 		// Only trigger when NOT in the middle of fighting an active Metin stone!
@@ -4723,8 +4808,13 @@ void CPlayerBotManager::Update()
 			// Item count is not inventory usage: weapons and armour occupy 2-3
 			// vertical cells.  Keep a generous reserve for a high-rate Metin drop and
 			// visit town before no contiguous 3-cell slot remains.
-			const bool bInventoryFull =
-					occupiedGridCells * 100 >= PLAYERBOT_BAG_CELLS * 45 ||
+			// Iwakura's Trader goes at eighty percent ("zapelni sie w co najmniej
+			// 80%"): a break is for what the game makes the bot do, and a bag at
+			// half is not that. No column of three is still a bag that cannot take
+			// a weapon, so it still sends the bot.
+			const bool personaOn = IsPlayerBotPersonaEnabled();
+			const bool bInventoryFull = (personaOn ? IsPlayerBotBagFull(ch)
+					: occupiedGridCells * 100 >= PLAYERBOT_BAG_CELLS * 45) ||
 					ch->GetEmptyInventory(3) < 0;
 			// The same question the planner asked. It used to be a different one:
 			// this counted stacks rather than potions, looked at four red vnums
@@ -4739,9 +4829,14 @@ void CPlayerBotManager::Update()
 			// and NeedsPlayerBotPotions wants the money for the trip, so a bot
 			// that cannot afford potions does not loop between merchants.
 			const bool bNeedsPotions = NeedsPlayerBotPotions(ch);
-			const bool bNeedsRefine = HasPlayerBotRefineOpportunity(ch);
+			// The gambler's session goes to the anvil as the Perfectionist's does
+			// (playerbot_gambler.h).
+			const bool bNeedsRefine = HasPlayerBotRefineOpportunity(ch) ||
+					IsPlayerBotGambling(state, dwNow);
 			const bool bNeedsGearUpgrade = bNeedsCoreGear || NeedsPlayerBotArrows(ch);
-			const bool bNeedsSellRun = CountPlayerBotJunkItems(ch) >= 12;
+			// The Trader's merchant round comes with the eighty percent above,
+			// not with a dozen pieces of junk.
+			const bool bNeedsSellRun = !personaOn && CountPlayerBotJunkItems(ch) >= 12;
 			const bool bNeedsPotionCleanup = HasPlayerBotExcessPotions(ch);
 
 			if (bNeedsProfession || bInventoryFull || bNeedsPotions || bWeaponMissing ||
@@ -4967,6 +5062,11 @@ void CPlayerBotManager::Update()
 			state.dwTargetVID = (DWORD)target->GetVID();
 			ClearPlayerBotRoute(state, true);
 		}
+		// Iwakura's stone hunter (playerbot_anti_pk.h): the stone in sight that
+		// takes the bot off its monster, and the turn on the stone's pack below
+		// 35%. A duel foe is the duel's.
+		if (!(duelFoe && target == duelFoe))
+			ManagePlayerBotPogromcaTarget(ch, state, target, dwNow);
 		const bool bTargetIsDuelFoe = (target != NULL && target == duelFoe);
 		const bool bTargetIsStone = (target && target->IsStone());
 		const bool bTargetIsMonster = (target && target->IsMonster());
@@ -5056,6 +5156,10 @@ void CPlayerBotManager::Update()
 			// after this pack dies. Existing routes are still advanced first inside
 			// ManagePlayerBotWandering; only an idle bot plans a fresh scouting leg.
 			state.dwNextWanderTime = dwNow;
+			// A pack just died: in a SLABY mood the bot stands a few seconds
+			// before it looks for the next one (playerbot_persona.h).
+			if (TakePlayerBotMoodPause(ch, state, dwNow))
+				continue;
 			// Nothing in sight: the one moment a material errand may take the
 			// bot somewhere on purpose instead of the wander picking a hub.
 			if (StartPlayerBotMaterialHunt(ch, state, dwNow))
@@ -5188,6 +5292,7 @@ void CPlayerBotManager::Update()
 		ReportPlayerBotM2Census();
 		ReportPlayerBotPartyCensus();
 	}
+	ReportPlayerBotPersonaCensus();
 
 	// Publish one compact, atomic snapshot per game core. The web panel reads
 	// these files from the shared read-only game-var volume, so it sees the real
@@ -5202,7 +5307,11 @@ void CPlayerBotManager::Update()
 		FILE* snapshot = fopen(tempPath, "wb");
 		if (snapshot)
 		{
-			fprintf(snapshot, "pid\tpersonality\tambition\trole\tin_party\tgoal\taction\tupdated_ms\tmap\tx\ty\thp\tmax_hp\tstatus\n");
+			// The panels read this file by its header since Iwakura's
+			// personalities added four columns (persona, mood, mood_lock,
+			// lock_level - 255 while the PERSONA switch is off); the status text
+			// stays the last column, because it is the one that may hold spaces.
+			fprintf(snapshot, "pid\tpersonality\tambition\trole\tin_party\tgoal\taction\tupdated_ms\tmap\tx\ty\thp\tmax_hp\tpersona\tmood\tmood_lock\tlock_level\tstatus\n");
 			for (TPlayerBotMap::const_iterator statusIt = m_mapBots.begin();
 					statusIt != m_mapBots.end(); ++statusIt)
 			{
@@ -5233,14 +5342,22 @@ void CPlayerBotManager::Update()
 				NotePlayerBotAdminStatus(statusCh->GetPlayerID(), statusText);
 				NotePlayerBotAdminLevel(statusCh);
 
-				fprintf(snapshot, "%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%ld\t%ld\t%ld\t%d\t%d\t%s\n",
+				const bool personaShown = IsPlayerBotPersonaEnabled() && statusState.persona.bRestored;
+				const TPlayerBotPersona& shownPersona = statusState.persona;
+				fprintf(snapshot, "%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%ld\t%ld\t%ld\t%d\t%d\t%u\t%u\t%u\t%u\t%s\n",
 						statusCh->GetPlayerID(), (unsigned int)statusState.bPersonality,
 						(unsigned int)statusState.bAmbition, (unsigned int)statusState.bBotRole,
 						statusCh->GetParty() ? 1U : 0U,
 						(unsigned int)statusState.bLongTermGoal,
 						(unsigned int)statusState.bCurrentAction, (unsigned int)dwNow,
 						statusCh->GetMapIndex(), statusCh->GetX(), statusCh->GetY(),
-						statusCh->GetHP(), statusCh->GetMaxHP(), statusText);
+						statusCh->GetHP(), statusCh->GetMaxHP(),
+						personaShown ? (unsigned int)shownPersona.bPersona : playerbot_persona::PERSONA_NONE,
+						personaShown ? (unsigned int)shownPersona.mood.mood : playerbot_persona::PERSONA_NONE,
+						personaShown && playerbot_persona::IsMoodLocked(shownPersona.mood)
+							? (unsigned int)shownPersona.mood.lockKind : 0U,
+						personaShown && !shownPersona.bAdvanced ? (unsigned int)shownPersona.bLockLevel : 0U,
+						statusText);
 			}
 			fflush(snapshot);
 			fclose(snapshot);
@@ -5361,6 +5478,14 @@ void CPlayerBotManager::OnGuildInvite(CGuild* guild, LPCHARACTER inviter, LPCHAR
 	if (!guild || !invitee || !IsRegisteredBotPID(invitee->GetPlayerID()))
 		return;
 	AcceptPlayerBotGuildInvite(invitee, guild, inviter);
+}
+
+// A player's blow at a bot, or at a person in a party (CHARACTER::Damage,
+// mt2009 via playerbotify.py): the one thing the engine does not remember
+// about a fight, and the one the Anti-PK protocol needs (playerbot_anti_pk.h).
+void CPlayerBotManager::OnPlayerStruck(LPCHARACTER victim, LPCHARACTER attacker)
+{
+	NotePlayerBotStruck(victim, attacker, get_dword_time());
 }
 
 // --- The F10 bot-admin window -----------------------------------------------

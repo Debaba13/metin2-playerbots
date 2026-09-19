@@ -299,6 +299,38 @@ BOT_PERSONALITY_LABELS = {
         9: "M2 Bestial dropper", 10: "Medal dropper",
     },
 }
+# The status file's columns before Iwakura's personalities (2.0.85): a core of
+# that age writes these fourteen and no header row the parser can read by.
+PLAYERBOT_STATUS_LEGACY_COLUMNS = (
+    "pid", "personality", "ambition", "role", "in_party", "goal", "action",
+    "updated_ms", "map", "x", "y", "hp", "max_hp", "status",
+)
+# playerbot_persona::PERSONA_NONE: what the persona and mood columns carry
+# while the PERSONA switch is off.
+PLAYERBOT_PERSONA_NONE = 255
+# Iwakura's personalities, "SYSTEM OSOBOWOSCI v2.0" (playerbot_persona_rules.h,
+# EPersona - the order is the interface). Under the switch the bot's old
+# personality is its character, shown beside these.
+BOT_PERSONA_LABELS = {
+    "pl": {
+        0: "Grinder", 1: "Zdobywca", 2: "Handlarz", 3: "Hazardzista",
+        4: "Perfekcjonista", 5: "Pogromca metinów", 6: "Górnik", 7: "Rybak",
+        8: "Najemnik", 9: "Towarzysz",
+    },
+    "en": {
+        0: "Grinder", 1: "Conqueror", 2: "Trader", 3: "Gambler",
+        4: "Perfectionist", 5: "Metin slayer", 6: "Miner", 7: "Fisherman",
+        8: "Mercenary", 9: "Companion",
+    },
+}
+BOT_MOOD_LABELS = {
+    "pl": {0: "Słaby", 1: "Normalny", 2: "Bardzo dobry"},
+    "en": {0: "Poor", 1: "Normal", 2: "Very good"},
+}
+BOT_MOOD_LOCK_LABELS = {
+    "pl": {1: "euforia po ulepszeniu", 2: "kapitulacja (Anty-PK)"},
+    "en": {1: "refine euphoria", 2: "capitulation (anti-PK)"},
+}
 # The droppers (IsPlayerBotDropper in playerbot_types.h). A dropper farms one
 # thing for the market and takes neither the Biologist nor a horse trial -
 # the operator's rule of 15 September - so its Biologist card reads "does not
@@ -377,11 +409,18 @@ def read_playerbot_live_status():
             try:
                 # The r40250 core and Polish locale tables use Windows-1250.
                 with open(path, "r", encoding="cp1250", errors="replace") as stream:
+                    header = None
                     for line in stream:
+                        # By the header, since Iwakura's personalities added
+                        # columns (persona, mood, mood_lock, lock_level); a
+                        # core from before them writes the old fourteen, and
+                        # the status text is the last column in both.
                         if line.startswith("pid\t"):
+                            header = line.rstrip("\r\n").split("\t")
                             continue
-                        parts = line.rstrip("\r\n").split("\t", 13)
-                        if len(parts) != 14:
+                        columns = header or PLAYERBOT_STATUS_LEGACY_COLUMNS
+                        parts = line.rstrip("\r\n").split("\t", len(columns) - 1)
+                        if len(parts) != len(columns) or columns[-1] != "status":
                             skipped += 1
                             continue
                         # One bad row costs one row.
@@ -394,19 +433,28 @@ def read_playerbot_live_status():
                         # the other panel, which is what a truncated parse looks
                         # like from the outside.
                         try:
-                            values = [int(value) for value in parts[:13]]
+                            row = {name: int(value) for name, value in zip(columns[:-1], parts[:-1])}
                         except ValueError:
                             skipped += 1
                             continue
-                        pid = values[0]
+                        if "pid" not in row:
+                            skipped += 1
+                            continue
+                        pid = row["pid"]
+                        persona = row.get("persona", PLAYERBOT_PERSONA_NONE)
+                        mood = row.get("mood", PLAYERBOT_PERSONA_NONE)
                         result[pid] = {
-                            "pid": pid, "personality_id": values[1],
-                            "ambition_id": values[2], "role": values[3],
-                            "in_pt": bool(values[4]), "goal_id": values[5],
-                            "action_id": values[6], "updated_ms": values[7],
-                            "map_index": values[8], "x": values[9], "y": values[10],
-                            "hp": values[11], "max_hp": values[12],
-                            "status": parts[13],
+                            "pid": pid, "personality_id": row.get("personality", 0),
+                            "ambition_id": row.get("ambition", 0), "role": row.get("role", 0),
+                            "in_pt": bool(row.get("in_party", 0)), "goal_id": row.get("goal", 0),
+                            "action_id": row.get("action", 0), "updated_ms": row.get("updated_ms", 0),
+                            "map_index": row.get("map", 0), "x": row.get("x", 0), "y": row.get("y", 0),
+                            "hp": row.get("hp", 0), "max_hp": row.get("max_hp", 0),
+                            "persona_id": None if persona == PLAYERBOT_PERSONA_NONE else persona,
+                            "mood_id": None if mood == PLAYERBOT_PERSONA_NONE else mood,
+                            "mood_lock": row.get("mood_lock", 0),
+                            "lock_level": row.get("lock_level", 0),
+                            "status": parts[-1],
                         }
             except OSError:
                 continue
@@ -443,18 +491,43 @@ def localize_playerbot_status(entry, language):
         entry.get("action_id"), BOT_ACTION_LABELS["en"][0])
 
 
+def playerbot_mood_label(entry, language):
+    """ "Słaby", or "Bardzo dobry (euforia po ulepszeniu)" while a lock holds;
+    "" while the PERSONA switch is off."""
+    mood = entry.get("mood_id") if entry else None
+    if mood is None:
+        return ""
+    text = BOT_MOOD_LABELS[language].get(mood, BOT_MOOD_LABELS[language][1])
+    lock = BOT_MOOD_LOCK_LABELS[language].get(entry.get("mood_lock") or 0)
+    return "%s (%s)" % (text, lock) if lock else text
+
+
 def playerbot_live_labels(entry, language):
     language = language if language in ("pl", "en") else "en"
     if not entry:
         return {
             "personality": BOT_PERSONALITY_LABELS[language][0],
+            "charakter": "",
+            "mood": "",
+            "hold": "",
             "ambition": BOT_AMBITION_LABELS[language][0],
             "goal": BOT_GOAL_LABELS[language][0],
             "action": BOT_ACTION_LABELS[language][0],
         }
+    old = BOT_PERSONALITY_LABELS[language].get(
+        entry.get("personality_id"), BOT_PERSONALITY_LABELS[language][0])
+    persona = entry.get("persona_id")
+    # Under Iwakura's personalities the one that claims the bot now is its
+    # personality, and the draw it has had since login is its character.
+    personality = BOT_PERSONA_LABELS[language].get(persona, old) if persona is not None else old
+    hold = ""
+    if persona is not None and entry.get("lock_level"):
+        hold = ("blokada expa na %d lvl" if language == "pl" else "exp held at level %d") % entry["lock_level"]
     return {
-        "personality": BOT_PERSONALITY_LABELS[language].get(
-            entry.get("personality_id"), BOT_PERSONALITY_LABELS[language][0]),
+        "personality": personality,
+        "charakter": old if persona is not None else "",
+        "mood": playerbot_mood_label(entry, language),
+        "hold": hold,
         "ambition": BOT_AMBITION_LABELS[language].get(
             entry.get("ambition_id"), BOT_AMBITION_LABELS[language][0]),
         "goal": BOT_GOAL_LABELS[language].get(
@@ -1048,6 +1121,9 @@ def read_ai_weights():
     vals["TOWER"] = 1
     # The bots' ItemShop purchases (playerbot_itemshop.h). On.
     vals["ISHOP"] = 1
+    # Iwakura's personalities and moods (playerbot_persona.h). On: the operator
+    # asked for them (19 September); off is the world as it was before.
+    vals["PERSONA"] = 1
     vals["SCRAP"] = 0
     # Percent of bots that rest on the market ring after a town errand; 100 is
     # the author's town, 0 is "every bot hunting".
@@ -1090,6 +1166,9 @@ def read_ai_weights():
                     continue
                 if name == "ISHOP":
                     vals["ISHOP"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                    continue
+                if name == "PERSONA":
+                    vals["PERSONA"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
                     continue
                 if name == "SCRAP":
                     try:
@@ -1161,6 +1240,8 @@ def write_ai_weights(vals):
     body.append("TOWER\t%d" % (1 if vals.get("TOWER", 1) else 0))
     # Not a weight: whether the bots cash their vouchers and buy in the ItemShop.
     body.append("ISHOP\t%d" % (1 if vals.get("ISHOP", 1) else 0))
+    # Not a weight: Iwakura's personalities, moods and the Grinder's locks.
+    body.append("PERSONA\t%d" % (1 if vals.get("PERSONA", 1) else 0))
     # Percent of stall keepers that sell scrap gear; 0 is off.
     body.append("SCRAP\t%d" % max(0, min(100, int(vals.get("SCRAP", 0)))))
     # Percent of bots that rest in town after an errand; 0 means nobody does.
@@ -3397,6 +3478,12 @@ T.update({
                   "de":"Ein Bot löst die gefundenen Kupon-SM-Gutscheine (Metinsteine und Bosse lassen sie fallen, M2_DRAGON_COIN_*_PERMILLE) in Drachenmünzen seines Kontos ein und kauft höchstens einmal pro Stunde nur, was seine eigenen Regeln nutzen: einen Kamień Duchowy für eine Großmeister-Fertigkeit, einen Bonus-Wechselstein für die getragene Waffe, wenn sie noch neu gewürfelt würde, mit Drachenmarken eine Segensrolle oder die Angriffstränke des Drachengottes, und jeder vierte Bot einmal eine Frisur. Keine VIP-Gegenstände und kein Pass: jeder Bot hat das Premium-Abo bereits. Aus: die Gutscheine bleiben im Inventar.",
                   "tr":"Bot bulduğu Kupon SM kuponlarını (Metin taşları ve boss'lar düşürür, M2_DRAGON_COIN_*_PERMILLE) hesabının Ejderha Parasına çevirir ve saatte en fazla bir kez, yalnızca kendi kurallarının kullanacağı şeyi alır: Büyük Usta becerisi için Kamień Duchowy, hâlâ yeniden atılmaya değer takılı silah için bonus değiştirme taşı, Ejderha İşaretleriyle Kutsama Parşömeni ya da Ejderha Tanrısı saldırı iksirleri ve dört bottan biri bir kez bir saç modeli. VIP eşya ve geçiş kartı yok: her bot zaten premium aboneliğe sahip. Kapalı: kuponlar çantada kalır."},
  "ai_ishop_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_persona":   {"en":"Bot personalities (Iwakura v2)","pl":"Osobowości botów (Iwakura v2)","de":"Bot-Persönlichkeiten (Iwakura v2)","tr":"Bot kişilikleri (Iwakura v2)"},
+ "ai_persona_help": {"en":"Iwakura's personality system. A bot's personality follows its situation (Grinder, Conqueror, Trader, Gambler, Perfectionist, Metin slayer, Miner, Fisherman, Mercenary, Companion) and it has a mood (poor, normal, very good) shown on its card. A Grinder holds its level at its tier (15, 23, 30-35, 40-48, 55-62) until it wears a weapon +7, an armour +6 and a shield +6 for its level, and only then may level on as a Conqueror. A bot in a poor mood pauses between packs and goes AFK now and then; only such bots rest in town. Off: the bots play as they did before, with their old personalities.",
+                  "pl":"System osobowości Iwakury. Osobowość bota wynika z jego sytuacji (Grinder, Zdobywca, Handlarz, Hazardzista, Perfekcjonista, Pogromca metinów, Górnik, Rybak, Najemnik, Towarzysz), a bot ma nastrój (słaby, normalny, bardzo dobry) widoczny na jego karcie. Grinder trzyma poziom swojego tieru (15, 23, 30-35, 40-48, 55-62), dopóki nie założy broni +7, zbroi +6 i tarczy +6 na swój poziom - dopiero wtedy może dalej expić jako Zdobywca. Bot w słabym nastroju robi przerwy między grupami mobów i co jakiś czas odchodzi od komputera; tylko takie boty odpoczywają w mieście. Wyłączone: boty grają jak wcześniej, ze starymi osobowościami.",
+                  "de":"Iwakuras Persönlichkeitssystem. Die Persönlichkeit eines Bots folgt seiner Lage (Grinder, Eroberer, Händler, Spieler, Perfektionist, Metinjäger, Bergmann, Fischer, Söldner, Gefährte), und er hat eine Stimmung (schlecht, normal, sehr gut), die auf seiner Karte steht. Ein Grinder hält die Stufe seines Tiers (15, 23, 30-35, 40-48, 55-62), bis er eine Waffe +7, eine Rüstung +6 und einen Schild +6 für seine Stufe trägt, und erst dann darf er als Eroberer weiterleveln. Ein Bot in schlechter Stimmung macht Pausen zwischen den Gruppen und ist ab und zu AFK; nur solche Bots ruhen in der Stadt. Aus: die Bots spielen wie früher, mit ihren alten Persönlichkeiten.",
+                  "tr":"Iwakura'nın kişilik sistemi. Bir botun kişiliği durumuna göre değişir (Grinder, Fatih, Tüccar, Kumarbaz, Mükemmeliyetçi, Metin avcısı, Madenci, Balıkçı, Paralı asker, Yoldaş) ve kartında görünen bir ruh hali vardır (kötü, normal, çok iyi). Bir Grinder, seviyesine uygun +7 silah, +6 zırh ve +6 kalkan giyene kadar kademesinin seviyesinde (15, 23, 30-35, 40-48, 55-62) kalır, ancak ondan sonra Fatih olarak seviye atlayabilir. Kötü ruh halindeki bot gruplar arasında durur ve ara sıra AFK olur; yalnızca bu botlar şehirde dinlenir. Kapalı: botlar eski kişilikleriyle önceki gibi oynar."},
+ "ai_persona_on": {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
  "ai_experimental": {"en":"experimental","pl":"eksperymentalne","de":"experimentell","tr":"deneysel"},
  "ai_scrap":     {"en":"Scrap keepers","pl":"Boty złomiarze","de":"Schrotthändler-Bots","tr":"Hurdacı botlar"},
  "ai_scrap_help":{"en":"The share of stall keepers that put their low refines (+0 to +3) on the counter, cheaply, instead of vendoring them - fodder for burning at the blacksmith, the way the hard servers play. Off by default.",
@@ -3406,10 +3493,10 @@ T.update({
  "ai_scrap_off": {"en":"off","pl":"wyłączone","de":"aus","tr":"kapalı"},
  "ai_scrap_all": {"en":"every keeper","pl":"każdy straganiarz","de":"jeder Händler","tr":"her tezgâhçı"},
  "ai_rest":      {"en":"Resting in town","pl":"Odpoczynek w mieście","de":"Ausruhen in der Stadt","tr":"Şehirde dinlenme"},
- "ai_rest_help": {"en":"The share of bots that stay on the market ring for about three minutes after finishing their business in the first village, strolling between the stalls. 0 - nobody rests: the bots hunt all the time and only come to town on errands. Whatever the slider says, a bot under level 18 never rests, and with no stall open nobody browses stalls.",
-                  "pl":"Udział botów, które po załatwieniu spraw w pierwszej wiosce zostają na rynku około trzech minut i spacerują między straganami. 0 - nikt nie odpoczywa: boty cały czas expią, a do miasta przychodzą tylko w sprawach. Niezależnie od suwaka bot poniżej 18 poziomu nie odpoczywa nigdy, a bez wystawionego straganu nikt nie ogląda straganów.",
-                  "de":"Anteil der Bots, die nach erledigten Besorgungen im ersten Dorf rund drei Minuten auf dem Marktring bleiben und zwischen den Ständen bummeln. 0 - niemand ruht sich aus: die Bots jagen die ganze Zeit und kommen nur für Besorgungen in die Stadt. Unabhängig vom Regler ruht ein Bot unter Stufe 18 nie, und ohne offenen Stand schaut niemand Stände an.",
-                  "tr":"İlk köydeki işlerini bitirdikten sonra yaklaşık üç dakika pazar halkasında kalıp tezgâhlar arasında dolaşan botların payı. 0 - kimse dinlenmez: botlar sürekli avlanır, şehre yalnızca iş için gelir. Kaydırıcı ne derse desin 18. seviyenin altındaki bot asla dinlenmez, açık tezgâh yokken kimse tezgâhlara bakmaz."},
+ "ai_rest_help": {"en":"The share of bots that stay on the market ring for about three minutes after finishing their business in the first village, strolling between the stalls. 0 - nobody rests: the bots hunt all the time and only come to town on errands. Whatever the slider says, a bot under level 18 never rests, and with no stall open nobody browses stalls. With the bot personalities on, only bots in a poor mood rest, and the slider is the share of them.",
+                  "pl":"Udział botów, które po załatwieniu spraw w pierwszej wiosce zostają na rynku około trzech minut i spacerują między straganami. 0 - nikt nie odpoczywa: boty cały czas expią, a do miasta przychodzą tylko w sprawach. Niezależnie od suwaka bot poniżej 18 poziomu nie odpoczywa nigdy, a bez wystawionego straganu nikt nie ogląda straganów. Przy włączonych osobowościach botów odpoczywają tylko boty w słabym nastroju, a suwak to ich udział.",
+                  "de":"Anteil der Bots, die nach erledigten Besorgungen im ersten Dorf rund drei Minuten auf dem Marktring bleiben und zwischen den Ständen bummeln. 0 - niemand ruht sich aus: die Bots jagen die ganze Zeit und kommen nur für Besorgungen in die Stadt. Unabhängig vom Regler ruht ein Bot unter Stufe 18 nie, und ohne offenen Stand schaut niemand Stände an. Mit eingeschalteten Bot-Persönlichkeiten ruhen nur Bots in schlechter Stimmung, und der Regler ist ihr Anteil.",
+                  "tr":"İlk köydeki işlerini bitirdikten sonra yaklaşık üç dakika pazar halkasında kalıp tezgâhlar arasında dolaşan botların payı. 0 - kimse dinlenmez: botlar sürekli avlanır, şehre yalnızca iş için gelir. Kaydırıcı ne derse desin 18. seviyenin altındaki bot asla dinlenmez, açık tezgâh yokken kimse tezgâhlara bakmaz. Bot kişilikleri açıkken yalnızca kötü ruh halindeki botlar dinlenir ve kaydırıcı onların payıdır."},
  "ai_rest_off":  {"en":"nobody rests","pl":"nikt nie odpoczywa","de":"niemand ruht","tr":"kimse dinlenmez"},
  "ai_rest_all":  {"en":"every bot","pl":"każdy bot","de":"jeder Bot","tr":"her bot"},
  "ai_kpvp":      {"en":"Hostility between kingdoms","pl":"Wrogość między królestwami","de":"Feindschaft zwischen Königreichen","tr":"Krallıklar arası düşmanlık"},
@@ -5514,6 +5601,11 @@ TPL_AI = BASE.replace("__BODY__", """
   <label><input type="checkbox" name="CHAT" value="1" {% if cur.get('CHAT', 1) %}checked{% endif %}> {{t('ai_chat_on')}}</label>
 </div>
 <div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">🎭 {{t('ai_persona')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_persona_help')}}</p>
+  <label><input type="checkbox" name="PERSONA" value="1" {% if cur.get('PERSONA', 1) %}checked{% endif %}> {{t('ai_persona_on')}}</label>
+</div>
+<div style="margin-bottom:18px">
   <h3 style="margin:0 0 2px">📚 {{t('ai_books')}}</h3>
   <p class="muted" style="margin:0 0 6px">{{t('ai_books_help')}}</p>
   <label><input type="checkbox" name="BOOKS" value="1" {% if cur.get('BOOKS', 1) %}checked{% endif %}> {{t('ai_books_on')}}</label>
@@ -5655,7 +5747,7 @@ MAP_I18N = {
   "solo_bot":"Bot solo","party_bot":"W grupie (PT)","metin_fight":"Walka z Metinem","loading":"Ładowanie...","world_stats":"Statystyki świata","active_bots":"Aktywne boty",
   "in_parties":"W grupach (PT)","avg_level":"Średni poziom","max_level":"Maks. poziom","rankings":"Rankingi botów","rank_level":"Poziom","rank_weapon":"Broń","rank_armor":"Zbroja",
   "rank_weapon30":"Bronie 30 Lv","rank_items":"Przedmioty","rank_horse":"Koń","rank_biologist":"Biolog","rank_hunting":"Polowanie","rank_shops":"Otwarte sklepy","rank_skills":"Umiejętności","rank_plus9":"Przedmiot +9","rank_stall_open":"Stragan otwarty","rank_empty":"Brak danych rankingu.","rank_show":"Pokaż","rank_search":"Szukaj w rankingu...","none":"Brak","items_short":"przedm.",
-  "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","ambition":"Ambicja","current_goal":"Aktualny cel",
+  "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","mood":"Nastrój","charakter":"Charakter","ambition":"Ambicja","current_goal":"Aktualny cel",
   "coordinates":"Koordynaty","open_inventory":"Kliknij, aby otworzyć ekwipunek i EQ","loading_character":"Ładowanie ekwipunku i statystyk postaci","error":"Błąd","not_found":"Nie znaleziono danych",
   "teleport_me":"Teleportuj moją postać w grze (1 klik)","position":"Pozycja","horse":"Koń","biologist":"Biolog","bio_stage":"Etap Biologa","hunting":"Polowanie","no_data":"Brak danych",
   "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.","shop":"Sklep","shop_none":"Ten bot nie ma otwartego sklepu.","shop_empty":"Lada jest pusta.","shop_price":"Cena","shop_premium":"premium","refresh":"Odśwież (dane z bazy)",
@@ -5676,7 +5768,7 @@ MAP_I18N = {
   "solo_bot":"Solo bot","party_bot":"In party (PT)","metin_fight":"Fighting a Metin","loading":"Loading...","world_stats":"World statistics","active_bots":"Active bots",
   "in_parties":"In parties (PT)","avg_level":"Average level","max_level":"Max level","rankings":"Bot rankings","rank_level":"Level","rank_weapon":"Weapon","rank_armor":"Armour",
   "rank_weapon30":"Lv 30 Weapons","rank_items":"Items","rank_horse":"Horse","rank_biologist":"Biologist","rank_hunting":"Hunting","rank_shops":"Open shops","rank_skills":"Skills","rank_plus9":"Item +9","rank_stall_open":"Stall open","rank_empty":"No ranking data.","rank_show":"Show","rank_search":"Search ranking...","none":"None","items_short":"items",
-  "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","ambition":"Ambition","current_goal":"Current goal",
+  "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","mood":"Mood","charakter":"Character","ambition":"Ambition","current_goal":"Current goal",
   "coordinates":"Coordinates","open_inventory":"Click to open inventory and equipment","loading_character":"Loading character equipment and statistics","error":"Error","not_found":"No data found",
   "teleport_me":"Teleport my in-game character (one click)","position":"Position","horse":"Horse","biologist":"Biologist","bio_stage":"Biologist stage","hunting":"Hunting","no_data":"No data",
   "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.","shop":"Shop","shop_none":"This bot has no stall open.","shop_empty":"The counter is empty.","shop_price":"Price","shop_premium":"premium","refresh":"Refresh (from the database)",
@@ -6767,7 +6859,10 @@ function showTooltip(pid, ev) {
   tt.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
                  '<b style="font-size:14px;color:var(--gold2)">' + escapeHtml(bot.name) + '</b> ' + statusBadge + '</div>' +
                  '<div style="color:#ddd;margin-bottom:4px"><b>' + I18N.class + ':</b> ' + escapeHtml(bot.job) + ' &nbsp;|&nbsp; <b>' + I18N.level + ':</b> ' + bot.level + '</div>' +
-                 '<div style="color:#c084fc;margin-bottom:4px"><b>' + I18N.personality + ':</b> ' + escapeHtml(bot.personality) + '</div>' +
+                 '<div style="color:#c084fc;margin-bottom:4px"><b>' + I18N.personality + ':</b> ' + escapeHtml(bot.personality) +
+                   (bot.charakter ? ' <span style="color:#9ca3af">(' + I18N.charakter + ': ' + escapeHtml(bot.charakter) + ')</span>' : '') + '</div>' +
+                 (bot.mood ? '<div style="color:#fbbf24;margin-bottom:4px"><b>' + I18N.mood + ':</b> ' + escapeHtml(bot.mood) +
+                   (bot.hold ? ' &nbsp;|&nbsp; ' + escapeHtml(bot.hold) : '') + '</div>' : '') +
                  '<div style="color:#86efac;margin-bottom:4px"><b>' + I18N.ambition + ':</b> ' + escapeHtml(bot.ambition) + ' &nbsp;|&nbsp; <b>' + I18N.current_goal + ':</b> ' + escapeHtml(bot.goal) + '</div>' +
                  '<div style="color:#ffd700;margin-bottom:4px"><b>' + I18N.action + ':</b> ' + actionStr + '</div>' +
                  '<div style="color:#ddd;margin-bottom:4px"><b>' + I18N.status + ':</b> ' + ptStr + '</div>' +
@@ -7537,8 +7632,13 @@ function openBotModal(pid) {
               '<div><b>HP:</b> <span style="color:#ef4444">' + (p.hp || 0) + '</span> / <b>MP:</b> <span style="color:#38bdf8">' + (p.mp || 0) + '</span></div>' +
               '<div><b>Yang:</b> <span style="color:#eab308;font-weight:700">' + (p.gold || 0).toLocaleString() + '</span></div>' +
               '<div><b>' + I18N.position + ':</b> (' + p.x + ', ' + p.y + ')</div>' +
-              '<div><b>' + I18N.personality + ':</b> <span style="color:#c084fc;font-weight:700">' + escapeHtml(p.personality) + '</span></div>' +
+              '<div><b>' + I18N.personality + ':</b> <span style="color:#c084fc;font-weight:700">' + escapeHtml(p.personality) + '</span>' +
+                (p.charakter ? ' <span style="color:#9ca3af">(' + I18N.charakter + ': ' + escapeHtml(p.charakter) + ')</span>' : '') + '</div>' +
               '<div><b>' + I18N.ambition + ':</b> <span style="color:#86efac;font-weight:700">' + escapeHtml(p.ambition) + '</span></div>' +
+              // Iwakura's Bot Mood System: "Aktualny nastroj powinien byc zawsze
+              // widoczny w panelu danego bota". Empty while the switch is off.
+              (p.mood ? '<div style="grid-column:1 / -1"><b>' + I18N.mood + ':</b> <span style="color:#fbbf24;font-weight:700">' + escapeHtml(p.mood) + '</span>' +
+                (p.hold ? ' &nbsp;|&nbsp; <span style="color:#9ca3af">' + escapeHtml(p.hold) + '</span>' : '') + '</div>' : '') +
               '<div style="grid-column:1 / -1"><b>' + I18N.current_goal + ':</b> <span style="color:#60a5fa;font-weight:700">' + escapeHtml(p.goal) + '</span></div>' +
               '<div style="grid-column:1 / -1"><b>' + I18N.action + ':</b> <span style="color:#ffd700">' + escapeHtml(p.action) + '</span></div>' +
               '<div><b>' + I18N.horse + ':</b> <span style="color:#c084fc;font-weight:700">Lv ' + (p.horse_level || 0) + '</span></div>' +
@@ -12121,6 +12221,9 @@ def api_bot_positions():
                     "is_bot": is_bot,
                     "action": live_labels["action"],
                     "personality": live_labels["personality"],
+                    "charakter": live_labels["charakter"],
+                    "mood": live_labels["mood"],
+                    "hold": live_labels["hold"],
                     "ambition": live_labels["ambition"],
                     "goal": live_labels["goal"],
                     "live": bool(live),
@@ -12158,6 +12261,9 @@ def api_bot_inventory(pid):
                 player["hp"] = live.get("hp", player.get("hp"))
             player["action"] = live_labels["action"]
             player["personality"] = live_labels["personality"]
+            player["charakter"] = live_labels["charakter"]
+            player["mood"] = live_labels["mood"]
+            player["hold"] = live_labels["hold"]
             player["ambition"] = live_labels["ambition"]
             player["goal"] = live_labels["goal"]
             player["live"] = bool(live)
@@ -13136,6 +13242,7 @@ def ai_weights():
         vals["WARS"] = 1 if request.form.get("WARS") else 0
         vals["TOWER"] = 1 if request.form.get("TOWER") else 0
         vals["ISHOP"] = 1 if request.form.get("ISHOP") else 0
+        vals["PERSONA"] = 1 if request.form.get("PERSONA") else 0
         try:
             vals["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", 0))))
         except (TypeError, ValueError):

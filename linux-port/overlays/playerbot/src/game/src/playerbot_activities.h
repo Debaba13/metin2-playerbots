@@ -35,9 +35,25 @@ namespace
 		return PLAYERBOT_HORSE_REQUIRED_LEVEL;
 	}
 
+	// Iwakura's Jezdziec: a Grinder wants a horse for its speed and no more
+	// ("odebrac konia na 1. poziomie - zalezy mu tylko na szybkosci
+	// przemieszczania sie"), and the medals after the first are stock for a
+	// counter; a Conqueror raises it to eleven and twenty-one, the horse it
+	// fights from. A dropper keeps its own rules.
+	bool IsPlayerBotGrinderRider(LPCHARACTER ch)
+	{
+		if (!ch || !IsPlayerBotPersonaEnabled())
+			return false;
+		TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+		return it != s_mapPlayerBotAIStates.end() && it->second.persona.bRestored &&
+				!it->second.persona.bAdvanced && !IsPlayerBotDropper(it->second.bPersonality);
+	}
+
 	bool CanPlayerBotAdvanceHorse(LPCHARACTER ch)
 	{
 		if (!ch || ch->GetHorseLevel() >= 21)
+			return false;
+		if (ch->GetHorseLevel() >= 1 && IsPlayerBotGrinderRider(ch))
 			return false;
 		// A horse at exactly ten is what the battle horse trial asks for, and one
 		// more medal makes it eleven - after which no medal, quest or NPC in this
@@ -265,12 +281,57 @@ namespace
 		return GetPlayerBotProtoLevelLimit(proto) <= (int)ch->GetLevel();
 	}
 
+	// Iwakura's Rybak, while the PERSONA switch is on: from level thirty, never
+	// in a party ("jesli bot jest w PT nie powinien lowic"), for the hour a
+	// capitulation sent it to the water, and otherwise by its mood - a SLABY
+	// bot very likely gives up the grind for the bank, a NORMALNY one now and
+	// then, and a BARDZO DOBRY one does not. Rolled once per window per bot.
+	bool IsPlayerBotRybakNow(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (!ch || ch->GetParty() || (int)ch->GetLevel() < playerbot_persona::PK_FISHING_MIN_LEVEL)
+			return false;
+		const TPlayerBotPersona& p = state.persona;
+		if (p.dwFishingSpellUntil != 0 && dwNow < p.dwFishingSpellUntil)
+			return true;
+		const DWORD roll = PlayerBotNavHash(ch->GetPlayerID() ^ 0x5259424BU ^
+				(dwNow / PLAYERBOT_RYBAK_ROLL_WINDOW_MS));
+		switch (p.mood.mood)
+		{
+			case playerbot_persona::MOOD_SLABY:
+				return PlayerBotWeightedRoll(roll % 100U, PLAYERBOT_RYBAK_SLABY_PERCENT,
+						PLAYERBOT_WEIGHT_FISHING);
+			case playerbot_persona::MOOD_NORMALNY:
+				return PlayerBotWeightedRoll(roll % 1000U, PLAYERBOT_RYBAK_NORMALNY_PERMILLE,
+						PLAYERBOT_WEIGHT_FISHING);
+			default:
+				return false;
+		}
+	}
+
+	// How long this Rybak stays at the water: the capitulation's hour to its
+	// end, a bad mood half an hour to an hour, a good one a short episode -
+	// never more than the hour the document allows.
+	DWORD GetPlayerBotRybakSessionMs(const TPlayerBotAIState& state, DWORD dwNow)
+	{
+		const TPlayerBotPersona& p = state.persona;
+		DWORD length;
+		if (p.dwFishingSpellUntil != 0 && dwNow < p.dwFishingSpellUntil)
+			length = p.dwFishingSpellUntil - dwNow;
+		else if (p.mood.mood == playerbot_persona::MOOD_SLABY)
+			length = (DWORD)number(PLAYERBOT_RYBAK_SLABY_SESSION_MIN, PLAYERBOT_RYBAK_SLABY_SESSION_MAX);
+		else
+			length = (DWORD)number(PLAYERBOT_RYBAK_EPISODE_MIN, PLAYERBOT_RYBAK_EPISODE_MAX);
+		return std::min<DWORD>(length, PLAYERBOT_RYBAK_MAX_SESSION);
+	}
+
 	bool IsPlayerBotAngler(LPCHARACTER ch, const TPlayerBotAIState& state)
 	{
 		// A dropper is no angler: a session is a stay on a bank in the first
 		// village, away from the one thing it farms.
 		if (IsPlayerBotDropper(state.bPersonality) || !CanPlayerBotUseFishingRod(ch))
 			return false;
+		if (IsPlayerBotPersonaEnabled() && state.persona.bRestored)
+			return IsPlayerBotRybakNow(ch, state, get_dword_time());
 		const DWORD roll = PlayerBotNavHash(ch->GetPlayerID() ^ 0x46495348U) % 100U;
 		// Thirty collectors in a hundred and eight of everyone else, stretched or
 		// shrunk by the FISHING weight.
@@ -538,6 +599,10 @@ namespace
 	// UseItem, which frees the very inventory slot being iterated over.
 	// Defined in playerbot_economy.h, which this file precedes.
 	bool PlayerBotNeedsRefineMaterial(LPCHARACTER ch, DWORD materialVnum);
+	int GetPlayerBotRefineMaterialReserve(LPCHARACTER ch, DWORD materialVnum);
+
+	// The Rybak's batch of shells being opened, by pid: five at a time.
+	std::map<DWORD, int> s_mapPlayerBotShellBatch;
 
 	// What a thing is worth to sell: what the market has paid for it, else a
 	// fifth of the shop price, which is what the merchant pays.
@@ -803,7 +868,21 @@ namespace
 			// A shell is worth something whole, so the first few are never
 			// gambled with: they go to the anvil or onto the counter, and only
 			// the surplus is pried open.
-			if (vnum == PLAYERBOT_SHELLFISH_VNUM &&
+			// Iwakura's Rybak opens them in fives for the pearls ("bot otwiera
+			// co 5 Malz w celu zdobycia perly"), whatever the market says a
+			// shell is worth - but never the ones its own anvil keeps back.
+			if (vnum == PLAYERBOT_SHELLFISH_VNUM && IsPlayerBotPersonaEnabled())
+			{
+				int& batch = s_mapPlayerBotShellBatch[ch->GetPlayerID()];
+				const int spare = (int)ch->CountSpecifyItem(PLAYERBOT_SHELLFISH_VNUM) -
+						GetPlayerBotRefineMaterialReserve(ch, PLAYERBOT_SHELLFISH_VNUM);
+				if (batch <= 0 && spare >= PLAYERBOT_RYBAK_SHELL_BATCH)
+					batch = PLAYERBOT_RYBAK_SHELL_BATCH;
+				if (batch <= 0 || spare <= 0)
+					continue;
+				--batch;
+			}
+			else if (vnum == PLAYERBOT_SHELLFISH_VNUM &&
 					(ch->CountSpecifyItem(PLAYERBOT_SHELLFISH_VNUM) <= PLAYERBOT_SHELLFISH_KEEP ||
 					 PlayerBotNeedsRefineMaterial(ch, vnum) ||
 					 !ShouldPlayerBotOpenShellfish(ch, get_dword_time())))
@@ -812,8 +891,33 @@ namespace
 			const int whiteBefore = ch->CountSpecifyItem(PLAYERBOT_PEARL_FIRST_VNUM);
 			const int blueBefore = ch->CountSpecifyItem(PLAYERBOT_PEARL_FIRST_VNUM + 1);
 			const int redBefore = ch->CountSpecifyItem(PLAYERBOT_PEARL_LAST_VNUM);
+			const int shellBefore = ch->CountSpecifyItem(PLAYERBOT_SHELLFISH_VNUM);
+			const int boneBefore = ch->CountSpecifyItem(PLAYERBOT_FISH_BONE_VNUM);
 			if (!ch->UseItem(TItemPos(INVENTORY, cell)))
 				continue;
+			// A shell or a bone out of a fish, a pearl out of a shell: the
+			// document's valuables, and an angler's cure for a SLABY mood
+			// ("nastroj natychmiast poprawia sie", playerbot_mood.h).
+			if (aliveFish)
+			{
+				if (ch->CountSpecifyItem(PLAYERBOT_SHELLFISH_VNUM) > shellBefore)
+					NotePlayerBotMoodValuable(ch, PLAYERBOT_SHELLFISH_VNUM, 0, ITEM_USE, "fish");
+				else if (ch->CountSpecifyItem(PLAYERBOT_FISH_BONE_VNUM) > boneBefore)
+					NotePlayerBotMoodValuable(ch, PLAYERBOT_FISH_BONE_VNUM, 0, ITEM_MATERIAL, "fish");
+			}
+			else
+			{
+				for (DWORD pearl = PLAYERBOT_PEARL_FIRST_VNUM; pearl <= PLAYERBOT_PEARL_LAST_VNUM; ++pearl)
+				{
+					const int before = pearl == PLAYERBOT_PEARL_FIRST_VNUM ? whiteBefore
+							: (pearl == PLAYERBOT_PEARL_LAST_VNUM ? redBefore : blueBefore);
+					if (ch->CountSpecifyItem(pearl) > before)
+					{
+						NotePlayerBotMoodValuable(ch, pearl, 0, ITEM_MATERIAL, "shell");
+						break;
+					}
+				}
+			}
 			if (!aliveFish)
 			{
 				// What the shell held, counted whatever it was - the empty ones
@@ -885,11 +989,22 @@ namespace
 		return item && IsPlayerBotHairDyeKeptForSaleId(item->GetID());
 	}
 
+	// Iwakura's Rybak sells the water's rubbish to the Fisherman instead,
+	// once the bag is PLAYERBOT_RYBAK_JUNK_SELL_PERCENT full ("sprzedawane u
+	// rybaka jesli ekwipunek bedzie zapelniony przynajmniej w 70%").
+	bool IsPlayerBotBagFullForFishingJunk(LPCHARACTER ch)
+	{
+		return ch && (PLAYERBOT_BAG_CELLS - CountPlayerBotFreeInventoryCells(ch)) * 100 >=
+				PLAYERBOT_BAG_CELLS * PLAYERBOT_RYBAK_JUNK_SELL_PERCENT;
+	}
+
 	// Thrown away, as most players throw theirs: every dye from the water but
 	// one colour for a bot whose hair has none yet (ManagePlayerBotHairDye
 	// uses it) and the few kept for a counter. The remover is never used, so
 	// it is never the one kept. An item the operator gave a word to is his.
-	int DiscardPlayerBotFishedDyes(LPCHARACTER ch)
+	// With `sell`, the same dyes go to the NPC for a fifth of their price, the
+	// merchant's rate - the Rybak's way.
+	int DiscardPlayerBotFishedDyes(LPCHARACTER ch, bool sell = false)
 	{
 		if (!ch || !ch->IsItemLoaded())
 			return 0;
@@ -909,13 +1024,23 @@ namespace
 			}
 			if (IsPlayerBotHairDyeKeptForSale(item))
 				continue;
-			thrown += std::max<int>(1, item->GetCount());
-			ITEM_MANAGER::instance().RemoveItem(item, "PLAYERBOT_DISCARD");
+			const int count = std::max<int>(1, item->GetCount());
+			thrown += count;
+			if (sell)
+			{
+				DWORD price = item->GetShopBuyPrice();
+				if (price == 0)
+					price = item->GetProto() ? item->GetProto()->dwGold : 100;
+				PlayerBotChangeGold(ch, (long long)std::max<DWORD>(10, price / 5) * count);
+				ITEM_MANAGER::instance().RemoveItem(item, "PLAYERBOT_SHOP_SELL");
+			}
+			else
+				ITEM_MANAGER::instance().RemoveItem(item, "PLAYERBOT_DISCARD");
 		}
 		if (thrown > 0)
 			PlayerBotLogThrottled("dye_discard", get_dword_time(),
-					"PLAYERBOT_LOOK: threw away hair dye pid=%u name=%s count=%d",
-					ch->GetPlayerID(), ch->GetName(), thrown);
+					"PLAYERBOT_LOOK: %s hair dye pid=%u name=%s count=%d",
+					sell ? "sold" : "threw away", ch->GetPlayerID(), ch->GetName(), thrown);
 		return thrown;
 	}
 
@@ -936,7 +1061,12 @@ namespace
 		state.dwNextFishingCheckTime = dwNow +
 				number(PLAYERBOT_FISHING_REST_MIN, PLAYERBOT_FISHING_REST_MAX);
 		StowPlayerBotRod(ch);
-		DiscardPlayerBotFishedDyes(ch);
+		// The Rybak sells them to the Fisherman beside the bank, and only from
+		// a bag seventy percent full; without the switch they are thrown away.
+		if (!IsPlayerBotPersonaEnabled())
+			DiscardPlayerBotFishedDyes(ch);
+		else if (IsPlayerBotBagFullForFishingJunk(ch))
+			DiscardPlayerBotFishedDyes(ch, true);
 		ClearPlayerBotRoute(state, true);
 		// An angler that has just packed the rod away is the one bot reliably
 		// standing in Joan with nothing left to do. Half of them wander over to
@@ -1259,15 +1389,21 @@ namespace
 			state.dwFishingCastTime = 0;
 			state.dwNextFishingActionTime = 0;
 			state.dwNextFishingProgressLogTime = 0;
+			// Iwakura's Rybak is at the water for its mood's length, an hour at
+			// most (GetPlayerBotRybakSessionMs).
 			state.dwFishingSessionEndTime = dwNow +
-					number(PLAYERBOT_FISHING_SESSION_MIN, PLAYERBOT_FISHING_SESSION_MAX);
+					(IsPlayerBotPersonaEnabled() && state.persona.bRestored
+						? GetPlayerBotRybakSessionMs(state, dwNow)
+						: (DWORD)number(PLAYERBOT_FISHING_SESSION_MIN, PLAYERBOT_FISHING_SESSION_MAX));
 			state.dwTargetVID = 0;
 			ch->SetVictim(NULL);
 			ch->Stop();
 			ClearPlayerBotRoute(state, true);
-			sys_log(0, "PLAYERBOT_FISHING: heading for the bank pid=%u name=%s level=%u personality=%u",
+			sys_log(0, "PLAYERBOT_FISHING: heading for the bank pid=%u name=%s level=%u personality=%u mood=%u spell=%d minutes=%u",
 					ch->GetPlayerID(), ch->GetName(), ch->GetLevel(),
-					(unsigned int)state.bPersonality);
+					(unsigned int)state.bPersonality, (unsigned int)state.persona.mood.mood,
+					state.persona.dwFishingSpellUntil != 0 && dwNow < state.persona.dwFishingSpellUntil ? 1 : 0,
+					(unsigned int)((state.dwFishingSessionEndTime - dwNow) / 60000));
 		}
 
 		// A session only ends between casts, so a fish already on the hook is
@@ -1393,6 +1529,10 @@ namespace
 
 		if (needsTackle)
 		{
+			// At the Fisherman's counter: the Rybak's rubbish goes here, from a
+			// bag seventy percent full.
+			if (IsPlayerBotPersonaEnabled() && IsPlayerBotBagFullForFishingJunk(ch))
+				DiscardPlayerBotFishedDyes(ch, true);
 			if (!RestockPlayerBotTackle(ch, state, dwNow))
 				return EndPlayerBotFishingSession(ch, state, dwNow, "cannot_afford_tackle");
 			return true;

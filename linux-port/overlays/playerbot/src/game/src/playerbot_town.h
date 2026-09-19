@@ -23,6 +23,17 @@
 
 namespace
 {
+	// Iwakura's gambler, defined in playerbot_gambler.h after this file: a
+	// session that takes pieces from the storekeeper and the bag to the anvil
+	// and refines them for the counter. It runs inside a town visit - the
+	// visit is the commitment every other pass already stands back for - so
+	// the visit's phases ask it what they should do.
+	bool IsPlayerBotGambling(const TPlayerBotAIState& state, DWORD dwNow);
+	bool IsPlayerBotGambleStock(LPCHARACTER ch, LPITEM item);
+	void CollectPlayerBotGambleMaterials(LPCHARACTER ch, std::set<DWORD>& out);
+	bool ManagePlayerBotGamble(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow);
+	bool ContinuePlayerBotVisitAsGambler(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow);
+
 #if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
 	bool HasPlayerBotOfflineShop(LPCHARACTER ch);
 	bool SubmitPlayerBotOfflineShop(LPCHARACTER, TPlayerBotAIState&, DWORD, const char*, TShopItemTable*, BYTE);
@@ -236,11 +247,21 @@ namespace
 	// not one weapon, so the case does not arise. Materials are the whole of
 	// what is down there, which is also why "it fills up and is never freed"
 	// was the right complaint.
+	//
+	// The one exception is Iwakura's gambler (pGambler, set while a session
+	// is on): it comes to the storekeeper first "by wyciagnac z magazynu
+	// odlozone wczesniej przedmioty ... i ulepszacze", so it takes the pieces
+	// it could work - judged by the item alone (IsPlayerBotGambleStock), the
+	// bag's own tests run at the anvil - and the materials its bag pieces'
+	// next steps consume.
 	int WithdrawPlayerBotSafebox(LPCHARACTER ch, CSafebox* box,
-			const std::set<DWORD>* pJustDeposited = NULL)
+			const std::set<DWORD>* pJustDeposited = NULL, TPlayerBotPersona* pGambler = NULL)
 	{
 		if (!ch || !box)
 			return 0;
+		std::set<DWORD> gambleMaterials;
+		if (pGambler)
+			CollectPlayerBotGambleMaterials(ch, gambleMaterials);
 		int taken = 0;
 		for (DWORD pos = 0; pos < SAFEBOX_MAX_NUM &&
 				taken < PLAYERBOT_SAFEBOX_WITHDRAW_MAX; ++pos)
@@ -304,6 +325,24 @@ namespace
 							(PLAYERBOT_BAG_CELLS - freeAfter) * 100 < PLAYERBOT_BAG_CELLS * PLAYERBOT_BAG_FULL_PERCENT;
 					why = "market";
 				}
+				else if (pGambler && gambleMaterials.find(item->GetVnum()) != gambleMaterials.end())
+				{
+					// What the gambler's pieces consume next, on the same terms.
+					const int freeAfter = CountPlayerBotFreeInventoryCells(ch) - (int)item->GetSize();
+					wanted = freeAfter > PLAYERBOT_BAG_PRESSURE_FREE_CELLS;
+					why = "gamble";
+				}
+			}
+			else if (pGambler && (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR))
+			{
+				// A few pieces a session, into a bag that stays clear of the
+				// pressure the deposit waits for, like the market's half above.
+				const int freeAfter = CountPlayerBotFreeInventoryCells(ch) - (int)item->GetSize();
+				wanted = pGambler->bGambleSafeboxTaken < PLAYERBOT_GAMBLE_SAFEBOX_TAKE &&
+						IsPlayerBotGambleStock(ch, item) &&
+						freeAfter > PLAYERBOT_BAG_PRESSURE_FREE_CELLS &&
+						(PLAYERBOT_BAG_CELLS - freeAfter) * 100 < PLAYERBOT_BAG_CELLS * PLAYERBOT_BAG_FULL_PERCENT;
+				why = "gamble";
 			}
 			else if (item->GetType() == ITEM_MATERIAL && IsPlayerBotNonGearMaterial(item->GetVnum()))
 			{
@@ -336,6 +375,8 @@ namespace
 			sys_log(0, "PLAYERBOT_TOWN: safebox withdraw pid=%u name=%s vnum=%u count=%u reason=%s",
 					ch->GetPlayerID(), ch->GetName(), item->GetVnum(),
 					(unsigned int)item->GetCount(), why);
+			if (pGambler && (item->GetType() == ITEM_WEAPON || item->GetType() == ITEM_ARMOR))
+				++pGambler->bGambleSafeboxTaken;
 			++taken;
 		}
 		return taken;
@@ -442,14 +483,18 @@ namespace
 		std::vector<WORD> dead;
 		CollectPlayerBotSafeboxDeadStock(ch, state, dead);
 		cells.insert(cells.end(), dead.begin(), dead.end());
+		const DWORD dwNow = get_dword_time();
+		// Not while gambling: the gambler came for the storekeeper's materials,
+		// and whatever went down here the withdrawal below would not bring
+		// back up in the same visit (pDeposited).
 		std::vector<WORD> mats;
-		CollectPlayerBotSafeboxMaterials(ch, mats);
+		if (!IsPlayerBotGambling(state, dwNow))
+			CollectPlayerBotSafeboxMaterials(ch, mats);
 		cells.insert(cells.end(), mats.begin(), mats.end());
 		std::vector<WORD> keys;
 		CollectPlayerBotSafeboxKeys(ch, keys);
 		cells.insert(cells.end(), keys.begin(), keys.end());
 		int deposited = 0;
-		const DWORD dwNow = get_dword_time();
 		for (size_t i = 0; i < cells.size(); ++i)
 		{
 			LPITEM item = ch->GetInventoryItem(cells[i]);
@@ -603,8 +648,11 @@ namespace
 		state.bTownNeedArmorMerchant = HasPlayerBotJunkForMerchant(ch, BOT_MERCHANT_ARMOR) ||
 				NeedsPlayerBotProgressionArmor(ch) || NeedsPlayerBotProgressionShield(ch) ||
 				NeedsPlayerBotProgressionHelmet(ch);
-		state.bTownNeedBlacksmith = HasPlayerBotRefineOpportunity(ch);
-		state.bTownNeedSafebox = HasPlayerBotSafeboxDeposit(ch, state);
+		state.bTownNeedBlacksmith = HasPlayerBotRefineOpportunity(ch) ||
+				IsPlayerBotGambling(state, dwNow);
+		// The gambler's first stop is the storekeeper, once a session.
+		state.bTownNeedSafebox = HasPlayerBotSafeboxDeposit(ch, state) ||
+				(IsPlayerBotGambling(state, dwNow) && !state.persona.bGambleSafeboxChecked);
 		if (!state.bTownNeedTrainer && !state.bTownNeedSkillReset && !state.bTownNeedMisc &&
 				!state.bTownNeedWeaponMerchant && !state.bTownNeedSafebox &&
 				!state.bTownNeedArmorMerchant && !state.bTownNeedBlacksmith)
@@ -614,6 +662,9 @@ namespace
 		}
 
 		state.bVisitingShop = true;
+		// The purse the Perfectionist's share is measured against
+		// (ManagePlayerBotRefining).
+		state.persona.llVisitGoldStart = (long long)ch->GetGold();
 		if (bDirect)
 		{
 			// Bokjung has no decorative gate split, and neither have Yongan and
@@ -946,6 +997,10 @@ namespace
 			return false;
 		if (ch->GetLevel() < PLAYERBOT_HERBALISM_MIN_LEVEL)
 			return false;
+		// A Conqueror's errand from forty-five under Iwakura's system
+		// (IsPlayerBotZielarz); a visit already walking finishes.
+		if (!state.bVisitingHerbalist && !IsPlayerBotZielarz(ch))
+			return false;
 		// A bot in somebody's party is theirs, and the board is an errand.
 		if (ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty()))
 			return false;
@@ -987,6 +1042,8 @@ namespace
 		if (!state.bVisitingHerbalist)
 		{
 			state.bVisitingHerbalist = true;
+			// The Zielarz's tenth of the purse is measured against this.
+			state.persona.llHerbGoldStart = (long long)ch->GetGold();
 			state.dwNextHerbalistActionTime = 0;
 			state.dwTargetVID = 0;
 			ch->SetVictim(NULL);
@@ -1039,6 +1096,13 @@ namespace
 			for (DWORD i = 0; i < PLAYERBOT_HERBALISM_CRAFTS_PER_VISIT; ++i)
 			{
 				const TCraftingItem* next = ChoosePlayerBotCraftRow(ch);
+				// "Nie wykorzystuje w tym celu wiecej niz 10% swoich Yang": the
+				// craft's fee may not take the purse under nine tenths of what
+				// the visit came with.
+				if (next && IsPlayerBotPersonaEnabled() && state.persona.llHerbGoldStart > 0 &&
+						(long long)ch->GetGold() - (long long)next->price <
+							state.persona.llHerbGoldStart * (100 - PLAYERBOT_ZIELARZ_SPEND_PERCENT) / 100)
+					break;
 				if (!next || !CraftPlayerBotPotion(ch, next))
 					break;
 				++made;
@@ -1062,6 +1126,13 @@ namespace
 	void FinishPlayerBotTownVisit(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow,
 			bool completed)
 	{
+		// The Trader's visit is over: with a heavy purse and its own gear done
+		// it may turn gambler ("moze plynnie zmienic sie w Hazardziste"). The
+		// visit goes on to the storekeeper and the anvil instead of ending -
+		// ended, it hands the bot to the stall, the market and the road, and
+		// any of them would walk it away from the anvil before it got there.
+		if (completed && ch && ContinuePlayerBotVisitAsGambler(ch, state, dwNow))
+			return;
 		state.bVisitingShop = false;
 		state.bTownNeedMisc = false;
 		state.bTownNeedWeaponMerchant = false;
@@ -1946,6 +2017,9 @@ namespace
 		// forty on a horse of ten - a battle horse candidate, forbidden to spend
 		// one - could neither use nor sell what it had.
 		if (ch && GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_MEDAL_DROPPER)
+			return true;
+		// Iwakura's Grinder on its first horse: "a nadmiar medali sprzedaje".
+		if (ch && ch->GetHorseLevel() >= 1 && IsPlayerBotGrinderRider(ch))
 			return true;
 		return ch && ch->GetHorseLevel() >= 10 &&
 				ch->GetLevel() < GetPlayerBotNextHorseRequiredLevel(ch->GetHorseLevel());
@@ -4057,6 +4131,11 @@ namespace
 			GetPlayerBotNpcApproach(ch->GetPlayerID(), keeperX, keeperY, 0x53414645U, goalX, goalY);
 			if (MovePlayerBotTownLeg(ch, state, dwNow, goalX, goalY, 650))
 			{
+				// One try a session for the gambler, whatever the box says: a
+				// page not ready or a purse short of the fee is not a reason to
+				// walk back here on every visit it restarts.
+				if (IsPlayerBotGambling(state, dwNow))
+					state.persona.bGambleSafeboxChecked = true;
 				// The first visit pays for the page the way a player does at
 				// the keeper's dialog: 500 yang, and the DB core opens a
 				// safebox row of one page for the account.
@@ -4146,8 +4225,10 @@ namespace
 				// And then back the other way, on the same open box. The deposit
 				// runs first on purpose: it is what frees the bag cells the
 				// withdrawal then needs, so a bot under pressure can still take
-				// back the one material it came for.
-				const int taken = WithdrawPlayerBotSafebox(ch, box, &justDeposited);
+				// back the one material it came for. A gambler also takes its
+				// pieces and their materials, once a session.
+				const int taken = WithdrawPlayerBotSafebox(ch, box, &justDeposited,
+						IsPlayerBotGambling(state, dwNow) ? &state.persona : NULL);
 #if defined(PLAYERBOT_ENGINE_MT2009)
 				// The box poured together and laid out the way a player's
 				// "Scal i uporzadkuj" does it (ArrangeSafebox, playerbot_arrange.cpp):
@@ -4264,6 +4345,8 @@ namespace
 			if (MovePlayerBotTownLeg(ch, state, dwNow, blacksmithX, blacksmithY, 500))
 			{
 				ManagePlayerBotRefining(ch, state, dwNow);
+				// The gambler's pieces, after the bot's own (playerbot_gambler.h).
+				ManagePlayerBotGamble(ch, state, dwNow);
 				// The blacksmith is where a player rerolls bonus lines too, and the
 				// bot is already standing still there for six to twenty-four seconds.
 				ManagePlayerBotBonusReroll(ch, state, dwNow);
@@ -4288,6 +4371,12 @@ namespace
 			// refine attempts instead of clicking only once and idling.  This cadence
 			// never extends dwTownWaitUntil; the visit has one absolute 6-24 s limit.
 			ManagePlayerBotRefining(ch, state, dwNow);
+			// The gambler stays at the anvil for as long as its session has a
+			// piece and a purse left - the visit's six to twenty-four seconds
+			// are a player's quick refine, not a gambler's evening
+			// (IsPlayerBotGambling bounds it by its own clock).
+			if (ManagePlayerBotGamble(ch, state, dwNow) || IsPlayerBotGambling(state, dwNow))
+				state.dwTownWaitUntil = std::max<DWORD>(state.dwTownWaitUntil, dwNow + 2500);
 			ManagePlayerBotBonusReroll(ch, state, dwNow);
 			if (!HasPlayerBotRefineOpportunity(ch))
 				RestorePlayerBotEquipmentAfterRefining(ch, state, dwNow);

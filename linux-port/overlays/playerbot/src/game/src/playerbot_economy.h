@@ -1611,7 +1611,8 @@ namespace
 		if (!ch || !ch->IsItemLoaded())
 			return false;
 		DiscardPlayerBotSurplusBoosters(ch);
-		DiscardPlayerBotFishedDyes(ch);
+		// Sold rather than thrown away under Iwakura's system (the Rybak's way).
+		DiscardPlayerBotFishedDyes(ch, IsPlayerBotPersonaEnabled());
 
 		size_t soldCount = 0;
 		long long totalSoldGold = 0;
@@ -1874,6 +1875,20 @@ namespace
 
 		state.dwNextRefineCheckTime = dwNow + PLAYERBOT_REFINE_INTERVAL;
 
+		// Iwakura's Perfectionist spends at most PERFECT_BUDGET_PERCENT of what
+		// it walked into town with ("max 80% yang"), and keeps the rest.
+		const bool personaOn = IsPlayerBotPersonaEnabled();
+		if (personaOn && state.persona.llVisitGoldStart > 0 &&
+				(long long)ch->GetGold() * 100 <
+					state.persona.llVisitGoldStart * (100 - playerbot_persona::PERFECT_BUDGET_PERCENT))
+		{
+			PlayerBotLogThrottled("perfectionist_budget", dwNow,
+					"PLAYERBOT_PERSONA: perfectionist budget spent pid=%u name=%s gold=%lld start=%lld",
+					ch->GetPlayerID(), ch->GetName(), (long long)ch->GetGold(),
+					state.persona.llVisitGoldStart);
+			return false;
+		}
+
 		// Collect all upgradable worn items and inventory candidates
 		struct TRefineCandidate
 		{
@@ -1914,7 +1929,10 @@ namespace
 			cand.wearCell = wearSlots[i];
 			cand.item = item;
 			cand.plusLevel = plusLevel;
-			cand.priority = coreProgression ? 0 : 2;
+			// The Perfectionist's order: the weapon, the armour, the shield,
+			// then the rest (GetPlayerBotPerfectionistRank).
+			cand.priority = personaOn ? GetPlayerBotPerfectionistRank(ch, item)
+					: (coreProgression ? 0 : 2);
 			candidates.push_back(cand);
 		}
 
@@ -1965,7 +1983,8 @@ namespace
 			cand.item = item;
 			cand.plusLevel = plusLevel;
 			const bool coreProgression = IsPlayerBotCoreProgressionItem(ch, item);
-			cand.priority = coreProgression ? 0 : 2;
+			cand.priority = personaOn ? GetPlayerBotPerfectionistRank(ch, item)
+					: (coreProgression ? 0 : 2);
 			candidates.push_back(cand);
 		}
 
@@ -2192,7 +2211,15 @@ namespace
 				// piece back a grade down and a plain one burns it, and both were
 				// shouted as luck ("ulepszylem zbroje +4 na +3", Tieru, 15 September).
 				if (success)
+				{
 					BroadcastPlayerBotRefineSuccess(ch, nextVnum, (int)plusLevel + 1);
+					// +8 and +9 are Iwakura's euphoria (playerbot_mood.h).
+					NotePlayerBotMoodRefine(ch, (int)plusLevel + 1);
+				}
+				else
+					// And a failure on the way to them costs a level of mood.
+					NotePlayerBotMoodRefineFailure(ch, (int)plusLevel + 1,
+							scrollCell >= 0 ? "downgraded" : "burned");
 				sys_log(0, "PLAYERBOT_AI: refine %s pid=%u name=%s old_vnum=%u new_vnum=%u plus=%u scroll=%d materials=%s",
 						success ? "SUCCESS" : (scrollCell >= 0 ? "FAILED_DOWNGRADED" : "FAILED_BURNED"),
 						ch->GetPlayerID(), ch->GetName(), oldVnum, nextVnum, plusLevel + 1, scrollCell >= 0 ? 1 : 0,
@@ -2308,7 +2335,12 @@ namespace
 		{
 			const bool success = ch->CountSpecifyItem(nextVnum) > before;
 			if (success)
+			{
 				BroadcastPlayerBotRefineSuccess(ch, nextVnum, (int)plus + 1);
+				NotePlayerBotMoodRefine(ch, (int)plus + 1);
+			}
+			else
+				NotePlayerBotMoodRefineFailure(ch, (int)plus + 1, "downgraded");
 			sys_log(0, "PLAYERBOT_AI: refine %s pid=%u name=%s old_vnum=%u new_vnum=%u plus=%u scroll=1 place=field wear=%u",
 					success ? "SUCCESS" : "FAILED_DOWNGRADED", ch->GetPlayerID(), ch->GetName(),
 					oldVnum, nextVnum, (unsigned int)plus + 1, (unsigned int)bestWear);

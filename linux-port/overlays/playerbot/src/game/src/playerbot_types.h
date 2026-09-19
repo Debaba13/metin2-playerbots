@@ -3472,6 +3472,8 @@ namespace
 	// What a shell can hold: Biala / Niebieska / Krwawa Perla.
 	const DWORD PLAYERBOT_PEARL_FIRST_VNUM = 27992;
 	const DWORD PLAYERBOT_PEARL_LAST_VNUM = 27994;
+	// Rybia Osc, what a gutted fish sometimes leaves (fishing::UseFish).
+	const DWORD PLAYERBOT_FISH_BONE_VNUM = 27799;
 	// How many shells a bot keeps whole. Prying one open is a bet against the
 	// shell's own worth: twenty-six recipes consume a shellfish as it is, and
 	// that is what it sells for. So the first few are never gambled with and
@@ -4943,6 +4945,268 @@ namespace
 
 	BYTE GetPlayerBotPersonalityByPID(DWORD dwPID);
 
+	// Iwakura's personality system ("SYSTEM OSOBOWOSCI v2.0", 19 September):
+	// playerbot_persona_rules.h is the policy, playerbot_mood.h and
+	// playerbot_persona.h the engine's half. The PERSONA key of the weights
+	// file switches all of it; off is the world as it was before.
+	//
+	// A gap between two ticks longer than this is not play: the bot was logged
+	// out, or on another core, and its moods must not age by the absence.
+	const DWORD PLAYERBOT_PERSONA_TICK_MAX_DT = 10000;
+	// How often the mood's clocks are written back to the quest flags. A change
+	// of mood is written at once; the clocks only lose up to this much across a
+	// restart.
+	const DWORD PLAYERBOT_PERSONA_SAVE_INTERVAL = 5 * 60 * 1000;
+	// A fight this recent is hunting wherever the bot stands, so the drought
+	// clock runs; a village with no fight in it is not.
+	const DWORD PLAYERBOT_MOOD_HUNTING_COMBAT_MS = 30000;
+	// A fight this recent earns SLABY its pause before the next pack.
+	const DWORD PLAYERBOT_MOOD_PAUSE_FIGHT_MS = 6000;
+	// SLABY only goes AFK somewhere it will not simply die for it: not in a
+	// fight, not with a monster on it, not hurt.
+	const int PLAYERBOT_MOOD_AFK_MIN_HP_PERCENT = 70;
+	// A bot that has been AFK and was struck puts the next stop off this long.
+	const DWORD PLAYERBOT_MOOD_AFK_INTERRUPTED_RETRY = 5 * 60 * 1000;
+	// How often the census of personalities and moods is written.
+	const DWORD PLAYERBOT_PERSONA_CENSUS_INTERVAL = 10 * 60 * 1000;
+	// The quest flags a bot's moods and its Grinder's promise live in, so that
+	// a restart, a channel move or a life-schedule rest does not reroll them.
+	// Every one is written as its value plus one, so zero is "never written".
+	const char* const PLAYERBOT_PERSONA_FLAG_MOOD = "playerbot.persona_mood";
+	const char* const PLAYERBOT_PERSONA_FLAG_LOCK = "playerbot.persona_lock";
+	const char* const PLAYERBOT_PERSONA_FLAG_LOCK_LEFT = "playerbot.persona_lock_s";
+	const char* const PLAYERBOT_PERSONA_FLAG_PLAYED = "playerbot.persona_played_s";
+	const char* const PLAYERBOT_PERSONA_FLAG_DROUGHT = "playerbot.persona_drought_s";
+	const char* const PLAYERBOT_PERSONA_FLAG_ADVANCED = "playerbot.persona_adv";
+	const char* const PLAYERBOT_PERSONA_FLAG_LOCK_LEVEL = "playerbot.persona_lock_lv";
+
+	// The Grinder and the Conqueror (Zdobywca). A Grinder that meets the Law of
+	// Advancement is asked once an hour whether it moves on or stays to push
+	// its gear to +8 and +9 first ("moze podjac decyzje o przedluzeniu pobytu"),
+	// the chance in percent by its character (GetPlayerBotAdvanceChance).
+	const DWORD PLAYERBOT_PERSONA_ADVANCE_ROLL_INTERVAL = 60 * 60 * 1000;
+	const int PLAYERBOT_PERSONA_ADVANCE_CHANCE = 60;
+	// The first question comes this soon after the law is first met, so a bot
+	// that has just finished its gear does not wait an hour to be asked.
+	const DWORD PLAYERBOT_PERSONA_ADVANCE_FIRST_ROLL = 2 * 60 * 1000;
+
+	// The gambler (Hazardzista, playerbot_gambler.h). "Duza nadwyzka Yang" is a
+	// purse of at least this on Iwakura's scale (ScalePlayerBotIwakuraPrice:
+	// two million at the stock rate, sixty at 3000%), of which the session may
+	// spend GAMBLE_BUDGET_PERCENT - fees, scrolls, materials and what burns.
+	const DWORD PLAYERBOT_GAMBLE_MIN_PURSE_BASE = 2000000;
+	// A bot that qualifies and does not take it is asked again this much later;
+	// one that has gambled rests this long before the next session.
+	const DWORD PLAYERBOT_GAMBLE_RETRY_MIN_MS = 30 * 60 * 1000;
+	const DWORD PLAYERBOT_GAMBLE_RETRY_MAX_MS = 60 * 60 * 1000;
+	const DWORD PLAYERBOT_GAMBLE_REST_MIN_MS = 3 * 60 * 60 * 1000;
+	const DWORD PLAYERBOT_GAMBLE_REST_MAX_MS = 6 * 60 * 60 * 1000;
+	// The document ends a session on its budget or its +9 and nothing else;
+	// this is only the net under a session something else stranded.
+	const DWORD PLAYERBOT_GAMBLE_MAX_MS = 20 * 60 * 1000;
+	// "Nastepnie wybiera kolejna osobowosc lecz nie moze to byc Hazardzista":
+	// not within this long of a Perfectionist's spell.
+	const DWORD PLAYERBOT_GAMBLE_AFTER_PERFECT_MS = 30 * 60 * 1000;
+	// One attempt at the anvil every 1.5 to 3 seconds - a player's click.
+	const DWORD PLAYERBOT_GAMBLE_STEP_MIN_MS = 1500;
+	const DWORD PLAYERBOT_GAMBLE_STEP_MAX_MS = 3000;
+	// What the LPP calls valuable: a family his tier list rates 3 or better,
+	// in PvE or in PvP. Body armour, helmets and shields are not in that list
+	// (he judges them by level and lines) and are taken as they come.
+	const int PLAYERBOT_GAMBLE_MIN_TIER = 3;
+	// At most this many pieces taken out of the safebox for one session.
+	const int PLAYERBOT_GAMBLE_SAFEBOX_TAKE = 4;
+
+	// The stone hunter (Pogromca, playerbot_anti_pk.h and the target section):
+	// how often a bot busy with a monster looks round for a stone, and how
+	// often one at a stone looks for somebody of another kingdom breaking it.
+	const DWORD PLAYERBOT_POGROMCA_PROBE_MS = 3000;
+	const DWORD PLAYERBOT_POGROMCA_RIVAL_SCAN_MS = 2000;
+	// A stone that has killed the bot more than POGROMCA_MAX_DEATHS times is
+	// left alone this long.
+	const DWORD PLAYERBOT_POGROMCA_GIVE_UP_MS = 30 * 60 * 1000;
+	// The Anti-PK protocol: a player's blow is a fight while it is this recent,
+	// and a foe further than this, or in a safe zone, is let go.
+	const DWORD PLAYERBOT_ANTIPK_STRUCK_MEMORY_MS = 12000;
+	const int PLAYERBOT_ANTIPK_FOE_RANGE = 3000;
+	// A party answers for a member struck this recently ("cala grupa rzuca sie
+	// na agresora"), from as far as this.
+	const DWORD PLAYERBOT_ANTIPK_PARTY_MEMORY_MS = 8000;
+	const int PLAYERBOT_ANTIPK_PARTY_RANGE = 2500;
+
+	// Iwakura's Rybak (playerbot_activities.h): from level thirty, never in a
+	// party, and mostly a bad mood's answer - "bardzo duza szansa" for SLABY,
+	// "sporadycznie" for NORMALNY, and BARDZO DOBRY has better things to do.
+	// The answer is rolled once per window per bot, so the question can be asked
+	// every tick without the answer flickering. The FISHING weight scales both.
+	const DWORD PLAYERBOT_RYBAK_ROLL_WINDOW_MS = 30 * 60 * 1000;
+	const int PLAYERBOT_RYBAK_SLABY_PERCENT = 75;
+	const int PLAYERBOT_RYBAK_NORMALNY_PERMILLE = 40;
+	// "Faza Rybaka trwa maksymalnie 1 godzine": a bad mood's session runs
+	// half an hour to an hour, a good mood's episode is short.
+	const DWORD PLAYERBOT_RYBAK_SLABY_SESSION_MIN = 30 * 60 * 1000;
+	const DWORD PLAYERBOT_RYBAK_SLABY_SESSION_MAX = 60 * 60 * 1000;
+	const DWORD PLAYERBOT_RYBAK_EPISODE_MIN = 10 * 60 * 1000;
+	const DWORD PLAYERBOT_RYBAK_EPISODE_MAX = 20 * 60 * 1000;
+	const DWORD PLAYERBOT_RYBAK_MAX_SESSION = 60 * 60 * 1000;
+	// "Bot otwiera co 5 Malz": shells are opened in fives.
+	const int PLAYERBOT_RYBAK_SHELL_BATCH = 5;
+
+	// Iwakura's Gornik (playerbot_mining.h): a bot with a pickaxe digs a vein
+	// in sight, until the vein is gone ("Ruda znika z mapy"), and after a fight
+	// goes straight back to the same vein ("natychmiast wraca do kopania tej
+	// samej rudy"). How often it looks for a vein, the net under a session that
+	// outlives its vein, the rest after a vein is dug out, the return after a
+	// fight, and the clock of the jewellery work that follows a smelt.
+	const DWORD PLAYERBOT_GORNIK_PROBE_MS = 10000;
+	const DWORD PLAYERBOT_GORNIK_SESSION_CAP = 20 * 60 * 1000;
+	const DWORD PLAYERBOT_GORNIK_REST_MIN = 5 * 60 * 1000;
+	const DWORD PLAYERBOT_GORNIK_REST_MAX = 10 * 60 * 1000;
+	const DWORD PLAYERBOT_GORNIK_RESUME_MS = 5000;
+	const DWORD PLAYERBOT_GORNIK_SOCKET_WORK_MS = 5000;
+
+	// Iwakura's Zielarz (Baek-Go's board, playerbot_herbalism.h): a
+	// Conqueror's errand from level forty-five, spending at most a tenth of the
+	// purse a visit came with ("nie wykorzystuje w tym celu wiecej niz 10%
+	// swoich Yang").
+	const int PLAYERBOT_ZIELARZ_MIN_LEVEL = 45;
+	const int PLAYERBOT_ZIELARZ_SPEND_PERCENT = 10;
+	// And the water's rubbish goes to the Fisherman once the bag is this full.
+	const int PLAYERBOT_RYBAK_JUNK_SELL_PERCENT = 70;
+
+	// Why a bot is fighting a player (playerbot_anti_pk.h): the status line
+	// says it, so it lives here with the state.
+	enum EPlayerBotFoeReason
+	{
+		BOT_FOE_NONE = 0,
+		BOT_FOE_STRUCK,       // it struck this bot
+		BOT_FOE_PARTY,        // it struck a member of this bot's party
+		BOT_FOE_GRUDGE,       // it killed this bot, which has come back for it
+		BOT_FOE_STONE_RIVAL   // another kingdom's, breaking this bot's stone
+	};
+
+	// The gambler's plan for one piece (playerbot_gambler.h): the item, the
+	// plus it was rolled to reach, and whether a Blessing Scroll has already
+	// failed on it - after which it goes back to +7 at the anvil and is sold;
+	// and whether the piece is finished with, for sale as it stands.
+	struct TPlayerBotGamblePlan
+	{
+		DWORD dwItemId;
+		BYTE bTarget;
+		bool bScrollFailed;
+		bool bDone;
+	};
+
+	// One member of the AI state, with a constructor of its own: it never
+	// joins the long initialiser list of TPlayerBotAIState, so -Wreorder has
+	// nothing to say about where it stands.
+	struct TPlayerBotPersona
+	{
+		playerbot_persona::TMood mood;
+		// The quest flags have been read (they arrive from the db core a moment
+		// after the bot enters the game), something worth writing has changed,
+		// and the clocks of the last tick and of the next save.
+		bool bRestored;
+		bool bDirty;
+		DWORD dwLastTick;
+		DWORD dwNextSave;
+		// The personality the last planning pass decided, since when, and when
+		// it is next decided. The old personality drawn by pid at login is kept
+		// too: under the switch the bot plays by its character (a dropper's
+		// becomes the character it leans to), and switching the system off must
+		// be able to give it back.
+		BYTE bPersona;
+		DWORD dwPersonaSince;
+		DWORD dwNextDecide;
+		BYTE bDrawnPersonality;
+		// SLABY's habits: until when the bot pauses between two packs, the
+		// fight the last pause answered, and the stop from the keyboard.
+		DWORD dwPauseUntil;
+		DWORD dwPausedAfterFight;
+		DWORD dwAfkUntil;
+		DWORD dwNextAfkAt;
+		// The Grinder: whether the law is met and the bot has chosen to level
+		// (a Conqueror), the level it holds at otherwise (zero until its tier's
+		// lock is reached), when it is next asked, and the monster deaths that
+		// say a Conqueror has outgrown its gear.
+		bool bAdvanced;
+		BYTE bLockLevel;
+		DWORD dwNextAdvanceRoll;
+		playerbot_persona::TDeathWindow deaths;
+		// The player-death counter of the engine (PLAYER_STATS_DEATH_FROM_
+		// PLAYER_FLAG on mt2009) as last read, so a death can be told apart.
+		long long llPlayerDeaths;
+		// The Perfectionist's purse: what the bot held when its town visit
+		// began, of which the anvil takes at most PERFECT_BUDGET_PERCENT; and
+		// when its last Perfectionist spell ended, since the document says the
+		// next personality after one may not be the gambler.
+		long long llVisitGoldStart;
+		DWORD dwPerfectEndedAt;
+		// The gambler (playerbot_gambler.h): the session, its purse and what it
+		// has spent of the GAMBLE_BUDGET_PERCENT, when it must end at the latest,
+		// when the next may start, the next step's clock, what it has done, and
+		// one plan per piece on the anvil. The storekeeper is visited once a
+		// session, first, for the pieces and scrolls put away there.
+		bool bGambling;
+		long long llGambleGoldStart;
+		long long llGambleSpent;
+		DWORD dwGambleUntil;
+		DWORD dwNextGambleAt;
+		DWORD dwNextGambleStep;
+		BYTE bGambleNines;
+		BYTE bGambleBurned;
+		BYTE bGambleFinished;
+		BYTE bGambleDowngraded;
+		WORD wGambleAttempts;
+		bool bGambleSafeboxChecked;
+		BYTE bGambleSafeboxTaken;
+		std::vector<TPlayerBotGamblePlan> vecGamblePlans;
+		// The Anti-PK protocol (playerbot_anti_pk.h): the last player who
+		// struck the bot and when (CHARACTER::Damage tells the manager, mt2009),
+		// the character it is fighting and why, the deaths at a player's hand
+		// that make it give ground, the ground it gave up and until when, and
+		// the hour at the water one capitulation in twelve ends in.
+		DWORD dwStruckByVID;
+		DWORD dwStruckByPID;
+		DWORD dwStruckAt;
+		DWORD dwFoeVID;
+		BYTE bFoeReason;
+		DWORD dwFoeSince;
+		DWORD dwNextRivalScan;
+		DWORD dwCapitulatedUntil;
+		playerbot_persona::TPkDeaths pkDeaths;
+		long lAvoidSpotMap;
+		long lAvoidSpotX;
+		long lAvoidSpotY;
+		DWORD dwAvoidSpotUntil;
+		DWORD dwFishingSpellUntil;
+		// The stone hunter: the stone it is breaking and how often it has died
+		// at it, whether it has turned on the stone's pack below 35%, and the
+		// clock of its look round for a stone.
+		DWORD dwPogromcaStoneVID;
+		BYTE bPogromcaDeaths;
+		bool bPogromcaClearing;
+		DWORD dwNextStoneProbe;
+		// The Zielarz's purse at Baek-Go's board, of which a visit spends at
+		// most PLAYERBOT_ZIELARZ_SPEND_PERCENT.
+		long long llHerbGoldStart;
+
+		TPlayerBotPersona() : bRestored(false), bDirty(false), dwLastTick(0), dwNextSave(0),
+			bPersona(playerbot_persona::PERSONA_GRINDER), dwPersonaSince(0), dwNextDecide(0),
+			bDrawnPersonality(BOT_PERSONALITY_STEADY_ADVENTURER),
+			dwPauseUntil(0), dwPausedAfterFight(0), dwAfkUntil(0), dwNextAfkAt(0),
+			bAdvanced(false), bLockLevel(0), dwNextAdvanceRoll(0), llPlayerDeaths(-1),
+			llVisitGoldStart(0), dwPerfectEndedAt(0), bGambling(false), llGambleGoldStart(0),
+			llGambleSpent(0), dwGambleUntil(0), dwNextGambleAt(0), dwNextGambleStep(0),
+			bGambleNines(0), bGambleBurned(0), bGambleFinished(0), bGambleDowngraded(0),
+			wGambleAttempts(0), bGambleSafeboxChecked(false), bGambleSafeboxTaken(0),
+			dwStruckByVID(0), dwStruckByPID(0), dwStruckAt(0), dwFoeVID(0), bFoeReason(0),
+			dwFoeSince(0), dwNextRivalScan(0), dwCapitulatedUntil(0), lAvoidSpotMap(0),
+			lAvoidSpotX(0), lAvoidSpotY(0), dwAvoidSpotUntil(0), dwFishingSpellUntil(0),
+			dwPogromcaStoneVID(0), bPogromcaDeaths(0), bPogromcaClearing(false),
+			dwNextStoneProbe(0), llHerbGoldStart(0) {}
+	};
+
 	enum EPlayerBotAmbition
 	{
 		BOT_AMBITION_LEVEL = 0,
@@ -4971,6 +5235,8 @@ namespace
 #if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
 		playerbot_offline::State offlineShop;
 #endif
+		// Iwakura's personality and mood (TPlayerBotPersona above).
+		TPlayerBotPersona persona;
 		TPlayerBotAIState() :
 			dwTargetVID(0),
 			dwSpawnTime(0),

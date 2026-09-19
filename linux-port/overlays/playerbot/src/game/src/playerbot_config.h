@@ -148,6 +148,13 @@ namespace
 	// The bots' ItemShop purchases (the ISHOP key), playerbot_itemshop.h.
 	bool s_bPlayerBotItemShop = true;
 	bool s_bPlayerBotItemShopReported = true;
+	// Iwakura's personality system (the PERSONA key): moods, the personalities
+	// that follow a bot's situation, the Grinder's experience locks and the
+	// Law of Advancement (playerbot_persona.h). On by default - the operator
+	// asked for it (19 September) - and the switch is the way back to the
+	// world as it was, whole, while a world is running.
+	bool s_bPlayerBotPersona = true;
+	bool s_bPlayerBotPersonaReported = true;
 	// What the clock last asked the DB core for, so a request is not repeated
 	// every minute while the round trip is still in flight, and so switching
 	// the clock off in the middle of a night lowers the flag it raised.
@@ -203,6 +210,7 @@ namespace
 		s_bPlayerBotGuildWars = true;
 		s_bPlayerBotTowerRaids = true;
 		s_bPlayerBotItemShop = true;
+		s_bPlayerBotPersona = true;
 		if (s_iPlayerBotChestConfigPermille < 0)
 		{
 			s_iPlayerBotChestConfigPermille = g_iMoonlightChestPermille;
@@ -326,6 +334,17 @@ namespace
 				s_bPlayerBotItemShopReported = enabled;
 			}
 			s_bPlayerBotItemShop = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "PERSONA"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotPersonaReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: personalities (Iwakura v2) %s", enabled ? "on" : "off");
+				s_bPlayerBotPersonaReported = enabled;
+			}
+			s_bPlayerBotPersona = enabled;
 			return;
 		}
 		if (PlayerBotWeightNameEquals(szKey, "CHEST") || PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))
@@ -493,6 +512,8 @@ namespace
 			return s_bPlayerBotTowerRaids ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "ISHOP"))
 			return s_bPlayerBotItemShop ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "PERSONA"))
+			return s_bPlayerBotPersona ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "SCRAP"))
 			return s_iPlayerBotScrapPercent;
 		if (PlayerBotWeightNameEquals(szKey, "REST"))
@@ -542,7 +563,8 @@ namespace
 				PlayerBotWeightNameEquals(szKey, "LIFE") ||
 				PlayerBotWeightNameEquals(szKey, "WARS") ||
 				PlayerBotWeightNameEquals(szKey, "TOWER") ||
-				PlayerBotWeightNameEquals(szKey, "ISHOP"))
+				PlayerBotWeightNameEquals(szKey, "ISHOP") ||
+				PlayerBotWeightNameEquals(szKey, "PERSONA"))
 		{
 			value = value ? 1 : 0;
 			return true;
@@ -871,6 +893,9 @@ namespace
 	// The market ledger's count of open counters on a map (playerbot_market.h,
 	// which comes long after this fragment).
 	int GetPlayerBotStallsOnMap(long lMapIndex);
+	// Whether the bot's mood lets it rest at all (playerbot_mood.h): under the
+	// PERSONA switch only a SLABY bot does.
+	bool PlayerBotMoodAllowsTownRest(LPCHARACTER ch);
 
 	// Whether this bot may stand about in town at all: in a first village, old
 	// enough, the REST key above zero, and counters on the map to stand among.
@@ -881,13 +906,17 @@ namespace
 	// to zero ends the rests already running rather than waiting them out.
 	// A dropper does not: its time is its table's, and ten medal droppers were
 	// found resting on Yongan's square between two dungeon trips.
+	// Under Iwakura's personalities a rest is SLABY's alone: NORMALNY and
+	// BARDZO DOBRY stop only for what the game makes them do, and the REST
+	// slider now says what share of the SLABY bots rest (19 September).
 	bool MayPlayerBotRestInTown(LPCHARACTER ch)
 	{
 		return ch && IsPlayerBotM1Map(ch->GetMapIndex()) &&
 				!IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())) &&
 				ch->GetLevel() >= PLAYERBOT_TOWN_REST_MIN_LEVEL &&
 				GetPlayerBotRestPercent() > 0 &&
-				GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0;
+				GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0 &&
+				PlayerBotMoodAllowsTownRest(ch);
 	}
 
 	bool RollPlayerBotTownRest(LPCHARACTER ch)
@@ -907,6 +936,16 @@ namespace
 	bool IsPlayerBotLifeScheduleEnabled()
 	{
 		return s_bPlayerBotLifeSchedule;
+	}
+
+	// The PERSONA switch: Iwakura's personalities and moods
+	// (playerbot_mood.h, playerbot_persona.h). Every rule that behaves
+	// differently under them asks this, so off is today's world, whole.
+	bool IsPlayerBotPersonaEnabled()
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		return s_bPlayerBotPersona;
 	}
 
 	// The WARS switch, asked by ManagePlayerBotGuildWars.

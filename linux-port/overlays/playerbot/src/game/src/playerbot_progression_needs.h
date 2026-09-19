@@ -49,16 +49,27 @@ namespace {
         }
         return 0;
     }
+    // Iwakura's Student (SUB-OSOBOWOSCI CHWILOWE): a book or a spirit stone a
+    // bot drops it reads on the spot, but under the personality system it
+    // buys one only once its big three - weapon, armour, shield - stand at +7
+    // ("Grinder ... nigdy nie kupuje KU na rynku, gdyz priorytetowo odklada
+    // Yang na ulepszenie sprzetu"). The keep limits below were already the
+    // other half of his rule: a book for a skill at Master, a stone for one at
+    // Grand Master, never one "na zapas".
+    bool PlayerBotStudiesAtTheMarket(LPCHARACTER ch) {
+        return !IsPlayerBotPersonaEnabled() || IsPlayerBotBigThreeAtPlus(ch, 7);
+    }
     // Quantity needed, not a boolean reason to buy an arbitrarily large stack.
     int GetPlayerBotProgressionNeed(LPCHARACTER ch, LPITEM offer) {
         if (!ch || !offer || !ch->IsItemLoaded()) return 0;
         if (offer->GetType() == ITEM_SKILLBOOK) {
             DWORD skill = GetPlayerBotSkillBookSkillVnum(offer);
-            if (!ch->GetSkillGroup() || !IsPlayerBotOwnSkill(ch, skill)) return 0;
+            if (!ch->GetSkillGroup() || !IsPlayerBotOwnSkill(ch, skill) || !PlayerBotStudiesAtTheMarket(ch)) return 0;
             return std::max(0, GetPlayerBotBookKeepLimit(ch, skill) - CountPlayerBotOwnedSkillBooks(ch, skill));
         }
         if (offer->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
-            return PlayerBotHasGrandMasterToTrain(ch) ? std::max(0, PLAYERBOT_GRAND_MASTER_STONE_KEEP - (int)ch->CountSpecifyItem(offer->GetVnum())) : 0;
+            return PlayerBotHasGrandMasterToTrain(ch) && PlayerBotStudiesAtTheMarket(ch)
+                ? std::max(0, PLAYERBOT_GRAND_MASTER_STONE_KEEP - (int)ch->CountSpecifyItem(offer->GetVnum())) : 0;
         return GetPlayerBotBiologistPurchaseNeed(ch, offer->GetVnum());
     }
     bool IsPlayerBotProgressionOffer(LPCHARACTER ch, LPITEM offer) {
@@ -68,12 +79,14 @@ namespace {
     bool PlayerBotNeedsProgressionShopping(LPCHARACTER ch) {
         if (!ch || !ch->IsItemLoaded() || !ch->GetSkillGroup()) return false;
         const TJobSkillBuild build = GetPlayerBotSkillBuild(ch->GetJob(), ch->GetSkillGroup(), ch->GetPlayerID());
-        for (BYTE i = 0; i < build.bSkillCount; ++i) {
+        const bool studies = PlayerBotStudiesAtTheMarket(ch);
+        for (BYTE i = 0; studies && i < build.bSkillCount; ++i) {
             DWORD skill = build.dwSkills[i];
             if (skill && ch->GetSkillMasterType(skill) == SKILL_MASTER &&
                     CountPlayerBotOwnedSkillBooks(ch, skill) < GetPlayerBotBookKeepLimit(ch, skill)) return true;
         }
-        if (PlayerBotHasGrandMasterToTrain(ch) && ch->CountSpecifyItem(PLAYERBOT_GRAND_MASTER_STONE_VNUM) < PLAYERBOT_GRAND_MASTER_STONE_KEEP) return true;
+        if (studies && PlayerBotHasGrandMasterToTrain(ch) &&
+                ch->CountSpecifyItem(PLAYERBOT_GRAND_MASTER_STONE_VNUM) < PLAYERBOT_GRAND_MASTER_STONE_KEEP) return true;
         for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i)
             if (GetPlayerBotBiologistPurchaseNeed(ch, PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum) > 0) return true;
         return false;
@@ -81,8 +94,9 @@ namespace {
 
     bool PlayerBotProgressionSupplyExists(LPCHARACTER ch) {
         // The ledger is advisory; the actual offer is revalidated at purchase.
+        const bool studies = PlayerBotStudiesAtTheMarket(ch);
         const TPlayerBotMarketLedgerEntry* books = GetPlayerBotMarketLedgerEntry(50300);
-        if (books && books->dwSupplyUnits > 0 && ch->GetSkillGroup()) {
+        if (studies && books && books->dwSupplyUnits > 0 && ch->GetSkillGroup()) {
             const TJobSkillBuild build = GetPlayerBotSkillBuild(ch->GetJob(), ch->GetSkillGroup(), ch->GetPlayerID());
             for (BYTE i = 0; i < build.bSkillCount; ++i) {
                 DWORD skill = build.dwSkills[i];
@@ -91,7 +105,7 @@ namespace {
             }
         }
         const TPlayerBotMarketLedgerEntry* stones = GetPlayerBotMarketLedgerEntry(PLAYERBOT_GRAND_MASTER_STONE_VNUM);
-        if (stones && stones->dwSupplyUnits > 0 && PlayerBotHasGrandMasterToTrain(ch) &&
+        if (studies && stones && stones->dwSupplyUnits > 0 && PlayerBotHasGrandMasterToTrain(ch) &&
                 ch->CountSpecifyItem(PLAYERBOT_GRAND_MASTER_STONE_VNUM) < PLAYERBOT_GRAND_MASTER_STONE_KEEP) return true;
         for (size_t i = 0; i < PLAYERBOT_BIOLOGIST_MISSION_COUNT; ++i) {
             const DWORD vnum = PLAYERBOT_BIOLOGIST_MISSIONS[i].itemVnum;

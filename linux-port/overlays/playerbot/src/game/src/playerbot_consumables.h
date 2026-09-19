@@ -289,10 +289,17 @@ namespace
 			const int before = ch->GetEmptyInventory(1);
 			const DWORD chestVnum = item->GetVnum();
 			const DWORD chestCount = item->GetCount();
+			// What the chest hands out goes straight into the bag, one line of
+			// its group at a time, and nothing else names it: the bag's
+			// valuables before and after are the Bot Mood System's news.
+			const int valuablesBefore = IsPlayerBotPersonaEnabled() ? CountPlayerBotMoodValuables(ch) : 0;
 			// By the chest's own cell: FreePlayerBotGiftboxColumn may have moved
 			// this very chest out of the column it made.
 			if (ch->UseItem(TItemPos(INVENTORY, item->GetCell())))
 			{
+				if (IsPlayerBotPersonaEnabled())
+					NotePlayerBotMoodValuableCount(ch,
+							CountPlayerBotMoodValuables(ch) - valuablesBefore, "chest");
 				sys_log(0, "PLAYERBOT_CHEST: opened pid=%u name=%s level=%u map=%ld free_before=%d free_after=%d",
 						ch->GetPlayerID(), ch->GetName(), ch->GetLevel(), ch->GetMapIndex(),
 						before, ch->GetEmptyInventory(1));

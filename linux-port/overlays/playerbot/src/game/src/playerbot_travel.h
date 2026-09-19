@@ -99,6 +99,11 @@ namespace
 		if (IsPlayerBotOnBattleHorseTrial(ch))
 			return false;
 
+		// Iwakura's Trader goes back to town at eighty percent: a break is for
+		// what the game makes the bot do, and a bag at half is not that.
+		if (IsPlayerBotPersonaEnabled())
+			return IsPlayerBotBagFull(ch);
+
 		size_t occupiedGridCells = 0;
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
 		{
@@ -219,6 +224,15 @@ namespace
 		// anything else is worth a trip to Joan while the character is still
 		// young enough for her to serve it.
 		if (ShouldPlayerBotResetSkills(ch, state, dwNow))
+			return true;
+		// Iwakura's Rybak: a bot back in a second village in a mood for the
+		// water gives up the grind for the bank ("po powrocie do miasta
+		// zrezygnuje z dalszego grindu"), and the banks are the first villages'.
+		// Only from a village: a bot on the frontier goes home first.
+		if (IsPlayerBotPersonaEnabled() && state.persona.bRestored &&
+				IsPlayerBotVillageMap(ch->GetMapIndex()) && !IsPlayerBotM1Map(ch->GetMapIndex()) &&
+				!state.bFishingSession && dwNow >= state.dwNextFishingCheckTime &&
+				IsPlayerBotAngler(ch, state))
 			return true;
 
 		size_t missionIndex = 0;
@@ -1390,10 +1404,18 @@ namespace
 		return true;
 	}
 
+	// Defined in playerbot_gambler.h, after the town visit that runs it.
+	bool IsPlayerBotGambling(const TPlayerBotAIState& state, DWORD dwNow);
+
 	bool ManagePlayerBotWorldTravel(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || state.bVisitingShop || state.bVisitingBiologist ||
 				state.bVisitingStable || state.bRecoveringAfterDeath || state.bTacticalRetreat)
+			return false;
+		// A gambler whose visit was cut short (a death, the watchdog) is back at
+		// the anvil when the town check comes round again in a minute or two;
+		// the road would take it to another map for the rest of its session.
+		if (IsPlayerBotGambling(state, dwNow) && IsPlayerBotVillageMap(ch->GetMapIndex()))
 			return false;
 		// A bot in a player's party goes where the player goes
 		// (ManagePlayerBotFollowHumanLeader), not where its own plans send it.
@@ -1415,8 +1437,13 @@ namespace
 		// A medal in a medal dropper's bag is stock for its counter, not an errand
 		// at the stable: neither village holds such a bot back for one, and its
 		// expedition goes on past it (GetPlayerBotDesiredHorseMedalStock).
+		// Under Iwakura's system only a medal the stable would take holds a bot
+		// back: a Grinder on its first horse carries them as stock for a
+		// counter (IsPlayerBotGrinderRider), and a village that held it for one
+		// would hold it for good.
 		const bool holdsMedalToHandIn = hasMedal &&
-				state.bPersonality != BOT_PERSONALITY_MEDAL_DROPPER;
+				state.bPersonality != BOT_PERSONALITY_MEDAL_DROPPER &&
+				(!IsPlayerBotPersonaEnabled() || CanPlayerBotAdvanceHorse(ch));
 		// A trader does not down tools to go and farm horse medals in the Monkey
 		// Dungeon. That errand takes a bot right across the world for the better
 		// part of an hour, and it is exactly the striving this personality exists

@@ -157,6 +157,11 @@ except (OSError, ValueError):
 # czytal sie jako wedrowiec, a piec dopisanych od tamtej pory osobowosci
 # nie czytalo sie wcale.
 BOT_PERSONALITIES = {0: "Wytrwały poszukiwacz", 1: "Pogromca Metinów", 2: "Towarzysz drużyny", 3: "Mistrz ekwipunku", 4: "Rozważny zbieracz", 5: "Handlarz", 6: "Wędrowiec", 7: "Dropek Metinów", 8: "Dropek z M3", 9: "Dropek z M2", 10: "Dropek medali"}
+# Iwakura's personalities ("SYSTEM OSOBOWOSCI v2.0", playerbot_persona_rules.h,
+# EPersona - the order is the interface) and the Bot Mood System's moods.
+BOT_PERSONAS = {0: "Grinder", 1: "Zdobywca", 2: "Handlarz", 3: "Hazardzista", 4: "Perfekcjonista", 5: "Pogromca metinów", 6: "Górnik", 7: "Rybak", 8: "Najemnik", 9: "Towarzysz"}
+BOT_MOODS = {0: "Słaby", 1: "Normalny", 2: "Bardzo dobry"}
+BOT_MOOD_LOCKS = {1: "euforia po ulepszeniu", 2: "kapitulacja (Anty-PK)"}
 BOT_AMBITIONS = {0: "Poziom", 1: "Ekwipunek", 2: "Metiny", 3: "Koń", 4: "Biolog", 5: "Umiejętności", 6: "Handel"}
 BOT_GOALS = {0: "Zdobywanie poziomu", 1: "Przetrwanie", 2: "Wybór profesji", 3: "Zdobycie ekwipunku", 4: "Uzupełnienie zapasów", 5: "Ulepszanie EQ", 6: "Rozwój umiejętności", 7: "Polowanie na Metiny", 8: "Silne cele w PT", 9: "Misja Biologa", 10: "Misja Polowania", 11: "Rozwój konia"}
 # 18 (Kopie rudę) byla dopisana do playerbot_types.h u Tieru, ale nie tutaj -
@@ -480,6 +485,52 @@ def honor_rank(value):
     return {"points": points, "title": "Okrutny", "css": "cruel"}
 
 
+# playerbot_status.tsv, read by its header: Iwakura's personalities (2.0.85)
+# put four columns (persona, mood, mood_lock, lock_level) before the status
+# text, which stays last because it may hold spaces. A core of before that
+# writes the old fourteen columns under a header too; with no header at all
+# the old fourteen are assumed.
+STATUS_LEGACY_COLUMNS = ("pid", "personality", "ambition", "role", "in_party", "goal", "action",
+                         "updated_ms", "map", "x", "y", "hp", "max_hp", "status")
+PERSONA_NONE = 255
+
+
+def parse_status_rows(text):
+    header = None
+    for line in text.splitlines():
+        if line.startswith("pid\t"):
+            header = line.split("\t")
+            continue
+        columns = header or STATUS_LEGACY_COLUMNS
+        values = line.split("\t", len(columns) - 1)
+        if len(values) != len(columns) or columns[-1] != "status":
+            continue
+        try:
+            numbers = {name: int(value) for name, value in zip(columns[:-1], values[:-1])}
+        except ValueError:
+            continue
+        if "pid" in numbers:
+            yield numbers, values[-1]
+
+
+def personality_label(state):
+    """The personality that claims the bot now, or the old one with the
+    PERSONA switch off."""
+    persona = state.get("persona")
+    if persona is not None:
+        return BOT_PERSONAS.get(int(persona), f"#{persona}")
+    return live_label("personality", state.get("personality"))
+
+
+def mood_label(state):
+    mood = state.get("mood")
+    if mood is None:
+        return ""
+    text = BOT_MOODS.get(int(mood), "Normalny")
+    lock = BOT_MOOD_LOCKS.get(int(state.get("mood_lock") or 0))
+    return f"{text} ({lock})" if lock else text
+
+
 def live_label(field, value):
     labels = {"personality": BOT_PERSONALITIES, "ambition": BOT_AMBITIONS, "goal": BOT_GOALS, "action": BOT_ACTIONS}.get(field, {})
     value = int(value or 0)
@@ -685,10 +736,12 @@ def live_statuses():
             try:
                 if datetime.now().timestamp() - path.stat().st_mtime > 25:
                     continue
-                for line in path.read_text(encoding="cp1250", errors="replace").splitlines()[1:]:
-                    values = line.split("\t", 13)
-                    if len(values) == 14:
-                        result[int(values[0])] = {"personality": int(values[1]), "ambition": int(values[2]), "role": int(values[3]), "in_party": bool(int(values[4])), "goal": int(values[5]), "action": int(values[6]), "updated_ms": int(values[7]), "map_index": int(values[8]), "x": int(values[9]), "y": int(values[10]), "hp": int(values[11]), "max_hp": int(values[12]), "status": values[13]}
+                for n, status in parse_status_rows(path.read_text(encoding="cp1250", errors="replace")):
+                    persona = n.get("persona", PERSONA_NONE)
+                    mood = n.get("mood", PERSONA_NONE)
+                    result[n["pid"]] = {"personality": n.get("personality", 0), "ambition": n.get("ambition", 0), "role": n.get("role", 0), "in_party": bool(n.get("in_party", 0)), "goal": n.get("goal", 0), "action": n.get("action", 0), "updated_ms": n.get("updated_ms", 0), "map_index": n.get("map", 0), "x": n.get("x", 0), "y": n.get("y", 0), "hp": n.get("hp", 0), "max_hp": n.get("max_hp", 0),
+                                        "persona": None if persona == PERSONA_NONE else persona, "mood": None if mood == PERSONA_NONE else mood,
+                                        "mood_lock": n.get("mood_lock", 0), "lock_level": n.get("lock_level", 0), "status": status}
             except (OSError, ValueError):
                 continue
     return result
@@ -801,7 +854,8 @@ def live_bots():
             # The free-text status is diagnostic and can be stale; action is the authoritative core state.
             result.append({
                 **bot, **state,
-                "personality_label": live_label("personality", state["personality"]),
+                "personality_label": personality_label(state),
+                "mood_label": mood_label(state),
                 "ambition_label": live_label("ambition", state["ambition"]),
                 "goal_label": live_label("goal", state["goal"]),
                 "action_label": live_label("action", state["action"]),
@@ -2220,7 +2274,10 @@ def player(pid):
     live = live_statuses().get(pid)
     if live:
         character.update(live)
-        character["personality"] = live_label("personality", live.get("personality"))
+        character["personality"] = personality_label(live)
+        character["charakter"] = live_label("personality", live.get("personality")) if live.get("persona") is not None else ""
+        character["mood"] = mood_label(live)
+        character["hold"] = f"blokada expa na {live['lock_level']} lvl" if live.get("persona") is not None and live.get("lock_level") else ""
         character["ambition"] = live_label("ambition", live.get("ambition"))
         character["goal"] = live_label("goal", live.get("goal"))
         character["action"] = live.get("status") or live_label("action", live.get("action"))

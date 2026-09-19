@@ -68,6 +68,10 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		// A player invited a bot into a guild (CGuild::Invite, mt2009 via
 		// playerbotify.py): answered on the spot, while the invitation lives.
 		void	OnGuildInvite(CGuild* guild, LPCHARACTER inviter, LPCHARACTER invitee);
+		// A player struck a bot, or a person in a party (CHARACTER::Damage,
+		// mt2009 via playerbotify.py): the Anti-PK protocol's only source of
+		// who is attacking a bot - the engine keeps no record of it.
+		void	OnPlayerStruck(LPCHARACTER victim, LPCHARACTER attacker);
 
 		// The operator's spawn plan (input_db.cpp through playerbotify.py): the
 		// window the cohort arrives over, and a second cohort that joins one at

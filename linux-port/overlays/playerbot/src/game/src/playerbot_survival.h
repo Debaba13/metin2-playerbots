@@ -239,6 +239,9 @@ namespace
 			state.lDeathX = ch->GetX();
 			state.lDeathY = ch->GetY();
 			++state.bDeathCount;
+			// A Conqueror dying to monsters too often has outgrown its gear
+			// (playerbot_persona.h).
+			NotePlayerBotPersonaDeath(ch, state, dwNow);
 
 			state.dwTargetVID = 0;
 			ch->SetVictim(NULL);

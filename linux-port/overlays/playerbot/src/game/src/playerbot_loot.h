@@ -405,9 +405,13 @@ namespace
 		const DWORD itemVID = pickup->GetVID();
 		const DWORD itemVnum = pickup->GetVnum();
 		const bool material = pickup->GetType() == ITEM_MATERIAL;
+		// Read before the pickup: a stack that merges is gone after it.
+		const long itemSocket0 = pickup->GetSocket(0);
+		const BYTE itemType = pickup->GetType();
 		state.dwNextLootPickupTime = dwNow + GetPlayerBotLootPickupInterval(pickup);
 		if (ch->PickupItem(itemVID))
 		{
+			NotePlayerBotMoodValuable(ch, itemVnum, itemSocket0, itemType, "pickup");
 			state.mapLootSeenSince.erase(itemVID);
 			if (material)
 				RememberPlayerBotSpotDrop(ch->GetMapIndex(), ch->GetX(), ch->GetY(), itemVnum);
@@ -556,9 +560,12 @@ namespace
 
 			const DWORD itemVnum = nearest->GetVnum();
 			const bool material = nearest->GetType() == ITEM_MATERIAL;
+			const long itemSocket0 = nearest->GetSocket(0);
+			const BYTE itemType = nearest->GetType();
 			state.dwNextLootPickupTime = dwNow + GetPlayerBotLootPickupInterval(nearest);
 			if (ch->PickupItem(nearestVID))
 			{
+				NotePlayerBotMoodValuable(ch, itemVnum, itemSocket0, itemType, "pickup");
 				state.mapLootSeenSince.erase(nearestVID);
 				if (material)
 					RememberPlayerBotSpotDrop(ch->GetMapIndex(), ch->GetX(), ch->GetY(), itemVnum);

@@ -1876,10 +1876,18 @@ namespace
 		return false;
 	}
 
+	// Defined in playerbot_persona.h, further down: M3's door by Iwakura's
+	// document - a weapon at +6 and an armour at +5, the Mental Warrior with the
+	// weapon alone.
+	bool MeetsPlayerBotM3Survival(LPCHARACTER ch);
+
 	bool HasPlayerBotM3ReadyEquipment(LPCHARACTER ch)
 	{
 		if (!ch)
 			return false;
+		// The document's second tier starts at fifteen, as the old rule did.
+		if (IsPlayerBotPersonaEnabled())
+			return ch->GetLevel() >= 15 && MeetsPlayerBotM3Survival(ch);
 		LPITEM weapon = ch->GetWear(WEAR_WEAPON);
 		LPITEM armor = ch->GetWear(WEAR_BODY);
 		LPITEM shield = ch->GetWear(WEAR_SHIELD);
@@ -1971,9 +1979,58 @@ namespace
 		return scrolls;
 	}
 
+	bool PlayerBotWantsShield(LPCHARACTER ch);
+
+	// Iwakura's Perfectionist ranks the gear: the weapon first, the armour,
+	// the shield, and the rest - helmet, boots, jewellery - only once those
+	// three stand at +7 ("wielka trojca"). A bow or a two-hander has no shield
+	// to wait for.
+	bool IsPlayerBotBigThreeSlot(int wearCell)
+	{
+		return wearCell == WEAR_WEAPON || wearCell == WEAR_BODY || wearCell == WEAR_SHIELD;
+	}
+
+	bool IsPlayerBotBigThreeAtPlus(LPCHARACTER ch, BYTE plus)
+	{
+		if (!ch)
+			return false;
+		LPITEM weapon = GetPlayerBotHandWeapon(ch);
+		LPITEM body = ch->GetWear(WEAR_BODY);
+		if (!weapon || weapon->GetRefineLevel() < plus || !body || body->GetRefineLevel() < plus)
+			return false;
+		if (!PlayerBotWantsShield(ch))
+			return true;
+		LPITEM shield = ch->GetWear(WEAR_SHIELD);
+		return shield && shield->GetRefineLevel() >= plus;
+	}
+
+	// The Perfectionist's rank of a piece for the anvil: 0 the weapon, 1 the
+	// armour, 2 the shield, 3 the rest.
+	BYTE GetPlayerBotPerfectionistRank(LPCHARACTER ch, LPITEM item)
+	{
+		const int cell = item ? item->FindEquipCell(ch) : -1;
+		return cell == WEAR_WEAPON ? 0 : (cell == WEAR_BODY ? 1 : (cell == WEAR_SHIELD ? 2 : 3));
+	}
+
 	// How far a bot means to take a piece on the plain anvil, where a failed
 	// step burns it. What a scroll in the bag changes is GetPlayerBotRefineTarget.
+	BYTE GetPlayerBotRefineAmbitionDrawn(LPCHARACTER ch, LPITEM item);
+
 	BYTE GetPlayerBotRefineAmbition(LPCHARACTER ch, LPITEM item)
+	{
+		const BYTE drawn = GetPlayerBotRefineAmbitionDrawn(ch, item);
+		if (!ch || !item || drawn == 0 || !IsPlayerBotPersonaEnabled() || IsPlayerBotArcherStoneWeapon(ch, item))
+			return drawn;
+		// The Perfectionist aims the three at +7 whatever the draw - the Law of
+		// Advancement asks the weapon for +7 - and lets the draw carry them to
+		// +8 and +9 ("dazac do progu +7, a docelowo +8 i +9"). The rest waits
+		// for the three.
+		if (IsPlayerBotBigThreeSlot(item->FindEquipCell(ch)))
+			return std::max<BYTE>(drawn, 7);
+		return IsPlayerBotBigThreeAtPlus(ch, 7) ? drawn : 0;
+	}
+
+	BYTE GetPlayerBotRefineAmbitionDrawn(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item)
 			return 0;
@@ -2031,6 +2088,13 @@ namespace
 		// One of another class, ground for sale, as far as its ceiling.
 		if (PlayerBotRefinesLevel30ForSale(ch, item))
 			return GetPlayerBotLevel30SaleTarget(item);
+		// Under Iwakura's personalities the helmet, the boots and the jewellery
+		// wait for the weapon, the armour and the shield to stand at +7
+		// (GetPlayerBotRefineAmbition) - and a scroll in the bag, which would
+		// otherwise make a ladder of any piece, does not change that.
+		if (IsPlayerBotPersonaEnabled() && !IsPlayerBotArcherStoneWeapon(ch, item) &&
+				!IsPlayerBotBigThreeSlot(item->FindEquipCell(ch)) && !IsPlayerBotBigThreeAtPlus(ch, 7))
+			return 0;
 		// A scroll in the bag is a ladder to +9 for everybody: under it a
 		// failure costs a level or nothing, never the piece, so the ambition -
 		// which is about not burning what was earned - does not apply while

@@ -74,6 +74,19 @@ PERSONALITY_TITLES = {
 	8: "Dropek z M3",
 	9: "Dropek z M2",
 	10: "Dropek medali",
+	# Iwakura's personalities (playerbot_persona_rules.h, PERSONA_TITLE_BASE +
+	# EPersona): under the server's PERSONA switch the title is the one that
+	# claims the bot now, and it changes with what the bot is doing.
+	100: "Grinder",
+	101: "Zdobywca",
+	102: "Handlarz",
+	103: "Hazardzista",
+	104: "Perfekcjonista",
+	105: "Pogromca Metin\xf3w",
+	106: "G\xf3rnik",
+	107: "Rybak",
+	108: "Najemnik",
+	109: "Towarzysz",
 }
 
 PERSONALITY_COLOURS = {
@@ -88,6 +101,16 @@ PERSONALITY_COLOURS = {
 	8: (0.95, 0.7, 0.95),
 	9: (0.8, 0.85, 0.65),
 	10: (0.95, 0.8, 0.55),
+	100: (0.8, 0.8, 0.8),
+	101: (0.55, 0.95, 0.55),
+	102: (1.0, 0.95, 0.5),
+	103: (1.0, 0.55, 0.85),
+	104: (1.0, 0.85, 0.35),
+	105: (1.0, 0.65, 0.3),
+	106: (0.75, 0.65, 0.5),
+	107: (0.45, 0.8, 1.0),
+	108: (1.0, 0.45, 0.45),
+	109: (0.45, 0.9, 0.95),
 }
 
 TITLE_REFRESH_SECONDS = 1.0

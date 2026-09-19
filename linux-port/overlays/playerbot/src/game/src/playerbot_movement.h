@@ -654,6 +654,10 @@ namespace
 		// Breaking one warps every PC on the killer's map into a new tower.
 		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return false;
+		// Iwakura's stone hunter: ten levels either way, "aby zagwarantowac
+		// szanse na drop oraz upewnic sie, ze bot fizycznie da rade go zniszczyc".
+		if (IsPlayerBotPersonaEnabled())
+			return playerbot_persona::InPogromcaBand((int)ch->GetLevel(), (int)stone->GetLevel());
 		// Alone, a stone up to nine over the bot (a stronger one it cannot break
 		// by itself - it joins those, IsPlayerBotStoneJoinable), and one it has
 		// outgrown by PLAYERBOT_STONE_OUTGROWN_LEVELS is passed: the drop curve

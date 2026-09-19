@@ -322,6 +322,114 @@ namespace
 		players = counter.GetPlayers();
 	}
 
+	// Iwakura's stone hunter counts only its own: "jesli Metina bije juz 3 lub
+	// wiecej botow z tego samego krolestwa, bot rezygnuje". A bot is one this
+	// core runs - the state map says so - and "breaking" is the same test as
+	// the plain count's: its victim, or its AI's target.
+	class CCountPlayerBotStoneKingdomBots
+	{
+		public:
+			CCountPlayerBotStoneKingdomBots(LPCHARACTER stone, LPCHARACTER exclude, BYTE empire) :
+				m_stone(stone), m_exclude(exclude), m_empire(empire), m_count(0) {}
+
+			void operator () (LPENTITY entity)
+			{
+				if (!entity || !entity->IsType(ENTITY_CHARACTER))
+					return;
+				LPCHARACTER attacker = static_cast<LPCHARACTER>(entity);
+				if (attacker == m_exclude || !attacker->IsPC() || attacker->IsDead() ||
+						attacker->GetEmpire() != m_empire ||
+						attacker->GetMapIndex() != m_stone->GetMapIndex() ||
+						DISTANCE_APPROX(attacker->GetX() - m_stone->GetX(),
+								attacker->GetY() - m_stone->GetY()) > PLAYERBOT_STONE_SUPPORT_RANGE)
+					return;
+				TPlayerBotAIStateMap::const_iterator it =
+						s_mapPlayerBotAIStates.find(attacker->GetPlayerID());
+				if (it == s_mapPlayerBotAIStates.end())
+					return;
+				if (attacker->GetVictim() == m_stone ||
+						it->second.dwTargetVID == (DWORD)m_stone->GetVID())
+					++m_count;
+			}
+
+			int GetCount() const { return m_count; }
+
+		private:
+			LPCHARACTER m_stone;
+			LPCHARACTER m_exclude;
+			BYTE m_empire;
+			int m_count;
+	};
+
+	int CountPlayerBotStoneKingdomBots(LPCHARACTER stone, LPCHARACTER ch)
+	{
+		if (!stone || !ch || !stone->GetSectree())
+			return 0;
+		CCountPlayerBotStoneKingdomBots counter(stone, ch, ch->GetEmpire());
+		stone->GetSectree()->ForEachAround(counter);
+		return counter.GetCount();
+	}
+
+	// And the other half of his rule: somebody of another kingdom breaking the
+	// stone - a bot, or a person ("doslownie z dokumentu", Tieru, 19 September)
+	// - whom this bot's blow can reach. The nearest to the bot.
+	class FFindPlayerBotStoneRival
+	{
+		public:
+			FFindPlayerBotStoneRival(LPCHARACTER ch, LPCHARACTER stone) :
+				m_ch(ch), m_stone(stone), m_found(NULL), m_bestDistance(INT_MAX) {}
+
+			void operator () (LPENTITY entity)
+			{
+				if (!entity || !entity->IsType(ENTITY_CHARACTER))
+					return;
+				LPCHARACTER other = static_cast<LPCHARACTER>(entity);
+				if (other == m_ch || !other->IsPC() || other->IsDead() ||
+						other->GetEmpire() == m_ch->GetEmpire() ||
+						other->GetMapIndex() != m_stone->GetMapIndex() ||
+						other->IsAffectFlag(AFF_REVIVE_INVISIBLE) ||
+						(m_ch->GetParty() && other->GetParty() == m_ch->GetParty()) ||
+						DISTANCE_APPROX(other->GetX() - m_stone->GetX(),
+								other->GetY() - m_stone->GetY()) > PLAYERBOT_STONE_SUPPORT_RANGE)
+					return;
+				bool attacksStone = other->GetVictim() == m_stone;
+				if (!attacksStone)
+				{
+					TPlayerBotAIStateMap::const_iterator it =
+							s_mapPlayerBotAIStates.find(other->GetPlayerID());
+					attacksStone = it != s_mapPlayerBotAIStates.end() &&
+							it->second.dwTargetVID == (DWORD)m_stone->GetVID();
+				}
+				if (!attacksStone || !CanPlayerBotStrikeCharacter(m_ch, other) ||
+						IsPlayerBotSafeZone(other->GetMapIndex(), other->GetX(), other->GetY()))
+					return;
+				const int distance = DISTANCE_APPROX(m_ch->GetX() - other->GetX(),
+						m_ch->GetY() - other->GetY());
+				if (distance < m_bestDistance)
+				{
+					m_bestDistance = distance;
+					m_found = other;
+				}
+			}
+
+			LPCHARACTER GetFound() const { return m_found; }
+
+		private:
+			LPCHARACTER m_ch;
+			LPCHARACTER m_stone;
+			LPCHARACTER m_found;
+			int m_bestDistance;
+	};
+
+	LPCHARACTER FindPlayerBotStoneRival(LPCHARACTER ch, LPCHARACTER stone)
+	{
+		if (!ch || !stone || !stone->GetSectree())
+			return NULL;
+		FFindPlayerBotStoneRival finder(ch, stone);
+		stone->GetSectree()->ForEachAround(finder);
+		return finder.GetFound();
+	}
+
 	// Somebody is already breaking this stone, and it is somebody a bot
 	// joins: another bot always, a player only with PLAYERBOT_STONE_JOIN_PLAYERS.
 	bool IsPlayerBotStoneUnderJoinableAttack(LPCHARACTER ch, LPCHARACTER stone)
@@ -347,7 +455,14 @@ namespace
 			return false;
 		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return IsPlayerBotDungeonStoneObjective(ch, stone);
-		if ((int)stone->GetLevel() > (int)ch->GetLevel() + PLAYERBOT_STONE_JOIN_LEVEL_DELTA ||
+		// Under Iwakura's system the band of the stone hunter is the band of
+		// every stone, joined or not: ten levels either way.
+		if (IsPlayerBotPersonaEnabled())
+		{
+			if (!playerbot_persona::InPogromcaBand((int)ch->GetLevel(), (int)stone->GetLevel()))
+				return false;
+		}
+		else if ((int)stone->GetLevel() > (int)ch->GetLevel() + PLAYERBOT_STONE_JOIN_LEVEL_DELTA ||
 				(int)ch->GetLevel() > (int)stone->GetLevel() + PLAYERBOT_STONE_OUTGROWN_LEVELS)
 			return false;
 		return IsPlayerBotStoneUnderJoinableAttack(ch, stone);
@@ -541,7 +656,15 @@ namespace
 		{
 			LPCHARACTER target = CHARACTER_MANAGER::instance().Find(dwTargetVID);
 			if (target && target->IsStone())
+			{
+				// Iwakura's crowd is the bot's own kingdom: three of its bots
+				// and it goes back to what it was doing. Another kingdom's on
+				// the stone is not a crowd but a rival (playerbot_anti_pk.h).
+				if (IsPlayerBotPersonaEnabled())
+					return playerbot_persona::IsPogromcaCrowded(
+							CountPlayerBotStoneKingdomBots(target, owner));
 				return CountPlayerBotStoneAttackers(target, owner) >= PLAYERBOT_STONE_MAX_ATTACKERS;
+			}
 		}
 
 		for (TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.begin();
@@ -1017,6 +1140,11 @@ namespace
 					if (deathDist <= m_avoidRadius)
 						return false;
 				}
+				// And the ground a capitulation gave up (the Anti-PK protocol),
+				// for its forty-five minutes.
+				if (m_pState && IsPlayerBotAvoidedSpot(*m_pState, candidate->GetMapIndex(),
+						candidate->GetX(), candidate->GetY(), m_dwNow))
+					return false;
 
 				const int distance = DISTANCE_APPROX(
 						m_owner->GetX() - candidate->GetX(),
@@ -1487,6 +1615,19 @@ namespace
 						!IsTargetClaimedByAnotherBot(ch, targets[i].dwVID))
 					return CHARACTER_MANAGER::instance().Find(targets[i].dwVID);
 			}
+		}
+
+		// Iwakura's stone hunter: a stone in sight that the collector let
+		// through (its band, not failed, one the bot can break) and that its
+		// own kingdom has not crowded comes before anything at the bot's feet
+		// ("rzuca wszystko ... i pedzi prosto do kamienia"). The candidates are
+		// sorted, so the first such stone is the best one. A party is the
+		// party's to aim (FindPlayerBotPartyFocusTarget) and is left out.
+		if (IsPlayerBotPersonaEnabled() && !ch->GetParty())
+		{
+			for (size_t i = 0; i < targets.size(); ++i)
+				if (targets[i].bIsStone && !IsTargetClaimedByAnotherBot(ch, targets[i].dwVID))
+					return CHARACTER_MANAGER::instance().Find(targets[i].dwVID);
 		}
 
 		// Chain ordinary combat into the closest unclaimed pack. A nearby quest or

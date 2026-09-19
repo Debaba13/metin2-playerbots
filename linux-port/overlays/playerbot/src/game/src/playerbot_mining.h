@@ -364,6 +364,76 @@ namespace
 		return false;
 	}
 
+	// Iwakura's Gornik and the Perfectionist together: a smelt that fits the
+	// bot's own jewellery goes into it before anything thinks of selling it
+	// ("najpierw uzywa Diamentu, by wytworzyc wolne gniazda w swoim
+	// ekwipunku, a nastepnie umieszcza w nich przetopy"). The engine does both
+	// through UseItemEx onto the piece - USE_ADD_ACCESSORY_SOCKET opens a
+	// socket (up to ITEM_ACCESSORY_SOCKET_MAX_NUM), USE_PUT_INTO_ACCESSORY_SOCKET
+	// fills one when CItem::CanPutInto says the stone is this piece's - and
+	// refuses both on a worn piece, so the piece comes off for the one use and
+	// goes back on. One use a call, on a clock of its own.
+	std::map<DWORD, DWORD> s_mapPlayerBotSocketWorkNext;
+
+	bool ManagePlayerBotAccessorySockets(LPCHARACTER ch, DWORD dwNow)
+	{
+		if (!ch || !IsPlayerBotPersonaEnabled() || !ch->IsItemLoaded() || ch->IsDead())
+			return false;
+		const DWORD pid = ch->GetPlayerID();
+		std::map<DWORD, DWORD>::const_iterator next = s_mapPlayerBotSocketWorkNext.find(pid);
+		if (next != s_mapPlayerBotSocketWorkNext.end() && dwNow < next->second)
+			return false;
+		s_mapPlayerBotSocketWorkNext[pid] = dwNow + PLAYERBOT_GORNIK_SOCKET_WORK_MS;
+		static const BYTE slots[] = { WEAR_EAR, WEAR_WRIST, WEAR_NECK };
+		for (size_t s = 0; s < sizeof(slots) / sizeof(slots[0]); ++s)
+		{
+			LPITEM piece = ch->GetWear(slots[s]);
+			if (!piece || !piece->IsAccessoryForSocket() || piece->isLocked() || piece->IsExchanging())
+				continue;
+			int smeltCell = -1, diamondCell = -1;
+			for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+			{
+				LPITEM item = ch->GetInventoryItem(cell);
+				if (!item || item->GetCell() != cell || item->isLocked() || item->GetType() != ITEM_USE)
+					continue;
+				if (item->GetSubType() == USE_PUT_INTO_ACCESSORY_SOCKET && smeltCell < 0 &&
+						item->CanPutInto(piece))
+					smeltCell = cell;
+				else if (item->GetSubType() == USE_ADD_ACCESSORY_SOCKET && diamondCell < 0)
+					diamondCell = cell;
+			}
+			if (smeltCell < 0)
+				continue;
+			const int grade = piece->GetAccessorySocketGrade();
+			const int maxGrade = piece->GetAccessorySocketMaxGrade();
+			const bool freeSocket = grade < maxGrade;
+			if (!freeSocket && (maxGrade >= ITEM_ACCESSORY_SOCKET_MAX_NUM || diamondCell < 0))
+				continue;
+			// UnequipItem takes a bag cell without asking for one.
+			if (ch->GetEmptyInventory(piece->GetSize()) < 0)
+				return false;
+			const DWORD pieceVnum = piece->GetVnum();
+			if (!ch->UnequipItem(piece) || piece->IsEquipped() || piece->GetWindow() != INVENTORY)
+				return false;
+			const WORD pieceCell = piece->GetCell();
+			const int useCell = freeSocket ? smeltCell : diamondCell;
+			LPITEM use = ch->GetInventoryItem(useCell);
+			const DWORD useVnum = use ? use->GetVnum() : 0;
+			const bool used = use && ch->UseItem(TItemPos(INVENTORY, (WORD)useCell),
+					TItemPos(INVENTORY, pieceCell));
+			LPITEM after = ch->GetInventoryItem(pieceCell);
+			const int gradeAfter = after ? after->GetAccessorySocketGrade() : grade;
+			const int maxAfter = after ? after->GetAccessorySocketMaxGrade() : maxGrade;
+			if (after)
+				PlayerBotEquipItem(ch, after);
+			sys_log(0, "PLAYERBOT_PERSONA: gornik jewel %s pid=%u name=%s piece=%u used=%u grade=%d->%d sockets=%d->%d ok=%d",
+					freeSocket ? "gem" : "socket", pid, ch->GetName(), pieceVnum, useVnum,
+					grade, gradeAfter, maxGrade, maxAfter, used ? 1 : 0);
+			return used;
+		}
+		return false;
+	}
+
 	// The session's three clocks, kept out of TPlayerBotAIState on purpose.
 	// Adding a field there means matching its position in the declaration list
 	// *and* in the constructor's initialiser list, and -Wreorder is the first
@@ -372,6 +442,8 @@ namespace
 	std::map<DWORD, DWORD> s_mapPlayerBotMiningNext;     // when to consider digging again
 	std::map<DWORD, DWORD> s_mapPlayerBotMiningUntil;    // session end, and "is mining now"
 	std::map<DWORD, DWORD> s_mapPlayerBotMiningSwingAt;  // when the current swing resolves
+	// Iwakura's Gornik digs one vein until it is gone: which one, by pid.
+	std::map<DWORD, DWORD> s_mapPlayerBotMiningVein;
 
 	// What the tick needs to know about a miner standing still on purpose. A
 	// swing is up to thirty seconds of not moving and the inactivity watchdog
@@ -398,6 +470,7 @@ namespace
 		s_mapPlayerBotMiningUntil.erase(pid);
 		s_mapPlayerBotMiningSwingAt.erase(pid);
 		s_mapPlayerBotMiningHP.erase(pid);
+		s_mapPlayerBotMiningVein.erase(pid);
 		// The pickaxe must not travel in the weapon slot: every combat path
 		// judges by the weapon in the hand, and a bot that walked away holding
 		// one would swing a digging tool at an orc until the gear pass noticed.
@@ -443,23 +516,37 @@ namespace
 			return false;
 		}
 
+		// Iwakura's Gornik (PLAYERBOT_GORNIK_*): a bot with a pickaxe digs a
+		// vein in sight until it is gone, and comes straight back to it after a
+		// fight; without the switch, the old share digs anywhere on the map for
+		// a session's length.
+		const bool gornik = IsPlayerBotPersonaEnabled();
 		if (!inSession)
 		{
 			std::map<DWORD, DWORD>::const_iterator next = s_mapPlayerBotMiningNext.find(pid);
 			if (next != s_mapPlayerBotMiningNext.end() && dwNow < next->second)
 				return false;
-			if (!IsPlayerBotMiner(ch, state))
+			if (!IsPlayerBotMiner(ch, state) && !(gornik && CountPlayerBotPickaxes(ch) > 0))
 				return false;
 			// Never walk off mid-fight; finish what is already hitting back.
 			LPCHARACTER victim = state.dwTargetVID != 0
 					? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
 			if (victim && !victim->IsDead())
 				return false;
-			if (FindPlayerBotNearestVein(ch, NULL) == NULL)
+			long veinDistance = 0;
+			LPCHARACTER nearest = FindPlayerBotNearestVein(ch, &veinDistance);
+			if (nearest == NULL)
 			{
 				// Every vein on this map has expired at once; the maintenance
 				// pass puts them back inside the minute.
 				s_mapPlayerBotMiningNext[pid] = dwNow + PLAYERBOT_ORE_VEIN_CHECK_INTERVAL;
+				return false;
+			}
+			// "W zasiegu jego radaru (wzroku)": a vein in sight, not one across
+			// the map.
+			if (gornik && veinDistance > PLAYERBOT_SEARCH_RANGE)
+			{
+				s_mapPlayerBotMiningNext[pid] = dwNow + PLAYERBOT_GORNIK_PROBE_MS;
 				return false;
 			}
 			if (!EnsurePlayerBotPickaxe(ch, dwNow))
@@ -467,8 +554,10 @@ namespace
 				s_mapPlayerBotMiningNext[pid] = dwNow + PLAYERBOT_MINING_NO_PICK_RETRY;
 				return false;
 			}
-			s_mapPlayerBotMiningUntil[pid] = dwNow +
-					number(PLAYERBOT_MINING_SESSION_MIN, PLAYERBOT_MINING_SESSION_MAX);
+			s_mapPlayerBotMiningUntil[pid] = dwNow + (gornik ? PLAYERBOT_GORNIK_SESSION_CAP :
+					(DWORD)number(PLAYERBOT_MINING_SESSION_MIN, PLAYERBOT_MINING_SESSION_MAX));
+			if (gornik)
+				s_mapPlayerBotMiningVein[pid] = (DWORD)nearest->GetVID();
 			s_mapPlayerBotMiningSwingAt.erase(pid);
 			state.dwTargetVID = 0;
 			ch->SetVictim(NULL);
@@ -490,7 +579,10 @@ namespace
 		if (lastHP != s_mapPlayerBotMiningHP.end() && hp < lastHP->second &&
 				hp < ch->GetMaxHP())
 		{
-			EndPlayerBotMiningSession(ch, state, dwNow, "attacked", PLAYERBOT_MINING_RESUME_AFTER_FIGHT);
+			// The Gornik kills what came and is back at the vein the moment
+			// nothing is on it - the start waits for the fight to end by itself.
+			EndPlayerBotMiningSession(ch, state, dwNow, "attacked",
+					gornik ? PLAYERBOT_GORNIK_RESUME_MS : PLAYERBOT_MINING_RESUME_AFTER_FIGHT);
 			return false;
 		}
 		s_mapPlayerBotMiningHP[pid] = hp;
@@ -512,7 +604,25 @@ namespace
 		}
 
 		long distance = 0;
-		LPCHARACTER vein = FindPlayerBotNearestVein(ch, &distance);
+		LPCHARACTER vein = NULL;
+		if (gornik)
+		{
+			// The Gornik's own vein, until it is gone ("Wyczerpanie zloza:
+			// Ruda znika z mapy") - then back to what it was doing.
+			std::map<DWORD, DWORD>::const_iterator own = s_mapPlayerBotMiningVein.find(pid);
+			vein = own != s_mapPlayerBotMiningVein.end()
+					? CHARACTER_MANAGER::instance().Find(own->second) : NULL;
+			if (!vein || vein->IsDead() || !GetPlayerBotOreRowByVein(vein->GetRaceNum()))
+			{
+				EndPlayerBotMiningSession(ch, state, dwNow, "vein_gone",
+						(DWORD)number(PLAYERBOT_GORNIK_REST_MIN, PLAYERBOT_GORNIK_REST_MAX));
+				ManagePlayerBotAccessorySockets(ch, dwNow);
+				return false;
+			}
+			distance = DISTANCE_APPROX(ch->GetX() - vein->GetX(), ch->GetY() - vein->GetY());
+		}
+		else
+			vein = FindPlayerBotNearestVein(ch, &distance);
 		if (!vein)
 			// The one being dug has just expired. The session has time left, so
 			// wait for the maintenance pass rather than ending it.
@@ -566,8 +676,11 @@ namespace
 		}
 		s_mapPlayerBotMiningSwingAt[pid] = dwNow + PLAYERBOT_MINING_SWING_WAIT;
 		// A hundred raw ore is a smelt, and the bot is standing where it earned
-		// them. There is no alchemist in this world to walk to.
+		// them. There is no alchemist in this world to walk to. And a smelt that
+		// fits the bot's own jewellery goes into it first (the Gornik's synergy
+		// with the Perfectionist).
 		SmeltPlayerBotOre(ch, dwNow);
+		ManagePlayerBotAccessorySockets(ch, dwNow);
 		return true;
 	}
 

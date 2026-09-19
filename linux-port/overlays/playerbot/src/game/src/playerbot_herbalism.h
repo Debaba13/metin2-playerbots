@@ -318,11 +318,25 @@ namespace
 	// village, so it is the full list - knowledge, herbs, purse - and not a
 	// hope. The bottles are left out on purpose: they are bought at the counter
 	// itself, so a row short of only those is still a reason to go.
+	// Iwakura's Zielarz: under the PERSONA switch Baek-Go's board is a
+	// Conqueror's errand, from level forty-five ("Reakcja Zdobywcy ... odpala
+	// mikro-faze Alchemika"). Every bot still picks the herbs up on the way.
+	bool IsPlayerBotZielarz(LPCHARACTER ch)
+	{
+		if (!IsPlayerBotPersonaEnabled())
+			return true;
+		if (!ch || (int)ch->GetLevel() < PLAYERBOT_ZIELARZ_MIN_LEVEL)
+			return false;
+		TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+		return it != s_mapPlayerBotAIStates.end() && it->second.persona.bRestored &&
+				it->second.persona.bAdvanced;
+	}
+
 	bool PlayerBotHasReadyCraftRow(LPCHARACTER ch)
 	{
 		if (!ch || !ch->IsItemLoaded() || !IsPlayerBotHerbalismUnlocked(ch))
 			return false;
-		if (ch->GetLevel() < PLAYERBOT_HERBALISM_MIN_LEVEL)
+		if (ch->GetLevel() < PLAYERBOT_HERBALISM_MIN_LEVEL || !IsPlayerBotZielarz(ch))
 			return false;
 		if (CountPlayerBotFreeInventoryCells(ch) < PLAYERBOT_HERBALISM_FREE_CELLS)
 			return false;
@@ -383,7 +397,10 @@ namespace
 	// what the bot is fighting (`curTarget`) long before the engine's victim is
 	// set, and the first build asked the engine - 87 Metin lines and not one
 	// potion in the two minutes after it went live.
-	bool DrinkPlayerBotCraftedPotion(LPCHARACTER ch, LPCHARACTER target, DWORD dwNow)
+	// A fight with a player is one too, when the Anti-PK protocol is the one
+	// asking (playerbot_anti_pk.h): "jesli posiada w ekwipunku Rosy/Wody ...
+	// odpala je, by zwiekszyc swoje szanse".
+	bool DrinkPlayerBotCraftedPotion(LPCHARACTER ch, LPCHARACTER target, DWORD dwNow, bool pvp = false)
 	{
 		static std::map<DWORD, DWORD> s_mapPlayerBotPotionNext;
 		if (!ch || !ch->IsItemLoaded() || ch->IsDead())
@@ -391,7 +408,8 @@ namespace
 		if (!target || target->IsDead())
 			return false;
 		const bool worthIt = target->IsStone() ||
-				(target->IsMonster() && target->GetMobRank() >= MOB_RANK_BOSS);
+				(target->IsMonster() && target->GetMobRank() >= MOB_RANK_BOSS) ||
+				(pvp && target->IsPC());
 		if (!worthIt)
 			return false;
 		const DWORD pid = ch->GetPlayerID();
@@ -424,7 +442,7 @@ namespace
 				continue;
 			sys_log(0, "PLAYERBOT_HERB: potion drunk pid=%u name=%s vnum=%u group=%d against=%s",
 					pid, ch->GetName(), vnum, group,
-					target->IsStone() ? "stone" : "boss");
+					target->IsStone() ? "stone" : (target->IsPC() ? "player" : "boss"));
 			return true;
 		}
 		return false;
@@ -456,7 +474,7 @@ namespace
 	bool ReadPlayerBotCraftRecipe(LPCHARACTER) { return false; }
 	bool PlayerBotHasReadyCraftRow(LPCHARACTER) { return false; }
 	void ManagePlayerBotCraftRecipes(LPCHARACTER, DWORD) { }
-	bool DrinkPlayerBotCraftedPotion(LPCHARACTER, LPCHARACTER, DWORD) { return false; }
+	bool DrinkPlayerBotCraftedPotion(LPCHARACTER, LPCHARACTER, DWORD, bool = false) { return false; }
 
 #endif
 }
