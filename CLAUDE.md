@@ -6241,6 +6241,42 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   minutes (6 628 to 6 608 by 00:23). A test that writes the spool writes the
   operator's world: put it back when the test ends, and read the policy file
   before measuring anything a policy can steer.
+- **A build runs on the Windows clock.** Docker Desktop's machine takes its
+  time from Windows, and apt refuses a Release file dated after that clock as
+  "not valid yet". Xewi's Windows ran three hours behind (19 September - the
+  launcher's log said 09:09 in a Bucharest zone while Discord stamped the same
+  minute 09:10 UTC), so every GRAJ stopped at the panel's apt-get while the
+  containers built before still started from Docker Desktop ("z dockera
+  dziala"). The panel and the game's runtime stage run apt with
+  `Acquire::Check-Date=false` - the signatures are still checked - and the
+  game's deps stage does not, because a changed line there rebuilds every
+  library on every install that has built once; a fresh install on a wrong
+  clock still stops there. The preflight says why:
+  `Get-M2InternetClockSkew` (an HTTPS Date header against Windows) and
+  `Get-M2DockerClockSkew` (`docker info` SystemTime against Windows) warn past
+  five minutes, and `CLOCK_BEHIND` is the error guidance. Read a support
+  bundle's clock the same way: the launcher log's local time against the
+  Discord timestamp of the message that carried the bundle.
+- **Auto Lowy is Colide's window since client 2.0.17.** A player rebuilt it
+  for himself and sent it in (19 September): twelve skills in two rows, six
+  potion slots each under its own share - of mana when `IsManaItem` says what
+  lies there restores mana, of health otherwise, where the old window took the
+  first slot for health and the second for mana whatever was in them - six
+  items on a clock in seconds, a switch for the attack, the skills, the
+  revive, the potions, the items, the stones and the walk back, a share of
+  health to wait for after standing up, and the skills cast on their own
+  clocks fight or no fight. Settings go to `autohunt/<name>.cfg`; the old
+  `autohunt_<name>.cfg` is still read. On top of his file: a file of version 2
+  or none moves into the new slots (`ConfigFromOldValues`) where his reset it
+  to the defaults, which would have emptied every player's skill slots at the
+  update; `IsManaItem` reads the item's table (USE_POTION and
+  USE_POTION_NODELAY: value1 without value0, or a blessing's value4 without
+  value3) before his list of eleven, because the table knows 27052, the sushi
+  and the juice he had not found; the share after standing up is capped at a
+  hundred; and a missing item is looked for once a second, not on every frame
+  - the search walks every cell of four pages. His layout has no field for the
+  delay before standing up; the value stays in the file (15 s by default). He
+  is in the README's credits and in the release notes.
 
 ## Engine facts worth not re-deriving
 
