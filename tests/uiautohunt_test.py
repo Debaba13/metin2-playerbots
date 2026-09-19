@@ -22,7 +22,7 @@ def reset_state():
 		'status': {1: 100, 2: 100, 3: 100, 4: 100}, 'pos': (1000, 1000), 'distance': {},
 		'where': {}, 'bag': {}, 'targets': [], 'attack': [], 'picked': [], 'skills': {},
 		'cooling': set(), 'active': set(), 'cast': [], 'walks': [], 'rotations': [],
-		'toggles': set(),
+		'toggles': set(), 'bag_reads': 0, 'protos': {},
 	})
 
 
@@ -35,6 +35,19 @@ def module(name, **attrs):
 
 class StubBoard(object):
 	pass
+
+
+def read_bag(cell):
+	STATE['bag_reads'] += 1
+	return STATE['bag'].get(cell, 0)
+
+
+def select_item(vnum):
+	STATE['selected'] = vnum
+
+
+def proto(index):
+	return STATE['protos'].get(STATE.get('selected'), (0, 0, (0,) * 6))[index]
 
 
 def install_stubs():
@@ -54,7 +67,7 @@ def install_stubs():
 		GetMainCharacterName=lambda: 'Tester',
 		GetMainCharacterPosition=lambda: (STATE['pos'][0], STATE['pos'][1], 0),
 		GetCharacterDistance=lambda vid: STATE['distance'].get(vid, -1),
-		GetItemIndex=lambda cell: STATE['bag'].get(cell, 0),
+		GetItemIndex=read_bag,
 		SetTarget=lambda vid: STATE['targets'].append(vid),
 		SetAttackKeyState=lambda on: STATE['attack'].append(on),
 		GetSkillIndex=lambda slot: STATE['skills'].get(slot, 0),
@@ -69,6 +82,12 @@ def install_stubs():
 		SetRotation=lambda degree: STATE['rotations'].append(degree),
 		GetNameByVID=lambda vid: 'Wilk')
 	sys.modules['skill'] = module('skill', IsToggleSkill=lambda index: index in STATE['toggles'])
+	sys.modules['item'] = module(
+		'item', ITEM_TYPE_USE=3, USE_POTION=0, USE_POTION_NODELAY=11,
+		SelectItem=select_item,
+		GetItemType=lambda: proto(0),
+		GetItemSubType=lambda: proto(1),
+		GetValue=lambda index: proto(2)[index])
 	sys.modules['mouseModule'] = module('mouseModule')
 	ui = module('ui', BoardWithTitleBar=StubBoard)
 	setattr(ui, '__mem_func__', lambda func: func)
@@ -91,26 +110,25 @@ def commands(prefix):
 
 
 class HelpersTest(unittest.TestCase):
+	def setUp(self):
+		reset_state()
+		uiautohunt._manaItems.clear()
+
 	def test_config_round_trip_ignores_what_it_does_not_know(self):
 		config = uiautohunt.DefaultConfig()
 		config['range'] = 3000
-		config['skill5_slot'] = 5
-		config['item2_vnum'] = 70038
+		config['skill11_slot'] = 5
+		config['item8_vnum'] = 70038
 		config['loot_armour'] = 0
-		text = uiautohunt.ConfigText(config) + 'nonsense=1\nhp_percent=abc\nsp_percent=-7\n'
-		loaded = uiautohunt.ApplyConfigText(uiautohunt.DefaultConfig(), text)
+		text = uiautohunt.ConfigText(config) + 'nonsense=1\nitem0_val=abc\nitem1_val=-7\n'
+		loaded = uiautohunt.ConfigFromText(text)
 		self.assertEqual(loaded['range'], 3000)
-		self.assertEqual(loaded['skill5_slot'], 5)
-		self.assertEqual(loaded['item2_vnum'], 70038)
+		self.assertEqual(loaded['skill11_slot'], 5)
+		self.assertEqual(loaded['item8_vnum'], 70038)
 		self.assertEqual(loaded['loot_armour'], 0)
-		self.assertEqual(loaded['hp_percent'], 60)
-		self.assertEqual(loaded['sp_percent'], 0)
+		self.assertEqual(loaded['item0_val'], 60)
+		self.assertEqual(loaded['item1_val'], 0)
 		self.assertNotIn('nonsense', loaded)
-
-	def test_an_old_config_file_keeps_the_new_defaults(self):
-		loaded = uiautohunt.ApplyConfigText(uiautohunt.DefaultConfig(), 'range=1000\npickup=1\n')
-		self.assertEqual(loaded['range'], 1000)
-		self.assertEqual(uiautohunt.LootMask(loaded), 127)
 
 	def test_a_file_from_the_toggle_window_gets_the_pick_up_back(self):
 		old = 'range=3000\npickup=0\nloot_weapon=0\nloot_other=0\n'
@@ -126,6 +144,32 @@ class HelpersTest(unittest.TestCase):
 		loaded = uiautohunt.ConfigFromText(uiautohunt.ConfigText(config))
 		self.assertEqual(loaded['pickup'], 0)
 		self.assertEqual(uiautohunt.LootMask(loaded), 0)
+
+	def test_a_file_of_the_window_before_moves_into_the_new_slots(self):
+		old = ('range=3000\nstones=1\npickup=0\nrevive=0\nrevive_after=25\nreturn=0\n'
+			'hp_vnum=27001\nhp_percent=55\nsp_vnum=27004\nsp_percent=35\n'
+			'item0_vnum=70038\nitem0_interval=20\nitem1_vnum=0\nitem1_interval=30\nitem2_vnum=71016\nitem2_interval=40\n'
+			'skill0_slot=1\nskill0_interval=0\nskill3_slot=4\nskill3_interval=12\n'
+			'loot_weapon=0\nloot_armour=1\nconfig_version=2\n')
+		loaded = uiautohunt.ConfigFromText(old)
+		self.assertEqual((loaded['range'], loaded['stones'], loaded['pickup'], loaded['revive'], loaded['return']), (3000, 1, 0, 0, 0))
+		self.assertEqual(loaded['revive_after'], 25)
+		self.assertEqual((loaded['skill0_slot'], loaded['skill3_slot'], loaded['skill3_interval']), (1, 4, 12))
+		self.assertEqual((loaded['item0_vnum'], loaded['item0_val']), (27001, 55))
+		self.assertEqual((loaded['item1_vnum'], loaded['item1_val']), (27004, 35))
+		self.assertEqual(loaded['item2_vnum'], 0)
+		self.assertEqual((loaded['item6_vnum'], loaded['item6_val']), (70038, 20))
+		self.assertEqual(loaded['item7_vnum'], 0)
+		self.assertEqual((loaded['item8_vnum'], loaded['item8_val']), (71016, 40))
+		self.assertEqual((loaded['loot_weapon'], loaded['loot_armour']), (0, 1))
+		self.assertEqual((loaded['attack'], loaded['use_potions'], loaded['use_buffs'], loaded['use_skills']), (1, 1, 1, 1))
+		self.assertEqual(loaded['config_version'], uiautohunt.CONFIG_VERSION)
+
+	def test_a_file_of_colides_own_builds_starts_from_the_defaults(self):
+		loaded = uiautohunt.ConfigFromText('range=4000\nitem3_vnum=27001\nconfig_version=3\n')
+		self.assertEqual(loaded['range'], 2000)
+		self.assertEqual(loaded['item3_vnum'], 0)
+		self.assertEqual(loaded['config_version'], uiautohunt.CONFIG_VERSION)
 
 	def test_target_vid(self):
 		self.assertEqual(uiautohunt.ParseTargetVid('123'), 123)
@@ -155,13 +199,56 @@ class HelpersTest(unittest.TestCase):
 			degree = uiautohunt.FacingDegree(0, 0, target[0], target[1])
 			self.assertTrue(0.0 <= degree <= 360.0, (target, degree))
 
-	def test_config_path_keeps_names_to_letters(self):
-		self.assertEqual(uiautohunt.ConfigPath('Ab c/1'), 'autohunt_Ab_c_1.cfg')
+	def test_config_paths_keep_names_to_letters(self):
+		self.assertEqual(uiautohunt.ConfigPath('Ab c/1'), os.path.join('autohunt', 'Ab_c_1.cfg'))
+		self.assertEqual(uiautohunt.OldConfigPath('Ab c/1'), 'autohunt_Ab_c_1.cfg')
+
+	def test_mana_items_by_their_table_and_by_the_list(self):
+		# USE_POTION restoring mana, USE_POTION restoring health, a mana
+		# blessing (value4), a health blessing (value3), something else.
+		STATE['protos'].update({
+			27052: (3, 0, (0, 100, 0, 0, 0, 0)),
+			27001: (3, 0, (300, 0, 0, 0, 0, 0)),
+			39012: (3, 11, (0, 0, 0, 0, 100, 0)),
+			39011: (3, 11, (0, 0, 0, 100, 0, 0)),
+			70038: (3, 10, (60, 20, 0, 0, 0, 0)),
+		})
+		self.assertTrue(uiautohunt.IsManaItem(27052))
+		self.assertFalse(uiautohunt.IsManaItem(27001))
+		self.assertTrue(uiautohunt.IsManaItem(39012))
+		self.assertFalse(uiautohunt.IsManaItem(39011))
+		self.assertFalse(uiautohunt.IsManaItem(70038))
+		# Colide's list answers without the table.
+		self.assertTrue(uiautohunt.IsManaItem(50021))
+		self.assertFalse(uiautohunt.IsManaItem(0))
+
+	def test_settings_go_to_their_folder_and_the_old_file_is_still_read(self):
+		import shutil
+		import tempfile
+		here = os.getcwd()
+		folder = tempfile.mkdtemp()
+		try:
+			os.chdir(folder)
+			with open('autohunt_Tester.cfg', 'w') as handle:
+				handle.write('range=3000\nhp_vnum=27001\nconfig_version=2\n')
+			hunter = uiautohunt.Hunter()
+			hunter.LoadConfig()
+			self.assertEqual((hunter.config['range'], hunter.config['item0_vnum']), (3000, 27001))
+			hunter.config['range'] = 4000
+			self.assertTrue(hunter.SaveConfig())
+			self.assertTrue(os.path.exists(os.path.join('autohunt', 'Tester.cfg')))
+			again = uiautohunt.Hunter()
+			again.LoadConfig()
+			self.assertEqual(again.config['range'], 4000)
+		finally:
+			os.chdir(here)
+			shutil.rmtree(folder, ignore_errors=True)
 
 
 class HuntTest(unittest.TestCase):
 	def setUp(self):
 		reset_state()
+		uiautohunt._manaItems.clear()
 		self.hunter = uiautohunt.Hunter()
 		self.hunter.Start()
 
@@ -185,9 +272,7 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 1.0)
 		self.assertEqual(STATE['picked'], [])
 
-	def test_walks_to_the_target_then_swings_and_casts_once(self):
-		self.hunter.config['skill0_slot'] = 1
-		STATE['skills'][1] = 3
+	def test_walks_to_the_target_then_swings(self):
 		self.hunter.OnServerTarget('55')
 		STATE['where'][55] = (1500, 1000, 0)
 		STATE['distance'][55] = 500
@@ -199,20 +284,41 @@ class HuntTest(unittest.TestCase):
 		self.assertEqual(STATE['targets'], [55])
 		self.assertEqual(STATE['attack'], [True])
 		self.assertEqual(len(STATE['rotations']), 1)
+
+	def test_skills_go_on_their_own_clock_fight_or_no_fight(self):
+		self.hunter.config['skill0_slot'] = 1
+		STATE['skills'][1] = 3
+		step(self.hunter)
 		self.assertEqual(STATE['cast'], [1])
 		step(self.hunter, 1.0)
 		self.assertEqual(STATE['cast'], [1])
 		step(self.hunter, 0.6)
 		self.assertEqual(STATE['cast'], [1, 1])
 
-	def test_casts_the_sixth_skill_slot(self):
-		self.hunter.config['skill5_slot'] = 9
+	def test_casts_the_twelfth_skill_slot(self):
+		self.hunter.config['skill11_slot'] = 9
 		STATE['skills'][9] = 4
-		STATE['where'][55] = (1100, 1000, 0)
-		STATE['distance'][55] = 100
-		self.hunter.OnServerTarget('55')
 		step(self.hunter)
 		self.assertEqual(STATE['cast'], [9])
+
+	def test_no_skills_when_they_are_switched_off(self):
+		self.hunter.config['use_skills'] = 0
+		self.hunter.config['skill0_slot'] = 1
+		STATE['skills'][1] = 3
+		step(self.hunter)
+		self.assertEqual(STATE['cast'], [])
+
+	def test_with_the_attack_off_no_target_is_asked_for_and_skills_still_go(self):
+		self.hunter.config['attack'] = 0
+		self.hunter.config['skill0_slot'] = 1
+		STATE['skills'][1] = 3
+		self.hunter.OnServerTarget('55')
+		STATE['distance'][55] = 100
+		step(self.hunter)
+		self.assertEqual(commands('/autohunt_target'), [])
+		self.assertEqual(self.hunter.targetVid, 0)
+		self.assertEqual(STATE['attack'], [])
+		self.assertEqual(STATE['cast'], [1])
 
 	def test_a_new_target_releases_the_attack_key(self):
 		STATE['where'][55] = (1100, 1000, 0)
@@ -254,9 +360,9 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 2.0)
 		self.assertEqual(len(commands('/autohunt_loot')), asked)
 
-	def test_uses_the_third_item_on_its_clock(self):
-		self.hunter.config['item2_vnum'] = 70038
-		self.hunter.config['item2_interval'] = 5
+	def test_uses_an_item_on_its_clock(self):
+		self.hunter.config['item8_vnum'] = 70038
+		self.hunter.config['item8_val'] = 5
 		STATE['bag'][3] = 70038
 		step(self.hunter)
 		self.assertEqual(STATE['used'], [3])
@@ -265,8 +371,15 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 1.5)
 		self.assertEqual(STATE['used'], [3, 3])
 
+	def test_no_items_on_a_clock_when_they_are_switched_off(self):
+		self.hunter.config['use_buffs'] = 0
+		self.hunter.config['item6_vnum'] = 70038
+		STATE['bag'][3] = 70038
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [])
+
 	def test_drinks_below_the_share_and_not_twice_a_second(self):
-		self.hunter.config['hp_vnum'] = 27001
+		self.hunter.config['item0_vnum'] = 27001
 		STATE['bag'][5] = 27001
 		STATE['status'][1] = 30
 		step(self.hunter)
@@ -276,6 +389,39 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 0.6)
 		self.assertEqual(STATE['used'], [5, 5])
 
+	def test_a_mana_potion_in_the_first_slot_watches_mana(self):
+		# The window before Colide's drank the first slot for health whatever
+		# lay in it.
+		STATE['protos'][27004] = (3, 0, (0, 100, 0, 0, 0, 0))
+		self.hunter.config['item0_vnum'] = 27004
+		STATE['bag'][6] = 27004
+		STATE['status'][1] = 20
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [])
+		STATE['status'][3] = 30
+		step(self.hunter, 1.1)
+		self.assertEqual(STATE['used'], [6])
+
+	def test_no_potions_when_they_are_switched_off(self):
+		self.hunter.config['use_potions'] = 0
+		self.hunter.config['item0_vnum'] = 27001
+		STATE['bag'][5] = 27001
+		STATE['status'][1] = 30
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [])
+
+	def test_a_missing_potion_is_looked_for_once_a_second(self):
+		self.hunter.config['item0_vnum'] = 27001
+		STATE['status'][1] = 30
+		step(self.hunter)
+		reads = STATE['bag_reads']
+		self.assertTrue(reads > 0)
+		for _ in range(10):
+			step(self.hunter, 0.05)
+		self.assertEqual(STATE['bag_reads'], reads)
+		step(self.hunter, 0.6)
+		self.assertTrue(STATE['bag_reads'] > reads)
+
 	def test_stands_up_after_the_wait(self):
 		STATE['status'][1] = 0
 		step(self.hunter)
@@ -283,6 +429,37 @@ class HuntTest(unittest.TestCase):
 		self.assertNotIn('/restart_here', STATE['commands'])
 		step(self.hunter, 1.5)
 		self.assertIn('/restart_here', STATE['commands'])
+
+	def test_after_standing_up_it_drinks_and_waits_for_its_share(self):
+		self.hunter.config['item0_vnum'] = 27001
+		STATE['bag'][5] = 27001
+		STATE['where'][55] = (1100, 1000, 0)
+		STATE['distance'][55] = 100
+		STATE['status'][1] = 0
+		step(self.hunter)
+		STATE['status'][1] = 20
+		self.hunter.OnServerTarget('55')
+		del STATE['commands'][:]
+		step(self.hunter, 16.0)
+		self.assertTrue(self.hunter.justRevived)
+		self.assertEqual(STATE['used'], [5])
+		self.assertEqual(STATE['attack'], [])
+		self.assertEqual(commands('/autohunt_target'), [])
+		STATE['status'][1] = 60
+		step(self.hunter, 1.0)
+		self.assertFalse(self.hunter.justRevived)
+		self.assertEqual(STATE['attack'], [True])
+
+	def test_a_share_over_a_hundred_waits_for_full_health_only(self):
+		self.hunter.config['revive_hp_percent'] = 250
+		self.hunter.justRevived = True
+		STATE['status'][1] = 100
+		STATE['where'][55] = (1100, 1000, 0)
+		STATE['distance'][55] = 100
+		self.hunter.OnServerTarget('55')
+		step(self.hunter)
+		self.assertFalse(self.hunter.justRevived)
+		self.assertEqual(STATE['attack'], [True])
 
 	def test_gives_up_on_a_target_it_cannot_reach(self):
 		STATE['where'][55] = (2000, 1000, 0)

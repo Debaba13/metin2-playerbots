@@ -175,5 +175,6 @@ Szczegółowe informacje podzielone na dedykowane poradniki:
 - **seban latino** — autor Metin2 Singleplayer Panel (`linux-port/docker/seban-panel`), drugiego panelu w tej instalacji: mapa na żywo, profile, rankingi, gospodarka, telemetria i masowe nadania.
 - **Iwakura** — pomoc przy systemach cen i nazw sklepów, nickach botów oraz algorytmach wartości przedmiotów.
 - **ĹŌŞƬĒĶ** — nowy ekran logowania klienta (od 2.0.6): animowane tło, logo i Discord Rich Presence.
+- **Colide** — nowe okno Auto Łowów w kliencie (od 2.0.17): 12 umiejętności, 6 mikstur na % HP albo PE, 6 przedmiotów na czas, czekanie na HP po wskrzeszeniu i umiejętności niezależne od ataku.
 - [DadsMmoLab/dads-mmo-lab](https://github.com/DadsMmoLab/dads-mmo-lab) — Inspiracja badawcza dla autonomicznych agentów w grach MMO.
 - Społeczność badaczy i entuzjastów platformy Metin2.
