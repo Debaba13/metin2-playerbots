@@ -124,6 +124,26 @@ inline bool ValidLayout(const std::vector<Item>& items, int pages)
 	return ValidLayout(items, cells, pages);
 }
 
+// The safebox's own rule for what it holds: one grid five columns wide and nine
+// rows a page tall, with no page edge in it. CSafebox::IsEmpty asks CGrid,
+// which knows no pages, so a two-cell item dropped on a page's last row stands
+// on the next page's first - legal to the engine, and a box the planner must
+// still read. What it lays out keeps to the pages (ValidLayout).
+inline bool ValidGrid(const std::vector<Item>& items, int pages)
+{
+	std::vector<uint8_t> occupied(pages * PAGE_CELLS, 0);
+	for (const Item& item : items) {
+		if (item.cell < 0 || item.height < 1 || item.height > MAX_HEIGHT ||
+				item.cell + (item.height - 1) * PAGE_COLUMNS >= (int)occupied.size())
+			return false;
+		for (int k = 0; k < item.height; ++k)
+			if (occupied[item.cell + k * PAGE_COLUMNS])
+				return false;
+		Occupy(occupied, item.cell, item.height);
+	}
+	return true;
+}
+
 // The sort key, then the id: a total order, so the same bag always gives the
 // same layout and a second "Scal i uporzadkuj" changes nothing.
 inline bool KeyLess(const Item& a, const Item& b)
@@ -318,11 +338,13 @@ inline bool PlacePacked(const std::vector<const Item*>& order, const std::vector
 
 // The plan for a bag of `pages` pages. A bag that is not a legal layout to
 // begin with is refused whole: a plan made from items the engine has on top
-// of each other would only move the damage somewhere else.
-inline Plan MakePlan(std::vector<Item> items, int pages)
+// of each other would only move the damage somewhere else. pageBoundInput
+// false reads the input by the safebox's rule (ValidGrid) instead; the layout
+// handed back keeps to the pages either way.
+inline Plan MakePlan(std::vector<Item> items, int pages, bool pageBoundInput = true)
 {
 	Plan plan;
-	if (pages < 1 || !ValidLayout(items, pages))
+	if (pages < 1 || !(pageBoundInput ? ValidLayout(items, pages) : ValidGrid(items, pages)))
 		return plan;
 	std::map<uint32_t, int> original;
 	for (const Item& item : items)
@@ -384,6 +406,69 @@ inline Plan MakePlan(std::vector<Item> items, int pages)
 	}
 	plan.strategy = strategy;
 	plan.ok = true;
+	return plan;
+}
+
+// A stack moved by count: from the bag into the safebox, out of it, or from one
+// safebox cell to another (/safebox_put, /safebox_take and /safebox_move in
+// playerbot_arrange.cpp). What stands at the destination decides it: an empty
+// place takes the whole stack or a part cut off it, the same item takes what
+// its stack has room for, and anything else takes nothing - never a swap, which
+// no path in the engine makes across two windows either.
+enum TransferKind {
+	TRANSFER_KIND_NONE = 0,   // refused, and `refusal` says why
+	TRANSFER_KIND_MOVE = 1,   // the whole stack changes place
+	TRANSFER_KIND_SPLIT = 2,  // `units` cut off into a new stack at the destination
+	TRANSFER_KIND_POUR = 3,   // `units` poured into the stack standing there
+};
+
+enum TransferRefusal {
+	TRANSFER_REFUSED_NONE = 0,
+	TRANSFER_REFUSED_OCCUPIED = 1,  // something else stands there
+	TRANSFER_REFUSED_FULL = 2,      // the same item, and its stack is full
+	TRANSFER_REFUSED_EMPTY = 3,     // a source with nothing in it
+};
+
+struct TransferPlan {
+	int kind = TRANSFER_KIND_NONE;
+	int refusal = TRANSFER_REFUSED_NONE;
+	uint32_t units = 0;
+	bool sourceEmptied = false;  // the source stack is gone afterwards
+};
+
+// have: the units in the source stack. asked: the units the player picked, where
+// 0 - a stack taken up whole - and anything over `have` mean all of them.
+// splittable: the source may be cut in two (stackable, no ITEM_ANTIFLAG_STACK);
+// a stack that may not is only ever moved whole. The destination is either
+// empty and wide enough for the item, or holds a stack that pours with this one
+// (sameStack, with its count and its own limit), or holds something else.
+inline TransferPlan PlanTransfer(uint32_t have, uint32_t asked, bool splittable, bool destinationEmpty,
+		bool sameStack, uint32_t destinationCount, uint32_t destinationMax)
+{
+	TransferPlan plan;
+	if (have == 0) {
+		plan.refusal = TRANSFER_REFUSED_EMPTY;
+		return plan;
+	}
+	const uint32_t units = (!splittable || asked == 0 || asked >= have) ? have : asked;
+	if (destinationEmpty) {
+		plan.kind = units == have ? TRANSFER_KIND_MOVE : TRANSFER_KIND_SPLIT;
+		plan.units = units;
+		plan.sourceEmptied = units == have;
+		return plan;
+	}
+	if (!sameStack || !splittable) {
+		plan.refusal = TRANSFER_REFUSED_OCCUPIED;
+		return plan;
+	}
+	const uint32_t room = destinationCount < destinationMax ? destinationMax - destinationCount : 0;
+	if (room == 0) {
+		plan.refusal = TRANSFER_REFUSED_FULL;
+		return plan;
+	}
+	plan.kind = TRANSFER_KIND_POUR;
+	plan.units = units < room ? units : room;
+	plan.sourceEmptied = plan.units == have;
 	return plan;
 }
 

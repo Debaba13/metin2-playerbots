@@ -1256,7 +1256,8 @@ class InventoryWindow(ui.ScriptWindow):
 					snd.PlaySound("sound/ui/money.wav")
 
 				else:
-					net.SendSafeboxCheckoutPacket(attachedSlotPos, selectedSlotPos)
+					import safeboxtransfer
+					safeboxtransfer.DropIntoBag(attachedSlotPos, selectedSlotPos, attachedItemCount, False)
 
 			elif player.SLOT_TYPE_MALL == attachedSlotType:
 				net.SendMallCheckoutPacket(attachedSlotPos, selectedSlotPos)
@@ -1285,6 +1286,10 @@ class InventoryWindow(ui.ScriptWindow):
 					return
 				#@fixme011 END
 				self.__DropSrcItemToDestItemInInventory(attachedItemVID, attachedSlotPos, itemSlotIndex)
+
+			elif player.SLOT_TYPE_SAFEBOX == attachedSlotType and player.ITEM_MONEY != attachedItemVID:
+				import safeboxtransfer
+				safeboxtransfer.DropIntoBag(attachedSlotPos, itemSlotIndex, mouseModule.mouseController.GetAttachedItemCount(), True)
 
 			mouseModule.mouseController.DeattachObject()
 

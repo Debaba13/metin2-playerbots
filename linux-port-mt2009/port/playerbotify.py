@@ -1434,6 +1434,8 @@ def main(root):
     apply_bot_population_plan(game)
     apply_shops_first_channel(game)
     apply_event_cancel_in_flight(game)
+    apply_safebox_hands(game)
+    apply_safebox_commands(game)
     print('playerbotify: done')
 
 
@@ -3939,6 +3941,117 @@ def apply_pickup_nearby(game):
          '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
          marker='{ "pickup_nearby",')
 
+
+SAFEBOX_COMMANDS = r"""// The safebox's "Scal i uporzadkuj", and a stack moved by count across the
+// safebox and the bag or inside the safebox (blasty's proposal, 19 September;
+// client-root/safeboxtransfer.py). The safebox's packets name cells and no
+// count, so a part of a stack, and a stack dropped on the same item, go by
+// command; a whole stack dropped on a free place still goes by the packet.
+// playerbot_arrange.cpp does the work, and every answer goes back for the
+// client to put the refusals into words.
+ACMD(do_safebox_arrange)
+{
+	char arg1[256];
+	one_argument(argument, arg1, sizeof(arg1));
+	playerbot_arrange::TResult result;
+	if (*arg1)
+		result.code = playerbot_arrange::RESULT_BAD_REQUEST;
+	else
+		result = playerbot_arrange::ArrangeSafebox(ch, true);
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "SafeboxArrangeResult %d %d %d %u",
+			result.code, result.moved, result.merged, result.units);
+}
+
+// /safebox_put <bag cell> <safebox cell> [count], /safebox_take <safebox cell>
+// <bag cell> [count], /safebox_move <safebox cell> <safebox cell> [count]; the
+// subcommand is playerbot_arrange::ETransferOp, and no count, or 0, is the
+// whole stack.
+ACMD(do_safebox_transfer)
+{
+	char arg1[256], arg2[256], arg3[256];
+	const char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));
+	one_argument(rest, arg3, sizeof(arg3));
+	unsigned int from = 0, to = 0, count = 0;
+	playerbot_arrange::TTransfer result;
+	result.code = playerbot_arrange::TRANSFER_BAD_REQUEST;
+	if (*arg1 && *arg2 && str_to_number(from, arg1) && str_to_number(to, arg2) &&
+			(!*arg3 || str_to_number(count, arg3)))
+	{
+		switch (subcmd)
+		{
+			case playerbot_arrange::TRANSFER_OP_PUT:
+				result = playerbot_arrange::PutIntoSafebox(ch, from, to, count);
+				break;
+			case playerbot_arrange::TRANSFER_OP_TAKE:
+				result = playerbot_arrange::TakeFromSafebox(ch, from, to, count);
+				break;
+			case playerbot_arrange::TRANSFER_OP_MOVE:
+				result = playerbot_arrange::MoveInSafebox(ch, from, to, count);
+				break;
+		}
+	}
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "SafeboxTransferResult %d %d %u", subcmd, result.code, result.units);
+}
+"""
+
+
+def apply_safebox_hands(game):
+    # Rozdzielanie i laczenie stosow w torbie przy otwartym magazynie
+    # (propozycja blasty'ego, 19 wrzesnia; Tieru: "Jasne"). CHARACTER::MoveItem
+    # pytal CanHandleItem() z domyslnym wykluczeniem, a otwarty magazyn to dla
+    # IsBusy zajetosc - wiec przy otwartym depo serwer po cichu odrzucal kazde
+    # przesuniecie, rozdzielenie i polaczenie w ekwipunku, dokladnie wtedy, gdy
+    # gracz przeklada rzeczy miedzy oknami. Wykluczamy tylko magazyn: handel,
+    # sklepy i reszta nadal blokuja.
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\tif (!CanHandleItem())\n'
+         '\t{\n'
+         '\t\tif (NULL != DragonSoul_RefineWindow_GetOpener())\n'
+         '\t\t\tChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot move the item within the refinement window."));\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\n'
+         '\tif (DestCell.IsBeltInventoryPosition() && false == CBeltInventoryHelper::CanMoveIntoBeltInventory(item))\n',
+         '\t// Metin2 SinglePlayer: an open safebox is no reason to refuse a move\n'
+         '\t// inside the bag - splitting and pouring stacks beside it is the point\n'
+         '\t// of having both windows open (blasty, 19 September). Every other busy\n'
+         '\t// state still refuses.\n'
+         '\tif (!CanHandleItem(false, false, BUSY_CAN_HANDLE_ITEM_EXCLUDE | BUSY_SAFEBOX))\n'
+         '\t{\n'
+         '\t\tif (NULL != DragonSoul_RefineWindow_GetOpener())\n'
+         '\t\t\tChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot move the item within the refinement window."));\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\n'
+         '\tif (DestCell.IsBeltInventoryPosition() && false == CBeltInventoryHelper::CanMoveIntoBeltInventory(item))\n',
+         marker='\tif (!CanHandleItem(false, false, BUSY_CAN_HANDLE_ITEM_EXCLUDE | BUSY_SAFEBOX))\n')
+
+
+def apply_safebox_commands(game):
+    # Sortowanie magazynu i przenoszenie stosow z liczba sztuk miedzy
+    # magazynem a torba i w samym magazynie (propozycja blasty'ego, 19
+    # wrzesnia). Wykonanie jest w playerbot_arrange.cpp, tu polecenia i ich
+    # wpisy w tabeli - trzy przeniesienia to jedno polecenie z podkomenda
+    # (playerbot_arrange::ETransferOp: 1 put, 2 take, 3 move).
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         SAFEBOX_COMMANDS + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_safebox_arrange)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_pickup_nearby);\n',
+         'ACMD(do_pickup_nearby);\n'
+         'ACMD(do_safebox_arrange);\n'
+         'ACMD(do_safebox_transfer);\n',
+         marker='ACMD(do_safebox_transfer);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_arrange",\tdo_safebox_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_put",\tdo_safebox_transfer,\t1,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_take",\tdo_safebox_transfer,\t2,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_move",\tdo_safebox_transfer,\t3,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "safebox_arrange",')
 
 
 def apply_bot_population_plan(game):

@@ -306,10 +306,89 @@ void testRandomBags()
 	std::printf("random bags: %d of 400 needed the exact packing\n", packed);
 }
 
+// The safebox's transfers (PlanTransfer): a whole stack moves, a part is cut
+// off, the same item takes only what its stack has room for, and the
+// destination's limit is its own - a scroll's twenty, not the potion's two
+// hundred.
+void testTransfers()
+{
+	TransferPlan t = PlanTransfer(50, 0, true, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_MOVE && t.units == 50 && t.sourceEmptied, "transfer: a stack taken up whole moves whole");
+	t = PlanTransfer(50, 80, true, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_MOVE && t.units == 50, "transfer: more than the stack is the stack");
+	t = PlanTransfer(50, 50, true, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_MOVE && t.sourceEmptied, "transfer: all of it picked is a move");
+	t = PlanTransfer(50, 20, true, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_SPLIT && t.units == 20 && !t.sourceEmptied, "transfer: a part into an empty place is a split");
+	t = PlanTransfer(1, 1, false, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_MOVE && t.units == 1, "transfer: a single item moves");
+	t = PlanTransfer(5, 2, false, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_MOVE && t.units == 5, "transfer: what may not be cut moves whole");
+
+	t = PlanTransfer(50, 0, true, false, true, 120, 200);
+	check(t.kind == TRANSFER_KIND_POUR && t.units == 50 && t.sourceEmptied, "transfer: a stack that fits pours whole");
+	t = PlanTransfer(50, 0, true, false, true, 180, 200);
+	check(t.kind == TRANSFER_KIND_POUR && t.units == 20 && !t.sourceEmptied, "transfer: only the room pours, the rest stays");
+	t = PlanTransfer(50, 10, true, false, true, 180, 200);
+	check(t.kind == TRANSFER_KIND_POUR && t.units == 10 && !t.sourceEmptied, "transfer: a part pours");
+	t = PlanTransfer(30, 0, true, false, true, 12, 20);
+	check(t.kind == TRANSFER_KIND_POUR && t.units == 8, "transfer: the destination's own limit");
+	t = PlanTransfer(30, 0, true, false, true, 200, 200);
+	check(t.kind == TRANSFER_KIND_NONE && t.refusal == TRANSFER_REFUSED_FULL, "transfer: a full stack takes nothing");
+	t = PlanTransfer(30, 0, true, false, false, 7, 200);
+	check(t.kind == TRANSFER_KIND_NONE && t.refusal == TRANSFER_REFUSED_OCCUPIED, "transfer: another item is no destination");
+	t = PlanTransfer(1, 0, false, false, true, 1, 1);
+	check(t.kind == TRANSFER_KIND_NONE && t.refusal == TRANSFER_REFUSED_OCCUPIED, "transfer: what does not stack never pours");
+	t = PlanTransfer(0, 0, true, true, false, 0, 0);
+	check(t.kind == TRANSFER_KIND_NONE && t.refusal == TRANSFER_REFUSED_EMPTY, "transfer: an empty source");
+	// The units never exceed what the source has or what the destination takes.
+	for (uint32_t have = 1; have <= 40; ++have)
+		for (uint32_t asked = 0; asked <= 45; asked += 3)
+			for (uint32_t there = 0; there <= 20; there += 4) {
+				const TransferPlan p = PlanTransfer(have, asked, true, false, true, there, 20);
+				if (p.kind == TRANSFER_KIND_POUR) {
+					check(p.units >= 1 && p.units <= have && there + p.units <= 20, "transfer: a pour stays inside both limits");
+					check(p.sourceEmptied == (p.units == have), "transfer: emptied means all of it");
+				} else {
+					check(there == 20, "transfer: only a full stack refuses a pour");
+				}
+			}
+}
+
+// A safebox may hold an item across a page edge (CSafebox::IsEmpty asks a
+// grid with no pages in it). Such a box is read (ValidGrid) and laid out
+// inside the pages; the bag's rule still refuses it, and an overlap is refused
+// by both.
+void testSafeboxPageEdge()
+{
+	std::vector<Item> box;
+	box.push_back(make(1, 40, 2, 3));                 // page 1's last row into page 2's first
+	box.push_back(make(2, 0, 1, 1, 30, 200, 7));
+	box.push_back(make(3, 46, 1, 1, 50, 200, 7));
+	box.push_back(make(4, 12, 3, 2));
+	check(!MakePlan(box, 2).ok, "safebox edge: the bag's rule refuses an item across a page");
+	const Plan plan = MakePlan(box, 2, false);
+	check(plan.ok, "safebox edge: the safebox's rule reads it");
+	checkPlan(box, plan, 2, "safebox edge");
+	const int cell = cellOf(plan, 1);
+	check(cell >= 0 && RowOf(cell) + 2 <= PAGE_ROWS, "safebox edge: laid out inside one page");
+	check(plan.transfers.size() == 1 && plan.transfers[0].units == 30, "safebox edge: the two stacks poured");
+
+	std::vector<Item> overlap;
+	overlap.push_back(make(1, 40, 2, 3));
+	overlap.push_back(make(2, 45, 1, 1));
+	check(!MakePlan(overlap, 2, false).ok, "safebox edge: an overlap is still refused");
+	std::vector<Item> outside;
+	outside.push_back(make(1, 85, 3, 3));
+	check(!MakePlan(outside, 2, false).ok, "safebox edge: past the last page is refused");
+}
+
 }  // namespace
 
 int main()
 {
+	testTransfers();
+	testSafeboxPageEdge();
 	testMerges();
 	testPinnedNeverPours();
 	testCeilings();

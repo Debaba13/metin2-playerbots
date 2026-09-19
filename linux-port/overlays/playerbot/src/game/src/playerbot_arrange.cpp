@@ -32,6 +32,12 @@
 #include "questmanager.h"
 #include "questpc.h"
 #include "desc_client.h"
+#include "safebox.h"
+#include "log.h"
+#include "unique_item.h"
+#include "belt_inventory_helper.h"
+#include "../../common/CommonDefines.h"
+#include "../../common/PulseManager.h"
 #include "playerbot_arrange_rules.h"
 
 #include <chrono>
@@ -308,11 +314,13 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 		result.code = RESULT_DEAD;
 		return result;
 	}
-	// Everything MoveItem asks of the character, and every busy state with
-	// nothing excluded: an exchange, a shop and its management, the safebox,
-	// the cube, crafting, a refine, the dragon soul and acce windows, a warp.
-	// A quest running holds items it has been handed, by pointer or by cell.
-	if (!ch->CanHandleItem(false, false, 0) ||
+	// Everything MoveItem asks of the character, and every busy state but the
+	// safebox: an exchange, a shop and its management, the item shop, the
+	// cube, crafting, a refine, the dragon soul and acce windows, a warp. The
+	// safebox is let through as MoveItem lets it through (apply_safebox_hands):
+	// the bag is sorted beside it and nothing here touches the box. A quest
+	// running holds items it has been handed, by pointer or by cell.
+	if (!ch->CanHandleItem(false, false, BUSY_SAFEBOX) ||
 			quest::CQuestManager::instance().GetPCForce(ch->GetPlayerID())->IsRunning()) {
 		result.code = RESULT_BUSY;
 		return result;
@@ -558,6 +566,618 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 	return result;
 }
 
+// ---------------------------------------------------------------------------
+// The safebox (blasty's proposal of 19 September, Tieru's yes the same
+// minute): its own "Scal i uporzadkuj", and a stack moved by count across the
+// safebox and the bag or inside the safebox. The client has no safebox packet
+// that carries a count - SafeboxCheckin, SafeboxCheckout and SafeboxItemMove
+// name cells only - so these are commands. The package's
+// ENABLE_MT2009_DISABLE_SAFEBOX_STACK, which took stacking out of
+// CSafebox::MoveItem, stays on: that stacking destroyed the item it had just
+// failed to take out of the box whenever the owner was also browsing the item
+// shop (CSafebox::Remove refuses then and answers NULL, and M2_DESTROY_ITEM
+// went ahead regardless), which left a freed item in the box. Everything here
+// asks for that state before the first change, and nothing changes after a
+// refusal.
+//
+// A safebox item is written at once: the db core puts the SAFEBOX window
+// straight into the table (QUERY_ITEM_SAVE caches every other window), and
+// QUERY_SAFEBOX_LOAD reads the table. So a count changed in the box goes out
+// with FlushDelayedSave, and whatever changed in the bag with FlushRow - the
+// pair SafeboxCheckout sends - so the units are never in both places, or in
+// neither, for the minutes the bag's cache would otherwise hold them.
+namespace {
+
+static_assert(SAFEBOX_PAGE_WIDTH == rules::PAGE_COLUMNS, "the safebox's page is the planner's width");
+static_assert(SAFEBOX_PAGE_HEIGHT == rules::PAGE_ROWS, "the safebox's page is the planner's height");
+
+const int SAFEBOX_PAGE_CELLS = SAFEBOX_PAGE_WIDTH * SAFEBOX_PAGE_HEIGHT;
+
+std::unordered_map<DWORD, DWORD> s_mapLastSafeboxArrange;
+
+enum EHands {
+	HANDS_OK = 0,
+	HANDS_BUSY,
+	HANDS_DEAD,
+	HANDS_NO_SAFEBOX,
+};
+
+// Whether the open safebox may be worked on now: its owner alive, in no quest,
+// and busy with nothing but the safebox itself. CanHandleItem's default lets
+// the item shop through (BUSY_CAN_HANDLE_ITEM_EXCLUDE) and CSafebox::Add and
+// Remove do not, so it is asked here with only the safebox excluded.
+int SafeboxHands(LPCHARACTER ch, CSafebox*& box)
+{
+	box = NULL;
+	if (!ch || !ch->IsPC() || !ch->IsItemLoaded())
+		return HANDS_BUSY;
+	if (ch->IsDead())
+		return HANDS_DEAD;
+	if (quest::CQuestManager::instance().GetPCForce(ch->GetPlayerID())->IsRunning())
+		return HANDS_BUSY;
+	if (!ch->CanHandleItem(false, false, BUSY_SAFEBOX))
+		return HANDS_BUSY;
+	box = ch->GetSafebox();
+	if (!box || !ch->IsOpenSafebox() || !box->IsValidPosition(0))
+		return HANDS_NO_SAFEBOX;
+	return HANDS_OK;
+}
+
+int TransferCodeOf(int hands)
+{
+	switch (hands) {
+	case HANDS_DEAD: return TRANSFER_DEAD;
+	case HANDS_NO_SAFEBOX: return TRANSFER_NO_SAFEBOX;
+	default: return TRANSFER_BUSY;
+	}
+}
+
+// The pages the box has: whole pages its grid holds, never past SAFEBOX_MAX_NUM,
+// which is all the cells CSafebox keeps pointers for.
+int SafeboxPages(CSafebox* box)
+{
+	int pages = 0;
+	while (pages < SAFEBOX_PAGE_COUNT && box->IsValidPosition((DWORD)((pages + 1) * SAFEBOX_PAGE_CELLS - 1)))
+		++pages;
+	return pages;
+}
+
+// The safebox item whose top cell `pos` is, or NULL. CSafebox::Get answers
+// only for top cells; a cell another item covers is empty to it and full to
+// IsEmpty.
+LPITEM SafeboxItemAt(CSafebox* box, unsigned int pos)
+{
+	if (pos >= (unsigned int)SAFEBOX_MAX_NUM || !box->IsValidPosition(pos))
+		return NULL;
+	LPITEM item = box->Get(pos);
+	if (!item || item->GetCell() != pos || item->GetWindow() != SAFEBOX)
+		return NULL;
+	return item;
+}
+
+bool IsSplittable(LPITEM item)
+{
+	return item->IsStackable() && !IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK) && item->GetMaxStack() > 1;
+}
+
+// The part cut off a stack: everything SameStack compares, so it pours back
+// into its source later. MoveItem's own split copies the sockets alone.
+LPITEM CutOff(LPITEM item, ITEM_COUNT units)
+{
+	LPITEM part = ITEM_MANAGER::instance().CreateItem(item->GetOriginalVnum(), units);
+	if (!part)
+		return NULL;
+	part->SetSockets(item->GetSockets());
+	part->SetAttributes(item->GetAttributes());
+	return part;
+}
+
+// A count changed on an item in the box: the client told (Refresh; the
+// ITEM_UPDATE SetCount sends for the SAFEBOX window is dropped by the client,
+// whose IsValidItemPosition says no to it) and the row written now.
+void RefreshSafeboxItem(CSafebox* box, LPITEM item)
+{
+	box->Refresh(item->GetCell(), true);
+	ITEM_MANAGER::instance().FlushDelayedSave(item);
+}
+
+void LogSafebox(LPCHARACTER ch, LPITEM item, const char* how, unsigned int units, const char* way)
+{
+	char hint[128];
+	snprintf(hint, sizeof(hint), "%s %u %s", item->GetName(), units, way);
+	LogManager::instance().ItemLog(ch, item, how, hint);
+}
+
+// What SafeboxCheckin refuses about an item, and what it does not ask because
+// its cells cannot hold such an item: worn, a dragon stone, in a trade.
+bool MayGoIntoSafebox(LPCHARACTER ch, LPITEM item)
+{
+	if (item->IsEquipped() || item->IsDragonSoul() || item->IsExchanging() || item->isLocked())
+		return false;
+	if (item->GetVnum() == UNIQUE_ITEM_SAFEBOX_EXPAND || IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_SAFEBOX))
+		return false;
+	// @fixme140, as the checkin has it.
+	if (item->GetType() == ITEM_BELT && CBeltInventoryHelper::IsExistItemInBeltInventory(ch))
+		return false;
+	return true;
+}
+
+// An item the plan was sure of and the box did not take where it was told.
+// Not expected - every place is checked first - but an ownerless item is
+// destroyed by the next delayed save, so it goes into the first place in the
+// box it fits, then into the bag, then to its owner's feet (Rescue).
+void RescueIntoSafebox(LPCHARACTER ch, CSafebox* box, LPITEM item, int pages)
+{
+	if (item->GetOwner())
+		return;
+	for (int pos = 0; pos < pages * SAFEBOX_PAGE_CELLS; ++pos)
+		if (box->IsEmpty(pos, item->GetSize()) && box->Add(pos, item)) {
+			sys_err("SAFEBOX_ARRANGE: pid=%u name=%s item %u (%s) put back at safebox cell %d",
+					ch->GetPlayerID(), ch->GetName(), item->GetID(), item->GetName(), pos);
+			return;
+		}
+	Rescue(ch, item);
+}
+
+void CountSafeboxUnits(CSafebox* box, int pages, std::map<DWORD, uint64_t>& units)
+{
+	for (int pos = 0; pos < pages * SAFEBOX_PAGE_CELLS; ++pos) {
+		LPITEM item = box->Get(pos);
+		if (item)
+			units[item->GetVnum()] += item->GetCount();
+	}
+}
+
+}  // namespace
+
+TResult ArrangeSafebox(LPCHARACTER ch, bool fromPlayer)
+{
+	TResult result;
+	CSafebox* box = NULL;
+	const int hands = SafeboxHands(ch, box);
+	if (hands != HANDS_OK) {
+		result.code = hands == HANDS_DEAD ? RESULT_DEAD : (hands == HANDS_NO_SAFEBOX ? RESULT_NO_SAFEBOX : RESULT_BUSY);
+		return result;
+	}
+	const DWORD now = get_dword_time();
+	if (fromPlayer) {
+		std::unordered_map<DWORD, DWORD>::iterator last = s_mapLastSafeboxArrange.find(ch->GetPlayerID());
+		if (last != s_mapLastSafeboxArrange.end() && now - last->second < PLAYER_COOLDOWN_MS) {
+			result.code = RESULT_COOLDOWN;
+			return result;
+		}
+		if (s_mapLastSafeboxArrange.size() > 4096)
+			for (std::unordered_map<DWORD, DWORD>::iterator it = s_mapLastSafeboxArrange.begin(); it != s_mapLastSafeboxArrange.end();)
+				it = now - it->second > PLAYER_COOLDOWN_MS ? s_mapLastSafeboxArrange.erase(it) : std::next(it);
+		s_mapLastSafeboxArrange[ch->GetPlayerID()] = now;
+	}
+	const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+	const int pages = SafeboxPages(box);
+	if (pages < 1) {
+		result.code = RESULT_NO_SAFEBOX;
+		return result;
+	}
+
+	std::vector<rules::Item> items;
+	std::vector<LPITEM> handles;
+	std::map<uint32_t, LPITEM> handleOf;
+	for (int pos = 0; pos < pages * SAFEBOX_PAGE_CELLS; ++pos) {
+		LPITEM item = box->Get(pos);
+		if (!item)
+			continue;
+		if (item->GetCell() != (WORD)pos || item->GetOwner() != ch || item->GetWindow() != SAFEBOX ||
+				item->GetID() == 0 || handleOf.count(item->GetID())) {
+			sys_err("SAFEBOX_ARRANGE: pid=%u name=%s refused: item %u (%s) at safebox cell %d says cell %u window %u",
+					ch->GetPlayerID(), ch->GetName(), item->GetID(), item->GetName(), pos,
+					item->GetCell(), item->GetWindow());
+			result.code = RESULT_INCONSISTENT;
+			return result;
+		}
+		const int size = item->GetSize();
+		if (size > rules::MAX_HEIGHT) {
+			sys_err("SAFEBOX_ARRANGE: pid=%u name=%s refused: item %u (%s) is %d cells tall",
+					ch->GetPlayerID(), ch->GetName(), item->GetID(), item->GetName(), size);
+			result.code = RESULT_INCONSISTENT;
+			return result;
+		}
+		rules::Item planned;
+		planned.id = item->GetID();
+		planned.cell = pos;
+		planned.height = size >= 1 ? size : 1;
+		planned.count = item->GetCount();
+		planned.maxStack = item->GetMaxStack();
+		planned.pinned = item->isLocked() || item->IsExchanging() || planned.height != size;
+		SortKeyOf(item, planned.key);
+		items.push_back(planned);
+		handles.push_back(item);
+		handleOf[planned.id] = item;
+		if (planned.pinned)
+			++result.pinned;
+	}
+	result.items = (int)items.size();
+	std::map<DWORD, uint64_t> unitsBefore;
+	CountSafeboxUnits(box, pages, unitsBefore);
+
+	std::vector<LPITEM> representatives;
+	for (size_t i = 0; i < items.size(); ++i) {
+		LPITEM item = handles[i];
+		if (items[i].pinned || !IsSplittable(item))
+			continue;
+		size_t group = 0;
+		for (; group < representatives.size(); ++group)
+			if (SameStack(representatives[group], item))
+				break;
+		if (group == representatives.size())
+			representatives.push_back(item);
+		items[i].mergeGroup = (uint32_t)group + 1;
+	}
+
+	// The box's own rule for what it holds (rules::ValidGrid): an item may
+	// stand across a page edge, and the plan lays it out inside a page.
+	const rules::Plan plan = rules::MakePlan(items, pages, false);
+	if (!plan.ok) {
+		sys_err("SAFEBOX_ARRANGE: pid=%u name=%s refused: the safebox is not a legal layout (%d items, %d pages)",
+				ch->GetPlayerID(), ch->GetName(), result.items, pages);
+		result.code = RESULT_INCONSISTENT;
+		return result;
+	}
+	result.strategy = plan.strategy;
+	if (plan.transfers.empty() && plan.moved == 0) {
+		result.code = RESULT_NOTHING;
+		return result;
+	}
+
+	// The pours. The receiver grows first; an emptied giver leaves the box the
+	// way CSafebox's own stacking took one out, and is destroyed - SetCount(0)
+	// would only clear its owner, since RemoveFromCharacter leaves the box's
+	// pointer and grid alone for the SAFEBOX window.
+	std::set<LPITEM> recounted;
+	for (const rules::Transfer& transfer : plan.transfers) {
+		std::map<uint32_t, LPITEM>::iterator from = handleOf.find(transfer.from);
+		std::map<uint32_t, LPITEM>::iterator to = handleOf.find(transfer.to);
+		if (from == handleOf.end() || to == handleOf.end() || from->second->GetCount() < transfer.units ||
+				to->second->GetCount() + transfer.units > to->second->GetMaxStack()) {
+			sys_err("SAFEBOX_ARRANGE: pid=%u name=%s pour %u -> %u of %u refused; the safebox stays as poured so far",
+					ch->GetPlayerID(), ch->GetName(), transfer.from, transfer.to, transfer.units);
+			for (std::set<LPITEM>::const_iterator it = recounted.begin(); it != recounted.end(); ++it)
+				RefreshSafeboxItem(box, *it);
+			result.code = RESULT_INCONSISTENT;
+			return result;
+		}
+		LPITEM giver = from->second;
+		to->second->SetCount(to->second->GetCount() + transfer.units);
+		recounted.insert(to->second);
+		const ITEM_COUNT left = giver->GetCount() - transfer.units;
+		if (left == 0) {
+			recounted.erase(giver);
+			handleOf.erase(from);
+			box->Remove(giver->GetCell());
+			M2_DESTROY_ITEM(giver);
+			++result.merged;
+		} else {
+			giver->SetCount(left);
+			recounted.insert(giver);
+		}
+		result.units += transfer.units;
+	}
+
+	// The moves: out of the box first, then each into its new cell, so a cycle
+	// needs no free cell in between. Add writes the row (Save and
+	// FlushDelayedSave) and tells the client.
+	std::vector<std::pair<LPITEM, int> > movers;
+	for (const rules::Placement& placement : plan.placements) {
+		std::map<uint32_t, LPITEM>::iterator it = handleOf.find(placement.id);
+		if (it == handleOf.end())
+			continue;
+		if (it->second->GetCell() != (WORD)placement.cell)
+			movers.push_back(std::make_pair(it->second, placement.cell));
+	}
+	for (size_t i = 0; i < movers.size(); ++i)
+		box->Remove(movers[i].first->GetCell());
+	for (size_t i = 0; i < movers.size(); ++i) {
+		LPITEM item = movers[i].first;
+		recounted.erase(item);
+		if (!box->IsEmpty(movers[i].second, item->GetSize()) || !box->Add(movers[i].second, item))
+			RescueIntoSafebox(ch, box, item, pages);
+	}
+	result.moved = (int)movers.size();
+	// What was poured and did not move: its new count to the client and the
+	// table.
+	for (std::set<LPITEM>::const_iterator it = recounted.begin(); it != recounted.end(); ++it)
+		RefreshSafeboxItem(box, *it);
+
+	int misplaced = 0;
+	for (const rules::Placement& placement : plan.placements) {
+		std::map<uint32_t, LPITEM>::iterator it = handleOf.find(placement.id);
+		if (it == handleOf.end())
+			continue;
+		LPITEM item = it->second;
+		if (item->GetOwner() != ch || item->GetWindow() != SAFEBOX || item->GetCell() != (WORD)placement.cell ||
+				box->Get(placement.cell) != item)
+			++misplaced;
+	}
+	std::map<DWORD, uint64_t> unitsAfter;
+	CountSafeboxUnits(box, pages, unitsAfter);
+	if (unitsAfter != unitsBefore)
+		for (std::map<DWORD, uint64_t>::const_iterator it = unitsBefore.begin(); it != unitsBefore.end(); ++it) {
+			std::map<DWORD, uint64_t>::const_iterator after = unitsAfter.find(it->first);
+			const uint64_t held = after == unitsAfter.end() ? 0 : after->second;
+			if (held != it->second)
+				sys_err("SAFEBOX_ARRANGE: pid=%u name=%s vnum %u held %llu units before and %llu after",
+						ch->GetPlayerID(), ch->GetName(), it->first, (unsigned long long)it->second,
+						(unsigned long long)held);
+		}
+	const unsigned int micros = (unsigned int)std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - started).count();
+	result.micros = micros;
+	if (misplaced)
+		sys_err("SAFEBOX_ARRANGE: pid=%u name=%s %d item(s) were not where the plan put them",
+				ch->GetPlayerID(), ch->GetName(), misplaced);
+	if (fromPlayer)
+		sys_log(0, "SAFEBOX_ARRANGE: pid=%u name=%s pages=%d items=%d moved=%d merged=%d units=%u pinned=%d strategy=%d us=%u",
+				ch->GetPlayerID(), ch->GetName(), pages, result.items, result.moved, result.merged, result.units,
+				result.pinned, result.strategy, micros);
+	result.code = RESULT_DONE;
+	return result;
+}
+
+TTransfer PutIntoSafebox(LPCHARACTER ch, unsigned int bagCell, unsigned int safePos, unsigned int count)
+{
+	TTransfer result;
+	CSafebox* box = NULL;
+	const int hands = SafeboxHands(ch, box);
+	if (hands != HANDS_OK) {
+		result.code = TransferCodeOf(hands);
+		return result;
+	}
+	if (bagCell >= (unsigned int)INVENTORY_DEFAULT_MAX_NUM || safePos >= (unsigned int)SAFEBOX_MAX_NUM ||
+			!box->IsValidPosition(safePos)) {
+		result.code = TRANSFER_BAD_REQUEST;
+		return result;
+	}
+	if (!PulseManager::Instance().IncreaseClock(ch->GetPlayerID(), ePulse::SafeboxCheckInOut, std::chrono::milliseconds(250))) {
+		result.code = TRANSFER_COOLDOWN;
+		return result;
+	}
+	LPITEM item = ch->GetInventoryItem((WORD)bagCell);
+	if (!item || item->GetCell() != bagCell || item->GetWindow() != INVENTORY || item->GetOwner() != ch) {
+		result.code = TRANSFER_NO_ITEM;
+		return result;
+	}
+	if (!MayGoIntoSafebox(ch, item)) {
+		result.code = TRANSFER_REFUSED;
+		return result;
+	}
+	LPITEM held = box->Get(safePos);
+	const bool empty = !held && box->IsEmpty(safePos, item->GetSize());
+	const bool same = held && held->GetCell() == safePos && SameStack(held, item);
+	const rules::TransferPlan plan = rules::PlanTransfer(item->GetCount(), count, IsSplittable(item), empty, same,
+			held ? held->GetCount() : 0, held ? held->GetMaxStack() : 0);
+	switch (plan.kind) {
+	case rules::TRANSFER_KIND_MOVE:
+		// SafeboxCheckin's own steps.
+		item->RemoveFromCharacter();
+		ch->SyncQuickslot(QUICKSLOT_TYPE_ITEM, (WORD)bagCell, 255);
+		if (!box->Add(safePos, item)) {
+			item->AddToCharacter(ch, TItemPos(INVENTORY, (WORD)bagCell));
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		LogSafebox(ch, item, "SAFEBOX PUT", plan.units, "");
+		break;
+	case rules::TRANSFER_KIND_SPLIT: {
+		LPITEM part = CutOff(item, plan.units);
+		if (!part) {
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		// Into the box first: nothing has left the bag if the box says no.
+		if (!box->Add(safePos, part)) {
+			M2_DESTROY_ITEM(part);
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		item->SetCount(item->GetCount() - plan.units);
+		FlushRow(item);
+		LogSafebox(ch, part, "SAFEBOX PUT", plan.units, "split");
+		break;
+	}
+	case rules::TRANSFER_KIND_POUR:
+		held->SetCount(held->GetCount() + plan.units);
+		RefreshSafeboxItem(box, held);
+		LogSafebox(ch, held, "SAFEBOX PUT", plan.units, "stack");
+		if (plan.sourceEmptied) {
+			item->SetCount(0);  // MoveItem's stacking: the quickslot follows, the row is deleted
+		} else {
+			item->SetCount(item->GetCount() - plan.units);
+			FlushRow(item);
+		}
+		break;
+	default:
+		result.code = plan.refusal == rules::TRANSFER_REFUSED_FULL ? TRANSFER_FULL :
+				(plan.refusal == rules::TRANSFER_REFUSED_EMPTY ? TRANSFER_NO_ITEM : TRANSFER_OCCUPIED);
+		return result;
+	}
+	result.code = TRANSFER_DONE;
+	result.units = plan.units;
+	return result;
+}
+
+TTransfer TakeFromSafebox(LPCHARACTER ch, unsigned int safePos, unsigned int bagCell, unsigned int count)
+{
+	TTransfer result;
+	CSafebox* box = NULL;
+	const int hands = SafeboxHands(ch, box);
+	if (hands != HANDS_OK) {
+		result.code = TransferCodeOf(hands);
+		return result;
+	}
+	if (bagCell >= (unsigned int)INVENTORY_DEFAULT_MAX_NUM || safePos >= (unsigned int)SAFEBOX_MAX_NUM) {
+		result.code = TRANSFER_BAD_REQUEST;
+		return result;
+	}
+	// SafeboxCheckout's two switches.
+	if (quest::CQuestManager::instance().GetEventFlag("block_safebox") > 0 || g_bChannel > 90) {
+		result.code = TRANSFER_REFUSED;
+		return result;
+	}
+	if (!PulseManager::Instance().IncreaseClock(ch->GetPlayerID(), ePulse::SafeboxCheckInOut, std::chrono::milliseconds(250))) {
+		result.code = TRANSFER_COOLDOWN;
+		return result;
+	}
+	LPITEM held = SafeboxItemAt(box, safePos);
+	if (!held || held->GetOwner() != ch) {
+		result.code = TRANSFER_NO_ITEM;
+		return result;
+	}
+	// A dragon stone goes to its own window, which the engine's packet knows.
+	if (held->IsDragonSoul() || held->IsExchanging()) {
+		result.code = TRANSFER_REFUSED;
+		return result;
+	}
+	const TItemPos pos(INVENTORY, (WORD)bagCell);
+	LPITEM there = ch->GetInventoryItem((WORD)bagCell);
+	const bool empty = !there && ch->IsEmptyItemGrid(pos, held->GetSize());
+	const bool same = there && there->GetCell() == bagCell && !there->isLocked() && !there->IsExchanging() &&
+			SameStack(there, held);
+	const rules::TransferPlan plan = rules::PlanTransfer(held->GetCount(), count, IsSplittable(held), empty, same,
+			there ? there->GetCount() : 0, there ? there->GetMaxStack() : 0);
+	switch (plan.kind) {
+	case rules::TRANSFER_KIND_MOVE:
+		// SafeboxCheckout's own steps, and its HEADER_GD_ITEM_FLUSH.
+		box->Remove(safePos);
+		if (!held->AddToCharacter(ch, pos)) {
+			box->Add(safePos, held);
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		FlushRow(held);
+		LogSafebox(ch, held, "SAFEBOX GET", plan.units, "");
+		break;
+	case rules::TRANSFER_KIND_SPLIT: {
+		LPITEM part = CutOff(held, plan.units);
+		if (!part) {
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		if (!part->AddToCharacter(ch, pos)) {
+			M2_DESTROY_ITEM(part);
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		FlushRow(part);
+		held->SetCount(held->GetCount() - plan.units);
+		RefreshSafeboxItem(box, held);
+		LogSafebox(ch, part, "SAFEBOX GET", plan.units, "split");
+		break;
+	}
+	case rules::TRANSFER_KIND_POUR:
+		there->SetCount(there->GetCount() + plan.units);
+		FlushRow(there);
+		LogSafebox(ch, there, "SAFEBOX GET", plan.units, "stack");
+		if (plan.sourceEmptied) {
+			box->Remove(safePos);
+			M2_DESTROY_ITEM(held);
+		} else {
+			held->SetCount(held->GetCount() - plan.units);
+			RefreshSafeboxItem(box, held);
+		}
+		break;
+	default:
+		result.code = plan.refusal == rules::TRANSFER_REFUSED_FULL ? TRANSFER_FULL :
+				(plan.refusal == rules::TRANSFER_REFUSED_EMPTY ? TRANSFER_NO_ITEM : TRANSFER_OCCUPIED);
+		return result;
+	}
+	result.code = TRANSFER_DONE;
+	result.units = plan.units;
+	return result;
+}
+
+TTransfer MoveInSafebox(LPCHARACTER ch, unsigned int fromPos, unsigned int toPos, unsigned int count)
+{
+	TTransfer result;
+	CSafebox* box = NULL;
+	const int hands = SafeboxHands(ch, box);
+	if (hands != HANDS_OK) {
+		result.code = TransferCodeOf(hands);
+		return result;
+	}
+	if (fromPos == toPos || fromPos >= (unsigned int)SAFEBOX_MAX_NUM || toPos >= (unsigned int)SAFEBOX_MAX_NUM ||
+			!box->IsValidPosition(toPos)) {
+		result.code = TRANSFER_BAD_REQUEST;
+		return result;
+	}
+	if (!PulseManager::Instance().IncreaseCount(ch->GetPlayerID(), ePulse::SafeboxMove, std::chrono::milliseconds(500), 5)) {
+		result.code = TRANSFER_COOLDOWN;
+		return result;
+	}
+	LPITEM held = SafeboxItemAt(box, fromPos);
+	if (!held || held->GetOwner() != ch) {
+		result.code = TRANSFER_NO_ITEM;
+		return result;
+	}
+	if (held->IsExchanging()) {
+		result.code = TRANSFER_REFUSED;
+		return result;
+	}
+	LPITEM there = box->Get(toPos);
+	const bool same = there && there != held && there->GetCell() == toPos && SameStack(there, held);
+	// A whole stack onto a place no stack stands on goes the packet's own way,
+	// CSafebox::MoveItem, which says no when the place is not clear.
+	const bool whole = !IsSplittable(held) || count == 0 || count >= held->GetCount();
+	if (!there && whole) {
+		if (!box->MoveItem((BYTE)fromPos, (BYTE)toPos)) {
+			result.code = TRANSFER_OCCUPIED;
+			return result;
+		}
+		result.code = TRANSFER_DONE;
+		result.units = held->GetCount();
+		return result;
+	}
+	const bool empty = !there && box->IsEmpty(toPos, held->GetSize());
+	const rules::TransferPlan plan = rules::PlanTransfer(held->GetCount(), count, IsSplittable(held), empty, same,
+			there ? there->GetCount() : 0, there ? there->GetMaxStack() : 0);
+	switch (plan.kind) {
+	case rules::TRANSFER_KIND_SPLIT: {
+		LPITEM part = CutOff(held, plan.units);
+		if (!part) {
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		if (!box->Add(toPos, part)) {
+			M2_DESTROY_ITEM(part);
+			result.code = TRANSFER_REFUSED;
+			return result;
+		}
+		held->SetCount(held->GetCount() - plan.units);
+		RefreshSafeboxItem(box, held);
+		LogSafebox(ch, part, "SAFEBOX MOVE", plan.units, "split");
+		break;
+	}
+	case rules::TRANSFER_KIND_POUR:
+		there->SetCount(there->GetCount() + plan.units);
+		RefreshSafeboxItem(box, there);
+		LogSafebox(ch, there, "SAFEBOX MOVE", plan.units, "stack");
+		if (plan.sourceEmptied) {
+			box->Remove(fromPos);
+			M2_DESTROY_ITEM(held);
+		} else {
+			held->SetCount(held->GetCount() - plan.units);
+			RefreshSafeboxItem(box, held);
+		}
+		break;
+	default:
+		// A whole stack onto a free place went to MoveItem above; what is left
+		// is a refusal.
+		result.code = plan.refusal == rules::TRANSFER_REFUSED_FULL ? TRANSFER_FULL :
+				(plan.refusal == rules::TRANSFER_REFUSED_EMPTY ? TRANSFER_NO_ITEM : TRANSFER_OCCUPIED);
+		return result;
+	}
+	result.code = TRANSFER_DONE;
+	result.units = plan.units;
+	return result;
+}
+
 }  // namespace playerbot_arrange
 
 #else  // r40250: two pages and no horse page; the bots keep their own tidy pass there.
@@ -569,6 +1189,28 @@ TResult ArrangeInventory(LPCHARACTER, bool)
 	TResult result;
 	result.code = RESULT_UNSUPPORTED;
 	return result;
+}
+
+TResult ArrangeSafebox(LPCHARACTER, bool)
+{
+	TResult result;
+	result.code = RESULT_UNSUPPORTED;
+	return result;
+}
+
+TTransfer PutIntoSafebox(LPCHARACTER, unsigned int, unsigned int, unsigned int)
+{
+	return TTransfer();
+}
+
+TTransfer TakeFromSafebox(LPCHARACTER, unsigned int, unsigned int, unsigned int)
+{
+	return TTransfer();
+}
+
+TTransfer MoveInSafebox(LPCHARACTER, unsigned int, unsigned int, unsigned int)
+{
+	return TTransfer();
 }
 
 }  // namespace playerbot_arrange

@@ -222,6 +222,28 @@ EDITS = {
          b'\t\timport pickupnearby\r\n'
          b'\t\tpickupnearby.Request()\r\n'
          b'\r\n'),
+        # The safebox's answers (safeboxtransfer.py): its "Scal i uporzadkuj",
+        # and a stack moved by count. The entry follows the bag's own, which
+        # ends its line; the handlers go after the Top1 badge's, whose end no
+        # other edit reads - placed after the bag's handler they would have
+        # split the text by which the edit above knows it has been applied, and
+        # a second run would have added that handler again.
+        (b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n',
+         b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n'
+         b'\t\t\t"SafeboxArrangeResult"\t: self.__SafeboxArrangeResult,\r\n'
+         b'\t\t\t"SafeboxTransferResult"\t: self.__SafeboxTransferResult,\r\n'),
+        (b'\t\t\tself.interface.wndTop1Badge.Refresh(vid)\r\n'
+         b'\r\n',
+         b'\t\t\tself.interface.wndTop1Badge.Refresh(vid)\r\n'
+         b'\r\n'
+         b'\tdef __SafeboxArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):\r\n'
+         b'\t\timport safeboxtransfer\r\n'
+         b'\t\tsafeboxtransfer.OnArrangeResult(code, moved, merged, units)\r\n'
+         b'\r\n'
+         b'\tdef __SafeboxTransferResult(self, op="0", code="0", units="0", *rest):\r\n'
+         b'\t\timport safeboxtransfer\r\n'
+         b'\t\tsafeboxtransfer.OnTransferResult(op, code, units)\r\n'
+         b'\r\n'),
     ],
     # "Scal i uporzadkuj" (Tieru, 18 September; Codex's audit the same day):
     # the inventory's auto-stack button asks the server once
@@ -240,6 +262,147 @@ EDITS = {
          b'\t\tinventoryarrange.Request()\r\n'
          b'\r\n'
          b'\tdef __OnAutoStackButtonByMoves(self):\r\n'),
+        # A stack from the safebox dropped on the bag (blasty, 19 September;
+        # safeboxtransfer.py): a part of it, or onto the same item, goes to the
+        # server as a command with the count; a whole stack onto a free cell
+        # keeps the packet. Dropped on a stack in the bag it used to do nothing.
+        (b'\t\t\t\telse:\r\n'
+         b'\t\t\t\t\tnet.SendSafeboxCheckoutPacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\telse:\r\n'
+         b'\t\t\t\t\timport safeboxtransfer\r\n'
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoBag(attachedSlotPos, selectedSlotPos, attachedItemCount, False)\r\n'),
+        (b'\t\t\t\tself.__DropSrcItemToDestItemInInventory(attachedItemVID, attachedSlotPos, itemSlotIndex)\r\n'
+         b'\r\n'
+         b'\t\t\tmouseModule.mouseController.DeattachObject()\r\n',
+         b'\t\t\t\tself.__DropSrcItemToDestItemInInventory(attachedItemVID, attachedSlotPos, itemSlotIndex)\r\n'
+         b'\r\n'
+         b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType and player.ITEM_MONEY != attachedItemVID:\r\n'
+         b'\t\t\t\timport safeboxtransfer\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropIntoBag(attachedSlotPos, itemSlotIndex, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'
+         b'\r\n'
+         b'\t\t\tmouseModule.mouseController.DeattachObject()\r\n'),
+    ],
+    # The safebox's side (blasty's proposal, 19 September; Tieru: "Jasne"):
+    # "Scal i uporzadkuj" in the title bar, Shift and a click to split one of its
+    # stacks, and a stack dropped on the same item poured into it - bag into
+    # safebox, safebox into bag and inside the safebox (safeboxtransfer.py,
+    # hand-written; playerbot_arrange.cpp on the server). The drop onto a taken
+    # place from the bag was a commented-out packet; it is a command with the
+    # count now, and the packets stay for whole stacks onto free places.
+    'uisafebox.py': [
+        (b'import item\r\n'
+         b'\r\n'
+         b'EVENT_QUICK_REMOVE_SAFEBOX_ITEM',
+         b'import item\r\n'
+         b'import safeboxtransfer\r\n'
+         b'\r\n'
+         b'EVENT_QUICK_REMOVE_SAFEBOX_ITEM'),
+        (b'\t\tif self.dlgPickMoney:\r\n'
+         b'\t\t\tself.dlgPickMoney.Destroy()\r\n'
+         b'\t\t\tself.dlgPickMoney = None\r\n',
+         b'\t\tif self.dlgPickMoney:\r\n'
+         b'\t\t\tself.dlgPickMoney.Destroy()\r\n'
+         b'\t\t\tself.dlgPickMoney = None\r\n'
+         b'\t\tif getattr(self, "dlgPickItem", None):\r\n'
+         b'\t\t\tself.dlgPickItem.Destroy()\r\n'
+         b'\t\t\tself.dlgPickItem = None\r\n'),
+        (b'\t\tself.GetChild("ChangePasswordButton").SetEvent(ui.__mem_func__(self.OnChangePassword))\r\n'
+         b'\t\tself.GetChild("ExitButton").SetEvent(ui.__mem_func__(self.Close))\r\n',
+         b'\t\tself.GetChild("ChangePasswordButton").SetEvent(ui.__mem_func__(self.OnChangePassword))\r\n'
+         b'\t\tself.GetChild("ExitButton").SetEvent(ui.__mem_func__(self.Close))\r\n'
+         b'\t\t# "Scal i uporzadkuj" (uiscript/safeboxwindow.py) and the count a\r\n'
+         b'\t\t# stack is split with (safeboxtransfer.py).\r\n'
+         b'\t\ttry:\r\n'
+         b'\t\t\tself.GetChild("ArrangeButton").SetEvent(ui.__mem_func__(self.__OnArrangeButton))\r\n'
+         b'\t\texcept KeyError:\r\n'
+         b'\t\t\tpass\r\n'
+         b'\t\tself.dlgPickItem = safeboxtransfer.MakePickDialog(ui.__mem_func__(self.__OnPickItem))\r\n'),
+        (b'\t\tself.dlgPickMoney.Close()\r\n'
+         b'\t\tself.dlgChangePassword.Close()\r\n'
+         b'\t\tself.Hide()\r\n',
+         b'\t\tself.dlgPickMoney.Close()\r\n'
+         b'\t\tself.dlgChangePassword.Close()\r\n'
+         b'\t\tif getattr(self, "dlgPickItem", None):\r\n'
+         b'\t\t\tself.dlgPickItem.Close()\r\n'
+         b'\t\tself.Hide()\r\n'),
+        (b'\t\t\tif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\r\n'
+         b'\t\t\t\tnet.SendSafeboxItemMovePacket(attachedSlotPos, selectedSlotPos)\r\n'
+         b'\t\t\t\t#snd.PlaySound("sound/ui/drop.wav")\r\n',
+         b'\t\t\tif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropInSafebox(attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), False)\r\n'
+         b'\t\t\t\t#snd.PlaySound("sound/ui/drop.wav")\r\n'),
+        (b'\t\t\t\t\tself.AddItemToSafebox(attachedInvenType, attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoSafebox(attachedInvenType, attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), False)\r\n'),
+        (b'\t\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\t\t#net.SendSafeboxCheckinPacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoSafebox(player.INVENTORY, attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'),
+        (b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\tnet.SendSafeboxItemMovePacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropInSafebox(attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'),
+        (b'\t\t\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.SHOP_BUY_INFO)\r\n'
+         b'\r\n'
+         b'\t\t\telse:\r\n'
+         b'\t\t\t\tselectedItemID = safebox.GetItemID(selectedSlotPos)\r\n',
+         b'\t\t\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.SHOP_BUY_INFO)\r\n'
+         b'\r\n'
+         b'\t\t\telif app.IsPressed(app.DIK_LSHIFT) and safebox.GetItemCount(selectedSlotPos) > 1:\r\n'
+         b'\t\t\t\tself.__OpenPickItem(selectedSlotPos)\r\n'
+         b'\r\n'
+         b'\t\t\telse:\r\n'
+         b'\t\t\t\tselectedItemID = safebox.GetItemID(selectedSlotPos)\r\n'),
+        (b'\tdef RemoveItemFromSafebox(self, slotPos):\r\n'
+         b'\t\tpass\r\n',
+         b'\tdef RemoveItemFromSafebox(self, slotPos):\r\n'
+         b'\t\tpass\r\n'
+         b'\r\n'
+         b'\tdef __OnArrangeButton(self):\r\n'
+         b'\t\tsafeboxtransfer.RequestArrange()\r\n'
+         b'\r\n'
+         b'\tdef __OpenPickItem(self, slotPos):\r\n'
+         b'\t\tself.dlgPickItem.SetTitleName(localeInfo.PICK_ITEM_TITLE)\r\n'
+         b'\t\tself.dlgPickItem.Open(safebox.GetItemCount(slotPos))\r\n'
+         b'\t\tself.dlgPickItem.itemGlobalSlotIndex = slotPos\r\n'
+         b'\r\n'
+         b'\tdef __OnPickItem(self, count, *rest):\r\n'
+         b'\t\tslotPos = self.dlgPickItem.itemGlobalSlotIndex\r\n'
+         b'\t\tmouseModule.mouseController.AttachObject(self, player.SLOT_TYPE_SAFEBOX, slotPos, safebox.GetItemID(slotPos), count)\r\n'
+         b'\t\tsnd.PlaySound("sound/ui/pick.wav")\r\n'),
+    ],
+    # The safebox's "Scal i uporzadkuj": the bag's button and images, in the
+    # title bar where the bag has its own.
+    'uiscript/safeboxwindow.py': [
+        (b'import uiScriptLocale\r\n'
+         b'\r\n'
+         b'window = {\r\n',
+         b'import uiScriptLocale\r\n'
+         b'import flamewindPath\r\n'
+         b'\r\n'
+         b'window = {\r\n'),
+        (b'\t\t\t\t\t\t{ "name":"TitleName", "type":"text", "x":77, "y":3, "text":uiScriptLocale.SAFE_TITLE, "text_horizontal_align":"center" },\r\n'
+         b'\t\t\t\t\t),\r\n',
+         b'\t\t\t\t\t\t{ "name":"TitleName", "type":"text", "x":77, "y":3, "text":uiScriptLocale.SAFE_TITLE, "text_horizontal_align":"center" },\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t\t{\r\n'
+         b'\t\t\t\t\t\t\t"name" : "ArrangeButton",\r\n'
+         b'\t\t\t\t\t\t\t"type" : "button",\r\n'
+         b'\t\t\t\t\t\t\t"x" : 42,\r\n'
+         b'\t\t\t\t\t\t\t"y" : -1,\r\n'
+         b'\t\t\t\t\t\t\t"horizontal_align": "right",\r\n'
+         b'\t\t\t\t\t\t\t"vertical_align": "center",\r\n'
+         b'\t\t\t\t\t\t\t"default_image" : flamewindPath.GetInventory("autostack_01"),\r\n'
+         b'\t\t\t\t\t\t\t"over_image" : flamewindPath.GetInventory("autostack_02"),\r\n'
+         b'\t\t\t\t\t\t\t"down_image" : flamewindPath.GetInventory("autostack_03"),\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_text" : "Scal i uporz\\xb9dkuj",\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_y": -19,\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_x": -30,\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'),
     ],
     # The offline shop's edit grid removes an item on a left click and never
     # asked whether the slot held one: a click on an empty slot was a KeyError

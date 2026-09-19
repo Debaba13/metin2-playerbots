@@ -360,8 +360,10 @@ namespace
 		return false;
 	}
 
+#if !defined(PLAYERBOT_ENGINE_MT2009)
 	// And the stacks older visits left split in the box, poured together a
-	// few at a time on the same rule.
+	// few at a time on the same rule. The 2.x line arranges the whole box
+	// instead (ArrangeSafebox, at the end of the visit).
 	int MergePlayerBotSafeboxStacks(CSafebox* box, int maxMerges)
 	{
 		int merged = 0;
@@ -396,6 +398,7 @@ namespace
 		}
 		return merged;
 	}
+#endif
 
 	// Into the open safebox, the way CInputMain::SafeboxCheckin does it: off the
 	// character, onto the first empty slot of the grid. Returns how many books
@@ -4099,11 +4102,24 @@ namespace
 				// withdrawal then needs, so a bot under pressure can still take
 				// back the one material it came for.
 				const int taken = WithdrawPlayerBotSafebox(ch, box, &justDeposited);
+#if defined(PLAYERBOT_ENGINE_MT2009)
+				// The box poured together and laid out the way a player's
+				// "Scal i uporzadkuj" does it (ArrangeSafebox, playerbot_arrange.cpp):
+				// every stack, not sixteen a visit, and the same code a player's
+				// button runs, on every bot's box.
+				const playerbot_arrange::TResult arranged = playerbot_arrange::ArrangeSafebox(ch, false);
+				const int stacked = arranged.merged;
+				const int rearranged = arranged.moved;
+				const int arrangeCode = arranged.code;
+#else
 				const int stacked = MergePlayerBotSafeboxStacks(box, PLAYERBOT_SAFEBOX_STACK_MERGES_PER_VISIT);
+				const int rearranged = 0;
+				const int arrangeCode = -1;
+#endif
 				ch->CloseSafebox();
-				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d topped_up=%d stacked=%d",
+				sys_log(0, "PLAYERBOT_TOWN: safebox deposit pid=%u name=%s deposited=%d taken=%d books_left=%d free_cells=%d topped_up=%d stacked=%d arranged=%d arrange_code=%d",
 						ch->GetPlayerID(), ch->GetName(), deposited, taken, CountPlayerBotSkillBooks(ch),
-						CountPlayerBotFreeInventoryCells(ch), toppedUp, stacked);
+						CountPlayerBotFreeInventoryCells(ch), toppedUp, stacked, rearranged, arrangeCode);
 				done = true;
 			}
 			else if (dwNow >= state.dwTownWaitUntil)

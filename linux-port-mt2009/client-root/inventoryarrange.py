@@ -39,7 +39,7 @@ RESULT_BAD_REQUEST = 8
 
 MSG_DONE = 'Uporz\xb9dkowano ekwipunek: przestawiono %d, scalono stos\xf3w: %d.'
 MSG_NOTHING = 'Ekwipunek jest ju\xbf uporz\xb9dkowany.'
-MSG_BUSY = 'Nie mo\xbfna teraz uporz\xb9dkowa\xe6 ekwipunku - zamknij handel, sklep, magazyn lub inne okno.'
+MSG_BUSY = 'Nie mo\xbfna teraz uporz\xb9dkowa\xe6 ekwipunku - zamknij handel, sklep lub inne okno.'
 MSG_COOLDOWN = 'Odczekaj chwil\xea przed kolejnym porz\xb9dkowaniem.'
 MSG_NO_LAYOUT = 'Nie uda\xb3o si\xea u\xb3o\xbfy\xe6 ekwipunku - nic nie zmieniono.'
 MSG_DEAD = 'Nie mo\xbfesz porz\xb9dkowa\xe6 ekwipunku po \x9cmierci.'

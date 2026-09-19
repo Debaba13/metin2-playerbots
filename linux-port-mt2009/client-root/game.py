@@ -2625,6 +2625,8 @@ class GameWindow(ui.ScriptWindow):
 
 			# "Scal i uporzadkuj" (inventoryarrange.py)
 			"InventoryArrangeResult"	: self.__InventoryArrangeResult,
+			"SafeboxArrangeResult"	: self.__SafeboxArrangeResult,
+			"SafeboxTransferResult"	: self.__SafeboxTransferResult,
 
 			# WEDDING
 			"lover_login"			: self.__LoginLover,
@@ -3397,6 +3399,14 @@ class GameWindow(ui.ScriptWindow):
 	def __OnTop1Badge(self, vid):
 		if self.interface.wndTop1Badge:
 			self.interface.wndTop1Badge.Refresh(vid)
+
+	def __SafeboxArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):
+		import safeboxtransfer
+		safeboxtransfer.OnArrangeResult(code, moved, merged, units)
+
+	def __SafeboxTransferResult(self, op="0", code="0", units="0", *rest):
+		import safeboxtransfer
+		safeboxtransfer.OnTransferResult(op, code, units)
 
 	def __InventoryArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):
 		import inventoryarrange
