@@ -449,6 +449,19 @@ namespace
 	// Discord's number); a material is a pack of PLAYERBOT_SHOP_PACK_UNITS,
 	// small enough to buy for one refine and few enough lines to leave room
 	// on the counter. Zero for anything that does not stack.
+	// The three stones a bot rerolls gear with: the change stone, the add
+	// stone and the blessing marble, by their subtype rather than by vnum -
+	// each comes in an ordinary and an ItemShop flavour (the 76xxx copies),
+	// and the green pair for gear of forty and under is a fourth and fifth.
+	bool IsPlayerBotBonusStoneItem(LPITEM item)
+	{
+		if (!item || item->GetType() != ITEM_USE)
+			return false;
+		const BYTE sub = item->GetSubType();
+		return sub == USE_ADD_ATTRIBUTE || sub == USE_CHANGE_ATTRIBUTE ||
+				sub == USE_ADD_ATTRIBUTE2;
+	}
+
 	int GetPlayerBotStallLineUnits(LPITEM item)
 	{
 		if (!item || !item->IsStackable() || IS_SET(item->GetAntiFlag(), ITEM_ANTIFLAG_STACK))
@@ -457,6 +470,11 @@ namespace
 			return PLAYERBOT_SHOP_SCROLL_LINE_UNITS;
 		if (item->GetType() == ITEM_SKILLBOOK || item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
 			return 1;
+		// A bonus stone is bought a few at a time, and a bot that found more
+		// than it can spend has hundreds: one a line would take a day and a
+		// half to shift a single bag of them.
+		if (IsPlayerBotBonusStoneItem(item))
+			return PLAYERBOT_SHOP_PACK_UNITS;
 		if (item->GetType() == ITEM_USE || item->GetType() == ITEM_METIN ||
 				item->GetType() == ITEM_TREASURE_KEY ||
 				(item->GetVnum() >= 27992 && item->GetVnum() <= 27994))
@@ -762,19 +780,6 @@ namespace
 	// What the stack a counter's lines are cut from keeps back: the anvil's
 	// reserve of a material, the keys the bot holds on to, the scrolls of its
 	// own scroll work, one of anything else.
-	// The three stones a bot rerolls gear with: the change stone, the add
-	// stone and the blessing marble, by their subtype rather than by vnum -
-	// each comes in an ordinary and an ItemShop flavour (the 76xxx copies),
-	// and the green pair for gear of forty and under is a fourth and fifth.
-	bool IsPlayerBotBonusStoneItem(LPITEM item)
-	{
-		if (!item || item->GetType() != ITEM_USE)
-			return false;
-		const BYTE sub = item->GetSubType();
-		return sub == USE_ADD_ATTRIBUTE || sub == USE_CHANGE_ATTRIBUTE ||
-				sub == USE_ADD_ATTRIBUTE2;
-	}
-
 	int GetPlayerBotStallBaseKeep(LPCHARACTER ch, LPITEM item)
 	{
 		if (!item)
