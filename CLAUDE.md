@@ -1137,7 +1137,7 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `common.playerbot_name_history` now and require both halves to agree, so a
   second, hand-made rename is still somebody's deliberate choice.
   `M2_PLAYERBOT_HUMAN_NAMES` is 1/0/`restore`; the pool is
-  `tools/generate_bot_names.py` over `data/bot_names_iwakura.txt` - one written list, no class or sex pairing since 2.0.2, since 2.0.10 dealt by kingdom: the list shuffled once by its own hash and cut into three equal shares (`player_index.empire` says whose a bot is), a kingdom larger than its share (Chunjo, 1500 seeded) continuing with its own names and `2`/`v2`, then `3`/`v3`, then v4 from the whole list; and a pool version that renames every bot named from an older list or by the older scheme. **A waiting bot must never be dealt a name a settled bot wears**: the plan used to number waiting bots from one and free names from the top of the list, excluding only people's characters, so the thousand Shinsoo/Jinno bots seeded by 2.0.8 into an already-named world got the first thousand Chunjo names - 999 duplicates measured. A name worn by a bot with a current history row is not free.
+  `tools/generate_bot_names.py` over `data/bot_names_iwakura.txt` - one written list, no class or sex pairing since 2.0.2, since 2.0.10 dealt by kingdom: the list shuffled once by its own hash and cut into three equal shares (`player_index.empire` says whose a bot is), a kingdom larger than its share (Chunjo, 1500 seeded) continuing with its own names and `2`/`v2`, then `3`/`v3`, then v4 from the whole list; and a pool version that is recorded but, since 2.0.84, renames nobody: Iwakura's list of 19 September grew to 1 800 lines (1 768 names in the pool) and the operator's rule was not to change a name a bot already wears ("staraj sie nickow juz istniejacych playerbotow nie podmienic") - a bot with a name keeps it, a waiting bot (no history row) takes a free one, and a name another bot wears is never free. **A waiting bot must never be dealt a name a settled bot wears**: the plan used to number waiting bots from one and free names from the top of the list, excluding only people's characters, so the thousand Shinsoo/Jinno bots seeded by 2.0.8 into an already-named world got the first thousand Chunjo names - 999 duplicates measured. A name worn by a bot with a current history row is not free.
 - **`account.account.empire` is not where a bot's kingdom lives.** The seed
   wrote a literal 2 into it for the whole cohort while `player_index.empire` -
   the column the core actually reads - was right, so every Shinsoo and Jinno bot
@@ -4982,6 +4982,25 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   for Ebonitowe +1 because a table says so. The PvP column is rendered and
   unused until the second set exists. Body armour, helmets and shields are not
   in his list on purpose (judged by level and lines).
+- **A soul stone is seated by Iwakura's KD tiers, to the letter.** His
+  sheet of 19 September (`data/iwakura_tiery.txt`, the [TIERY KD] section)
+  rates each kind of stone at +3 and +4 for PvE and PvP, bans +0, +1 and +2 in
+  weapons and armour, and calls the class stones (Wojownika, Sury, Ninja,
+  Szamana) PvP-only and useless for PvE. `generate_iwakura_tiers.py` binds each
+  row to its vnum - 28000 + grade * 100 + kind, 30-37 the weapon kinds and 38-43
+  the armour kinds, checked against item_proto's name and type - and renders
+  `TPlayerBotSoulStoneTier` into `playerbot_item_tiers.h`. A stone is seated
+  when its kind's PvE tier is at least `PLAYERBOT_SOUL_STONE_MIN_PVE_TIER` (3),
+  into a piece at +6 or more, and a piece at +8 or more waits for a +4; the
+  market buys only +3 and +4; the equipment score counts the stones a piece
+  carries by their tier (`ScorePlayerBotSeatedSoulStones`), so a piece with
+  good stones is not swapped for a bare one. The operator's one exception, the
+  same evening ("te kamienie mozna wkladac jak sie dropnie do slabych itemow do
+  21 levela jesli sa to itemy co najwyzej +6"): a dropped +0..+2 goes into a
+  piece of level 21 or less at +6 or less (`IsPlayerBotWeakSoulStoneGear`) if
+  its kind rates 3 or more at +3 or +4 - Witalnosci's item name carries no
+  "Duszy", which is why the generator matches the stem. The rest of the sheet
+  only lost its "(Lvl N)" labels and spelled Miecz Zadlowy (an alias).
 - **Cennik 1.2 has two rows for one item, and the generator now says which it
   skips.** "Waleczna Dusza Zaprzys" (1.1) and "Waleczna dusza" (1.2) both bind
   to 30356, "Wyuszone Oczy" is a typo beside "Wysuszone Oczy"; `SKIPPED_ROWS`
@@ -5973,13 +5992,64 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, and the launcher
   widens both to 13000-13012 only while the channel is on, so a world that
   never asked publishes nothing new. The client lists 2 channels and
-  intrologin hides one past the first that does not answer. A bot on
-  channel 2 does not trade: the offline market reads only its own channel's
-  shops (as ikashop's `IsNearShop` does), and `PlayerBotCanOpenShop` answers
-  no there, so its goods take the no-counter path - the merchant under bag
-  pressure, the safebox - instead of waiting for a counter that cannot
-  open. Buying across channels would need `IsNearShop` to let a bot through
-  and was not tried.
+  intrologin hides one past the first that does not answer. Until 2.0.84 a
+  bot on channel 2 did not trade: the offline market read only its own
+  channel's shops (as ikashop's `IsNearShop` does), and `PlayerBotCanOpenShop`
+  answered no there, so its goods took the no-counter path - the merchant under
+  bag pressure, the safebox. Since then it asks to be moved to channel 1 for
+  anything at a stand (the next note), and the pins above are not read.
+- **The pins emptied the second channel, so since 2.0.84 a bot's channel is
+  a row that moves.** On a world that has played nearly every bot keeps an
+  offline shop - 2 404 shops for 2 500 bots on SIZOWSKI's - so nearly every bot
+  was pinned to channel 1 and channel 2 carried 42 ("% botow na channelach nie
+  dziala poprawnie", Xewi and Mkls, 19 September). SIZOWSKI sent a design and a
+  patch the same day; what shipped is his design with the ready time his patch
+  lacked. With the channel on (mt2009 with ikashop, `m_bChannelTable`) a bot's
+  channel is its row of `common.playerbot_channel_assignment` - one row a pid,
+  read by `LoadRegisteredBots`, a missing row filled from the spread by the
+  coordinator; the pins are not read. A bot on channel 2 with business at a
+  stand asks to be moved (`RequestShopChannel`): a stand to open
+  (`EnsurePlayerBotPrivateShopChannel`, which also holds the bot in town up to
+  75 s), another bot's counter to buy from, and its own stand 45 to 75 minutes
+  after the bot arrived on channel 2 (`PLAYERBOT_SHOP_CHANNEL_SERVICE_*`). The
+  first build asked at every keeper's first service there, and 235 of 397 bots
+  of channel 2 were waiting twelve minutes after the start, against 33 places
+  a gate; the second asked for an expired stand at once, and a stand its owner
+  will not renew (the TRADE slider, no yang for the fee) stays expired with its
+  goods for good - 253 of them among channel 2's owners on m2zip - so those
+  owners went back and forth for nothing. The
+  coordinator is the channel-1 core that hosts Joan: a census every five
+  seconds of the bots seen in the last half minute (both channels publish every
+  ten) and one step a gate of two minutes (`common.playerbot_channel_control`)
+  - `PlanChannelMoves`: straight in under the cap, one for one at it (3% a
+  gate), a drain's worth more out than in over it, and with nobody waiting a
+  drain (2% a gate): over the cap anybody not pinned, the cheapest first, and
+  between the cap and the target only bots with no live stand - with most bots
+  behind a stand, that gentle drain alone found two of 686. The cap
+  and the target come from the slider: 100 minus the share, and ten under that
+  (60 and 50 at 40). Who steps out is chosen by `MoveCost`: a village +1, an
+  errand +1, a live stand +2; a service visit, a shop operation in flight, a
+  player's party, a war, a dungeon, a raid, a duel and the medal droppers'
+  cohort (channel 1's alone, `SpawnMedalDropperCohort`) are pinned. SIZOWSKI's
+  swap kept every bot in a village out altogether; on m2zip 654 of 693 bots of
+  channel 1 stood in a village and the swaps ran at six a gate while eighty
+  waited. A move is a row changed: the old core reads it within a refresh and
+  despawns the bot, the new one spawns it once `ready_at` has passed and the
+  P2P table no longer knows it, so no pid is ever on two cores; a bot moved out
+  of channel 1 stays out of the next swap for twenty minutes (`moved_at`). A
+  bot moved in for its stand is served five seconds after it loads
+  (`m_setChannelMovedIn`) - 12 s from arrival to the first counter line
+  measured. Everything runs on a connection and a thread of the manager's own
+  (`m_pChannelSql`; the credentials come from config.cpp through
+  `apply_channel_connection` in playerbotify.py), so the game thread never
+  waits for the database. The coordinator moves nobody until the spawn window
+  plus two minutes have passed, never under five (the first test drained the
+  shop channel thirteen seconds in), and a start drops the last run's requests.
+  Measured on m2zip at 1 000 bots, the 99 medal droppers and a share of 40:
+  channel 1 went from 693 of 1 099 to its cap of 659 in two gates (29 out and
+  8 in, 27 and 7) and then swapped one for one with a dozen waiting; ticks 6-7 s
+  of 60 on channel 1 and 4.7 s on channel 2; no pid on both channels, no login
+  refused. A player never sees any of this but the numbers on the channel list.
 - **An event that cancels itself wrote into freed memory.** `event_process`
   deletes the queue element before calling the event and left `q_el` on it,
   and `event_cancel` of a processing event writes `q_el->bCancel`. A quest's
@@ -6281,7 +6351,13 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   hundred; and a missing item is looked for once a second, not on every frame
   - the search walks every cell of four pages. His layout has no field for the
   delay before standing up; the value stays in the file (15 s by default). He
-  is in the README's credits and in the release notes.
+  is in the README's credits and in the release notes. Client 2.0.19 carries
+  his second version: twelve items on a clock in two rows (`USE_ITEM_SLOTS` 18,
+  the first six the potions), and the pick-up in a window of its own, "Auto
+  Lowy - Lupy", movable, so each of the two fits 800x600. `CONFIG_VERSION`
+  stayed 4: the new keys only take their defaults, and a file of 2.0.18 reads
+  as it was (`tests/uiautohunt_test.py` checks both, and the two windows' places
+  on an 800x600 screen).
 - **The package's player dump brought another server's guild lands.**
   `initdb.d/dumps/player.sql` holds 28 `player.guild_land` rows and 62
   `player.object` buildings from the server the package was taken from, and
