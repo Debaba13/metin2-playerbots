@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-19T11:01:20Z",
-  "statusMessage": "2.0.81 (serwer 2.0.81, klient bez zmian 2.0.17): tereny gildii z paczki można kupić; dropki nie robią próby konia; w Wieży Demonów boty biją kilka potworów naraz; poprawiony restart launchera po aktualizacji. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-19T12:03:58Z",
+  "statusMessage": "2.0.82 (serwer 2.0.82, klient bez zmian 2.0.17): hostowanie w COOP (testy patronów) działa też przez VPN, gdy operator nie daje publicznego adresu. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.81",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.81/metin2-server-update-2.0.81.zip",
-    "sha256": "A19402A6F1C4027FEED247EC5F7CECF7B1CE76DADEB0F632BFA217DD5B978472"
+    "version": "2.0.82",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.82/metin2-server-update-2.0.82.zip",
+    "sha256": "F9EBD4E2D3B2F090E3165D4F456DE79C27BF66D7ADD30608571D963685DE9B2D"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
