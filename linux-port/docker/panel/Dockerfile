@@ -19,7 +19,11 @@ ENV PYTHONUNBUFFERED=1 \
 # tables it needs) at every start, so the panel works against a database that
 # already existed as well as a freshly initialised one.
 # curl: the healthcheck.
-RUN apt-get update \
+# Check-Date off: Docker Desktop's clock is the Windows clock, and apt refuses
+# a Release file dated after it ("not valid yet") - Xewi's Windows ran three
+# hours behind on 19 September and no start got past this line. The
+# signatures are still checked; only the date is not.
+RUN apt-get -o Acquire::Check-Date=false update \
  && apt-get install -y --no-install-recommends mariadb-client curl \
  && rm -rf /var/lib/apt/lists/*
 

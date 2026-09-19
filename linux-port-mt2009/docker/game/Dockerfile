@@ -252,8 +252,12 @@ RUN if [ -n "${APT_MIRROR}" ]; then \
 # What `ldd` resolves on the two binaries: libstdc++, libgcc_s, libc, and -
 # because the package's Makefiles link them dynamically (-lz, -lmd) - zlib and
 # libmd. tzdata so the logs carry the operator's clock.
+# Check-Date off, as in the panel: a Windows clock running behind makes apt
+# refuse every Release file as "not valid yet" (Xewi, 19 September). Only this
+# stage and the panel carry it - the deps stage is cached on every install that
+# has built once, and a changed line there would rebuild every library.
 RUN dpkg --add-architecture i386 \
- && apt-get update \
+ && apt-get -o Acquire::Check-Date=false update \
  && apt-get install -y --no-install-recommends \
         libc6:i386 libstdc++6:i386 libgcc-s1:i386 zlib1g:i386 libmd0:i386 \
         tzdata ca-certificates \
