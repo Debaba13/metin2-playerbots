@@ -46,7 +46,16 @@ Serwer 2.0.85. Klient bez zmian (2.0.19).
   dziesiatym poziomie i powyzej 35 poziomu postaci nie mogl ani wydac medalu
   (czeka na probe konia bojowego), ani go sprzedac — wiec zbieral je bez konca;
   jeden z graczy pokazal ponad czterdziesci sztuk w plecaku. Teraz wszystko
-  ponad dwa medale trafia na sklep jak kazdy inny towar.
+  ponad dwa medale trafia na sklep jak kazdy inny towar. Na swiecie testowym
+  bylo 37 627 medali w plecakach przeciwko 5 346 na ladach.
+- **Drugi kanal jest osiagalny takze na Linuksie** (GorącyDelfin). Kanal 2
+  nasluchuje na portach 13010-13012, ale otwieral je tylko launcher na
+  Windows — wiec na serwerze linuksowym (i po wlaczeniu kanalu w panelu) boty
+  na CH2 graly, a nikt z zewnatrz nie mogl sie tam zalogowac. Aktualizacja
+  ustawia zakres portow sama, zanim wystartuja kontenery.
+- **Panel zaawansowany pokazuje, ile botow jest na ktorym kanale** (hunmar).
+  Rozbicie pojawia sie obok lacznej liczby tylko wtedy, gdy drugi kanal
+  faktycznie dziala.
 
 ## 2.0.84 — 2026-09-19
 
