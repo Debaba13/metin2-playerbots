@@ -3187,6 +3187,56 @@ namespace
 		std::map<long, int>::const_iterator it = s_mapPlayerBotStallsByMap.find(lMapIndex);
 		return it == s_mapPlayerBotStallsByMap.end() ? 0 : it->second;
 	}
+	// The two channels with moves (playerbot_channel_rules.h). A bot on the
+	// second channel with business at a shop asks the coordinator to be moved
+	// to the shop channel: it asks again this often while it waits, holds in
+	// town at most this long (the stability window and a margin - a bot that
+	// cannot be moved soon goes back to its life with its request queued),
+	// retries a refused errand after this, and a buyer asks at most this often.
+	const DWORD PLAYERBOT_SHOP_CHANNEL_REQUEST_RETRY_MS = 120000;
+	const DWORD PLAYERBOT_SHOP_CHANNEL_REQUEST_REFRESH_MS = 30000;
+	const DWORD PLAYERBOT_SHOP_CHANNEL_WAIT_TIMEOUT_MS = 75000;
+	const DWORD PLAYERBOT_SHOP_CHANNEL_BUY_REQUEST_GAP_MS = 120000;
+	// A stand that still sells, its owner on the other channel: the owner asks
+	// to be moved for a service this long after arriving there, plus up to the
+	// spread by pid - the far round of PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS,
+	// because a move between channels costs more than a map change.
+	const DWORD PLAYERBOT_SHOP_CHANNEL_SERVICE_MIN_MS = 45 * 60 * 1000;
+	const DWORD PLAYERBOT_SHOP_CHANNEL_SERVICE_SPREAD_MS = 30 * 60 * 1000;
+	// The machinery's clocks: where every bot of a core is, every ten seconds;
+	// the table read back every five; the requests sent in one statement every
+	// two; the coordinator's census every five, acting at most once a gate. A
+	// statement past PLAYERBOT_CHANNEL_MAX_QUEUED waits for the database thread
+	// to catch up rather than pile up behind it.
+	const DWORD PLAYERBOT_CHANNEL_PRESENCE_INTERVAL = 10000;
+	const DWORD PLAYERBOT_CHANNEL_REFRESH_INTERVAL = 5000;
+	const DWORD PLAYERBOT_CHANNEL_FLUSH_INTERVAL = 2000;
+	const DWORD PLAYERBOT_CHANNEL_COORDINATOR_INTERVAL = 5000;
+	const DWORD PLAYERBOT_CHANNEL_MAX_QUEUED = 24;
+	const size_t PLAYERBOT_CHANNEL_CHUNK = 400;
+	// A request is acted on once it has stood this long, and only while the
+	// bot keeps asking (every ask refreshes it); the coordinator acts at most
+	// once a gate; a bot that changed channel is not moved out of the shop
+	// channel again within the cooldown - kept in the database, so it survives
+	// a restart - which is what stops a bot changing channel between every two
+	// blows. A bot counts as playing while its core saw it within the last.
+	const unsigned int PLAYERBOT_CHANNEL_REQUEST_STABLE_SECONDS = 30;
+	const unsigned int PLAYERBOT_CHANNEL_REQUEST_EXPIRE_SECONDS = 1200;
+	const unsigned int PLAYERBOT_CHANNEL_BATCH_GATE_SECONDS = 120;
+	const unsigned int PLAYERBOT_CHANNEL_MOVE_COOLDOWN_SECONDS = 1200;
+	const unsigned int PLAYERBOT_CHANNEL_SEEN_SECONDS = 30;
+	// How long before a moved bot may log in on its new channel: its old core
+	// reads the change within a refresh and logs it out first, and the P2P
+	// table refuses the login while the old core still holds it.
+	const unsigned int PLAYERBOT_CHANNEL_READY_OUT_SECONDS = 15;
+	const unsigned int PLAYERBOT_CHANNEL_READY_IN_SECONDS = 30;
+	// The coordinator moves nobody until both channels have started their
+	// bots: the spawn window and two minutes on top, never under five. A
+	// census taken while the cohorts are still arriving counts whichever core
+	// happened to spawn first - the first test drained the shop channel
+	// thirteen seconds after the start, against a split nobody had reached yet.
+	const DWORD PLAYERBOT_CHANNEL_WARMUP_MIN = 300000;
+	const DWORD PLAYERBOT_CHANNEL_WARMUP_AFTER_WINDOW = 120000;
 	const int PLAYERBOT_SHOP_RING_MIN = 400;
 	const int PLAYERBOT_SHOP_RING_RADIUS = 1700;
 	// The shop bundle (item 50200) carries LIMIT_NONE in item_proto, so the game
@@ -5271,6 +5321,13 @@ namespace
 		BYTE bShopOpenReason;
 		DWORD dwShopWeightsGeneration;
 		DWORD dwNextShopKeepTime;
+		// The two channels with moves: a bot on the second channel waiting to
+		// be moved to the shop channel to open a stand (EnsurePlayerBotPrivateShopChannel),
+		// since when, when it asks again, and when a buyer may ask next.
+		bool bWaitingForShopChannel = false;
+		DWORD dwShopChannelWaitStarted = 0;
+		DWORD dwNextShopChannelRequestTime = 0;
+		DWORD dwNextBuyChannelRequestTime = 0;
 		DWORD dwNextShoppingTime;
 		DWORD dwProgressionTripNext = 0, dwProgressionTripUntil = 0;
 		// The shopping trip: when it must be over, when the counters may be read

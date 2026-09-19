@@ -19,10 +19,15 @@ namespace {
             const long long budget = Affordable(ch->GetGold(), GetPlayerBotReservedGold(ch), PLAYERBOT_SHOPPING_GOLD_FLOOR);
             if (budget <= 0) return false;
             std::vector<std::pair<int, NativeShop> > shops;
+            // Every stand is on the shop channel. With the assignment table a
+            // bot elsewhere still reads the stands of its own map and asks to
+            // be moved there when one holds something worth buying.
+            const int shopChannel = CPlayerBotManager::instance().IsChannelTableMode()
+                    ? playerbot_channel_rules::SHOP_CHANNEL : (int)g_bChannel;
             for (const auto& [pid, shop] : manager.GetPlayerBotOfflineShops()) {
                 if (!shop || pid == ch->GetPlayerID() || shop->GetDuration() == 0 || shop->IsEditMode()) continue;
                 const auto spawn = shop->GetSpawn();
-                if (spawn.map != ch->GetMapIndex() || spawn.channel != g_bChannel) continue;
+                if (spawn.map != ch->GetMapIndex() || (int)spawn.channel != shopChannel) continue;
                 const int distance = DISTANCE_APPROX(spawn.x-ch->GetX(), spawn.y-ch->GetY());
                 if (distance <= PLAYERBOT_MARKET_TRIP_RANGE) shops.emplace_back(distance, shop);
             }
@@ -50,6 +55,20 @@ namespace {
             });
         }
         if (!o.buyOwner) return false;
+        if (g_bChannel != playerbot_channel_rules::SHOP_CHANNEL) {
+            // Something worth buying, on the shop channel: ask to be moved, at
+            // most this often, and forget the pick - the purchase is made there,
+            // by the browse after the move.
+            o.buyOwner = 0;
+            if (Due(now, state.dwNextBuyChannelRequestTime)) {
+                state.dwNextBuyChannelRequestTime = now + PLAYERBOT_SHOP_CHANNEL_BUY_REQUEST_GAP_MS;
+                if (CPlayerBotManager::instance().RequestShopChannel(ch->GetPlayerID()))
+                    PlayerBotLogThrottled("shop_channel_buy", now,
+                            "PLAYERBOT_CHANNEL: pid=%u name=%s asks for the shop channel to buy (here %u)",
+                            ch->GetPlayerID(), ch->GetName(), (unsigned int)g_bChannel);
+            }
+            return false;
+        }
         auto shop = manager.GetShopByOwnerID(o.buyOwner);
         if (!shop || shop->GetDuration() == 0 || shop->IsEditMode() || Due(now, o.buyUntil) ||
                 shop->GetSpawn().map != ch->GetMapIndex() || shop->GetSpawn().channel != g_bChannel) {

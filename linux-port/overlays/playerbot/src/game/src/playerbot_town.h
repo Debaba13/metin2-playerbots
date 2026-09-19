@@ -26,6 +26,36 @@ namespace
 #if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
 	bool HasPlayerBotOfflineShop(LPCHARACTER ch);
 	bool SubmitPlayerBotOfflineShop(LPCHARACTER, TPlayerBotAIState&, DWORD, const char*, TShopItemTable*, BYTE);
+
+	// The stands are the shop channel's alone. With the two channels with
+	// moves a bot elsewhere that has business with one - a stand to open, its
+	// own to renew or serve - asks to be moved there, waits in town while the
+	// coordinator does it (the hold in CPlayerBotManager::Update), and is
+	// refused here until it has arrived. Without the assignment table the
+	// refusal is all there is, as it always was.
+	bool EnsurePlayerBotPrivateShopChannel(LPCHARACTER ch, TPlayerBotAIState& state,
+			DWORD now, const char* phase)
+	{
+		if (!ch)
+			return false;
+		if (g_bChannel == playerbot_channel_rules::SHOP_CHANNEL)
+			return true;
+		if (!CPlayerBotManager::instance().IsChannelTableMode())
+			return false;
+		const bool requested = CPlayerBotManager::instance().RequestShopChannel(ch->GetPlayerID());
+		if (!state.bWaitingForShopChannel)
+			state.dwShopChannelWaitStarted = now;
+		state.bWaitingForShopChannel = true;
+		state.dwNextShopChannelRequestTime = now + PLAYERBOT_SHOP_CHANNEL_REQUEST_REFRESH_MS;
+		state.dwNextShopKeepTime = now + PLAYERBOT_SHOP_CHANNEL_REQUEST_RETRY_MS;
+		state.offlineShop.nextService = now + PLAYERBOT_SHOP_CHANNEL_REQUEST_RETRY_MS;
+		ClearPlayerBotRoute(state, true);
+		PlayerBotLogThrottled("shop_channel_request", now,
+				"PLAYERBOT_CHANNEL: pid=%u name=%s asks for the shop channel (here %u) phase=%s requested=%d",
+				ch->GetPlayerID(), ch->GetName(), (unsigned int)g_bChannel,
+				phase ? phase : "unknown", requested ? 1 : 0);
+		return false;
+	}
 #endif
 	BYTE GetPlayerBotFirstInteriorTownPhase(const TPlayerBotAIState& state)
 	{
@@ -3092,11 +3122,20 @@ namespace
 		if (!ch || !ch->IsItemLoaded())
 			return false;
 		// Every shop in the world stands on the first channel (the operator's
-		// rule for the second one, playerbot_channel_rules.h): a bot on another
-		// channel never opens one, and every bot that has ever kept one lives
-		// on the first.
-		if (g_bChannel != 1)
+		// rule for the second one, playerbot_channel_rules.h). Without the
+		// assignment table a bot on another channel never opens one; with it,
+		// the bot asks to be moved once it has a reason and the goods for a
+		// stand (EnsurePlayerBotPrivateShopChannel, below) - asking earlier
+		// would move bots that only pass through this pass once a tick.
+		if (g_bChannel != playerbot_channel_rules::SHOP_CHANNEL)
+		{
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+			if (!CPlayerBotManager::instance().IsChannelTableMode())
+				return false;
+#else
 			return false;
+#endif
+		}
 
 		// The stall's own lifetime is settled earlier in the tick; by the time
 		// this runs a keeper either has no shop or has already been held there.
@@ -3240,6 +3279,12 @@ namespace
 					scored.empty() ? 0 : scored[0].first);
 			return false;
 		}
+
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+		// A reason and the goods for a stand: only now ask for the shop channel.
+		if (!EnsurePlayerBotPrivateShopChannel(ch, state, dwNow, "open"))
+			return false;
+#endif
 
 		// Distance and angle are both stable per bot, so a keeper returns to its
 		// own pitch every time instead of the market rearranging itself.

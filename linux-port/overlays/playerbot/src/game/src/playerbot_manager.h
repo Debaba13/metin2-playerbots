@@ -5,6 +5,7 @@
 #include <deque>
 
 class CGuild;
+class CAsyncSQL;
 
 class CPlayerBotManager : public singleton<CPlayerBotManager>
 {
@@ -86,6 +87,22 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		// With the second channel off, want[] is left as it is on channel 1
 		// and emptied on any other.
 		void	SplitForThisChannel(int total, const int* registeredHere, int* want);
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// The two channels with moves (playerbot_channel_rules.h): with the
+		// second channel on, a bot's channel is its row of
+		// common.playerbot_channel_assignment, and a bot on the second channel
+		// with business at a shop - its own stand, a stand to open, another's
+		// counter - asks here to be moved to the shop channel. Queued, and sent
+		// with the others in one statement from Update; never a query of its
+		// own. False when it cannot apply (not this core's bot, already there,
+		// no table).
+		bool	RequestShopChannel(DWORD dwPlayerID);
+		bool	IsChannelTableMode() const { return m_bChannelTable; }
+		// The machinery's turn on a core no bot has woken yet (the world clock
+		// calls it): a channel that starts with nobody still learns who is
+		// moved to it, and spawns them.
+		void	ChannelClockTick(DWORD dwNow);
+#endif
 
 		// The three things the F10 bot-admin window asks for. The data behind
 		// the last two lives in playerbot_admin.h, inside the anonymous
@@ -107,7 +124,11 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		// The kingdom is part of the identity, not something a caller may pass
 		// in: Spawn takes it from here, so nothing can start a registered PID
 		// into an empire its character does not belong to.
-		struct TPlayerBotAccount { DWORD dwID; std::string strLogin; BYTE bEmpire; BYTE bLevel; };
+		// bChannel is the channel the identity plays on, and dwReadyAt the unix
+		// time from which it may log in there: a bot moved between channels
+		// must be out of its old one first (the two channels with moves).
+		struct TPlayerBotAccount { DWORD dwID; std::string strLogin; BYTE bEmpire; BYTE bLevel;
+				BYTE bChannel = 1; DWORD dwReadyAt = 0; };
 		typedef std::map<DWORD, TPlayerBotAccount> TPlayerBotAccountMap;
 
 		bool	LoadRegisteredBots();
@@ -130,6 +151,44 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		void	ManageLifeSchedule(DWORD dwNow);
 		bool	IsRestingBot(DWORD dwPlayerID) const;
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// The two channels with moves. Every statement below runs on a
+		// connection and a thread of its own (m_pChannelSql): the game thread
+		// only queues one and collects the answer on a later tick, so a slow
+		// database costs the moves a little latency and a player's login
+		// nothing (SIZOWSKI's first version queried on the game thread, and a
+		// slow database threw players out at the character screen).
+		void	RunChannelMachinery(DWORD dwNow);
+		bool	EnsureChannelSql();
+		void	SendChannelSql(int iKind, unsigned int uA, unsigned int uB, unsigned int uC,
+				unsigned int uD, const std::string& strQuery);
+		void	ProcessChannelSql();
+		void	OnChannelAssignments(void* pMsg);
+		void	OnChannelCensus(void* pMsg);
+		void	OnChannelSwapStep(void* pMsg);
+		void	SeedChannelAssignments();
+		void	PublishChannelPresence(DWORD dwNow);
+		void	FlushChannelRequests(DWORD dwNow);
+		void	CoordinateChannelSwaps(DWORD dwNow);
+		void	RefreshChannelAssignments(DWORD dwNow);
+		void	SpawnChannelArrivals(DWORD dwNow);
+
+		CAsyncSQL*		m_pChannelSql = NULL;
+		bool			m_bChannelSqlFailed = false;
+		bool			m_bChannelSeeded = false;
+		bool			m_bChannelRefreshInFlight = false;
+		bool			m_bChannelCoordInFlight = false;
+		DWORD			m_dwNextChannelRefreshTime = 0;
+		DWORD			m_dwNextChannelCoordinatorTime = 0;
+		DWORD			m_dwNextChannelPresenceTime = 0;
+		DWORD			m_dwNextChannelFlushTime = 0;
+		DWORD			m_dwChannelCoordinatorSince = 0;
+		std::set<DWORD>		m_setChannelRequests;
+		std::set<DWORD>		m_setChannelArrivals;
+		// Arrivals on the shop channel, until they load (OnPlayerLoaded).
+		std::set<DWORD>		m_setChannelMovedIn;
+#endif
+
 		TPlayerBotMap		m_mapBots;
 		THandleToPlayerMap	m_mapHandles;
 		// This channel's identities - what may be spawned here - and every
@@ -143,6 +202,9 @@ class CPlayerBotManager : public singleton<CPlayerBotManager>
 		bool			m_bSecondChannel = false;
 		int			m_iSecondChannelShare = 40;
 		int			m_aChannelIdentities[3][4] = {};
+		// Whether the channels come from the assignment table (mt2009 with the
+		// second channel on) rather than the spread and the pins.
+		bool			m_bChannelTable = false;
 		// Spawns still to be sent, and when the next batch goes. Filled by
 		// SpawnRegistered, drained by Update, see PLAYERBOT_SPAWN_WINDOW.
 		std::deque<DWORD>	m_dequePendingSpawns;

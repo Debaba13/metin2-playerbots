@@ -2174,6 +2174,13 @@ namespace
 		const DWORD dwNow = get_dword_time();
 		RefreshPlayerBotWeights(dwNow);
 		ManagePlayerBotEvents(dwNow);
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// A channel that starts with nobody still learns who is moved to it,
+		// and spawns them; the first of them starts Update and ends this.
+		playerbot_world_event_info* info = dynamic_cast<playerbot_world_event_info*>(event->info);
+		if (info && info->manager)
+			info->manager->ChannelClockTick(dwNow);
+#endif
 		return PASSES_PER_SEC(1);
 	}
 
@@ -2198,6 +2205,13 @@ CPlayerBotManager::~CPlayerBotManager()
 		event_cancel(&s_pkPlayerBotUpdateEvent);
 	if (s_pkPlayerBotWorldEvent)
 		event_cancel(&s_pkPlayerBotWorldEvent);
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	if (m_pChannelSql)
+	{
+		delete m_pChannelSql;
+		m_pChannelSql = NULL;
+	}
+#endif
 }
 
 void CPlayerBotManager::StartWorldClock()
@@ -2250,6 +2264,23 @@ bool CPlayerBotManager::Spawn(DWORD dwPlayerID, BYTE bEmpire)
 					s_dwRejectedSpawns, dwPlayerID, bEmpire);
 		}
 		return false;
+	}
+
+	// The two channels with moves: an identity plays on the channel its row
+	// gives it, and only from the row's ready time - a bot that has just been
+	// moved must be out of its old channel before it is loaded on the new one.
+	if (m_bChannelTable)
+	{
+		TPlayerBotAccountMap::const_iterator owner = m_mapBotAccounts.find(dwPlayerID);
+		if (owner == m_mapBotAccounts.end() || owner->second.bChannel != g_bChannel ||
+				owner->second.dwReadyAt > (DWORD)get_global_time())
+		{
+			PlayerBotLogThrottled("spawn_not_ready", get_dword_time(),
+					"PLAYERBOT_CHANNEL: refused pid=%u, assigned to channel %u or not ready yet (channel %u here)",
+					dwPlayerID, owner == m_mapBotAccounts.end() ? 0U : (unsigned int)owner->second.bChannel,
+					(unsigned int)g_bChannel);
+			return false;
+		}
 	}
 
 	if (IsManaged(dwPlayerID) || CHARACTER_MANAGER::instance().FindByPID(dwPlayerID))
@@ -2373,8 +2404,38 @@ bool CPlayerBotManager::LoadRegisteredBots()
 	const char* secondShare = std::getenv("PLAYERBOT_CH2_SHARE");
 	if (secondShare && *secondShare)
 		m_iSecondChannelShare = playerbot_channel_rules::ClampShare(std::atoi(secondShare));
+	// With the second channel on and offline shops in the world, the channels
+	// come from the assignment table (the two channels with moves, mt2009):
+	// the pins stood every bot that ever kept a shop on the first channel for
+	// good, which on a world that has played is nearly every bot.
+	m_bChannelTable = false;
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+	if (m_bSecondChannel)
+	{
+		// Both tables are the migrator's too (apply.sh); asked for here as
+		// well, so a core that starts before a migrator of this version has run
+		// still finds them. Idempotent, and at boot, so a blocking query is fine.
+		std::unique_ptr<SQLMsg> assignment(AccountDB::instance().DirectQuery(
+				"CREATE TABLE IF NOT EXISTS common.playerbot_channel_assignment ("
+				"pid INT UNSIGNED NOT NULL, channel TINYINT UNSIGNED NOT NULL, "
+				"active TINYINT(1) NOT NULL DEFAULT 0, requested_channel TINYINT UNSIGNED NOT NULL DEFAULT 0, "
+				"request_reason VARCHAR(32) NOT NULL DEFAULT '', request_at DATETIME NULL, "
+				"ready_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, last_map INT NOT NULL DEFAULT 0, "
+				"shop_busy TINYINT(1) NOT NULL DEFAULT 0, last_seen DATETIME NULL, moved_at DATETIME NULL, "
+				"updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+				"PRIMARY KEY (pid), KEY channel_seen (channel,last_seen), "
+				"KEY requested (requested_channel,request_at)) ENGINE=InnoDB"));
+		std::unique_ptr<SQLMsg> control(AccountDB::instance().DirectQuery(
+				"CREATE TABLE IF NOT EXISTS common.playerbot_channel_control ("
+				"id TINYINT UNSIGNED NOT NULL, last_batch DATETIME NOT NULL DEFAULT '2000-01-01 00:00:00', "
+				"PRIMARY KEY (id)) ENGINE=InnoDB"));
+		std::unique_ptr<SQLMsg> controlRow(AccountDB::instance().DirectQuery(
+				"INSERT IGNORE INTO common.playerbot_channel_control (id) VALUES (1)"));
+		m_bChannelTable = true;
+	}
+#endif
 	std::set<DWORD> pins;
-	const bool pinsKnown = !m_bSecondChannel || LoadPlayerBotChannelPins(pins);
+	const bool pinsKnown = m_bChannelTable || !m_bSecondChannel || LoadPlayerBotChannelPins(pins);
 	// Without the pins a pinned bot's channel cannot be told, so the second
 	// channel takes nobody and the first takes only whom the spread gives it:
 	// a bot may then start nowhere, and never twice.
@@ -2384,12 +2445,22 @@ bool CPlayerBotManager::LoadRegisteredBots()
 						: "this channel starts no bots");
 	unsigned int otherChannel = 0;
 
-	const char* query =
-			"SELECT l.pid, a.id, a.login, pi.empire, p.level "
+	// The assignment table's row, when there is one, rides with the registry:
+	// the channel and the seconds left until the bot may log in there. A pid
+	// with no row takes the spread's channel, the same on every core - the
+	// coordinator writes that row down (SeedChannelAssignments).
+	const std::string registryHead = "SELECT l.pid, a.id, a.login, pi.empire, p.level";
+	const std::string registryChannel = m_bChannelTable
+			? ", c.channel, COALESCE(GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),c.ready_at)),0) "
+			: " ";
+	const std::string registryJoin = m_bChannelTable
+			? "LEFT JOIN common.playerbot_channel_assignment AS c ON c.pid=l.pid "
+			: "";
+	const std::string query = registryHead + registryChannel +
 			"FROM common.playerbot_seed_state AS l "
 			"JOIN player.player AS p ON p.id=l.pid "
 			"JOIN account.account AS a ON a.id=p.account_id "
-			"JOIN player.player_index AS pi ON pi.id=a.id "
+			"JOIN player.player_index AS pi ON pi.id=a.id " + registryJoin +
 			"WHERE l.seed_version=1 "
 			"AND l.state IN ('complete','adopted') "
 			// LPAD shortens rather than pads when the value is already longer
@@ -2419,11 +2490,14 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			"CASE WHEN p.level>4 AND p.last_play>NOW()-INTERVAL 7 DAY THEN 0 "
 			"WHEN p.level<=4 THEN 1 ELSE 2 END, l.pid";
 
-	std::unique_ptr<SQLMsg> msg(AccountDB::instance().DirectQuery(query));
+	std::unique_ptr<SQLMsg> msg(AccountDB::instance().DirectQuery(query.c_str()));
 	if (!msg.get() || msg->uiSQLErrno != 0 || !msg->Get() ||
 			!msg->Get()->pSQLResult)
 	{
-		sys_err("PLAYERBOT_AUTH: registry query failed; refusing every bot spawn");
+		// Fail closed with the table too: a core that guessed its channels
+		// could start a bot the other channel holds.
+		sys_err("PLAYERBOT_AUTH: registry query failed%s; refusing every bot spawn",
+				m_bChannelTable ? " (with the channel assignment table)" : "");
 		return false;
 	}
 
@@ -2439,15 +2513,31 @@ bool CPlayerBotManager::LoadRegisteredBots()
 		if (pid != 0 && empire >= 1 && empire <= 3)
 		{
 			m_setAllRegisteredBots.insert(pid);
-			const int channel = playerbot_channel_rules::ChannelOf(pid, m_bSecondChannel,
-					m_iSecondChannelShare, pins.find(pid) != pins.end());
-			++m_aChannelIdentities[channel][empire];
-			if (channel != (int)g_bChannel || (!pinsKnown && g_bChannel != 1))
+			int channel = 0;
+			unsigned int readyIn = 0;
+			if (m_bChannelTable)
 			{
-				++otherChannel;
-				continue;
+				unsigned int rowChannel = 0;
+				if (row[5])
+					str_to_number(rowChannel, row[5]);
+				if (row[6])
+					str_to_number(readyIn, row[6]);
+				channel = (rowChannel == 1 || rowChannel == 2) ? (int)rowChannel
+						: playerbot_channel_rules::ChannelOf(pid, true, m_iSecondChannelShare, false);
 			}
-			m_setRegisteredBots.insert(pid);
+			else
+				channel = playerbot_channel_rules::ChannelOf(pid, m_bSecondChannel,
+						m_iSecondChannelShare, pins.find(pid) != pins.end());
+			++m_aChannelIdentities[channel][empire];
+			const bool here = channel == (int)g_bChannel && (m_bChannelTable || pinsKnown || g_bChannel == 1);
+			if (here)
+				m_setRegisteredBots.insert(pid);
+			else
+				++otherChannel;
+			// With the table every identity keeps its record whatever its
+			// channel: a move may bring it here, and it must be known by then.
+			if (!here && !m_bChannelTable)
+				continue;
 			TPlayerBotAccount account;
 			account.dwID = 0;
 			account.bEmpire = (BYTE)empire;
@@ -2461,14 +2551,17 @@ bool CPlayerBotManager::LoadRegisteredBots()
 			if (row[4])
 				str_to_number(level, row[4]);
 			account.bLevel = (BYTE)std::min<unsigned int>(level, 255);
+			account.bChannel = (BYTE)channel;
+			account.dwReadyAt = readyIn ? (DWORD)get_global_time() + readyIn : 0;
 			m_mapBotAccounts[pid] = account;
 		}
 	}
 
 	if (m_bSecondChannel || g_bChannel != 1)
-		sys_log(0, "PLAYERBOT_CHANNEL: channel=%u second=%d share=%d here=%u elsewhere=%u "
+		sys_log(0, "PLAYERBOT_CHANNEL: channel=%u second=%d table=%d share=%d here=%u elsewhere=%u "
 				"ch1=%d/%d/%d ch2=%d/%d/%d pinned=%u pins_read=%d",
-				(unsigned int)g_bChannel, m_bSecondChannel ? 1 : 0, m_iSecondChannelShare,
+				(unsigned int)g_bChannel, m_bSecondChannel ? 1 : 0, m_bChannelTable ? 1 : 0,
+				m_iSecondChannelShare,
 				(unsigned int)m_setRegisteredBots.size(), otherChannel,
 				m_aChannelIdentities[1][1], m_aChannelIdentities[1][2], m_aChannelIdentities[1][3],
 				m_aChannelIdentities[2][1], m_aChannelIdentities[2][2], m_aChannelIdentities[2][3],
@@ -2574,6 +2667,10 @@ void CPlayerBotManager::CountRegisteredPerEmpire(int* out, int size)
 	for (TPlayerBotAccountMap::const_iterator it = m_mapBotAccounts.begin();
 			it != m_mapBotAccounts.end(); ++it)
 	{
+		// With the assignment table every identity is kept, whatever its
+		// channel (a move may bring it here); this channel's are counted.
+		if (it->second.bChannel != g_bChannel)
+			continue;
 		const int empire = (int)it->second.bEmpire;
 		if (empire > 0 && empire < size)
 			++out[empire];
@@ -3132,6 +3229,12 @@ void CPlayerBotManager::OnPlayerLoaded(LPDESC d)
 		state.dwNextShoppingTime = now + spread;
 		state.dwNextBonusCheckTime = now + spread;
 		state.dwNextSoulStoneTime = now + spread;
+#if defined(PLAYERBOT_ENGINE_MT2009) && defined(ENABLE_IKASHOP_RENEWAL)
+		// A bot the coordinator moved here came for its stand: the first
+		// service is not spread over the next ten minutes like a start's.
+		if (m_setChannelMovedIn.erase(dwPID))
+			state.offlineShop.nextService = now + 5000;
+#endif
 
 		// Keep roughly one bot in ten eligible for party play, but deliberately
 		// weight Archer builds more heavily: about 30% of Archers and 7% of all
@@ -3294,11 +3397,660 @@ static void RunPlayerBotLightTick(LPDESC d, LPCHARACTER ch, TPlayerBotAIState& s
 	NotePlayerBotBattleHorseKill(ch, state, quickTarget);
 }
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+// ---------------------------------------------------------------------------
+// The two channels with moves (playerbot_channel_rules.h).
+//
+// SIZOWSKI's design and most of his code (metin2-ch2-dual-channel, sent on 18
+// September and run on his world of 1500 bots since), fitted to this world's
+// switch and slider: with the second channel on, a bot's channel is its row
+// of common.playerbot_channel_assignment - one row a pid, so one channel a
+// pid - and a bot on the second channel with business at a shop asks to be
+// moved to the shop channel (RequestShopChannel). The coordinator runs on the
+// shop channel's core that hosts Joan: every five seconds a census of the
+// bots that play and of who waits, and at most once a gate a step - waiting
+// bots straight in while the shop channel is under its cap, one for one
+// against free bots of the shop channel at the cap (and a few more out than
+// in over it), and with nobody waiting the shop channel eased back to its
+// target. Nothing moves until both channels have started their bots. What the operator's slider says
+// is the cap and the target (ShopChannelCapPercent), so the slider's 40 is
+// his 60 and 50.
+//
+// A move is a row changed and nothing else. The old core reads the change
+// within a refresh and logs the bot out (Despawn saves it like any logout);
+// the new one spawns it once the row's ready time has passed - and Spawn's
+// P2P test refuses it while the old core still holds it - so the bot is never
+// on two cores at once. That was the whole objection to his first patch,
+// which swapped bots through the database without a ready time.
+//
+// Every statement runs on m_pChannelSql, a connection and thread of this
+// manager's own: the game thread queues a statement and collects the answer
+// on a later tick, and never waits for the database.
+// ---------------------------------------------------------------------------
+namespace
+{
+	enum EPlayerBotChannelSql
+	{
+		PB_CHSQL_ASSIGNMENTS = 1,	// the whole assignment table, read back
+		PB_CHSQL_CENSUS,			// the coordinator: the gate, the split, who waits
+		PB_CHSQL_PROMOTE,			// waiting bots move straight to the shop channel
+		PB_CHSQL_SWAP_OUT,			// free bots of the shop channel step aside...
+		PB_CHSQL_SWAP_IN,			// ...and the waiting bots take their places
+		PB_CHSQL_DRAIN				// nobody waiting: the shop channel eases back
+	};
+
+	struct TPlayerBotChannelSql
+	{
+		int iKind;
+		unsigned int uA, uB, uC, uD;
+	};
+
+	// A bot this world counts as playing: its core reported it within the
+	// last half minute (both channels report their own).
+	std::string PlayerBotChannelSeen()
+	{
+		return "last_seen>DATE_SUB(NOW(),INTERVAL " +
+				std::to_string(PLAYERBOT_CHANNEL_SEEN_SECONDS) + " SECOND)";
+	}
+
+	// A request that counts: it has stood long enough, the bot is still asking
+	// (every ask refreshes updated_at), and the bot is still playing - a bot
+	// that has logged out since (the life schedule's rest) is not moved in.
+	std::string PlayerBotChannelRequestReady()
+	{
+		return "request_at<DATE_SUB(NOW(),INTERVAL " +
+				std::to_string(PLAYERBOT_CHANNEL_REQUEST_STABLE_SECONDS) +
+				" SECOND) AND updated_at>DATE_SUB(NOW(),INTERVAL " +
+				std::to_string(PLAYERBOT_CHANNEL_REQUEST_EXPIRE_SECONDS) + " SECOND) AND " +
+				PlayerBotChannelSeen();
+	}
+
+	// Who steps aside: bots of the shop channel that play, cost no more than
+	// maxCost (MoveCost: a village, an errand and a live stand all cost) and
+	// are past the cooldown; the cheapest interruption first, then at random.
+	// Easing back takes only a bot with no live stand (cost 0 or 1): an owner
+	// sent away would ask to come back for its next service, and the two
+	// would chase each other.
+	std::string PlayerBotChannelSwapOutQuery(unsigned int want, int maxCost)
+	{
+		const std::string shop = std::to_string(playerbot_channel_rules::SHOP_CHANNEL);
+		const std::string other = std::to_string(3 - playerbot_channel_rules::SHOP_CHANNEL);
+		return "UPDATE common.playerbot_channel_assignment SET channel=" + other +
+				",requested_channel=0,request_reason='',request_at=NULL,"
+				"ready_at=DATE_ADD(NOW(),INTERVAL " + std::to_string(PLAYERBOT_CHANNEL_READY_OUT_SECONDS) +
+				" SECOND),moved_at=NOW(),updated_at=NOW() "
+				"WHERE channel=" + shop + " AND shop_busy<=" + std::to_string(maxCost) +
+				" AND requested_channel=0 AND " + PlayerBotChannelSeen() +
+				" AND (moved_at IS NULL OR moved_at<DATE_SUB(NOW(),INTERVAL " +
+				std::to_string(PLAYERBOT_CHANNEL_MOVE_COOLDOWN_SECONDS) + " SECOND)) "
+				"ORDER BY shop_busy,CRC32(CONCAT(pid,UNIX_TIMESTAMP())) LIMIT " + std::to_string(want);
+	}
+
+	// The waiting bots, longest waiting first, onto the shop channel.
+	std::string PlayerBotChannelMoveInQuery(unsigned int want, unsigned int readySeconds)
+	{
+		const std::string shop = std::to_string(playerbot_channel_rules::SHOP_CHANNEL);
+		return "UPDATE common.playerbot_channel_assignment SET channel=" + shop +
+				",requested_channel=0,request_reason='',request_at=NULL,"
+				"ready_at=DATE_ADD(NOW(),INTERVAL " + std::to_string(readySeconds) +
+				" SECOND),moved_at=NOW(),updated_at=NOW() "
+				"WHERE channel<>" + shop + " AND requested_channel=" + shop +
+				" AND " + PlayerBotChannelRequestReady() +
+				" ORDER BY request_at,pid LIMIT " + std::to_string(want);
+	}
+
+	const char* PLAYERBOT_CHANNEL_GATE_STAMP =
+			"UPDATE common.playerbot_channel_control SET last_batch=NOW() WHERE id=1";
+}
+
+// Defined in config.cpp (playerbotify.py), which holds the common database's
+// credentials: they are locals of the config reader and nothing else keeps them.
+bool PlayerBotOpenChannelConnection(CAsyncSQL* pkDest);
+
+void CPlayerBotManager::RunChannelMachinery(DWORD dwNow)
+{
+	if (!m_bChannelTable)
+		return;
+	ProcessChannelSql();
+	SeedChannelAssignments();
+	PublishChannelPresence(dwNow);
+	CoordinateChannelSwaps(dwNow);
+	RefreshChannelAssignments(dwNow);
+	FlushChannelRequests(dwNow);
+	SpawnChannelArrivals(dwNow);
+}
+
+void CPlayerBotManager::ChannelClockTick(DWORD dwNow)
+{
+	RunChannelMachinery(dwNow);
+	SpawnPendingBatch(dwNow);
+}
+
+// Connects on first use. The connection is made by its own thread, so this
+// says "not yet" until that has happened and the game thread carries on.
+bool CPlayerBotManager::EnsureChannelSql()
+{
+	if (m_pChannelSql)
+		return m_pChannelSql->IsConnected();
+	if (m_bChannelSqlFailed || !AccountDB::instance().IsConnected())
+		return false;
+	CAsyncSQL* pSql = new CAsyncSQL;
+	if (!PlayerBotOpenChannelConnection(pSql))
+	{
+		delete pSql;
+		m_bChannelSqlFailed = true;
+		sys_err("PLAYERBOT_CHANNEL: cannot start the channel connection; the channels stay as they are");
+		return false;
+	}
+	m_pChannelSql = pSql;
+	sys_log(0, "PLAYERBOT_CHANNEL: channel %u database connection started", (unsigned int)g_bChannel);
+	return false;
+}
+
+void CPlayerBotManager::SendChannelSql(int iKind, unsigned int uA, unsigned int uB, unsigned int uC,
+		unsigned int uD, const std::string& strQuery)
+{
+	TPlayerBotChannelSql* pCtx = new TPlayerBotChannelSql;
+	pCtx->iKind = iKind;
+	pCtx->uA = uA;
+	pCtx->uB = uB;
+	pCtx->uC = uC;
+	pCtx->uD = uD;
+	m_pChannelSql->ReturnQuery(strQuery.c_str(), pCtx);
+}
+
+// Collects whatever the database thread has finished. Called every tick; an
+// empty queue costs one mutex lock.
+void CPlayerBotManager::ProcessChannelSql()
+{
+	if (!m_pChannelSql)
+		return;
+	SQLMsg* pMsg = NULL;
+	while (m_pChannelSql->PopResult(&pMsg))
+	{
+		TPlayerBotChannelSql* pCtx = static_cast<TPlayerBotChannelSql*>(pMsg->pvUserData);
+		const int iKind = pCtx ? pCtx->iKind : 0;
+		if (pMsg->uiSQLErrno != 0)
+			sys_err("PLAYERBOT_CHANNEL: statement %d failed (errno %u); retried on the next cycle",
+					iKind, pMsg->uiSQLErrno);
+		switch (iKind)
+		{
+			case PB_CHSQL_ASSIGNMENTS:
+				OnChannelAssignments(pMsg);
+				break;
+			case PB_CHSQL_CENSUS:
+				OnChannelCensus(pMsg);
+				break;
+			case PB_CHSQL_PROMOTE:
+			case PB_CHSQL_SWAP_OUT:
+			case PB_CHSQL_SWAP_IN:
+			case PB_CHSQL_DRAIN:
+				OnChannelSwapStep(pMsg);
+				break;
+			default:
+				break;
+		}
+		delete pCtx;
+		delete pMsg;
+	}
+}
+
+// A row for every identity that has none, with the channel every core already
+// gives it (the spread): once, from the coordinator. INSERT IGNORE, so a row a
+// move has changed stays as it is.
+void CPlayerBotManager::SeedChannelAssignments()
+{
+	if (m_bChannelSeeded || g_bChannel != playerbot_channel_rules::SHOP_CHANNEL ||
+			!map_allow_find(playerbot_empire_rules::GetHomeMap(playerbot_empire_rules::EMPIRE_CHUNJO,
+					playerbot_empire_rules::MAP_ROLE_M1)))
+		return;
+	if (!EnsureChannelSql())
+		return;
+	m_bChannelSeeded = true;
+	std::vector<std::pair<DWORD, BYTE> > rows;
+	rows.reserve(m_mapBotAccounts.size());
+	for (TPlayerBotAccountMap::const_iterator it = m_mapBotAccounts.begin(); it != m_mapBotAccounts.end(); ++it)
+		rows.push_back(std::make_pair(it->first, it->second.bChannel));
+	for (size_t off = 0; off < rows.size(); off += PLAYERBOT_CHANNEL_CHUNK)
+	{
+		const size_t end = std::min(rows.size(), off + PLAYERBOT_CHANNEL_CHUNK);
+		std::string q = "INSERT IGNORE INTO common.playerbot_channel_assignment (pid,channel,active) VALUES ";
+		for (size_t i = off; i < end; ++i)
+		{
+			if (i > off)
+				q += ",";
+			q += "(" + std::to_string(rows[i].first) + "," + std::to_string((unsigned int)rows[i].second) + ",1)";
+		}
+		m_pChannelSql->AsyncQuery(q.c_str());
+	}
+	// A request is a bot's business in the world that is running, and a bot
+	// the start has spawned afresh asks again if it still has any; requests
+	// left by the last run would otherwise move a few hundred bots for errands
+	// nobody has any more, the moment the warm-up ends.
+	m_pChannelSql->AsyncQuery("UPDATE common.playerbot_channel_assignment "
+			"SET requested_channel=0,request_reason='',request_at=NULL WHERE requested_channel<>0");
+	sys_log(0, "PLAYERBOT_CHANNEL: assignment rows seeded for %u identities", (unsigned int)rows.size());
+}
+
+// Where every bot of this core is and what moving it would cost: one
+// statement for the lot (a CASE per column, a few hundred pids a statement),
+// sent without waiting for the answer. Both channels report, because the
+// census counts the bots that play on both; only the shop channel's cost is
+// ever read.
+void CPlayerBotManager::PublishChannelPresence(DWORD dwNow)
+{
+	if (m_dwNextChannelPresenceTime && dwNow < m_dwNextChannelPresenceTime)
+		return;
+	m_dwNextChannelPresenceTime = dwNow + PLAYERBOT_CHANNEL_PRESENCE_INTERVAL;
+	if (m_mapBots.empty() || !EnsureChannelSql() || m_pChannelSql->CountQuery() > PLAYERBOT_CHANNEL_MAX_QUEUED)
+		return;
+
+	std::vector<DWORD> vecPid;
+	std::vector<long> vecMap;
+	std::vector<int> vecCost;
+	vecPid.reserve(m_mapBots.size());
+	vecMap.reserve(m_mapBots.size());
+	vecCost.reserve(m_mapBots.size());
+	for (TPlayerBotMap::const_iterator i = m_mapBots.begin(); i != m_mapBots.end(); ++i)
+	{
+		LPCHARACTER ch = i->second ? i->second->GetCharacter() : NULL;
+		if (!ch || !i->second->IsPhase(PHASE_GAME))
+			continue;
+		const DWORD pid = i->first;
+		TPlayerBotAIStateMap::const_iterator st = s_mapPlayerBotAIStates.find(pid);
+		const TPlayerBotAIState* state = st != s_mapPlayerBotAIStates.end() ? &st->second : NULL;
+		// Anything under way but standing about - a fight, a trip, a town
+		// visit, a purchase on its way - is busy; idling and resting in town
+		// are not.
+		bool busy = ch->GetVictim() ||
+				(state && ((state->bCurrentAction != BOT_ACTION_IDLE &&
+						state->bCurrentAction != BOT_ACTION_TOWN_REST) ||
+					state->bFishingSession || state->bTownVisitPhase != BOT_TOWN_PHASE_NONE ||
+					state->bMarketToJoan)) ||
+				IsPlayerBotMiningNow(pid, dwNow);
+		bool liveStand = false;
+		// The medal droppers' cohort is the first channel's alone
+		// (SpawnMedalDropperCohort): the second channel's core does not know
+		// it, so a dropper moved there would become an ordinary bot and the
+		// top-up here would never bring it back.
+		bool pinned = IsMedalDropperCohortPID(pid) || ch->GetMyShop() != NULL ||
+				(ch->GetParty() && IsPlayerBotHumanLedParty(ch->GetParty())) ||
+				ch->GetMapIndex() >= PLAYERBOT_INSTANCE_MAP_INDEX_MIN ||
+				playerbot_pvp::GetDuelOpponent(pid, dwNow) != 0 ||
+				(state && (IsPlayerBotOnTowerBusiness(ch, *state) || state->dwGuildWarEnemyGID != 0));
+#if defined(ENABLE_IKASHOP_RENEWAL)
+		auto stand = ikashop::GetManager().GetShopByOwnerID(pid);
+		liveStand = stand && stand->GetDuration() != 0;
+		// A shop operation in flight, and a service visit with the board open.
+		pinned = pinned || playerbot_offline::requests.count(pid) != 0 ||
+				(state && state->offlineShop.visiting);
+		busy = busy || (state && state->offlineShop.buyOwner != 0);
+#endif
+		vecPid.push_back(pid);
+		vecMap.push_back(ch->GetMapIndex());
+		vecCost.push_back(playerbot_channel_rules::MoveCost(busy, liveStand, pinned,
+				IsPlayerBotVillageMap(ch->GetMapIndex())));
+	}
+
+	for (size_t off = 0; off < vecPid.size(); off += PLAYERBOT_CHANNEL_CHUNK)
+	{
+		const size_t end = std::min(vecPid.size(), off + PLAYERBOT_CHANNEL_CHUNK);
+		std::string q;
+		q.reserve((end - off) * 64 + 256);
+		q += "UPDATE common.playerbot_channel_assignment SET last_map=CASE pid ";
+		for (size_t i = off; i < end; ++i)
+			q += "WHEN " + std::to_string(vecPid[i]) + " THEN " + std::to_string(vecMap[i]) + " ";
+		q += "END, shop_busy=CASE pid ";
+		for (size_t i = off; i < end; ++i)
+			q += "WHEN " + std::to_string(vecPid[i]) + " THEN " + std::to_string(vecCost[i]) + " ";
+		q += "END, last_seen=NOW() WHERE channel=" + std::to_string((unsigned int)g_bChannel) + " AND pid IN (";
+		for (size_t i = off; i < end; ++i)
+		{
+			if (i > off)
+				q += ",";
+			q += std::to_string(vecPid[i]);
+		}
+		q += ")";
+		m_pChannelSql->AsyncQuery(q.c_str());
+	}
+}
+
+bool CPlayerBotManager::RequestShopChannel(DWORD dwPlayerID)
+{
+	if (!m_bChannelTable || g_bChannel == playerbot_channel_rules::SHOP_CHANNEL)
+		return false;
+	TPlayerBotAccountMap::const_iterator it = m_mapBotAccounts.find(dwPlayerID);
+	if (it == m_mapBotAccounts.end() || it->second.bChannel == playerbot_channel_rules::SHOP_CHANNEL)
+		return false;
+	m_setChannelRequests.insert(dwPlayerID);
+	return true;
+}
+
+// The requests collected since the last flush, as one statement. The request
+// time is kept when the bot already waits for the same move, so the stability
+// clock does not restart at every ask.
+void CPlayerBotManager::FlushChannelRequests(DWORD dwNow)
+{
+	if (m_setChannelRequests.empty())
+		return;
+	if (m_dwNextChannelFlushTime && dwNow < m_dwNextChannelFlushTime)
+		return;
+	if (!EnsureChannelSql() || m_pChannelSql->CountQuery() > PLAYERBOT_CHANNEL_MAX_QUEUED)
+		return;
+	m_dwNextChannelFlushTime = dwNow + PLAYERBOT_CHANNEL_FLUSH_INTERVAL;
+
+	const std::string shop = std::to_string(playerbot_channel_rules::SHOP_CHANNEL);
+	std::vector<DWORD> vecPid(m_setChannelRequests.begin(), m_setChannelRequests.end());
+	m_setChannelRequests.clear();
+	for (size_t off = 0; off < vecPid.size(); off += PLAYERBOT_CHANNEL_CHUNK)
+	{
+		const size_t end = std::min(vecPid.size(), off + PLAYERBOT_CHANNEL_CHUNK);
+		std::string q = "UPDATE common.playerbot_channel_assignment "
+				"SET request_at=IF(requested_channel=" + shop +
+				" AND request_reason='shop' AND request_at IS NOT NULL,request_at,NOW()),"
+				"requested_channel=" + shop + ",request_reason='shop',updated_at=NOW() "
+				"WHERE channel<>" + shop + " AND pid IN (";
+		for (size_t i = off; i < end; ++i)
+		{
+			if (i > off)
+				q += ",";
+			q += std::to_string(vecPid[i]);
+		}
+		q += ")";
+		m_pChannelSql->AsyncQuery(q.c_str());
+	}
+}
+
+// The coordinator: the shop channel's core that hosts Joan, one in the world.
+// A census, then - step by step, each on the answer to the last - the moves.
+void CPlayerBotManager::CoordinateChannelSwaps(DWORD dwNow)
+{
+	if (m_bChannelCoordInFlight || g_bChannel != playerbot_channel_rules::SHOP_CHANNEL ||
+			!map_allow_find(playerbot_empire_rules::GetHomeMap(playerbot_empire_rules::EMPIRE_CHUNJO,
+					playerbot_empire_rules::MAP_ROLE_M1)))
+		return;
+	if (m_dwNextChannelCoordinatorTime && dwNow < m_dwNextChannelCoordinatorTime)
+		return;
+	// The warm-up is measured on every call, because the bootstrap may set the
+	// spawn window after the first tick of the machinery.
+	const DWORD dwWarmUp = std::max<DWORD>(PLAYERBOT_CHANNEL_WARMUP_MIN,
+			m_dwSpawnWindowMs + PLAYERBOT_CHANNEL_WARMUP_AFTER_WINDOW);
+	if (!m_dwChannelCoordinatorSince)
+	{
+		m_dwChannelCoordinatorSince = dwNow ? dwNow : 1;
+		sys_log(0, "PLAYERBOT_CHANNEL: coordinator waits %u s for both channels to start their bots",
+				(unsigned int)(dwWarmUp / 1000));
+	}
+	if (dwNow - m_dwChannelCoordinatorSince < dwWarmUp)
+		return;
+	if (!EnsureChannelSql())
+		return;
+	m_dwNextChannelCoordinatorTime = dwNow + PLAYERBOT_CHANNEL_COORDINATOR_INTERVAL;
+	m_bChannelCoordInFlight = true;
+	const std::string shop = std::to_string(playerbot_channel_rules::SHOP_CHANNEL);
+	SendChannelSql(PB_CHSQL_CENSUS, 0, 0, 0, 0,
+			"SELECT COALESCE((SELECT TIMESTAMPDIFF(SECOND,last_batch,NOW()) "
+			"FROM common.playerbot_channel_control WHERE id=1),999999),"
+			"COALESCE(SUM(" + PlayerBotChannelSeen() + "),0),"
+			"COALESCE(SUM(channel=" + shop + " AND " + PlayerBotChannelSeen() + "),0),"
+			"COALESCE(SUM(channel<>" + shop + " AND requested_channel=" + shop +
+			" AND " + PlayerBotChannelRequestReady() + "),0) "
+			"FROM common.playerbot_channel_assignment");
+}
+
+void CPlayerBotManager::OnChannelCensus(void* pvMsg)
+{
+	SQLMsg* pMsg = static_cast<SQLMsg*>(pvMsg);
+	MYSQL_ROW r = NULL;
+	if (pMsg->uiSQLErrno == 0 && pMsg->Get() && pMsg->Get()->pSQLResult)
+		r = mysql_fetch_row(pMsg->Get()->pSQLResult);
+	unsigned int gateAge = 0, total = 0, onShopChannel = 0, waiting = 0;
+	if (r)
+	{
+		if (r[0]) str_to_number(gateAge, r[0]);
+		if (r[1]) str_to_number(total, r[1]);
+		if (r[2]) str_to_number(onShopChannel, r[2]);
+		if (r[3]) str_to_number(waiting, r[3]);
+	}
+	if (!r || total == 0 || gateAge < PLAYERBOT_CHANNEL_BATCH_GATE_SECONDS)
+	{
+		m_bChannelCoordInFlight = false;
+		return;
+	}
+
+	const int capPercent = playerbot_channel_rules::ShopChannelCapPercent(m_iSecondChannelShare);
+	const int targetPercent = playerbot_channel_rules::ShopChannelTargetPercent(m_iSecondChannelShare);
+	const playerbot_channel_rules::TChannelMovePlan plan = playerbot_channel_rules::PlanChannelMoves(
+			total, onShopChannel, waiting, capPercent, targetPercent);
+	const unsigned int cap = total * (unsigned int)capPercent / 100U;
+	unsigned int batch = (total * playerbot_channel_rules::MOVE_BATCH_PERCENT + 99U) / 100U;
+	if (batch < 1)
+		batch = 1;
+	switch (plan.kind)
+	{
+		case playerbot_channel_rules::MOVE_DRAIN:
+			// Easing back from the cap to the target takes only bots with no
+			// live stand; over the cap is the slider not being kept, and then
+			// anybody not pinned goes, the cheapest first. With most bots
+			// behind a stand, the gentle drain found two bots in 686.
+			SendChannelSql(PB_CHSQL_DRAIN, 0, plan.count, 0, 0, PlayerBotChannelSwapOutQuery(plan.count,
+					onShopChannel > cap ? playerbot_channel_rules::MOVE_COST_PINNED - 1 : 1));
+			return;
+		case playerbot_channel_rules::MOVE_PROMOTE:
+			SendChannelSql(PB_CHSQL_PROMOTE, waiting - plan.count, cap, onShopChannel, batch,
+					PlayerBotChannelMoveInQuery(plan.count, PLAYERBOT_CHANNEL_READY_OUT_SECONDS));
+			return;
+		case playerbot_channel_rules::MOVE_SWAP:
+			SendChannelSql(PB_CHSQL_SWAP_OUT, 0, plan.count + plan.extraOut, 0, plan.count,
+					PlayerBotChannelSwapOutQuery(plan.count + plan.extraOut,
+							playerbot_channel_rules::MOVE_COST_PINNED - 1));
+			return;
+		default:
+			m_bChannelCoordInFlight = false;
+			return;
+	}
+}
+
+// One step of a move finished. PROMOTE: uA waiting bots left, uB the cap,
+// uC the shop channel's count before, uD the swap batch. SWAP_OUT: uC how
+// many a promotion before it moved, uD how many may take the places of those
+// who stepped out (0: all of them; fewer when the shop channel is over its
+// cap). SWAP_IN: uA how many stepped out.
+void CPlayerBotManager::OnChannelSwapStep(void* pvMsg)
+{
+	SQLMsg* pMsg = static_cast<SQLMsg*>(pvMsg);
+	TPlayerBotChannelSql* pCtx = static_cast<TPlayerBotChannelSql*>(pMsg->pvUserData);
+	const unsigned int moved = (pMsg->uiSQLErrno == 0 && pMsg->Get()) ? (unsigned int)pMsg->Get()->uiAffectedRows : 0;
+	const unsigned int shop = (unsigned int)playerbot_channel_rules::SHOP_CHANNEL;
+
+	if (pCtx->iKind == PB_CHSQL_DRAIN)
+	{
+		if (moved > 0)
+		{
+			sys_log(0, "PLAYERBOT_CHANNEL: %u bots eased from channel %u to keep room", moved, shop);
+			m_pChannelSql->AsyncQuery(PLAYERBOT_CHANNEL_GATE_STAMP);
+		}
+		m_bChannelCoordInFlight = false;
+		return;
+	}
+
+	if (pCtx->iKind == PB_CHSQL_PROMOTE)
+	{
+		sys_log(0, "PLAYERBOT_CHANNEL: %u bots moved to channel %u", moved, shop);
+		// Some may still wait past the room there was: trade places for those.
+		if (pCtx->uA > 0 && pCtx->uC + moved >= pCtx->uB)
+		{
+			const unsigned int want = std::min(pCtx->uA, pCtx->uD);
+			SendChannelSql(PB_CHSQL_SWAP_OUT, 0, want, moved, 0,
+					PlayerBotChannelSwapOutQuery(want, playerbot_channel_rules::MOVE_COST_PINNED - 1));
+			return;
+		}
+		if (moved > 0)
+			m_pChannelSql->AsyncQuery(PLAYERBOT_CHANNEL_GATE_STAMP);
+		m_bChannelCoordInFlight = false;
+		return;
+	}
+
+	if (pCtx->iKind == PB_CHSQL_SWAP_OUT)
+	{
+		// As many waiting bots as stepped aside take their places, the longest
+		// waiting first - fewer when the swap was also easing the shop channel
+		// back under its cap.
+		if (moved > 0)
+		{
+			const unsigned int in = pCtx->uD ? std::min(moved, pCtx->uD) : moved;
+			SendChannelSql(PB_CHSQL_SWAP_IN, moved, 0, 0, 0,
+					PlayerBotChannelMoveInQuery(in, PLAYERBOT_CHANNEL_READY_IN_SECONDS));
+			return;
+		}
+		// Nobody free right now; the next gate tries again.
+		if (pCtx->uC > 0)
+			m_pChannelSql->AsyncQuery(PLAYERBOT_CHANNEL_GATE_STAMP);
+		m_bChannelCoordInFlight = false;
+		return;
+	}
+
+	sys_log(0, "PLAYERBOT_CHANNEL: shop swap target=%u outgoing=%u incoming=%u", shop, pCtx->uA, moved);
+	m_pChannelSql->AsyncQuery(PLAYERBOT_CHANNEL_GATE_STAMP);
+	m_bChannelCoordInFlight = false;
+}
+
+void CPlayerBotManager::RefreshChannelAssignments(DWORD dwNow)
+{
+	if (m_bChannelRefreshInFlight)
+		return;
+	if (m_dwNextChannelRefreshTime && dwNow < m_dwNextChannelRefreshTime)
+		return;
+	if (!EnsureChannelSql())
+		return;
+	m_dwNextChannelRefreshTime = dwNow + PLAYERBOT_CHANNEL_REFRESH_INTERVAL;
+	m_bChannelRefreshInFlight = true;
+	SendChannelSql(PB_CHSQL_ASSIGNMENTS, 0, 0, 0, 0,
+			"SELECT pid,channel,COALESCE(GREATEST(0,TIMESTAMPDIFF(SECOND,NOW(),ready_at)),0) "
+			"FROM common.playerbot_channel_assignment");
+}
+
+// The table as the database thread read it. A bot now assigned elsewhere
+// leaves this core (Despawn saves it like any logout); a bot newly assigned
+// here is spawned once its ready time comes (SpawnChannelArrivals). An error
+// or an empty answer changes nothing: a database that will not answer must
+// not empty the world.
+void CPlayerBotManager::OnChannelAssignments(void* pvMsg)
+{
+	SQLMsg* pMsg = static_cast<SQLMsg*>(pvMsg);
+	m_bChannelRefreshInFlight = false;
+	if (pMsg->uiSQLErrno != 0 || !pMsg->Get() || !pMsg->Get()->pSQLResult || pMsg->Get()->uiNumRows == 0)
+		return;
+
+	const DWORD dwUnixNow = (DWORD)get_global_time();
+	MYSQL_ROW r;
+	while (NULL != (r = mysql_fetch_row(pMsg->Get()->pSQLResult)))
+	{
+		DWORD pid = 0;
+		unsigned int channel = 0, readyIn = 0;
+		if (r[0]) str_to_number(pid, r[0]);
+		if (r[1]) str_to_number(channel, r[1]);
+		if (r[2]) str_to_number(readyIn, r[2]);
+		if (channel != 1 && channel != 2)
+			continue;
+		TPlayerBotAccountMap::iterator x = m_mapBotAccounts.find(pid);
+		if (x == m_mapBotAccounts.end())
+			continue;
+		const bool wasHere = x->second.bChannel == g_bChannel;
+		x->second.bChannel = (BYTE)channel;
+		x->second.dwReadyAt = readyIn ? dwUnixNow + readyIn : 0;
+		const bool isHere = x->second.bChannel == g_bChannel;
+		if (isHere && !wasHere)
+			m_setChannelArrivals.insert(pid);
+		else if (!isHere)
+			m_setChannelArrivals.erase(pid);
+	}
+
+	std::vector<DWORD> leave;
+	for (TPlayerBotMap::const_iterator i = m_mapBots.begin(); i != m_mapBots.end(); ++i)
+	{
+		TPlayerBotAccountMap::const_iterator a = m_mapBotAccounts.find(i->first);
+		if (a != m_mapBotAccounts.end() && a->second.bChannel != g_bChannel)
+			leave.push_back(i->first);
+	}
+	for (size_t i = 0; i < leave.size(); ++i)
+	{
+		sys_log(0, "PLAYERBOT_CHANNEL: pid=%u moved to channel %u, logging out here",
+				leave[i], (unsigned int)m_mapBotAccounts[leave[i]].bChannel);
+		Despawn(leave[i]);
+	}
+	// Nobody moved away is this channel's to start or to top up any more.
+	for (TRegisteredPlayerBotSet::iterator i = m_setRegisteredBots.begin(); i != m_setRegisteredBots.end();)
+	{
+		TPlayerBotAccountMap::const_iterator a = m_mapBotAccounts.find(*i);
+		if (a != m_mapBotAccounts.end() && a->second.bChannel != g_bChannel)
+			m_setRegisteredBots.erase(i++);
+		else
+			++i;
+	}
+	for (std::set<DWORD>::iterator i = m_setScheduledBots.begin(); i != m_setScheduledBots.end();)
+	{
+		TPlayerBotAccountMap::const_iterator a = m_mapBotAccounts.find(*i);
+		if (a != m_mapBotAccounts.end() && a->second.bChannel != g_bChannel)
+			m_setScheduledBots.erase(i++);
+		else
+			++i;
+	}
+}
+
+// Bots moved to this channel while it runs: spawned once their ready time has
+// passed, and only on the core that hosts their kingdom's first village - the
+// same rule the start-up spawn follows.
+void CPlayerBotManager::SpawnChannelArrivals(DWORD)
+{
+	if (m_setChannelArrivals.empty())
+		return;
+	const DWORD dwUnixNow = (DWORD)get_global_time();
+	for (std::set<DWORD>::iterator i = m_setChannelArrivals.begin(); i != m_setChannelArrivals.end();)
+	{
+		TPlayerBotAccountMap::const_iterator a = m_mapBotAccounts.find(*i);
+		if (a == m_mapBotAccounts.end() || a->second.bChannel != g_bChannel)
+		{
+			m_setChannelArrivals.erase(i++);
+			continue;
+		}
+		const long lVillage = playerbot_empire_rules::GetHomeMap(
+				(int)a->second.bEmpire, playerbot_empire_rules::MAP_ROLE_M1);
+		if (lVillage == 0 || !map_allow_find(lVillage))
+		{
+			m_setChannelArrivals.erase(i++);
+			continue;
+		}
+		if (a->second.dwReadyAt > dwUnixNow)
+		{
+			++i;
+			continue;
+		}
+		m_setRegisteredBots.insert(*i);
+		if (m_setScheduledBots.insert(*i).second)
+			m_dequePendingSpawns.push_back(*i);
+		sys_log(0, "PLAYERBOT_CHANNEL: pid=%u arrives on channel %u", *i, (unsigned int)g_bChannel);
+		if (g_bChannel == playerbot_channel_rules::SHOP_CHANNEL)
+			m_setChannelMovedIn.insert(*i);
+		m_setChannelArrivals.erase(i++);
+	}
+	// The batch size is set by the start-up spawn; a channel that started with
+	// nobody has none yet.
+	if (!m_dequePendingSpawns.empty())
+		m_uSpawnBatchSize = std::max<size_t>(1, m_uSpawnBatchSize);
+}
+#endif
+
 void CPlayerBotManager::Update()
 {
 	const DWORD dwNow = get_dword_time();
 	const DWORD dwTickStartUs = PlayerBotClockUs();
 
+#if defined(PLAYERBOT_ENGINE_MT2009)
+	// The two channels with moves: what the database thread has answered,
+	// and the next round queued. Nothing here waits for the database.
+	RunChannelMachinery(dwNow);
+#endif
 	// The next batch of the cohort, if one is due - see PLAYERBOT_SPAWN_WINDOW.
 	SpawnPendingBatch(dwNow);
 	// The second cohort, one at a time over its hours (ScheduleLateJoiners).
@@ -3500,6 +4252,50 @@ void CPlayerBotManager::Update()
 
 		if (!d->IsPhase(PHASE_GAME))
 			continue;
+
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		// A bot that asked to be moved to the shop channel for a stand waits in
+		// town until the coordinator moves it: without the hold it starts a hunt
+		// inside the request's stability window and is logged out in the middle
+		// of the next fight. The timeout is for a coordinator or a database that
+		// does not answer - the request stays queued and the bot goes back to
+		// its life (EnsurePlayerBotPrivateShopChannel).
+		if (state.bWaitingForShopChannel)
+		{
+			if (g_bChannel == playerbot_channel_rules::SHOP_CHANNEL)
+			{
+				state.bWaitingForShopChannel = false;
+				state.dwShopChannelWaitStarted = 0;
+				state.dwNextShopChannelRequestTime = 0;
+			}
+			else if (state.dwShopChannelWaitStarted != 0 &&
+					dwNow - state.dwShopChannelWaitStarted >= PLAYERBOT_SHOP_CHANNEL_WAIT_TIMEOUT_MS)
+			{
+				state.bWaitingForShopChannel = false;
+				state.dwShopChannelWaitStarted = 0;
+				state.dwNextShopChannelRequestTime = 0;
+				state.dwNextShopKeepTime = dwNow + number(300000, 600000);
+				PlayerBotLogThrottled("shop_channel_timeout", dwNow,
+						"PLAYERBOT_CHANNEL: pid=%u name=%s waited for the shop channel and goes back to its life",
+						ch->GetPlayerID(), ch->GetName());
+			}
+			else
+			{
+				if (state.dwNextShopChannelRequestTime == 0 || dwNow >= state.dwNextShopChannelRequestTime)
+				{
+					RequestShopChannel(ch->GetPlayerID());
+					state.dwNextShopChannelRequestTime = dwNow + PLAYERBOT_SHOP_CHANNEL_REQUEST_REFRESH_MS;
+				}
+				ch->SetVictim(NULL);
+				ClearPlayerBotRoute(state, true);
+				if (ch->IsStateMove())
+					ch->Stop();
+				SetPlayerBotAction(state, BOT_ACTION_IDLE, dwNow);
+				state.dwLastMeaningfulActivityTime = dwNow;
+				continue;
+			}
+		}
+#endif
 
 		// The duel the bot agreed to, ahead of every errand. A challenge is
 		// answered within three seconds and then fought; a bot that walks off

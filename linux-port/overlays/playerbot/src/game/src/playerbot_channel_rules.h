@@ -82,6 +82,120 @@ namespace playerbot_channel_rules
 			second = secondChannelIdentities;
 		return channel == 2 ? second : total - second;
 	}
+
+	// ------------------------------------------------------------------
+	// The two channels with moves (mt2009, SIZOWSKI's design of 18-19
+	// September). The pins above had a flaw that only a world which has
+	// played shows: nearly every bot keeps an offline shop there - 2 404
+	// shops for 2 500 bots on one player's world - so nearly every bot was
+	// pinned to the first channel and the second carried 42 ("% botow na
+	// channelach nie dziala poprawnie", Xewi and Mkls, 19 September).
+	//
+	// With the second channel on, a bot's channel is its row of
+	// common.playerbot_channel_assignment: one row a pid, so one channel a
+	// pid. A bot on the second channel with business at a shop - its own
+	// stand to serve or renew, a stand to open, another bot's counter to buy
+	// from - asks to be moved to the shop channel, and the coordinator (the
+	// shop channel's core that hosts Joan) moves it: straight in while the
+	// shop channel is under its cap, one for one against a free bot of the
+	// shop channel at the cap, and when nobody waits it eases the shop
+	// channel back to its target. A move is a row changed and nothing else:
+	// the old core despawns the bot when it reads the change, the new one
+	// spawns it once the row's ready time has passed and the P2P table no
+	// longer knows it - the bot is never on two cores at once.
+	// ------------------------------------------------------------------
+	const int SHOP_CHANNEL = 1;
+
+	// The shop channel's cap and the target it eases back to, as shares of
+	// the bots that play. The operator's slider is the second channel's
+	// share, so the shop channel never holds more than the rest of it and
+	// rests ten points under that: at the slider's 40 that is SIZOWSKI's own
+	// 60 and 50. Never under the slider's own minimum.
+	inline int ShopChannelCapPercent(int sharePercent)
+	{
+		return 100 - ClampShare(sharePercent);
+	}
+	inline int ShopChannelTargetPercent(int sharePercent)
+	{
+		const int target = ShopChannelCapPercent(sharePercent) - 10;
+		return target < CH2_SHARE_MIN ? CH2_SHARE_MIN : target;
+	}
+
+	// What it costs to move a bot out of the shop channel - the order the
+	// coordinator picks candidates in. Nothing to lose is 0; standing in a
+	// village +1, because that is where the market is and where players look;
+	// an errand under way (a fight, a trip, a town visit, a purchase) +1; a
+	// live stand +2 (its owner asks to come back for the next service, so
+	// easing the shop channel back never takes one). A bot that must not
+	// vanish - a shop operation in flight, a service visit, a player's party,
+	// a war, a dungeon, a tower raid, a duel, the medal droppers' cohort - is
+	// pinned where it is. SIZOWSKI's design kept every bot in a village out
+	// of the swap altogether, which on his frontier world was a few; on a
+	// world that is young, or whose bots live in their villages, it was
+	// everybody - 654 of 693 on m2zip, and the swaps ran at six a gate while
+	// eighty waited.
+	const int MOVE_COST_PINNED = 9;
+	inline int MoveCost(bool busy, bool liveStand, bool pinned, bool inVillage)
+	{
+		if (pinned)
+			return MOVE_COST_PINNED;
+		return (inVillage ? 1 : 0) + (busy ? 1 : 0) + (liveStand ? 2 : 0);
+	}
+
+	// One step of the coordinator, decided from a census: how many bots play
+	// (seen in the last half minute, both channels), how many of those are on
+	// the shop channel, and how many requests have stood long enough.
+	enum EChannelMove { MOVE_NONE = 0, MOVE_DRAIN, MOVE_PROMOTE, MOVE_SWAP };
+	// count: how many move (a swap: how many each way); extraOut: a swap
+	// over the cap sends this many more out than it brings in.
+	struct TChannelMovePlan { int kind; unsigned int count; unsigned int extraOut; };
+	// A swap batch moves at most this share of the bots each way (a relog
+	// storm shows as a longer tick), easing back at most this share a gate.
+	const unsigned int MOVE_BATCH_PERCENT = 3;
+	const unsigned int MOVE_DRAIN_PERCENT = 2;
+
+	inline TChannelMovePlan PlanChannelMoves(unsigned int total, unsigned int onShopChannel,
+			unsigned int waiting, int capPercent, int targetPercent)
+	{
+		TChannelMovePlan plan = { MOVE_NONE, 0, 0 };
+		if (total == 0)
+			return plan;
+		if (targetPercent > capPercent)
+			targetPercent = capPercent;
+		const unsigned int cap = total * (unsigned int)capPercent / 100U;
+		const unsigned int target = total * (unsigned int)targetPercent / 100U;
+		unsigned int drainMost = total * MOVE_DRAIN_PERCENT / 100U;
+		if (drainMost < 1)
+			drainMost = 1;
+		if (waiting == 0)
+		{
+			if (onShopChannel > target)
+			{
+				plan.kind = MOVE_DRAIN;
+				plan.count = onShopChannel - target < drainMost ? onShopChannel - target : drainMost;
+			}
+			return plan;
+		}
+		const unsigned int room = cap > onShopChannel ? cap - onShopChannel : 0;
+		if (room > 0)
+		{
+			plan.kind = MOVE_PROMOTE;
+			plan.count = waiting < room ? waiting : room;
+			return plan;
+		}
+		unsigned int batch = (total * MOVE_BATCH_PERCENT + 99U) / 100U;
+		if (batch < 1)
+			batch = 1;
+		plan.kind = MOVE_SWAP;
+		plan.count = waiting < batch ? waiting : batch;
+		// Over the cap - the slider moved, or bots pinned to the shop channel
+		// hold places there - a swap alone would keep the shop channel where it
+		// is for as long as anybody asks, and a world with shops always asks.
+		// The swap sends a drain's worth more out than it brings in.
+		if (onShopChannel > cap)
+			plan.extraOut = onShopChannel - cap < drainMost ? onShopChannel - cap : drainMost;
+		return plan;
+	}
 }
 
 #endif

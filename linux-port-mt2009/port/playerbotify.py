@@ -1436,6 +1436,7 @@ def main(root):
     apply_event_cancel_in_flight(game)
     apply_safebox_hands(game)
     apply_safebox_commands(game)
+    apply_channel_connection(game)
     print('playerbotify: done')
 
 
@@ -4176,6 +4177,47 @@ def apply_event_cancel_in_flight(game):
         print('  edited:  %s' % os.path.relpath(path))
         return
     raise SystemExit('playerbotify: event_process anchor not found in %s' % path)
+
+
+def apply_channel_connection(game):
+    # The two channels with moves (playerbot_channel_rules.h, SIZOWSKI's
+    # design) keep their table on a database connection and a thread of their
+    # own, so the game thread never waits for it: his first version queried on
+    # the game thread, and a slow database threw players out at the character
+    # screen. The common database's credentials are locals of the config reader
+    # and nothing keeps them, so config.cpp keeps a copy and hands out a
+    # connection made with them (CPlayerBotManager::EnsureChannelSql). His
+    # snippet, as he sent it; no header changes - db.h is included by half the
+    # engine.
+    p = os.path.join(game, 'config.cpp')
+    edit(p,
+         'static bool __LoadConnectConfigFile(const char* configName)\n',
+         '// The common database\'s credentials, kept for the playerbots\' channel\n'
+         '// assignment (the two channels with moves): it runs on a connection and a\n'
+         '// thread of its own so the game thread never waits on the database.\n'
+         'static std::string s_stChannelSqlHost, s_stChannelSqlUser, s_stChannelSqlPwd, s_stChannelSqlDb;\n'
+         'static int s_iChannelSqlPort = 0;\n'
+         '\n'
+         'bool PlayerBotOpenChannelConnection(CAsyncSQL* pkDest)\n'
+         '{\n'
+         '\tif (!pkDest || s_stChannelSqlHost.empty())\n'
+         '\t\treturn false;\n'
+         '\treturn pkDest->Setup(s_stChannelSqlHost.c_str(), s_stChannelSqlUser.c_str(),\n'
+         '\t\t\ts_stChannelSqlPwd.c_str(), s_stChannelSqlDb.c_str(), g_stLocale.c_str(),\n'
+         '\t\t\tfalse, s_iChannelSqlPort);\n'
+         '}\n'
+         '\n'
+         'static bool __LoadConnectConfigFile(const char* configName)\n',
+         marker='bool PlayerBotOpenChannelConnection(CAsyncSQL* pkDest)')
+    edit(p,
+         '\tAccountDB::instance().ConnectAsync(db_host[COMMON_SQL_INDEX], mysql_db_port[COMMON_SQL_INDEX], db_user[COMMON_SQL_INDEX], db_pwd[COMMON_SQL_INDEX], db_db[COMMON_SQL_INDEX], g_stLocale.c_str());\n',
+         '\tAccountDB::instance().ConnectAsync(db_host[COMMON_SQL_INDEX], mysql_db_port[COMMON_SQL_INDEX], db_user[COMMON_SQL_INDEX], db_pwd[COMMON_SQL_INDEX], db_db[COMMON_SQL_INDEX], g_stLocale.c_str());\n'
+         '\ts_stChannelSqlHost = db_host[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlUser = db_user[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlPwd = db_pwd[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlDb = db_db[COMMON_SQL_INDEX];\n'
+         '\ts_iChannelSqlPort = mysql_db_port[COMMON_SQL_INDEX];\n',
+         marker='s_stChannelSqlHost = db_host[COMMON_SQL_INDEX];')
 
 
 if __name__ == '__main__':

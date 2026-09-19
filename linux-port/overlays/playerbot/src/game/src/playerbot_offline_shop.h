@@ -148,10 +148,12 @@ namespace {
     bool SubmitPlayerBotOfflineShop(LPCHARACTER ch, TPlayerBotAIState& state,
             DWORD now, const char* sign, TShopItemTable* table, BYTE count) {
         using namespace playerbot_offline;
+        // Shops are the first channel's alone (ManagePlayerBotPrivateShop): the
+        // last line of defence at the native submit, and with the assignment
+        // table a bot elsewhere that got this far asks to be moved there.
+        if (!EnsurePlayerBotPrivateShopChannel(ch, state, now, "submit_guard")) return false;
         auto& manager = ikashop::GetManager();
         state.dwNextShopKeepTime = now + 120000;
-        // Shops are the first channel's alone (ManagePlayerBotPrivateShop).
-        if (g_bChannel != 1) return false;
         if (manager.GetShopByOwnerID(ch->GetPlayerID()) || requests.count(ch->GetPlayerID()) ||
                 !db_clientdesc || !db_clientdesc->IsPhase(PHASE_DBCLIENT) || !count) return false;
         // Keep the existing prices and selection, but revalidate every line,
@@ -742,6 +744,39 @@ namespace {
             return false;
         }
         const auto spawn = shop->GetSpawn();
+        // The stand is on the other channel: with the assignment table the
+        // owner asks to be moved to it - opening, repricing and emptying the
+        // counter all need the owner beside it. A move is a logout and a
+        // login, dearer than the map change the long round below spares, so
+        // the stand waits a long round of its own, counted from the bot's
+        // arrival on this channel (the clock of its last service stayed on
+        // the core it came from) and spread by pid, or a channel's whole
+        // cohort asks in the same minute after a start. The first build
+        // asked at the first service of every keeper here: 235 of 397 bots of
+        // the second channel waiting within twelve minutes, against 33 places
+        // a gate. An expired stand waits the same round: the second build
+        // asked for one at once, and a stand its owner will not renew - the
+        // TRADE slider, no yang for the fee - stays expired with its goods
+        // for good, so its owner went back and forth between the channels
+        // for nothing. Once due, the bot asks again every retry until the
+        // coordinator moves it.
+        if (spawn.channel != g_bChannel && CPlayerBotManager::instance().IsChannelTableMode()) {
+            const bool expired = shop->GetDuration() == 0;
+            const DWORD since = state.dwSpawnTime ? state.dwSpawnTime : now;
+            const DWORD wait = PLAYERBOT_SHOP_CHANNEL_SERVICE_MIN_MS +
+                    PlayerBotNavHash(ch->GetPlayerID() ^ 0x43485356U) % PLAYERBOT_SHOP_CHANNEL_SERVICE_SPREAD_MS;
+            BotOfflineFinishVisit(ch, state, now);
+            if (!Due(now, since + wait)) {
+                o.nextService = now + PLAYERBOT_OFFLINE_FAR_SERVICE_RETRY_MS;
+                return false;
+            }
+            if (CPlayerBotManager::instance().RequestShopChannel(ch->GetPlayerID()))
+                PlayerBotLogThrottled("shop_channel_service", now,
+                        "PLAYERBOT_CHANNEL: pid=%u name=%s asks for the shop channel to serve its stand (here %u, expired %d)",
+                        ch->GetPlayerID(), ch->GetName(), (unsigned int)g_bChannel, expired ? 1 : 0);
+            o.nextService = now + PLAYERBOT_SHOP_CHANNEL_REQUEST_RETRY_MS;
+            return false;
+        }
         if (spawn.channel != g_bChannel ||
                 playerbot_empire_rules::GetMapOwnerEmpire(spawn.map) != ch->GetEmpire() ||
                 !IsPlayerBotMapHostedHere(spawn.map)) {

@@ -57,6 +57,72 @@ int main()
 	assert(ShareOfTotal(1500, true, 40, 3, 1000) == 0);
 	assert(ShareOfTotal(0, true, 40, 1, 1000) == 0);
 
+	// The moves. The slider's 40 is SIZOWSKI's own 60 and 50; the target never
+	// falls under the slider's minimum.
+	assert(ShopChannelCapPercent(40) == 60 && ShopChannelTargetPercent(40) == 50);
+	assert(ShopChannelCapPercent(20) == 80 && ShopChannelTargetPercent(20) == 70);
+	assert(ShopChannelCapPercent(90) == 10 && ShopChannelTargetPercent(90) == CH2_SHARE_MIN);
+	assert(ShopChannelCapPercent(5) == 90);
+
+	// Nobody waiting: a shop channel over its target eases back, at most two
+	// percent of the bots a gate and never under the target.
+	{
+		TChannelMovePlan p = PlanChannelMoves(1000, 600, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 20);
+		p = PlanChannelMoves(1000, 505, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 5);
+		p = PlanChannelMoves(1000, 500, 0, 60, 50);
+		assert(p.kind == MOVE_NONE);
+		p = PlanChannelMoves(10, 9, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 1);
+	}
+	// Somebody waiting with room under the cap: straight in, as many as fit.
+	{
+		TChannelMovePlan p = PlanChannelMoves(1000, 550, 80, 60, 50);
+		assert(p.kind == MOVE_PROMOTE && p.count == 50);
+		p = PlanChannelMoves(1000, 550, 7, 60, 50);
+		assert(p.kind == MOVE_PROMOTE && p.count == 7);
+	}
+	// At the cap: one for one, three percent of the bots a gate at most.
+	{
+		TChannelMovePlan p = PlanChannelMoves(1000, 600, 80, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 30 && p.extraOut == 0);
+		p = PlanChannelMoves(1000, 640, 5, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 5);
+		p = PlanChannelMoves(20, 12, 4, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 1 && p.extraOut == 0);
+	}
+	// Over the cap with somebody waiting - the slider moved, or a cohort
+	// pinned to the shop channel holds places there: the swap sends out up to
+	// a drain's worth more than it brings in, and never more than the excess.
+	{
+		TChannelMovePlan p = PlanChannelMoves(1000, 640, 5, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 5 && p.extraOut == 20);
+		p = PlanChannelMoves(1000, 605, 80, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 30 && p.extraOut == 5);
+		p = PlanChannelMoves(1098, 701, 38, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 33 && p.extraOut == 21);
+		p = PlanChannelMoves(20, 14, 4, 60, 50);
+		assert(p.kind == MOVE_SWAP && p.count == 1 && p.extraOut == 1);
+	}
+	// Nobody plays, nothing moves; a target over the cap is the cap.
+	assert(PlanChannelMoves(0, 0, 5, 60, 50).kind == MOVE_NONE);
+	{
+		TChannelMovePlan p = PlanChannelMoves(1000, 650, 0, 60, 90);
+		assert(p.kind == MOVE_DRAIN && p.count == 20);
+	}
+	// The cost of moving a bot out of the shop channel.
+	assert(MoveCost(false, false, false, false) == 0);
+	assert(MoveCost(true, false, false, false) == 1);
+	assert(MoveCost(false, false, false, true) == 1);
+	assert(MoveCost(false, true, false, false) == 2);
+	assert(MoveCost(true, true, false, false) == 3);
+	assert(MoveCost(true, true, false, true) == 4);
+	assert(MoveCost(true, true, true, true) == MOVE_COST_PINNED);
+	// The drain takes what costs one at most: an idle bot in a village with
+	// no stand is fair game, one with a stand never is.
+	assert(MoveCost(false, false, false, true) <= 1 && MoveCost(false, true, false, true) > 1);
+
 	std::printf("playerbot_channel_rules_test: OK\n");
 	return 0;
 }
