@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-19T15:11:17Z",
-  "statusMessage": "2.0.83 (serwer 2.0.83, klient 2.0.18): magazyn z przyciskiem Scal i uporządkuj oraz łączeniem i rozdzielaniem stosów między magazynem a ekwipunkiem; boty na wojnach gildii nie giną już w kółko, a wyłączenie wojen kończy trwającą wojnę. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-19T17:39:13Z",
+  "statusMessage": "2.0.84 (serwer 2.0.84, klient 2.0.19): drugi kanał dostaje tylu botów, ile ustawia suwak - boty przechodzą na CH1 do sklepów i wracają; Kamienie Duszy według tierów Iwakury; nowe nicki bez zmiany nicków istniejących botów; Auto Łowy od Colide'a w drugiej wersji; launcher naprawia plik .env zniszczony przez nagłe wyłączenie komputera. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.83",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.83/metin2-server-update-2.0.83.zip",
-    "sha256": "07BEE2950F0DB5108DBD19F5313D8D76F9E4158718777C3A35273EC29560D126"
+    "version": "2.0.84",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.84/metin2-server-update-2.0.84.zip",
+    "sha256": "6086B942B23A50208338D596EF04ED6AEFBFA9C136A4B12847F7948EE6AEE221"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.18",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.83/metin2-client-update-2.0.18.zip",
-    "sha256": "D563EFE523177015267CA74419FB03D25E94394274AAD29D54292C8310852BE0"
+    "version": "2.0.19",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.84/metin2-client-update-2.0.19.zip",
+    "sha256": "EB99D664987A2A7472B4AD6AD1EAC87A0843277FD838C6ACBF607E33A5B80964"
   }
 }
