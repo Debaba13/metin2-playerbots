@@ -2533,6 +2533,23 @@ namespace
 				std::greater<std::pair<int, WORD> >());
 	}
 
+	// The piece's name without the grade it has just reached. The table names
+	// every grade ("Smoczy Noz+7"), so a line that also said the grade said it
+	// twice: "no i mam +7 na Pajecza Wlocznia+7" (archonek, 19 September).
+	std::string PlayerBotRefineBaseName(const char* name)
+	{
+		std::string base = name ? name : "";
+		const std::string::size_type plus = base.find_last_of('+');
+		if (plus != std::string::npos && plus + 1 < base.size() &&
+				base.find_first_not_of("0123456789", plus + 1) == std::string::npos)
+		{
+			base.erase(plus);
+			while (!base.empty() && base[base.size() - 1] == ' ')
+				base.erase(base.size() - 1);
+		}
+		return base;
+	}
+
 	// A good refine is the one moment worth breaking the bots' silence for. They
 	// say nothing when attacked, nothing during PvP, and nothing on a kill -
 	// only the blacksmith gets a reaction, and even then rarely.
@@ -2556,23 +2573,27 @@ namespace
 		if (number(1, 100) > 45)
 			return;
 
+		// Every line is the name, then "z +6 na +7", then the reaction: the name
+		// cannot be declined here, and after "na" it had to be ("no i mam +7 na
+		// Smoczy Noz" is not Polish), and a verb in the past would have to agree
+		// with a gender the piece does not tell us.
 		static const char* kPlus7[] = {
-			"%s poszedl na +7, kowal dzis laskawy",
-			"no i mam +7 na %s, moglo byc gorzej",
-			"+7 na %s siadlo za pierwszym razem",
-			"udalo sie, %s na +7"
+			"%s %s, kowal dzis laskawy",
+			"udalo sie! %s %s",
+			"%s %s, moglo byc gorzej",
+			"wbite: %s %s!!!"
 		};
 		static const char* kPlus8[] = {
-			"%s na +8! rece mi sie trzesly",
-			"jest +8 na %s, teraz sie zastanawiam czy pchac dalej",
-			"+8 na %s, chyba mam dzis szczescie",
-			"weszlo na +8, %s gotowy do roboty"
+			"%s %s! rece mi sie trzesly",
+			"jest! %s %s, pchac dalej?",
+			"%s %s, chyba mam dzis szczescie",
+			"wbite: %s %s, idzie do roboty"
 		};
 		static const char* kPlus9[] = {
-			"%s NA +9!!! nie wierze",
-			"+9 na %s, kto by pomyslal",
-			"dziewiatka na %s, dzis stawiam :D",
-			"%s +9, chyba wystarczy tych probek na dzis"
+			"%s %s!!! nie wierze",
+			"%s %s, kto by pomyslal",
+			"dziewiatka! %s %s, dzis stawiam :D",
+			"%s %s, chyba wystarczy tych prob na dzis"
 		};
 
 		const char** pool = kPlus7;
@@ -2583,7 +2604,10 @@ namespace
 
 		char msg[CHAT_MAX_LEN + 1];
 		char body[CHAT_MAX_LEN + 1];
-		snprintf(body, sizeof(body), pool[number(0, 3)], resultProto->szLocaleName);
+		char step[32];
+		snprintf(step, sizeof(step), "z +%d na +%d", newPlus - 1, newPlus);
+		const std::string name = PlayerBotRefineBaseName(resultProto->szLocaleName);
+		snprintf(body, sizeof(body), pool[number(0, 3)], name.c_str(), step);
 		snprintf(msg, sizeof(msg), "%s : %s", ch->GetName(), body);
 
 		s_dwLastShoutTime = dwNow;
