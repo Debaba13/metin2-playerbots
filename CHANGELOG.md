@@ -17,6 +17,45 @@ every version here.
 
 ---
 
+## 2.0.80 — 2026-09-19
+
+Serwer 2.0.80, klient 2.0.17. W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Nowe okno Auto Łowów (Colide)
+
+- Okno Auto Łowów (klawisz K) przebudował Colide, gracz, który zrobił je
+  dla siebie i przysłał: 12 umiejętności w dwóch rzędach, 6 miejsc na
+  mikstury, każde z własnym progiem w procentach, i 6 przedmiotów używanych
+  co podaną liczbę sekund (peleryny, rosy).
+- Mikstura na manę sama pilnuje PE, a każda inna HP. Nie trzeba już trzymać
+  czerwonej na pierwszym miejscu i niebieskiej na drugim.
+- Przełączniki: Atak, Umiejętności, Wskrzeszenie, Mikstury, Odpały, Metiny
+  i Wracaj. Umiejętności działają na swoich zegarach także przy wyłączonym
+  ataku (wtedy wyłącz też Wracaj, bo postać wraca w miejsce startu).
+- „HP po wskrz. %”: po odrodzeniu postać pije mikstury i nie rusza do walki,
+  dopóki nie ma tylu procent HP, także po ręcznym „Odródź tutaj”.
+- Ustawienia każdej postaci zapisują się w folderze autohunt obok klienta.
+  Dotychczasowe ustawienia przechodzą same: umiejętności zostają na swoich
+  miejscach, mikstury HP i PE trafiają na dwa pierwsze miejsca mikstur,
+  a przedmioty do rzędu Odpały.
+
+### Serwer nie budował się przy źle ustawionym zegarze Windows (Xewi)
+
+- Docker bierze czas od Windows. Gdy zegar Windows jest cofnięty (u Xewi
+  o 3 godziny), serwery pakietów odrzucają pobieranie („Release file ... is
+  not valid yet”) i każde GRAJ zatrzymywało się na budowie panelu. Panel
+  i serwer gry budują się teraz mimo takiego zegara.
+- Launcher przy starcie porównuje zegar Windows z czasem z internetu,
+  a zegar Dockera z zegarem Windows. Gdy któryś odbiega o ponad 5 minut,
+  mówi, co ustawić: Ustawienia → Czas i język → Data i godzina → „Ustaw
+  czas automatycznie” i „Synchronizuj teraz”, potem zamknij Docker Desktop
+  i kliknij GRAJ.
+
+### COOP w testach u patronów
+
+- COOP, czyli gra ze znajomymi przez internet, jest na razie w testach
+  u patronów: przycisk COOP w launcherze prosi o hasło, które dostają patroni.
+
 ## 2.0.79 — 2026-09-19
 
 Serwer 2.0.79, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
