@@ -3067,9 +3067,14 @@ namespace
 	// PLAYERBOT_SHOP_MARBLE_LINES of them, never two of one monster; the rest
 	// are the merchant's under bag pressure (IsPlayerBotJunkItem).
 	const int PLAYERBOT_SHOP_POLYMORPH_SCORE = 380;
-	// A bonus stone over the keep: worth a counter slot, and worth it ahead of
-	// a marble, because every bot with gear to finish wants one.
-	const int PLAYERBOT_SHOP_BONUS_STONE_SCORE = 420;
+	// A bonus stone over the keep: worth a counter slot ahead of a refine
+	// material (500), which is the only thing that outranked it and the
+	// reason the first build listed none at all - a keeper adds one line a
+	// visit, and while it holds any material at all the stone waits behind
+	// it for ever. Materials have a market that works (792 sales in two
+	// days); the stones had 20 387 units in bags and not one on a counter.
+	// The per-vnum line cap is what bounds it from here.
+	const int PLAYERBOT_SHOP_BONUS_STONE_SCORE = 520;
 	const int PLAYERBOT_SHOP_MARBLE_LINES = 3;
 	// And no counter carries more than PLAYERBOT_SHOP_SAME_VNUM_LINES lines of
 	// one item. The caps above were each for a kind - a material, a heap, the
