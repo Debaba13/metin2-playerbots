@@ -1220,6 +1220,14 @@ namespace
 	const int PLAYERBOT_TOWER_STONE_CLEAR_LIMIT = 25;
 	// ... or with no monster this close to the stone itself.
 	const int PLAYERBOT_TOWER_STONE_CLEAR_RADIUS = 1500;
+	// The pack spreads its blows, not itself: an ordinary monster is taken
+	// from the few standing nearest the pack, about this many bots to each,
+	// and only among those no further than SPREAD_RANGE beyond the nearest
+	// one - so the pack still fights in one place. A stone and a boss stay
+	// everybody's. With one target for sixteen bots a floor was cleared a
+	// monster at a time ("atakuja po jednym przeciwniku", Nagash, 19 September).
+	const int PLAYERBOT_TOWER_BOTS_PER_MONSTER = 2;
+	const int PLAYERBOT_TOWER_SPREAD_RANGE = 600;
 	// metin2_map_deviltower1's base in cells (Setting.txt), the ground
 	// floor's entrance the quest warps a player to, and the Metin of
 	// Toughness's spawn point (regen.txt: cell 195,690 off the base).

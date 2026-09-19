@@ -73,11 +73,26 @@ namespace
 				ch->GetHorseHealth() > 0;
 	}
 
+	// A dropper is a drop character and takes no trial - the operator's rule of
+	// 15 September, which the Biologist and the guild already follow. The two
+	// "on trial" predicates below did not ask, so a Metin dropper of thirty-six
+	// with a horse at ten was on the battle trial as far as every reader was
+	// concerned: the frontier draw pointed it at the desert, and its status read
+	// "Zdobywam konia bojowego na pustyni (0/100)" from the guild map it farms
+	// (GG1249125 and MORDEGAPOTEGA, Urtopy, 18 September). The stable keeper's
+	// side (IsPlayerBotBattleHorseEarned) is left alone: a horse already earned
+	// is still handed over.
+	bool IsPlayerBotTrialExempt(LPCHARACTER ch)
+	{
+		return ch && IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID()));
+	}
+
 	// Out in the desert working on it.
 	bool IsPlayerBotOnBattleHorseTrial(LPCHARACTER ch)
 	{
 		return IsPlayerBotHorseTrialOpenHere(PLAYERBOT_MAP_DESERT) &&
 				IsPlayerBotBattleHorseCandidate(ch) &&
+				!IsPlayerBotTrialExempt(ch) &&
 				GetPlayerBotBattleHorseKills(ch) < PLAYERBOT_BATTLE_HORSE_KILLS;
 	}
 
@@ -121,6 +136,7 @@ namespace
 	{
 		return IsPlayerBotHorseTrialOpenHere(PLAYERBOT_MAP_DEMON_TOWER) &&
 				IsPlayerBotMilitaryHorseCandidate(ch) &&
+				!IsPlayerBotTrialExempt(ch) &&
 				GetPlayerBotMilitaryHorseKills(ch) < PLAYERBOT_MILITARY_HORSE_KILLS;
 	}
 

@@ -143,6 +143,7 @@ namespace
 		DWORD race;
 		bool stone;
 		bool npc;
+		bool boss;	// a monster of MOB_RANK_BOSS and up: the pack's, like a stone
 	};
 
 	struct TPlayerBotTowerScan
@@ -154,8 +155,9 @@ namespace
 		int upperBots;	// bots of PLAYERBOT_TOWER_UPPER_LEVEL and up
 		// The pack: where the live bots on the map stand, on average. The
 		// objective is chosen from here, not from each bot, so the sixteen
-		// fight the same demon instead of sixteen different ones - spread over
-		// the seventh floor they died 253 times in eight minutes.
+		// fight the same few demons in one place instead of sixteen different
+		// ones across the floor - spread over the seventh floor they died 253
+		// times in eight minutes.
 		long packX;
 		long packY;
 		int packN;
@@ -195,6 +197,7 @@ namespace
 			e.race = c->GetRaceNum();
 			e.stone = c->IsStone();
 			e.npc = !e.stone && !c->IsMonster();
+			e.boss = !e.stone && !e.npc && c->GetMobRank() >= MOB_RANK_BOSS;
 			if (!e.npc)
 			{
 				++m_scan.alive;
@@ -269,16 +272,25 @@ namespace
 	// on it. On the ground floor only the Metin of Toughness; inside, that
 	// stone never (breaking it there does nothing), the fourth and seventh
 	// floors' stones ahead of their monsters because the floor turns on them,
-	// the Metin of the Devil (8016) ahead of the seven it spawns.
+	// the Metin of the Devil (8016) ahead of the seven it spawns. A stone, or a
+	// boss once he is the nearest, is the whole pack's; an ordinary monster
+	// is spread over the pack instead (PLAYERBOT_TOWER_BOTS_PER_MONSTER):
+	// each bot takes one of the few standing nearest the pack by a slot drawn
+	// from its pid, and keeps it while it stands, so the pack stays in one
+	// place and fights several monsters at once rather than queueing on one.
 	LPCHARACTER PickPlayerBotTowerObjective(LPCHARACTER ch, const TPlayerBotTowerScan* scan, int level,
 			bool parterStone, int maxDistance)
 	{
 		DWORD bestVid = 0;
 		int bestScore = INT_MIN;
+		bool bestShared = false;
+		// The ordinary monsters that passed every test below, with their
+		// distance from the point the pack ranks from.
+		std::vector<std::pair<int, DWORD> > spread;
 		long floorX = 0, floorY = 0;
 		const bool onFloor = !parterStone && GetPlayerBotTowerFloorCentre(level, floorX, floorY);
-		// Measured from the pack when there is one, so everybody picks the same
-		// thing; from the bot itself on the ground floor and when alone.
+		// Measured from the pack when there is one, so everybody picks among the
+		// same few; from the bot itself on the ground floor and when alone.
 		const bool fromPack = onFloor && scan && scan->packN >= 2;
 		long fromX = fromPack ? scan->packX : ch->GetX();
 		long fromY = fromPack ? scan->packY : ch->GetY();
@@ -322,16 +334,37 @@ namespace
 			if (!parterStone && e.stone && !stonesNow &&
 					CountPlayerBotTowerMonstersNear(scan, e.x, e.y, PLAYERBOT_TOWER_STONE_CLEAR_RADIUS) > 0)
 				continue;
-			int score = -DISTANCE_APPROX(fromX - e.x, fromY - e.y);
+			const int fromDistance = DISTANCE_APPROX(fromX - e.x, fromY - e.y);
+			const bool shared = parterStone || e.stone || e.boss;
+			int score = -fromDistance;
 			if (!parterStone && e.stone)
 				score += 100000;
 			if (e.race == PLAYERBOT_TOWER_STONE_FLOOR4)
 				score += 50000;
+			if (fromPack && !shared)
+				spread.push_back(std::make_pair(fromDistance, e.vid));
 			if (score > bestScore)
 			{
 				bestScore = score;
 				bestVid = e.vid;
+				bestShared = shared;
 			}
+		}
+		// No stone or boss outranks the monsters: this bot's share of them.
+		// Only the ones within SPREAD_RANGE beyond the nearest count, and no
+		// more of them than the pack has bots for.
+		if (!bestShared && spread.size() > 1 && scan->packN > PLAYERBOT_TOWER_BOTS_PER_MONSTER)
+		{
+			std::sort(spread.begin(), spread.end());
+			const int limit = spread.front().first + PLAYERBOT_TOWER_SPREAD_RANGE;
+			size_t nearby = 0;
+			while (nearby < spread.size() && spread[nearby].first <= limit)
+				++nearby;
+			const size_t wanted = (size_t)((scan->packN + PLAYERBOT_TOWER_BOTS_PER_MONSTER - 1) /
+					PLAYERBOT_TOWER_BOTS_PER_MONSTER);
+			const size_t choices = std::min(nearby, wanted);
+			if (choices > 1)
+				bestVid = spread[PlayerBotNavHash(ch->GetPlayerID() ^ 0x53505244U) % choices].second;
 		}
 		return bestVid ? CHARACTER_MANAGER::instance().Find(bestVid) : NULL;
 	}
