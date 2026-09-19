@@ -2208,10 +2208,11 @@ namespace
 		if (item->GetRefinedVnum() == 0 && item->GetType() == ITEM_MATERIAL &&
 				!IsPlayerBotSheetGoods(item))
 			return -1;
-		// A soul stone the bot cannot seat - the wrong school's, no socket open,
-		// the wrong grade for the piece it keeps - is somebody else's set.
+		// A soul stone the bot cannot seat - one Iwakura's list keeps out of the
+		// hunting set, no socket open, the wrong grade for the piece it keeps -
+		// is somebody else's set.
 		if (item->GetType() == ITEM_METIN)
-			return WantsPlayerBotSoulStone(ch, item->GetVnum(), (DWORD)item->GetValue(5))
+			return CanPlayerBotSeatSoulStone(ch, item->GetVnum(), (DWORD)item->GetValue(5))
 					? -1 : 700 + GetPlayerBotSoulStoneGrade(item->GetVnum()) * 100;
 		// Sztuka Combo and the Leadership books: kept while the bot can read
 		// them (a few of each), the rest goods like any other book.

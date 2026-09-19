@@ -61,31 +61,31 @@ Buty Feniksa 					PVP: 6 PVE: 6
 Buty Ognistego Ptaka 			PVP: 6 PVE: 3
 
 [Bronie]
-Miecz (Lvl 0) 					PVP: 1 PVE: 1
-Długi Miecz (Lvl 5) 			PVP: 1 PVE: 1
-Sejmitar (Lvl 10) 				PVP: 1 PVE: 1
-Stożkowy Miecz (Lvl 15) 		PVP: 1 PVE: 1
-Szeroki Miecz (Lvl 20) 			PVP: 1 PVE: 1
-Srebrny Miecz (Lvl 25) 			PVP: 1 PVE: 1
-Miecz Pełni Księżyca (Lvl 30) 	PVP: 4 PVE: 5
-Miecz Storczykowy (Lvl 32) 		PVP: 1 PVE: 1
-Miecz Półtoraręczny (Lvl 36) 	PVP: 1 PVE: 1
-Miecz Barbarzyńcy (Lvl 40) 		PVP: 1 PVE: 1
-Krwawy Miecz (Lvl 45) 			PVP: 1 PVE: 1
-Wielki Miecz (Lvl 50) 			PVP: 1 PVE: 1
-Miecz Lat. Maga (Lvl 55) 		PVP: 1 PVE: 1
-Pół-księżycowy Miecz (Lvl 60) 	PVP: 1 PVE: 1
-Miecz Bojowy (Lvl 65) 			PVP: 5 PVE: 2 
-Miecz Egzorcysty (Lvl 65) 		PVP: 5 PVE: 2
-Miecz Nimfy (Lvl 65) 			PVP: 3 PVE: 2
-Miecz Szponu Ducha (Lvl 65) 	PVP: 5 PVE: 2
-Demoniczne Ostrze (Lvl 70) 		PVP: 2 PVE: 2
-Miecz Żądło (Lvl 70) 			PVP: 2 PVE: 2
-Lwi Miecz (Lvl 75) 				PVP: 4 PVE: 5
-Zatruty miecz (Lvl 75) 			PVP: 5 PVE: 6
-Brzegowe Ostrze (Lvl 80) 		PVP: 6 PVE: 4
-Miecz Trytona (Lvl 80) 			PVP: 6 PVE: 3
-Święty Miecz (Lvl 80) 			PVP: 6 PVE: 2 
+Miecz		 					PVP: 1 PVE: 1
+Długi Miecz 		 			PVP: 1 PVE: 1
+Sejmitar 						PVP: 1 PVE: 1
+Stożkowy Miecz 					PVP: 1 PVE: 1
+Szeroki Miecz 					PVP: 1 PVE: 1
+Srebrny Miecz					PVP: 1 PVE: 1
+Miecz Pełni Księżyca 		 	PVP: 4 PVE: 5
+Miecz Storczykowy 				PVP: 1 PVE: 1
+Miecz Półtoraręczny				PVP: 1 PVE: 1
+Miecz Barbarzyńcy 				PVP: 1 PVE: 1
+Krwawy Miecz 					PVP: 1 PVE: 1
+Wielki Miecz 		 			PVP: 1 PVE: 1
+Miecz Lat. Maga 		 		PVP: 1 PVE: 1
+Pół-księżycowy Miecz 		 	PVP: 1 PVE: 1
+Miecz Bojowy 					PVP: 5 PVE: 2 
+Miecz Egzorcysty 				PVP: 5 PVE: 2
+Miecz Nimfy 					PVP: 3 PVE: 2
+Miecz Szponu Ducha 			 	PVP: 5 PVE: 2
+Demoniczne Ostrze 				PVP: 2 PVE: 2
+Miecz Żądłowy					PVP: 2 PVE: 2
+Lwi Miecz						PVP: 4 PVE: 5
+Zatruty miecz					PVP: 5 PVE: 6
+Brzegowe Ostrze					PVP: 6 PVE: 4
+Miecz Trytona		 			PVP: 6 PVE: 3
+Święty Miecz		 			PVP: 6 PVE: 2 
 
 Glewia                          PVP: 1 PVE: 1
 Włócznia                        PVP: 1 PVE: 1
@@ -241,3 +241,30 @@ Silny na zwierzęta                  PVP: 1 PVE: 3 (M1/M2/Loch Małp)
 Szybkość ruchu                      PVP: 4 PVE: 4
 Punkty doświadczenia +%             PVP: 1 PVE: 4
 Szansa na podwójną ilość yang       PVP: 1 PVE: 6
+
+[TIERY KD] <-- [NEW!]
+Boty mają całkowity zakaz umieszczania Kamieni Duszy +0, +1 i +2 w broniach i zbrojach. Dozwolone są wyłącznie wymienione poniżej KD:
+Kamień Duszy Potwora +3				PVP: 1 PVE: 5
+Kamień Duszy Przyspieszenia +3 		PVP: 4 PVE: 4
+Kamień Duszy Śmierci +3				PVP: 3 PVE: 4
+Kamień Duszy Uchylenia +3			PVP: 3 PVE: 3
+Kamień Duszy Witalności +3			PVP: 3 PVE: 4
+Kamień Duszy Obrony +3				PVP: 1 PVE: 5
+
+Kamień Duszy Potwora +4				PVP: 1 PVE: 6
+Kamień Duszy Przyspieszenia +4 		PVP: 4 PVE: 6
+Kamień Duszy Śmierci +4				PVP: 3 PVE: 6
+Kamień Duszy Uchylenia +4			PVP: 4 PVE: 4
+Kamień Duszy Penetracji	+4			PVP: 6 PVE: 3
+Kamień Duszy Powtórki +4			PVP: 4 PVE: 2
+Kamień Duszy Witalności +4			PVP: 6 PVE: 6
+Kamień Duszy Uniku +4				PVP: 6 PVE: 6
+Kamień Duszy Obrony +4				PVP: 1 PVE: 5
+Kamień Duszy Magii +4				PVP: 1 PVE: 1
+
+Poniższe Kamienie Duszy stosuje się WYŁĄCZNIE w broniach PVP (zgodnych z powyższą tierlistą). Przy kompletowaniu ekwipunku pod PVP bot musi zawsze preferować te KD, ignorując w tym przypadku kamienie z górnej listy:
+Kamień Duszy Wojownika +4			PVP: 6 PVE: 1
+Kamień Duszy Sury +4				PVP: 6 PVE: 1
+Kamień Duszy Ninja +4				PVP: 6 PVE: 1
+Kamień Duszy Szamana +4				PVP: 5 PVE: 1
+Kamienie duszy Wojownika, Sury, Ninjy i Szamana są bezużyteczne w itemach pod PVE. 

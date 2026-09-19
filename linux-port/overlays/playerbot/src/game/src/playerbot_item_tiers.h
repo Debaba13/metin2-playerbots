@@ -1,5 +1,6 @@
 // Rendered by linux-port/overlays/playerbot/tools/generate_iwakura_tiers.py from Iwakura's
-// tier list (data/iwakura_tiery.txt, 16 September). Do not edit by hand.
+// tier list (data/iwakura_tiery.txt, 16 September, the soul stones added on
+// 19 September). Do not edit by hand.
 //
 // Every family of bracelets, earrings, necklaces, boots and weapons, and every
 // bonus line, rated 1 (bardzo zly) to 6 (wspanialy) - once for PvE, once for
@@ -7,6 +8,11 @@
 // and shields are judged by level and bonuses, not by name, so they are not
 // here. The PvE column steers the hunting set today; the PvP column waits for
 // the second set ("na przyszlosc pod posiadanie przez boty dwoch setow").
+//
+// The soul stones (Kamienie Duszy, the ITEM_METIN stones a socket takes) are
+// his rule rather than a nudge: a stone of a banned grade (+0, +1 and +2 on
+// his list) never goes into a weapon or an armour, only the stones listed
+// here may, and the four class stones only into a PvP weapon.
 #ifndef __INC_METIN2_PLAYERBOT_ITEM_TIERS_H__
 #define __INC_METIN2_PLAYERBOT_ITEM_TIERS_H__
 
@@ -34,7 +40,7 @@ namespace
 		{ 140, 2, 5, 0, 0 }, // Miecz Bojowy
 		{ 150, 2, 5, 0, 0 }, // Miecz Szponu Ducha
 		{ 160, 2, 3, 0, 0 }, // Miecz Nimfy
-		{ 170, 2, 2, 0, 0 }, // Miecz Zadlo
+		{ 170, 2, 2, 0, 0 }, // Miecz Zadlowy
 		{ 180, 6, 5, 0, 0 }, // Zatruty miecz
 		{ 190, 5, 4, 0, 0 }, // Lwi Miecz
 		{ 200, 4, 6, 0, 0 }, // Brzegowe Ostrze
@@ -235,6 +241,56 @@ namespace
 		{ APPLY_ST_REGEN, 1, 1, 0, 0 }, // Regeneracja ST (staminy)
 #endif
 	};
+
+	// Iwakura's soul stones, by vnum (28000 + grade * 100 + kind). A stone of a
+	// grade under PLAYERBOT_SOUL_STONE_MIN_GRADE, or one not on this list, is
+	// never put into a weapon or an armour; a PvP-only stone never into the
+	// hunting set.
+	const int PLAYERBOT_SOUL_STONE_MIN_GRADE = 3;
+	struct TPlayerBotSoulStoneTier { DWORD dwVnum; BYTE bPve; BYTE bPvp; bool bPvpOnly; };
+	const TPlayerBotSoulStoneTier PLAYERBOT_SOUL_STONE_TIERS[] = {
+		{ 28331, 4, 3, false }, // Kamien Duszy Smierci +3
+		{ 28337, 5, 1, false }, // Kamien Duszy Potwora +3
+		{ 28338, 3, 3, false }, // Kamien Duszy Uchylenia +3
+		{ 28341, 4, 3, false }, // Kamien Duszy Witalnosci +3
+		{ 28342, 5, 1, false }, // Kamien Duszy Obrony +3
+		{ 28343, 4, 4, false }, // Kamien Duszy Przyspieszenia +3
+		{ 28430, 3, 6, false }, // Kamien Duszy Penetracji +4
+		{ 28431, 6, 3, false }, // Kamien Duszy Smierci +4
+		{ 28432, 2, 4, false }, // Kamien Duszy Powtorki +4
+		{ 28433, 1, 6, true }, // Kamien Duszy Wojownika +4
+		{ 28434, 1, 6, true }, // Kamien Duszy Ninja +4
+		{ 28435, 1, 6, true }, // Kamien Duszy Sury +4
+		{ 28436, 1, 5, true }, // Kamien Duszy Szamana +4
+		{ 28437, 6, 1, false }, // Kamien Duszy Potwora +4
+		{ 28438, 4, 4, false }, // Kamien Duszy Uchylenia +4
+		{ 28439, 6, 6, false }, // Kamien Duszy Uniku +4
+		{ 28440, 1, 1, false }, // Kamien Duszy Magii +4
+		{ 28441, 6, 6, false }, // Kamien Duszy Witalnosci +4
+		{ 28442, 5, 1, false }, // Kamien Duszy Obrony +4
+		{ 28443, 6, 4, false }, // Kamien Duszy Przyspieszenia +4
+	};
+
+	const TPlayerBotSoulStoneTier* FindPlayerBotSoulStoneTier(DWORD vnum)
+	{
+		if ((int)((vnum / 100) % 10) < PLAYERBOT_SOUL_STONE_MIN_GRADE)
+			return NULL;
+		for (size_t i = 0; i < sizeof(PLAYERBOT_SOUL_STONE_TIERS) / sizeof(PLAYERBOT_SOUL_STONE_TIERS[0]); ++i)
+			if (PLAYERBOT_SOUL_STONE_TIERS[i].dwVnum == vnum)
+				return &PLAYERBOT_SOUL_STONE_TIERS[i];
+		return NULL;
+	}
+
+	// The stone's tier for the set it would go into, or 0 when it may not go
+	// into that set at all: a banned grade, a stone off his list, or a PvP-only
+	// stone asked about for the hunting set.
+	int GetPlayerBotSoulStoneTier(DWORD vnum, bool pvp)
+	{
+		const TPlayerBotSoulStoneTier* row = FindPlayerBotSoulStoneTier(vnum);
+		if (!row || (row->bPvpOnly && !pvp))
+			return 0;
+		return pvp ? row->bPvp : row->bPve;
+	}
 
 	int PlayerBotTierWithJob(int tier, BYTE jobs, int job)
 	{

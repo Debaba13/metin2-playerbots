@@ -576,6 +576,34 @@ namespace
 		return tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
 	}
 
+	// A stone already in a socket, as the equipment score counts it: its own
+	// lines, by his tier of the stone the way a bonus line goes by his tier of
+	// the line. A stone seated before his list (a +0 to +2, or one he rates
+	// low) still does what it does and counts at face value - a socket cannot
+	// be emptied, so the piece is worth exactly what it holds.
+	long long ScorePlayerBotSeatedSoulStones(LPITEM item, LPCHARACTER ch)
+	{
+		if (!item || (item->GetType() != ITEM_WEAPON && item->GetType() != ITEM_ARMOR))
+			return 0;
+		long long score = 0;
+		for (int socketIdx = 0; socketIdx < ITEM_SOCKET_MAX_NUM; ++socketIdx)
+		{
+			const DWORD inSocket = (DWORD)item->GetSocket(socketIdx);
+			if (inSocket <= 2 || inSocket == PLAYERBOT_BROKEN_SOUL_STONE_VNUM)
+				continue;
+			const TItemTable* stone = ITEM_MANAGER::instance().GetTable(inSocket);
+			if (!stone || stone->bType != ITEM_METIN)
+				continue;
+			const int tier = GetPlayerBotSoulStoneTier(inSocket, false);
+			for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
+			{
+				const long long raw = ScorePlayerBotApply(stone->aApplies[i].bType, stone->aApplies[i].lValue, ch);
+				score += tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
+			}
+		}
+		return score;
+	}
+
 	long long GetPlayerBotEquipmentScore(LPITEM item, LPCHARACTER ch = NULL)
 	{
 		if (!item || !item->GetProto())
@@ -677,6 +705,11 @@ namespace
 				continue;
 			score += ScorePlayerBotApplyTiered(t, item->GetAttributeValue(i), ch);
 		}
+		// The soul stones in its sockets are lines of the piece too: a weapon
+		// holding Potwora and Smierci +4 is a different weapon from the same
+		// one with the sockets open, and a swap for a bare one of a point
+		// more would throw both stones away.
+		score += ScorePlayerBotSeatedSoulStones(item, ch);
 
 		if (item->GetImmuneFlag() != 0)
 			score += 1000;
@@ -2284,31 +2317,37 @@ namespace
 	bool IsPlayerBotWeaponSoulStoneKind(int kind) { return kind >= 30 && kind <= 37; }
 	bool IsPlayerBotArmorSoulStoneKind(int kind) { return kind >= 38 && kind <= 43; }
 
-	// The set, by what the school does with it. In a world of monsters the
-	// class stones (33-36) are worth nothing to anybody; Potwora is first for
-	// everybody; the blow schools take crit and pierce, the skill schools the
-	// cooldown stone. On armour: health, then block for the ones that stand in
-	// the pack, move for the ones that keep away from it, then defence.
-	int GetPlayerBotSoulStoneWorth(LPCHARACTER ch, int kind)
+	// What a stone is worth to the hunting set, by Iwakura's list alone: his
+	// PvE tier when he lets it into a socket and rates it neutral or better,
+	// else nothing. Before his list this was a table of our own by school, and
+	// it seated a +0 to +2 on anything under +6 - which his list forbids
+	// ("Boty maja calkowity zakaz umieszczania Kamieni Duszy +0, +1 i +2 w
+	// broniach i zbrojach") outside the operator's exception for weak pieces
+	// (PLAYERBOT_SOUL_STONE_WEAK_GEAR_*). A stone of a banned grade takes the
+	// best tier his list gives its kind, so the exception seats the kinds he
+	// wants and not Magii or Powtorki. The class stones he keeps for a PvP
+	// weapon, which no bot assembles, so they are never seated.
+	int GetPlayerBotSoulStoneSeatTier(DWORD vnum)
 	{
-		const int style = GetPlayerBotSchoolStyle(ch);
-		const bool ranged = ch && ((ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2) ||
-				(ch->GetJob() == JOB_SURA && ch->GetSkillGroup() == 2) || ch->GetJob() == JOB_SHAMAN);
-		switch (kind)
+		int tier = GetPlayerBotSoulStoneTier(vnum, false);
+		if (GetPlayerBotSoulStoneGrade(vnum) < PLAYERBOT_SOUL_STONE_MIN_GRADE)
 		{
-			case 37: return 600;                          // Potwora
-			case 31: return 500;                          // Smierci (kryt)
-			case 30: return style > 0 ? 250 : 450;       // Penetracji
-			case 32: return style > 0 ? 500 : 150;       // Powtorki
-			case 33: case 34: case 35: case 36: return 0; // klasowe: PvP
-			case 41: return 600;                          // Witalnosci
-			case 38: return ranged ? 250 : 500;          // Uchylenia (blok)
-			case 43: return ranged ? 450 : 200;          // Przyspieszenia
-			case 42: return 400;                          // Obrony
-			case 39: return 250;                          // Uniku
-			case 40: return style > 0 ? 150 : 0;         // Magii (PE)
-			default: return 0;
+			const int kind = GetPlayerBotSoulStoneKind(vnum);
+			for (size_t i = 0; i < sizeof(PLAYERBOT_SOUL_STONE_TIERS) / sizeof(PLAYERBOT_SOUL_STONE_TIERS[0]); ++i)
+			{
+				const TPlayerBotSoulStoneTier& row = PLAYERBOT_SOUL_STONE_TIERS[i];
+				if (GetPlayerBotSoulStoneKind(row.dwVnum) == kind && !row.bPvpOnly)
+					tier = std::max<int>(tier, row.bPve);
+			}
 		}
+		return tier >= PLAYERBOT_SOUL_STONE_MIN_PVE_TIER ? tier : 0;
+	}
+
+	// The operator's weak piece: level 21 or less and +6 or less.
+	bool IsPlayerBotWeakSoulStoneGear(LPITEM gear)
+	{
+		return gear && gear->GetLevelLimit() <= PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_LEVEL &&
+				gear->GetRefineLevel() <= PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_REFINE;
 	}
 
 	// Whether the worn piece for this kind of stone has a socket open for it
@@ -2343,30 +2382,40 @@ namespace
 	}
 
 	// A seating is a 30% roll, and the other 70% welds a cracked stone into
-	// the socket for good. On a piece the bot will outgrow that costs nothing;
-	// on the +6 it keeps, a socket is worth waiting for a +3, and on a +8 for
-	// the +4. A +3 or +4 is never spent on a piece below +6.
+	// the socket for good. A stone under Iwakura's lowest grade goes only into
+	// the operator's weak piece; a +3 or +4 is never spent on a piece below
+	// +6, and on a +8 or +9 the socket waits for the +4.
 	bool ShouldPlayerBotSeatSoulStone(LPITEM gear, int grade)
 	{
 		if (!gear)
 			return false;
+		if (grade < PLAYERBOT_SOUL_STONE_MIN_GRADE)
+			return IsPlayerBotWeakSoulStoneGear(gear);
 		const int refine = gear->GetRefineLevel();
-		if (refine >= 8)
-			return grade >= 4;
-		if (refine >= 6)
-			return grade >= 3;
-		return grade <= 2;
+		if (refine >= PLAYERBOT_SOUL_STONE_TOP_GEAR_REFINE)
+			return grade >= PLAYERBOT_SOUL_STONE_TOP_GEAR_MIN_GRADE;
+		return refine >= PLAYERBOT_SOUL_STONE_MIN_GEAR_REFINE;
 	}
 
-	bool WantsPlayerBotSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
+	// Whether this stone would go into a socket of what the bot wears now:
+	// what the counter must not sell.
+	bool CanPlayerBotSeatSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
 	{
 		const int kind = GetPlayerBotSoulStoneKind(vnum);
-		if (GetPlayerBotSoulStoneWorth(ch, kind) <= 0)
+		if (GetPlayerBotSoulStoneSeatTier(vnum) <= 0)
 			return false;
 		LPITEM gear = NULL;
 		int socket = -1;
 		return FindPlayerBotSoulStoneSocket(ch, kind, stoneValue5, &gear, &socket) &&
 				ShouldPlayerBotSeatSoulStone(gear, GetPlayerBotSoulStoneGrade(vnum));
+	}
+
+	// Whether the bot would buy this stone off a counter: one it would seat,
+	// of Iwakura's grades - the weak piece's +0..+2 are for what drops.
+	bool WantsPlayerBotSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
+	{
+		return GetPlayerBotSoulStoneGrade(vnum) >= PLAYERBOT_SOUL_STONE_MIN_GRADE &&
+				CanPlayerBotSeatSoulStone(ch, vnum, stoneValue5);
 	}
 
 	// Does this bot have a socket that a stone worth having could still fill?
@@ -2379,7 +2428,7 @@ namespace
 		for (int s = 0; s < 2; ++s)
 		{
 			LPITEM gear = ch->GetWear(slots[s]);
-			if (!gear || gear->GetRefineLevel() < PLAYERBOT_PRECIOUS_REFINE)
+			if (!gear || gear->GetRefineLevel() < PLAYERBOT_SOUL_STONE_MIN_GEAR_REFINE)
 				continue;
 			for (int socketIdx = 0; socketIdx < ITEM_SOCKET_MAX_NUM; ++socketIdx)
 				if ((DWORD)gear->GetSocket(socketIdx) == 1)

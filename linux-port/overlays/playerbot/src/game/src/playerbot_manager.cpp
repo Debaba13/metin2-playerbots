@@ -1512,8 +1512,10 @@ namespace
 			const DWORD kdVnum = item->GetVnum();
 			const int kdPlus = GetPlayerBotSoulStoneGrade(kdVnum);
 			const int stoneKind = GetPlayerBotSoulStoneKind(kdVnum);
-			const int worth = GetPlayerBotSoulStoneWorth(ch, stoneKind);
-			if (worth <= 0)
+			// Iwakura's list decides which stones go in at all and which
+			// first: his tier, then the grade, then the better piece.
+			const int tier = GetPlayerBotSoulStoneSeatTier(kdVnum);
+			if (tier <= 0)
 				continue;
 			LPITEM targetGear = NULL;
 			int openSocket = -1;
@@ -1521,7 +1523,7 @@ namespace
 				continue;
 			if (!ShouldPlayerBotSeatSoulStone(targetGear, kdPlus))
 				continue;
-			const int score = kdPlus * 100 + targetGear->GetRefineLevel() * 10 + worth;
+			const int score = tier * 1000 + kdPlus * 100 + targetGear->GetRefineLevel() * 10;
 			if (score > bestScore)
 			{
 				bestScore = score;

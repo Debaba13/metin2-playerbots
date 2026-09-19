@@ -667,6 +667,26 @@ namespace
 	// What UseItemEx leaves in the socket when the 30% roll fails. Defined as a
 	// file-local const in char_item.cpp, so it is repeated here.
 	const DWORD PLAYERBOT_BROKEN_SOUL_STONE_VNUM = 28960;
+	// Iwakura's soul stones (playerbot_item_tiers.h, 19 September) say which
+	// stones may go into the hunting set at all; these say which of those are
+	// worth a socket. A socket takes a stone for good, so a stone he rates 1
+	// ("calkowicie mija sie z celem") or 2 ("praktycznie bezuzyteczne") in PvE -
+	// Magii and Powtorki +4 on his list - would only hold the socket against a
+	// better one; neutral (3) and up is seated. And not on a piece under +6: a
+	// +3 or +4 there is a stone thrown away with the piece the bot outgrows. On
+	// a +8 or +9 the socket waits for a +4.
+	const int PLAYERBOT_SOUL_STONE_MIN_PVE_TIER = 3;
+	const int PLAYERBOT_SOUL_STONE_MIN_GEAR_REFINE = 6;
+	const int PLAYERBOT_SOUL_STONE_TOP_GEAR_REFINE = 8;
+	const int PLAYERBOT_SOUL_STONE_TOP_GEAR_MIN_GRADE = 4;
+	// The operator's one exception to Iwakura's ban on +0..+2 (Tieru, 19
+	// September: "te kamienie mozna wkladac jak sie dropnie do slabych itemow
+	// do 21 levela jesli sa to itemy co najwyzej +6"): a stone of a banned
+	// grade that the bot found goes into a piece of level 21 or less at +6 or
+	// less, if its kind is one his list rates for the hunting set. It is never
+	// bought for that - the market wants +3 and +4 only.
+	const int PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_LEVEL = 21;
+	const int PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_REFINE = 6;
 	const DWORD PLAYERBOT_GOAL_PLAN_INTERVAL = 5000;
 	// How long the population takes to log in after a start, and how often a
 	// batch goes out. The whole cohort used to be asked for in one call, and the
