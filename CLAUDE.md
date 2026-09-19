@@ -6583,7 +6583,14 @@ Four things the personalities changed that are easy to trip over later:
   holds - ITEM_SET or ITEM_DEL, never a state of its own) and counts the empty
   cells the engine's own `bItemGrid` still calls taken, which is what
   `GetEmptyInventory` reads and therefore what a safebox checkout, a purchase
-  and a pickup all ask. Note the numbering while reading either side: header 20
+  and a pickup all ask - measured before the plan as well as after it, because
+  a cell the bag already carried that way is not the operation's doing. And
+  measured against `GetInventoryMaxCount()`, which is what `IsEmptyItemGrid`
+  itself measures by (`bCell >= MAX_INVENTORY` answers "not empty"): read
+  against `INVENTORY_DEFAULT_MAX_NUM` instead, every bot without the full four
+  pages reads as having half a page of holes, and the first run of this said
+  314 of 566 bags were broken when none of them was. The point you verify must
+  be the point the engine samples, for a count as much as for a coordinate. Note the numbering while reading either side: header 20
   is `HEADER_GC_ITEM_DEL` to the server and `HEADER_GC_ITEM_SET` (the short
   struct, no flags) to the client, and 21 is `HEADER_GC_ITEM_SET` to the server
   and `HEADER_GC_ITEM_SET2` to the client - the structures match pairwise, so

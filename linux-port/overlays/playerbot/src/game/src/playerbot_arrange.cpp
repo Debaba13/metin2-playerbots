@@ -427,6 +427,18 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 	for (size_t i = 0; i < handles.size(); ++i)
 		unitsBefore[handles[i]->GetVnum()] += handles[i]->GetCount();
 
+	// And the grid as the bag already carried it, so a cell that was unusable
+	// before this ran is not counted against it afterwards. Counted against
+	// GetInventoryMaxCount, which is what IsEmptyItemGrid itself measures by:
+	// a cell past the pages this character has bought answers "not empty" with
+	// nothing in it, and reading it as a hole says every bot without the full
+	// bag has half a page of them.
+	const WORD bagCells = std::min<WORD>(ch->GetInventoryMaxCount(), INVENTORY_DEFAULT_MAX_NUM);
+	int holesBefore = 0;
+	for (WORD cell = 0; cell < bagCells; ++cell)
+		if (!ch->GetInventoryItem(cell) && !ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
+			++holesBefore;
+
 	// Merge groups by comparing the items themselves.
 	std::vector<LPITEM> representatives;
 	for (size_t i = 0; i < items.size(); ++i) {
@@ -599,16 +611,19 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 		for (std::set<WORD>::const_iterator it = restate.begin(); it != restate.end(); ++it)
 			RestateCell(ch, *it);
 	}
+	// Counted before the plan as well as after it (`holesBefore`), because a
+	// cell the bag already carried that way is not this operation's doing and
+	// the two answers are told apart in the line.
 	int gridHoles = 0;
-	for (WORD cell = 0; cell < INVENTORY_DEFAULT_MAX_NUM; ++cell) {
+	for (WORD cell = 0; cell < bagCells; ++cell) {
 		if (ch->GetInventoryItem(cell))
 			continue;
 		if (!ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
 			++gridHoles;
 	}
-	if (gridHoles)
-		sys_err("INVENTORY_ARRANGE: pid=%u name=%s %d empty cell(s) still marked taken in the grid",
-				ch->GetPlayerID(), ch->GetName(), gridHoles);
+	if (gridHoles || holesBefore)
+		sys_err("INVENTORY_ARRANGE: pid=%u name=%s empty cells marked taken in the grid: %d before, %d after",
+				ch->GetPlayerID(), ch->GetName(), holesBefore, gridHoles);
 
 	std::map<DWORD, uint64_t> unitsAfter;
 	for (WORD cell = 0; cell < INVENTORY_DEFAULT_MAX_NUM; ++cell) {
