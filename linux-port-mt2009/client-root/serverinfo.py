@@ -45,7 +45,7 @@ STATE_DICT = {
 }
 
 SERVER_PRODUCTION = {
-	"name":TextColor("Metin2 SinglePlayer - offline", "ffd500"), #GOLD
+	"name":TextColor("Metin2 SinglePlayer", "ffd500"), #GOLD
 	"host":"127.0.0.1",
 	"auth_base_port": 11000,
 	"auth_port_increment": 0,

@@ -1,5 +1,5 @@
 ﻿Metin2 SinglePlayer - gra w świecie znajomego (COOP, wersja testowa)
-======================================================================
+====================================================================
 
 Znajomy uruchamia u siebie serwer i "hostuje" swój świat. Ty potrzebujesz
 tylko tego folderu z klientem - bez serwera, bez Dockera, bez instalacji.
@@ -13,8 +13,8 @@ tylko tego folderu z klientem - bez serwera, bez Dockera, bez instalacji.
 5. Na liście serwerów wybierz "Online: <nazwa świata znajomego>" i zaloguj się
    tym loginem i hasłem.
 
-Serwer 1 na liście ("offline") to świat na własnym komputerze - bez własnego
-serwera się nie połączy i tak ma być.
+Serwer 1 na liście ("Metin2 SinglePlayer") to świat na własnym komputerze -
+bez własnego serwera się nie połączy i tak ma być.
 
 Gdy nie działa
 --------------

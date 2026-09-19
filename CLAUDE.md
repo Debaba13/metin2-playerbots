@@ -6357,12 +6357,15 @@ implemented differently from what it describes.
 - **Next Roadmap Priorities:**
   * From PLAYERBOTS_FEATURE_SPECS.md: Module 2 (Mounted combat tuning against Metin stones), Module 4 (Bot guilds and guild marks), Module 5 (Live AI Config sliders in admin panel without recompilation), Module 6 (Weekly season analytics).
 
-## COOP (the local branch `coop` - never pushed, never announced)
+## COOP (the Patreon testers' since 2.0.80, behind a password)
 
 Playing the host's world with friends over the Internet: the host runs the
-stack, a friend runs only the client. Built on 19 September at the operator's
-request and secret until the operator says otherwise - no CHANGELOG, Discord
-or devlog line may mention it, and the branch is never pushed.
+stack, a friend runs only the client. Built on 19 September and shipped the
+same day in an ordinary release, at the operator's choice: every install
+carries it, the hosting half asks for a password that only the patrons get,
+and the changelog and the devlog say one sentence about it - "nie
+upublicznimy innym dopoki to nie bedzie dzialac". Say no more than that
+anywhere public until the operator does.
 
 - **The server needs no change; the client does.** The server names one
   address for the game cores - PROXY_IP, which is M2_PUBLIC_ADDRESS and
@@ -6386,8 +6389,25 @@ or devlog line may mention it, and the branch is never pushed.
   engine's hash, `CONCAT('*', UPPER(SHA1(UNHEX(SHA1(pw)))))`), the invite code
   (`M2COOP1:` + base64url JSON, password included) and coop.cfg. The console
   actions are `Coop*` in Metin2-Launcher.ps1 (menu 23-29); the window's COOP
-  button opens `Show-CoopDialog`. A friend with no server uses
-  `linux-port-mt2009/client-coop/Dolacz.bat` in the client folder.
+  button goes through `Open-CoopWindow` to `Show-CoopDialog`. A friend with no
+  server uses `Dolacz.bat` in the client folder
+  (`linux-port-mt2009/client-coop/`, shipped in the client package since
+  2.0.17, with a page of instructions beside it).
+- **The testers' password is a digest in the module, and it gates hosting
+  alone.** `Grant-M2CoopAccess` compares SHA-256 of a salt and the password
+  (spaces and dashes dropped, case folded) with `$script:CoopAccessDigest` and
+  keeps that digest in `.m2coop.json` as `access`; `Test-M2CoopAccess` is the
+  gate. The window asks once, before its COOP dialog (`Open-CoopWindow`,
+  `Show-CoopUnlockDialog`); the text menu asks inline (`Assert-CoopHostAccess`,
+  `Read-Host -AsSecureString`, which reads the console and cannot be fed from
+  a pipe); an action the window starts has no console to answer from and
+  refuses instead. Securing the accounts, friends, invites and hosting ask;
+  ending hosting, the lease, the network check and joining never do - an
+  invite code is the key to one world and only somebody who can host can make
+  one, so the unlock dialog's "Mam kod zaproszenia" opens the joining tab
+  alone. It is a gate, not a lock: the module is plain text. A new digest
+  re-locks every install; going public is deleting the gate. The password is
+  not in the repository - ask the operator.
 - **No password reaches a log.** The window's actions write their output under
   launcher-logs, which support bundles carry, so CoopHost, CoopStop and
   CoopCheck print none, and whatever shows a password runs in-process in the
@@ -6412,8 +6432,14 @@ or devlog line may mention it, and the branch is never pushed.
   IPv4); CoopHost with the firewall and UPnP steps stubbed - bindings on
   0.0.0.0 and all four cores answering on 192.168.1.16; CoopStop back to
   127.0.0.1 and the LAN refused; the real window's COOP button opening the
-  dialog. Not run yet: a router mapping, the firewall rule, and a client on
-  another network - the operator's test on a laptop over mobile Internet.
+  dialog. Then the operator's own test on 19 September, a laptop on a phone's
+  hotspot against the PC at home: Hostuj's four UPnP mappings held on the
+  Funbox, the laptop logged in (once the handshake below was fixed), both
+  characters saw each other and the Teleporter worked on the laptop. A trade
+  and a pickup that failed once, with the laptop thrown back to the menu, were
+  the hotspot stalling - the server removed the dead session a minute later -
+  and worked after. Not run yet: a map on another core (`/transfer` to map 62,
+  game2) with a friend in it.
 - **The traffic is not private.** The client's XTEA key is fixed and key
   agreement is compiled out, so a password in LOGIN3 can be read on the way.
   That is why friends' passwords are random and per world; say so before any
