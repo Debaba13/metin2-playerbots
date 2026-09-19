@@ -18,7 +18,13 @@
 # health to wait for after standing up, drinking and casting but neither
 # walking nor fighting. Before him the first slot was health and the second
 # mana whatever was put in them, so a player who swapped the two drank health
-# potions for mana for as long as the hunt ran.
+# potions for mana for as long as the hunt ran. His second version, the same
+# evening, after his players had tried it: a second row of six items on a clock
+# ("odpalow" there are many in this game, and six ran out), and the pick-up in a
+# window of its own, "Auto Lowy - Lupy", beside the fight's - so each fits the
+# game's smallest window, 800x600, and either closes on its own. The potions
+# stay one row: a slot names a vnum, not a cell, so the next stack of the same
+# potion anywhere in the bag is drunk when the first runs out.
 #
 # The client cannot list the monsters or the items round its character - the
 # scripts that do this without the server scan a million VIDs a frame - so it
@@ -54,6 +60,7 @@ import os
 import player
 import skill
 import ui
+import wndMgr
 
 try:
     xrange
@@ -61,9 +68,9 @@ except NameError:
     xrange = range
 
 SKILL_SLOTS = 12
-USE_ITEM_SLOTS = 12
+USE_ITEM_SLOTS = 18
 # The first six item slots are potions, each used under its own share of
-# health or mana; the other six are items used on a clock, in seconds.
+# health or mana; the other twelve are items used on a clock, in seconds.
 POTION_SLOTS = 6
 ITEM_SLOT_KEYS = tuple('item%d_vnum' % i for i in xrange(USE_ITEM_SLOTS))
 ITEM_EDIT_KEYS = tuple('item%d_val' % i for i in xrange(USE_ITEM_SLOTS))
@@ -147,7 +154,9 @@ for _index in xrange(SKILL_SLOTS):
 for _key, _label, _bit in LOOT_KINDS:
     DEFAULTS.append((_key, 1))
 # 2: the window before Colide's (six skills, a health potion, a mana potion and
-# three items); 3: Colide's own builds on his way to this one; 4: this window.
+# three items); 3: Colide's own builds on his way to this one; 4: his window,
+# with six items on a clock and then twelve - the second row only added keys,
+# so a file saved with six reads here as it was and the new row starts empty.
 # A file of 2 or older moves into the new slots (ConfigFromOldValues), one of 3
 # starts from the defaults, as Colide's own window did with it.
 CONFIG_VERSION = 4
@@ -346,13 +355,14 @@ def WlWyl(value):
 
 class Hunter(object):
     """The hunt itself, driven by the game's updateables (CanUpdate, OnUpdate,
-    Destroy) whether or not the window is open."""
+    Destroy) whether or not its windows are open."""
 
     def __init__(self):
         self.config = DefaultConfig()
         self.configName = None
         self.running = False
-        self.window = None
+        self.mainWindow = None
+        self.lootWindow = None
         self.ResetState()
 
     def ResetState(self):
@@ -411,9 +421,12 @@ class Hunter(object):
         # The game window is closing (a warp or a logout) and the chat with it,
         # so this stop says nothing.
         self.Stop(quiet=True)
-        if self.window:
-            self.window.Destroy()
-            self.window = None
+        if self.mainWindow:
+            self.mainWindow.Destroy()
+            self.mainWindow = None
+        if self.lootWindow:
+            self.lootWindow.Destroy()
+            self.lootWindow = None
 
     # --- start and stop -------------------------------------------------
     def Start(self):
@@ -714,20 +727,37 @@ class Hunter(object):
             return False
 
     def ToggleWindow(self):
+        """K: both windows, side by side in the middle of the screen the first
+        time; after that they stand where the player dragged them. K closes
+        whichever of the two is open, and opens both when neither is."""
         self.LoadConfig()
-        if self.window is None:
-            self.window = AutoHuntWindow(self)
-        if self.window.IsShow():
-            self.window.Close()
+        if self.mainWindow is None:
+            self.mainWindow = AutoHuntWindow(self)
+            self.lootWindow = AutoHuntLootWindow(self)
+            width = self.mainWindow.WIDTH + 10 + self.lootWindow.WIDTH
+            x = max(0, (wndMgr.GetScreenWidth() - width) // 2)
+            y = max(0, (wndMgr.GetScreenHeight() - self.mainWindow.HEIGHT) // 2)
+            self.mainWindow.SetPosition(int(x), int(y))
+            self.lootWindow.SetPosition(int(x + self.mainWindow.WIDTH + 10), int(y))
+        if self.mainWindow.IsShow() or self.lootWindow.IsShow():
+            if self.mainWindow.IsShow():
+                self.mainWindow.Close()
+            if self.lootWindow.IsShow():
+                self.lootWindow.Close()
         else:
-            self.window.Refresh()
-            self.window.Show()
-            self.window.SetTop()
+            self.mainWindow.Refresh()
+            self.lootWindow.Refresh()
+            self.mainWindow.Show()
+            self.lootWindow.Show()
+            self.mainWindow.SetTop()
+            self.lootWindow.SetTop()
 
 
 class AutoHuntWindow(ui.BoardWithTitleBar):
+    """The fight: skills, potions, items on a clock, the switches, and the
+    buttons that save, start and stop."""
     WIDTH = 300
-    HEIGHT = 580
+    HEIGHT = 555
     SLOT_STEP = 40
     SLOTS_PER_ROW = 6
     EDIT_W = 34
@@ -743,10 +773,9 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         self.AddFlag('movable')
         self.AddFlag('float')
         self.SetSize(self.WIDTH, self.HEIGHT)
-        self.SetTitleName('Auto \xa3owy')
+        self.SetTitleName('Auto \xa3owy - Walka')
         self.SetCloseEvent(ui.__mem_func__(self.Close))
         self.Build()
-        self.SetCenterPosition()
 
     def Build(self):
         BL = 10
@@ -755,14 +784,14 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         SECTION_GAP = 5
         y = 32
 
-        sk_r1_y = 18
+        sk_r1_y = 22
         sk_e1_y = sk_r1_y + 34
         sk_r2_y = sk_e1_y + 18 + 4
         sk_e2_y = sk_r2_y + 34
-        sk_h = sk_e2_y + 18 + 4
+        sk_h = sk_e2_y + 18 + 7
 
         skBoard = self._Board(BL, y, BW, sk_h)
-        self._Label(skBoard, 8, 4, 'Umiej\xeatno\x9cci')
+        self._Label(skBoard, 14, 4, 'Umiej\xeatno\x9cci')
 
         self.skillSlots1 = self._Slots(skBoard, SL, sk_r1_y, self.SLOTS_PER_ROW)
         self.skillSlots1.SetSelectEmptySlotEvent(ui.__mem_func__(self._EvSkill1))
@@ -780,12 +809,12 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
 
         y += sk_h + SECTION_GAP
 
-        mk_r1_y = 18
+        mk_r1_y = 22
         mk_e1_y = mk_r1_y + 34
-        mk_h = mk_e1_y + 18 + 4
+        mk_h = mk_e1_y + 18 + 7
 
         mkBoard = self._Board(BL, y, BW, mk_h)
-        self._Label(mkBoard, 8, 4, 'Mikstury (% HP / PE)')
+        self._Label(mkBoard, 14, 4, 'Mikstury (% HP / PE)')
 
         self.itemSlots1 = self._Slots(mkBoard, SL, mk_r1_y, self.SLOTS_PER_ROW)
         self.itemSlots1.SetSelectEmptySlotEvent(ui.__mem_func__(self._EvItem1))
@@ -796,12 +825,14 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
 
         y += mk_h + SECTION_GAP
 
-        od_r1_y = 18
+        od_r1_y = 22
         od_e1_y = od_r1_y + 34
-        od_h = od_e1_y + 18 + 4
+        od_r2_y = od_e1_y + 18 + 4
+        od_e2_y = od_r2_y + 34
+        od_h = od_e2_y + 18 + 7
 
         odBoard = self._Board(BL, y, BW, od_h)
-        self._Label(odBoard, 8, 4, 'Odpa\xb3y (Sekundy)')
+        self._Label(odBoard, 14, 4, 'Odpa\xb3y (Sekundy)')
 
         self.itemSlots2 = self._Slots(odBoard, SL, od_r1_y, self.SLOTS_PER_ROW)
         self.itemSlots2.SetSelectEmptySlotEvent(ui.__mem_func__(self._EvItem2))
@@ -810,10 +841,17 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         for i in xrange(self.SLOTS_PER_ROW):
             self._EditField(odBoard, SL + i * self.SLOT_STEP, od_e1_y, self.EDIT_W, ITEM_EDIT_KEYS[i + self.SLOTS_PER_ROW])
 
+        self.itemSlots3 = self._Slots(odBoard, SL, od_r2_y, self.SLOTS_PER_ROW)
+        self.itemSlots3.SetSelectEmptySlotEvent(ui.__mem_func__(self._EvItem3))
+        self.itemSlots3.SetSelectItemSlotEvent(ui.__mem_func__(self._EvItem3))
+        self.itemSlots3.SetUnselectItemSlotEvent(ui.__mem_func__(self._EvClrItem3))
+        for i in xrange(self.SLOTS_PER_ROW):
+            self._EditField(odBoard, SL + i * self.SLOT_STEP, od_e2_y, self.EDIT_W, ITEM_EDIT_KEYS[i + self.SLOTS_PER_ROW * 2])
+
         y += od_h + SECTION_GAP
 
-        ROW_H = 21
-        st_row_start = 18
+        ROW_H = 19
+        st_row_start = 22
         settings_rows = [
             ('Atak',                   'attack',            'toggle'),
             ('Umiej\xeatno\x9cci',     'use_skills',        'toggle'),
@@ -826,7 +864,7 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         ]
         st_h = st_row_start + 4 * ROW_H + 4
         stBoard = self._Board(BL, y, BW, st_h)
-        self._Label(stBoard, 8, 4, 'Ustawienia')
+        self._Label(stBoard, 14, 4, 'Ustawienia')
 
         col_w = (BW - 8) // 2
         for idx, (lbl, key, kind) in enumerate(settings_rows):
@@ -839,21 +877,7 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
             else:
                 self._EditSettingRow(stBoard, x, ry, col_w - 2, ROW_H - 1, lbl, key)
 
-        y += st_h + SECTION_GAP
-
-        pd_btn_start = 18
-        pd_h = pd_btn_start + 3 * 22 + 4
-        pdBoard = self._Board(BL, y, BW, pd_h)
-        self._Label(pdBoard, 8, 4, 'Podnoszenie')
-        pdy = pd_btn_start
-        self._FlagBtn(pdBoard, 4, pdy, 'Podnie\x9c', 'pickup')
-        for idx, (key, label, bit) in enumerate(LOOT_KINDS):
-            pos = idx + 1
-            col = pos % 3
-            row = pos // 3
-            self._FlagBtn(pdBoard, 4 + col * 92, pdy + row * 22, label, key)
-        self.rangeButton = self._Btn(pdBoard, 'large', 4 + 2 * 92, pdy + 2 * 22, '', self.OnRange)
-        y += pd_h + 6
+        y += st_h + 4
 
         bw = 88
         gap = 8
@@ -991,13 +1015,6 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         self.widgets.append(edit)
         self.edits[key] = edit
 
-    def _FlagBtn(self, parent, x, y, label, key):
-        # A switch says what it is set to: a toggle button's pressed look was
-        # read as off.
-        btn = self._Btn(parent, 'large', x, y, '', self.OnToggle, key)
-        self.toggles[key] = (btn, label, False)
-        return btn
-
     def _EvSkill1(self, idx):
         self.OnSkillSlot(idx)
 
@@ -1022,10 +1039,15 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
     def _EvClrItem2(self, idx):
         self.OnClearItemSlot(idx + self.SLOTS_PER_ROW)
 
+    def _EvItem3(self, idx):
+        self.OnItemSlot(idx + self.SLOTS_PER_ROW * 2)
+
+    def _EvClrItem3(self, idx):
+        self.OnClearItemSlot(idx + self.SLOTS_PER_ROW * 2)
+
     # --- showing the settings -------------------------------------------
     def Refresh(self):
         config = self.hunter.config
-        self.rangeButton.SetText('Zasi\xeag %d' % config['range'])
         for key, (btn, label, wyl) in self.toggles.items():
             if wyl:
                 btn.SetText(WlWyl(config[key]))
@@ -1073,6 +1095,14 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
                 self.itemSlots2.ClearSlot(i)
         self.itemSlots2.RefreshSlot()
 
+        for i in xrange(self.SLOTS_PER_ROW):
+            vnum = config[ITEM_SLOT_KEYS[i + self.SLOTS_PER_ROW * 2]]
+            if vnum:
+                self.itemSlots3.SetItemSlot(i, vnum, 0)
+            else:
+                self.itemSlots3.ClearSlot(i)
+        self.itemSlots3.RefreshSlot()
+
     def RefreshStatus(self):
         hunter = self.hunter
         if not hunter.running:
@@ -1114,14 +1144,6 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         if self.hunter.running:
             self.hunter.Stop()
         self.RefreshStatus()
-
-    def OnRange(self):
-        self.ReadEdits()
-        config = self.hunter.config
-        ranges = list(RANGES)
-        pos = ranges.index(config['range']) if config['range'] in ranges else -1
-        config['range'] = ranges[(pos + 1) % len(ranges)]
-        self.Refresh()
 
     def OnToggle(self, key):
         self.ReadEdits()
@@ -1180,6 +1202,120 @@ class AutoHuntWindow(ui.BoardWithTitleBar):
         self.hunter = None
         self.widgets = []
         self.edits = {}
+        self.toggles = {}
+
+
+class AutoHuntLootWindow(ui.BoardWithTitleBar):
+    """The pick-up: whether it runs, what kinds it takes and how far the hunt
+    reaches. A window of its own (Colide): the fight's window fits an 800x600
+    screen without it, and it has room to grow a filter of what drops."""
+    WIDTH = 300
+    HEIGHT = 136
+
+    def __init__(self, hunter):
+        ui.BoardWithTitleBar.__init__(self)
+        self.hunter = hunter
+        self.widgets = []
+        self.toggles = {}
+        self.AddFlag('movable')
+        self.AddFlag('float')
+        self.SetSize(self.WIDTH, self.HEIGHT)
+        self.SetTitleName('Auto \xa3owy - \xa3upy')
+        self.SetCloseEvent(ui.__mem_func__(self.Close))
+        self.Build()
+
+    def Build(self):
+        BL = 10
+        BW = self.WIDTH - 2 * BL
+        y = 32
+
+        pd_btn_start = 24
+        pd_h = pd_btn_start + 3 * 22 + 4
+        pdBoard = self._Board(BL, y, BW, pd_h)
+        self._Label(pdBoard, 14, 4, 'Podnoszenie')
+        pdy = pd_btn_start
+        self._FlagBtn(pdBoard, 4, pdy, 'Podnie\x9c', 'pickup')
+        for idx, (key, label, bit) in enumerate(LOOT_KINDS):
+            pos = idx + 1
+            col = pos % 3
+            row = pos // 3
+            self._FlagBtn(pdBoard, 4 + col * 92, pdy + row * 22, label, key)
+        self.rangeButton = self._Btn(pdBoard, 'large', 4 + 2 * 92, pdy + 2 * 22, '', self.OnRange)
+
+    def _Board(self, x, y, w, h):
+        board = ui.ThinBoard()
+        board.SetParent(self)
+        board.SetPosition(x, y)
+        board.SetSize(w, h)
+        board.Show()
+        self.widgets.append(board)
+        return board
+
+    def _Label(self, parent, x, y, text):
+        line = ui.TextLine()
+        line.SetParent(parent)
+        line.SetPosition(x, y)
+        line.SetText(text)
+        line.Show()
+        self.widgets.append(line)
+        return line
+
+    def _Btn(self, parent, size, x, y, text, event, *args):
+        button = ui.Button()
+        button.SetParent(parent)
+        button.SetPosition(x, y)
+        button.SetUpVisual('d:/ymir work/ui/public/%s_button_01.sub' % size)
+        button.SetOverVisual('d:/ymir work/ui/public/%s_button_02.sub' % size)
+        button.SetDownVisual('d:/ymir work/ui/public/%s_button_03.sub' % size)
+        button.SetText(text)
+        button.SAFE_SetEvent(event, *args)
+        button.Show()
+        self.widgets.append(button)
+        return button
+
+    def _FlagBtn(self, parent, x, y, label, key):
+        # A switch says what it is set to: a toggle button's pressed look was
+        # read as off.
+        btn = self._Btn(parent, 'large', x, y, '', self.OnToggle, key)
+        self.toggles[key] = (btn, label, False)
+        return btn
+
+    def Refresh(self):
+        config = self.hunter.config
+        self.rangeButton.SetText('Zasi\xeag %d' % config['range'])
+        for key, (btn, label, wyl) in self.toggles.items():
+            btn.SetText('%s: %s' % (label, YesNo(config[key])))
+
+    def ReadFightEdits(self):
+        # The fight's numbers typed but not yet read go into the settings
+        # first, or this click would save them as they were.
+        if self.hunter.mainWindow:
+            self.hunter.mainWindow.ReadEdits()
+
+    def OnRange(self):
+        self.ReadFightEdits()
+        config = self.hunter.config
+        ranges = list(RANGES)
+        pos = ranges.index(config['range']) if config['range'] in ranges else -1
+        config['range'] = ranges[(pos + 1) % len(ranges)]
+        self.Refresh()
+
+    def OnToggle(self, key):
+        self.ReadFightEdits()
+        self.hunter.config[key] = 0 if self.hunter.config[key] else 1
+        self.Refresh()
+
+    def Close(self):
+        self.Hide()
+
+    def OnPressEscapeKey(self):
+        self.Close()
+        return True
+
+    def Destroy(self):
+        self.Hide()
+        self.hunter = None
+        self.widgets = []
         self.toggles = {}
 
 

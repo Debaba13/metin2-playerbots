@@ -33,8 +33,41 @@ def module(name, **attrs):
 	return mod
 
 
-class StubBoard(object):
-	pass
+class StubWidget(object):
+	"""Any client widget: every call it does not know is accepted and does
+	nothing, so a window can be built; where it was put and what an edit
+	holds are kept for the tests."""
+
+	def __init__(self, *args, **kwargs):
+		self.position = None
+		self.text = ''
+		self.shown = False
+
+	def SetPosition(self, x, y):
+		self.position = (x, y)
+
+	def SetText(self, text):
+		self.text = text
+
+	def GetText(self):
+		return self.text
+
+	def Show(self):
+		self.shown = True
+
+	def Hide(self):
+		self.shown = False
+
+	def IsShow(self):
+		return self.shown
+
+	def __getattr__(self, name):
+		if name.startswith('__'):
+			raise AttributeError(name)
+		return lambda *args, **kwargs: None
+
+
+StubBoard = StubWidget
 
 
 def read_bag(cell):
@@ -89,7 +122,9 @@ def install_stubs():
 		GetItemSubType=lambda: proto(1),
 		GetValue=lambda index: proto(2)[index])
 	sys.modules['mouseModule'] = module('mouseModule')
-	ui = module('ui', BoardWithTitleBar=StubBoard)
+	sys.modules['wndMgr'] = module('wndMgr', GetScreenWidth=lambda: 800, GetScreenHeight=lambda: 600)
+	ui = module('ui', BoardWithTitleBar=StubBoard, ThinBoard=StubWidget, TextLine=StubWidget,
+		Button=StubWidget, SlotWindow=StubWidget, SlotBar=StubWidget, EditLine=StubWidget, Bar=StubWidget)
 	setattr(ui, '__mem_func__', lambda func: func)
 	sys.modules['ui'] = ui
 
@@ -164,6 +199,19 @@ class HelpersTest(unittest.TestCase):
 		self.assertEqual((loaded['loot_weapon'], loaded['loot_armour']), (0, 1))
 		self.assertEqual((loaded['attack'], loaded['use_potions'], loaded['use_buffs'], loaded['use_skills']), (1, 1, 1, 1))
 		self.assertEqual(loaded['config_version'], uiautohunt.CONFIG_VERSION)
+
+	def test_a_file_of_the_six_item_clock_reads_as_it_was(self):
+		# Colide's first window saved six items on a clock under version 4; his
+		# second has twelve, and only added keys.
+		saved = ('range=3000\nitem6_vnum=70038\nitem6_val=20\nitem11_vnum=71016\nitem11_val=40\n'
+			'skill7_slot=3\nconfig_version=4\n')
+		loaded = uiautohunt.ConfigFromText(saved)
+		self.assertEqual(loaded['range'], 3000)
+		self.assertEqual((loaded['item6_vnum'], loaded['item6_val']), (70038, 20))
+		self.assertEqual((loaded['item11_vnum'], loaded['item11_val']), (71016, 40))
+		self.assertEqual(loaded['skill7_slot'], 3)
+		self.assertEqual((loaded['item12_vnum'], loaded['item17_vnum']), (0, 0))
+		self.assertEqual((loaded['item12_val'], loaded['item17_val']), (30, 30))
 
 	def test_a_file_of_colides_own_builds_starts_from_the_defaults(self):
 		loaded = uiautohunt.ConfigFromText('range=4000\nitem3_vnum=27001\nconfig_version=3\n')
@@ -371,6 +419,15 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 1.5)
 		self.assertEqual(STATE['used'], [3, 3])
 
+	def test_uses_an_item_of_the_second_clock_row(self):
+		self.hunter.config['item17_vnum'] = 71016
+		self.hunter.config['item17_val'] = 3
+		STATE['bag'][9] = 71016
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [9])
+		step(self.hunter, 3.1)
+		self.assertEqual(STATE['used'], [9, 9])
+
 	def test_no_items_on_a_clock_when_they_are_switched_off(self):
 		self.hunter.config['use_buffs'] = 0
 		self.hunter.config['item6_vnum'] = 70038
@@ -540,6 +597,56 @@ class HuntTest(unittest.TestCase):
 		self.hunter.Destroy()
 		self.assertFalse(self.hunter.running)
 		self.assertEqual(len(STATE['chat']), messages)
+
+
+class WindowTest(unittest.TestCase):
+	def setUp(self):
+		reset_state()
+		uiautohunt._manaItems.clear()
+
+	def test_k_opens_both_windows_side_by_side_and_closes_them(self):
+		hunter = uiautohunt.Hunter()
+		hunter.ToggleWindow()
+		main, loot = hunter.mainWindow, hunter.lootWindow
+		self.assertTrue(main.IsShow() and loot.IsShow())
+		(mx, my), (lx, ly) = main.position, loot.position
+		self.assertEqual(lx - mx, main.WIDTH + 10)
+		self.assertEqual(my, ly)
+		self.assertTrue(mx + main.WIDTH + 10 + loot.WIDTH <= 800)
+		self.assertTrue(my + main.HEIGHT <= 600)
+		loot.Close()
+		hunter.ToggleWindow()
+		self.assertFalse(main.IsShow() or loot.IsShow())
+		hunter.ToggleWindow()
+		self.assertTrue(main.IsShow() and loot.IsShow())
+
+	def test_the_loot_window_switches_and_reaches(self):
+		hunter = uiautohunt.Hunter()
+		hunter.ToggleWindow()
+		loot = hunter.lootWindow
+		loot.OnToggle('loot_weapon')
+		self.assertEqual(hunter.config['loot_weapon'], 0)
+		self.assertEqual(loot.toggles['loot_weapon'][0].text, 'Bro\xf1: nie')
+		loot.OnRange()
+		self.assertEqual(hunter.config['range'], 3000)
+		self.assertEqual(loot.rangeButton.text, 'Zasi\xeag 3000')
+
+	def test_the_fight_window_has_a_slot_and_a_field_for_every_item(self):
+		hunter = uiautohunt.Hunter()
+		hunter.ToggleWindow()
+		main = hunter.mainWindow
+		for key in uiautohunt.ITEM_EDIT_KEYS:
+			self.assertIn(key, main.edits)
+		main.edits['item17_val'].SetText('45')
+		main.ReadEdits()
+		self.assertEqual(hunter.config['item17_val'], 45)
+
+	def test_destroy_takes_both_windows(self):
+		hunter = uiautohunt.Hunter()
+		hunter.ToggleWindow()
+		hunter.Destroy()
+		self.assertIsNone(hunter.mainWindow)
+		self.assertIsNone(hunter.lootWindow)
 
 
 if __name__ == '__main__':
