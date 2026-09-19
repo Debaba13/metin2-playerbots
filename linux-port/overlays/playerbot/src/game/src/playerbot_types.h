@@ -5113,6 +5113,10 @@ namespace
 	const int PLAYERBOT_MERC_MIN_LEVEL = 20;
 	const DWORD PLAYERBOT_MERC_APPROACH_MS = 3 * 60 * 1000;
 	const int PLAYERBOT_MERC_OFFER_DISTANCE = 1200;
+	// "Zauwazy w swoim otoczeniu na mapie": the first contract struck on m2zip
+	// had its mercenary walk forty-four kilometres across Orc Valley to make
+	// the offer, which is a map's width and not a surrounding.
+	const int PLAYERBOT_MERC_NOTICE_RANGE = 20000;
 	const DWORD PLAYERBOT_MERC_DISTRESS_MS = 20 * 60 * 1000;
 	const int PLAYERBOT_MERC_CONTRACTS_PER_MILLE = 20;
 	const int PLAYERBOT_MERC_CONTRACTS_MIN = 2;

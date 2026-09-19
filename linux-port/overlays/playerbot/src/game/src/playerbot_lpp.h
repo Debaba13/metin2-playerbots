@@ -37,6 +37,14 @@
 
 namespace
 {
+	// What the list has moved lately, for the census below.
+	unsigned int s_uPlayerBotLppDeposits = 0;
+	unsigned int s_uPlayerBotLppReleased = 0;
+	unsigned int s_uPlayerBotLppVisits = 0;
+	unsigned int s_uPlayerBotLppBoxesFull = 0;
+
+	void NotePlayerBotLppDeposit() { ++s_uPlayerBotLppDeposits; }
+
 	// The level at which each of his weapon bands begins in this world, read
 	// off the rendered table (PLAYERBOT_LPP_WEAPONS): a band is passed when the
 	// next one's weapons can be worn.
@@ -340,8 +348,11 @@ namespace
 				++n;
 		}
 		p.bLppStoredKnown = true;
+		++s_uPlayerBotLppVisits;
 		const bool wasFull = p.bLppBoxFull;
 		p.bLppBoxFull = freeCells < PLAYERBOT_LPP_BOX_MIN_FREE_CELLS;
+		if (p.bLppBoxFull)
+			++s_uPlayerBotLppBoxesFull;
 		if (p.bLppBoxFull != wasFull)
 			sys_log(0, "PLAYERBOT_LPP: box %s pid=%u name=%s free_cells=%d families=%u",
 					p.bLppBoxFull ? "full, the bag's pieces sell" : "has room again",
@@ -353,9 +364,27 @@ namespace
 	// down - the list let it go once, and a counter's discount is its way out.
 	void NotePlayerBotLppReleased(TPlayerBotPersona& p, DWORD itemId)
 	{
+		++s_uPlayerBotLppReleased;
 		if (p.setLppReleased.size() >= 64)
 			p.setLppReleased.erase(p.setLppReleased.begin());
 		p.setLppReleased.insert(itemId);
+	}
+
+	// Every ten minutes: what the list kept, let go and could not fit.
+	void ReportPlayerBotLppCensus(DWORD dwNow)
+	{
+		static DWORD s_dwReported = 0;
+		if (s_dwReported != 0 && dwNow - s_dwReported < 600000)
+			return;
+		const bool first = s_dwReported == 0;
+		s_dwReported = dwNow;
+		if (first || !IsPlayerBotPersonaEnabled())
+			return;
+		sys_log(0, "PLAYERBOT_LPP: census deposits=%u released=%u visits=%u boxes_full=%u",
+				s_uPlayerBotLppDeposits, s_uPlayerBotLppReleased, s_uPlayerBotLppVisits,
+				s_uPlayerBotLppBoxesFull);
+		s_uPlayerBotLppDeposits = s_uPlayerBotLppReleased = 0;
+		s_uPlayerBotLppVisits = s_uPlayerBotLppBoxesFull = 0;
 	}
 
 	bool IsPlayerBotLppReleased(LPCHARACTER ch, DWORD itemId)

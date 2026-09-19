@@ -328,6 +328,15 @@ Four things the personalities changed that are easy to trip over later:
   party rules, the watchdog's break-up and the map-change quit all stand down
   for it. `PLAYERBOT_MERC: census` counts the contracts and
   `PLAYERBOT_MERC: nobody to carry` says which of the reasons stopped one.
+  Two things the first contract on m2zip taught in five seconds: **a goal that
+  is a state rather than progress ends a contract on the tick it starts** - the
+  client's bag was already at eighty percent, which is one of the document's
+  own ends ("uzbiera przedmioty z ziemi"), so it paid 7.5 million for five
+  seconds of company, and a bag at eighty percent is now a refusal at the offer
+  (that bot wants the town, not a carry); and "w swoim otoczeniu na mapie" is a
+  distance, because the mercenary that struck it had walked forty-four
+  kilometres across Orc Valley to make the offer
+  (`PLAYERBOT_MERC_NOTICE_RANGE`).
 - **The Useful Items List is a keep, not a ranking.** A piece the list keeps -
   jewellery and boots of tier 3-6, the weapons of his level bands, the level-61
   shields and the level-66 armours, and anything carrying a tier 5-6 line

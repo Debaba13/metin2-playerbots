@@ -97,6 +97,7 @@ namespace
 	void RefreshPlayerBotLppStored(LPCHARACTER ch, TPlayerBotPersona& p, CSafebox* box);
 	void NotePlayerBotLppReleased(TPlayerBotPersona& p, DWORD itemId);
 	bool IsPlayerBotLppReleased(LPCHARACTER ch, DWORD itemId);
+	void NotePlayerBotLppDeposit();
 	bool IsPlayerBotZielarz(LPCHARACTER ch);
 
 	// The surplus books beyond what the bag keeps as counter goods, oldest
@@ -615,6 +616,7 @@ namespace
 							(unsigned int)ch->GetLevel());
 					state.mapStallUnsold.erase(item->GetID());
 					state.mapStockFirstListed.erase(item->GetID());
+					NotePlayerBotLppDeposit();
 				}
 				else if (i >= books)
 				{

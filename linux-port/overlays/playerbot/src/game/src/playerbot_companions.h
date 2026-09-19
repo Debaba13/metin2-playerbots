@@ -223,8 +223,11 @@ namespace
 				IsPlayerBotGambling(cs, dwNow))
 			return "busy";
 		// Something only the town can mend comes first: a bot out of potions is
-		// not carried, it is sent shopping.
-		if (BlocksPlayerBotTravel(client))
+		// not carried, it is sent shopping. A bag already at eighty percent is
+		// the same thing: it is what ends a contract ("uzbiera przedmioty z
+		// ziemi"), and the first one struck on m2zip was over five seconds
+		// after the client had paid its 7.5 million for the hour.
+		if (BlocksPlayerBotTravel(client) || cs.persona.bBagFull)
 			return "needs_town";
 		if (!playerbot_persona::MercClientCanPay((long long)client->GetGold(),
 				(long long)GetPlayerBotReservedGold(client), price))
@@ -525,6 +528,11 @@ namespace
 				continue;
 			}
 			const int dist = DISTANCE_APPROX(ch->GetX() - client->GetX(), ch->GetY() - client->GetY());
+			if (dist > PLAYERBOT_MERC_NOTICE_RANGE)
+			{
+				++refusals["too_far"];
+				continue;
+			}
 			if (dist < bestDist)
 			{
 				best = client;

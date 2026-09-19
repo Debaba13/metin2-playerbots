@@ -5364,6 +5364,7 @@ void CPlayerBotManager::Update()
 	}
 	ReportPlayerBotPersonaCensus();
 	ReportPlayerBotMercCensus(get_dword_time());
+	ReportPlayerBotLppCensus(get_dword_time());
 
 	// Publish one compact, atomic snapshot per game core. The web panel reads
 	// these files from the shared read-only game-var volume, so it sees the real
