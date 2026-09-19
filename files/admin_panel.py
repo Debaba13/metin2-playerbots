@@ -299,6 +299,12 @@ BOT_PERSONALITY_LABELS = {
         9: "M2 Bestial dropper", 10: "Medal dropper",
     },
 }
+# The droppers (IsPlayerBotDropper in playerbot_types.h). A dropper farms one
+# thing for the market and takes neither the Biologist nor a horse trial -
+# the operator's rule of 15 September - so its Biologist card reads "does not
+# apply" instead of a 0/7 that looks like a bot stuck for good (GG1249125 and
+# OptimusPrime001 on Urtopy's world, 18 September).
+BOT_DROPPER_PERSONALITIES = frozenset((7, 8, 9, 10))
 BOT_AMBITION_LABELS = {
     "pl": {
         0: "Poziom", 1: "Ekwipunek", 2: "Metiny", 3: "Koń",
@@ -5660,7 +5666,7 @@ MAP_I18N = {
   "log_error":"Błąd odczytu logów","network_error":"Błąd sieci","teleporting":"Teleportowanie Twojej postaci w grze...","teleported":"Przeteleportowano {name} do bota w grze!","you":"Cię","failure":"Niepowodzenie",
   "copied":"Skopiowano","paste":"wklej w grze [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo — zdobywanie doświadczenia","party_exp":"[PT] Zdobywanie doświadczenia w grupie","metin_hunt":"Polowanie na Metiny",
   "character_missing":"Postać nie znaleziona","bio_next":"Następna misja od Lv {level}: {name}","bio_key":"{name}{sep}{have}/{need}, czeka na: {key}",
-  "bio_all":"Wszystkie podstawowe misje ukończone","bio_complete":"komplet","bio_done":"ukończone","bio_skipped":"za niskie dla bota, pominięte: {n}",
+  "bio_all":"Wszystkie podstawowe misje ukończone","bio_complete":"komplet","bio_done":"ukończone","bio_skipped":"za niskie dla bota, pominięte: {n}","bio_dropper":"nie dotyczy — dropper nie robi Biologa",
   "bio_rank_now":"{done}/{total} ukończone • teraz: {stage}","bio_rank_next":"{done}/{total} ukończone • {stage}"
  },
  "en": {
@@ -5681,7 +5687,7 @@ MAP_I18N = {
   "log_error":"Log read error","network_error":"Network error","teleporting":"Teleporting your in-game character...","teleported":"Teleported {name} to the bot in game!","you":"you","failure":"Failure",
   "copied":"Copied","paste":"paste in game [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo levelling","party_exp":"[PT] Party levelling","metin_hunt":"Hunting Metins",
   "character_missing":"Character not found","bio_next":"Next mission at Lv {level}: {name}","bio_key":"{name}{sep}{have}/{need}, waiting for: {key}",
-  "bio_all":"All basic missions completed","bio_complete":"complete","bio_done":"done","bio_skipped":"outgrown, skipped: {n}",
+  "bio_all":"All basic missions completed","bio_complete":"complete","bio_done":"done","bio_skipped":"outgrown, skipped: {n}","bio_dropper":"does not apply — a dropper does not do the Biologist",
   "bio_rank_now":"{done}/{total} done • now: {stage}","bio_rank_next":"{done}/{total} done • {stage}"
  }
 }
@@ -12197,6 +12203,8 @@ def api_bot_inventory(pid):
             biologist_label = biologist_stage_text(stage, messages, ": ")
             if skipped:
                 biologist_label += " • " + messages["bio_skipped"].format(n=skipped)
+            if live and live.get("personality_id") in BOT_DROPPER_PERSONALITIES:
+                biologist_label = messages["bio_dropper"]
             player["biologist_completed"] = completed
             # How many rows there are, so the card does not carry the number in
             # its own markup. It said "/7" outright, and a chain that grew a row
@@ -12686,7 +12694,10 @@ def api_bot_rankings():
                     bio_completed, stage, _ = biologist_progress(
                         r.get("level"), bio_flags.get(int(r["id"]), {}),
                         bio_bags.get(int(r["id"]), {}), entry.get("map_index"), language)
-                    if stage is None:
+                    if entry.get("personality_id") in BOT_DROPPER_PERSONALITIES:
+                        bio_label = "%d/%d • %s" % (
+                            bio_completed, len(BIOLOGIST_REACHABLE), messages["bio_dropper"])
+                    elif stage is None:
                         bio_label = "%d/%d • %s" % (
                             bio_completed, len(BIOLOGIST_REACHABLE), messages["bio_complete"])
                     else:
