@@ -865,24 +865,53 @@ function Get-LauncherFingerprint {
 }
 
 function Restart-Launcher {
+    # The new launcher is a console program (the .bat's cmd.exe, or
+    # powershell.exe), and a console program whose parent exits in the same
+    # breath can fail to initialise: on Windows 11, where the new terminal
+    # takes over every console window, that is cmd.exe's "Aplikacja nie zostala
+    # wlasciwie uruchomiona (0xc0000142)" after an update (Urtopy, 19 September,
+    # the launcher started from its desktop shortcut). So this window stays up
+    # until the new one has run for a few seconds, and a start that died on the
+    # way is tried once more straight through powershell.exe.
     $batch = Join-Path $root 'Metin2-Launcher-GUI.bat'
-    try {
-        if (Test-Path -LiteralPath $batch -PathType Leaf) {
-            Start-Process -FilePath $batch -WorkingDirectory $root
-        }
-        else {
-            # -STA matters: WinForms will not start without it.
-            Start-Process -FilePath 'powershell.exe' -WorkingDirectory $root -ArgumentList @(
-                '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
-        }
-        Write-LocalLog 'Uruchamiam launcher ponownie po aktualizacji.'
-        $script:form.Close()
+    $attempts = @()
+    if (Test-Path -LiteralPath $batch -PathType Leaf) {
+        $attempts += ,@($batch)
     }
-    catch {
-        [Windows.Forms.MessageBox]::Show(
-            ("Nie udalo sie uruchomic launchera ponownie: {0}`r`n`r`nZamknij to okno i uruchom launcher recznie." -f $_.Exception.Message),
-            'Restart launchera', 'OK', 'Warning') | Out-Null
+    # -STA matters: WinForms will not start without it.
+    $attempts += ,@('powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath))
+    $lastError = ''
+    foreach ($attempt in $attempts) {
+        try {
+            if ($attempt.Count -gt 1) {
+                $started = Start-Process -FilePath $attempt[0] -WorkingDirectory $root -PassThru `
+                    -ArgumentList ($attempt[1..($attempt.Count - 1)])
+            }
+            else {
+                $started = Start-Process -FilePath $attempt[0] -WorkingDirectory $root -PassThru
+            }
+        }
+        catch {
+            $lastError = $_.Exception.Message
+            Write-LocalLog ("Restart launchera przez {0} nieudany: {1}" -f $attempt[0], $lastError)
+            continue
+        }
+        $deadline = [DateTime]::UtcNow.AddSeconds(4)
+        while ($started -and -not $started.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+            [Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not $started -or -not $started.HasExited -or $started.ExitCode -eq 0) {
+            Write-LocalLog 'Uruchamiam launcher ponownie po aktualizacji.'
+            $script:form.Close()
+            return
+        }
+        $lastError = 'kod 0x{0:X8}' -f $started.ExitCode
+        Write-LocalLog ("Nowy launcher ({0}) zakonczyl sie od razu, {1}." -f $attempt[0], $lastError)
     }
+    [Windows.Forms.MessageBox]::Show(
+        ("Nie udalo sie uruchomic launchera ponownie ({0}).`r`n`r`nZamknij to okno i uruchom launcher skrotem z pulpitu." -f $lastError),
+        'Restart launchera', 'OK', 'Warning') | Out-Null
 }
 
 function Get-InstalledServerVersion {
