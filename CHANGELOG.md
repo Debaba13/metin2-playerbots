@@ -17,6 +17,53 @@ every version here.
 
 ---
 
+## 2.0.83 — 2026-09-19
+
+Serwer 2.0.83 i klient 2.0.18. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe okno
+magazynu potrzebuje obu.
+
+### Magazyn: sortowanie, łączenie i rozdzielanie stosów (blasty)
+
+- W oknie magazynu, obok tytułu, jest przycisk „Scal i uporządkuj”, taki sam
+  jak w ekwipunku. Scala stosy tych samych przedmiotów i układa magazyn:
+  najpierw mikstury, potem ekwipunek, księgi, ulepszacze, skrzynki i reszta.
+- Przy otwartym magazynie ekwipunek działa normalnie: można w nim rozdzielać
+  i łączyć stosy, a także go porządkować. Wcześniej serwer po cichu odmawiał
+  każdego przesunięcia w torbie, dopóki magazyn był otwarty.
+- Przedmiot przeciągnięty na taki sam przedmiot łączy się z nim: z magazynu
+  do ekwipunku, z ekwipunku do magazynu i w samym magazynie. Gdy docelowy
+  stos jest pełny albo leży tam inny przedmiot, czat mówi, czemu nic się nie
+  stało.
+- Shift i kliknięcie stosu w magazynie otwiera okno wyboru ilości, jak w
+  ekwipunku. Wybraną część można upuścić w ekwipunku, na wolnym polu
+  magazynu albo na takim samym przedmiocie. Część stosu z ekwipunku (też
+  Shift i kliknięcie) trafia tak samo do magazynu.
+- Boty układają swoje magazyny przy każdej wizycie.
+
+### Wojny gildii: koniec z biciem się w kółko w miejscu (Hiob)
+
+- Bot, który zginął na wojnie, wstaje niewidzialny, odpoczywa do trzech
+  czwartych życia i dopiero wtedy wraca do walki. Wcześniej wstawał z jedną
+  piątą życia wprost pod miecze zabójców i ginął od nowa, a wrogowie machali
+  w niewidzialnego. Stąd boty, które „w nieskończoność biją się w miejscu”.
+  Wrogowie nie atakują już wstających.
+- Wyłączenie wojen w panelu kończy też wojnę, która trwa: boty od razu
+  schodzą z pola bitwy i wracają do wioski. Wcześniej wyłącznik blokował
+  tylko następną wojnę, a trwająca szła do końca swoich 30 minut.
+
+### Okrzyk o ulepszeniu podaje stopień raz (archonek)
+
+- Bot chwali się ulepszeniem tak: „Pajęcza Włócznia z +6 na +7, kowal dziś
+  łaskawy”. Wcześniej stopień padał dwa razy: „no i mam +7 na Pajęcza
+  Włócznia+7”.
+
+### Klient 2.0.18
+
+- Okno magazynu: przycisk „Scal i uporządkuj”, Shift i kliknięcie oraz
+  łączenie przez przeciąganie (opis wyżej). Potrzebuje serwera 2.0.83.
+- COOP w testach u patronów: Dolacz.bat mówi, którego VPN brakuje, gdy świat
+  jest hostowany przez VPN.
+
 ## 2.0.82 — 2026-09-19
 
 Serwer 2.0.82, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
