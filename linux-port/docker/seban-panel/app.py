@@ -736,12 +736,18 @@ def live_statuses():
             try:
                 if datetime.now().timestamp() - path.stat().st_mtime > 25:
                     continue
+                # Kanal z nazwy katalogu (var/channelN/<rdzen>/): jeden plik to
+                # jeden rdzen jednego kanalu, a bot jest naraz tylko na jednym.
+                channel = 1
+                for part in path.parts:
+                    if part.startswith("channel") and part[7:].isdigit():
+                        channel = int(part[7:])
                 for n, status in parse_status_rows(path.read_text(encoding="cp1250", errors="replace")):
                     persona = n.get("persona", PERSONA_NONE)
                     mood = n.get("mood", PERSONA_NONE)
                     result[n["pid"]] = {"personality": n.get("personality", 0), "ambition": n.get("ambition", 0), "role": n.get("role", 0), "in_party": bool(n.get("in_party", 0)), "goal": n.get("goal", 0), "action": n.get("action", 0), "updated_ms": n.get("updated_ms", 0), "map_index": n.get("map", 0), "x": n.get("x", 0), "y": n.get("y", 0), "hp": n.get("hp", 0), "max_hp": n.get("max_hp", 0),
                                         "persona": None if persona == PERSONA_NONE else persona, "mood": None if mood == PERSONA_NONE else mood,
-                                        "mood_lock": n.get("mood_lock", 0), "lock_level": n.get("lock_level", 0), "status": status}
+                                        "mood_lock": n.get("mood_lock", 0), "lock_level": n.get("lock_level", 0), "status": status, "channel": channel}
             except (OSError, ValueError):
                 continue
     return result
@@ -3235,9 +3241,18 @@ def events():
 def manage():
     map_counts = live_map_counts()
     current_settings = settings()
+    # Ile botow na ktorym kanale - z drugim kanalem wlaczonym sama suma nie
+    # mowi, czy podzial wyszedl ("warto by dodac statystyke ile jest botow na
+    # CH1 a ile na CH2", hunmar, 19 wrzesnia). Bez drugiego kanalu wszystko
+    # jest na pierwszym i rozbicie sie nie pokazuje.
+    bots = live_bots()
+    per_channel = {}
+    for bot in bots:
+        per_channel[int(bot.get("channel") or 1)] = per_channel.get(int(bot.get("channel") or 1), 0) + 1
+    bot_channels = sorted(per_channel.items()) if len(per_channel) > 1 else []
     updater = update_status()
     updater["protected"] = current_settings.get("auth_enabled") == "1" and bool(session.get("seban_admin"))
-    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=current_settings, map_counts=map_counts, bot_count=len(live_bots()), map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status(), server_settings=server_settings_status(), updater=updater, playerbots_release=playerbots_release_status(), update_csrf=update_csrf_token(), bot_count_wanted=read_bot_count() if CUSTOM_PATCHES_ENABLED else 0, spawn_plan=read_spawn_plan(), student_chest_disabled=read_student_chest_disabled() if CUSTOM_PATCHES_ENABLED else False, custom_patches_enabled=CUSTOM_PATCHES_ENABLED, include_real_players=include_real_players_in_rankings(), announce_plus9=read_announce_plus9_refines())
+    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=current_settings, map_counts=map_counts, bot_count=len(bots), bot_channels=bot_channels, map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status(), server_settings=server_settings_status(), updater=updater, playerbots_release=playerbots_release_status(), update_csrf=update_csrf_token(), bot_count_wanted=read_bot_count() if CUSTOM_PATCHES_ENABLED else 0, spawn_plan=read_spawn_plan(), student_chest_disabled=read_student_chest_disabled() if CUSTOM_PATCHES_ENABLED else False, custom_patches_enabled=CUSTOM_PATCHES_ENABLED, include_real_players=include_real_players_in_rankings(), announce_plus9=read_announce_plus9_refines())
 
 
 @app.post("/manage/update")
