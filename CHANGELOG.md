@@ -17,6 +17,15 @@ every version here.
 
 ---
 
+## 2.0.82 — 2026-09-19
+
+Serwer 2.0.82, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### COOP w testach u patronów
+
+- Hostowanie w COOP działa też przez VPN (Radmin VPN, Tailscale, ZeroTier,
+  Hamachi) tam, gdzie operator internetu nie daje publicznego adresu.
+
 ## 2.0.81 — 2026-09-19
 
 Serwer 2.0.81, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
