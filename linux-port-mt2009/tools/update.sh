@@ -240,6 +240,45 @@ migrate_world_layout() {
     printf 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1\n' >> "$_env"
 }
 
+# Channel N listens on 13000+10*(N-1)..+2 inside the container, and compose
+# publishes M2_GAME_PORT_RANGE onto M2_GAME_CONTAINER_PORT_RANGE - so with the
+# second channel on and the range left at 13000-13002 the cores are up, the
+# bots play on CH2 and nobody outside the machine can reach it. Only the
+# Windows launcher ever widened it, so a Linux host, or anyone who switched the
+# channel on in the panel, had CH2 running and unreachable: "Boty graly na ch2
+# lecz ja nie moglem sie logowac" (GoracyDelfin, 19 September), fixed by hand
+# in .env. The wish the panel writes lives on a volume, so it is read from the
+# running container when there is one; .env alone answers otherwise.
+sync_channel_ports() {
+    _env="$COMPOSE_DIR/.env"
+    [ -f "$_env" ] || return 0
+    _ch2=$(kv "$_env" M2_PLAYERBOT_CH2 | tr -d ' \r')
+    _wish=$( (cd "$COMPOSE_DIR" && docker compose exec -T game cat /opt/m2spool/channels.wanted) 2>/dev/null |
+        sed -n 's/^CH2=//p' | head -n 1 | tr -d ' \r')
+    case "$_wish" in
+        0|1) _ch2="$_wish" ;;
+    esac
+    if [ "$_ch2" = 1 ]; then
+        _want=13000-13012
+    else
+        _want=13000-13002
+    fi
+    _changed=0
+    for _key in M2_GAME_PORT_RANGE M2_GAME_CONTAINER_PORT_RANGE; do
+        _cur=$(kv "$_env" "$_key" | tr -d ' \r')
+        [ "$_cur" = "$_want" ] && continue
+        [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
+        if grep -q "^$_key=" "$_env"; then
+            sed -i "s|^$_key=.*|$_key=$_want|" "$_env"
+        else
+            printf '%s=%s\n' "$_key" "$_want" >> "$_env"
+        fi
+        _changed=1
+    done
+    [ "$_changed" = 1 ] && note "   the channels' ports: $_want (second channel $([ "$_ch2" = 1 ] && echo on || echo off))"
+    return 0
+}
+
 # A new key in .env.example reaches nobody who already installed: .env is
 # written at install and never rewritten, and only the Windows launcher
 # (Add-MissingDotEnvKeys) ever appended the keys a release added - a Linux
@@ -327,6 +366,8 @@ run_update() {
     # After the keys, so a world that had no layout line at all gets the
     # example's and then this.
     migrate_world_layout
+    # Before compose, because a published port range only changes at a recreate.
+    sync_channel_ports
     stage_panel_context || { fail "the panel's build context could not be staged from files/"; return 1; }
     step "building and starting the new version (docker compose up -d --build)"
     # By hand the build talks to the terminal; under the panel it goes to the

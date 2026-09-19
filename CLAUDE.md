@@ -6602,6 +6602,18 @@ Four things the personalities changed that are easy to trip over later:
   lines agree - the medal dropper keeps one, being the medal shop. Any rule of
   the shape "may spend" beside one of the shape "may sell" wants reading
   together: the pair can refuse both ways at once.
+- **A channel nobody can reach is a channel that is running.** Channel N
+  listens on 13000+10*(N-1)..+2 inside the container and compose publishes
+  `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, so with the second
+  channel on and the range left at 13000-13002 the cores are up, the bots play
+  on CH2 and nothing outside the machine can log in to it: "Boty graly na ch2
+  lecz ja nie moglem sie logowac" (GoracyDelfin, 19 September), fixed by hand
+  in `.env`. Only the Windows launcher ever widened the range, so a Linux host
+  - and anyone who used the panel's own switch, which writes a wish the game
+  container reads at its next start - had CH2 unreachable. `sync_channel_ports`
+  (update.sh) sets both ranges from the channel's state before compose runs,
+  reading the panel's wish out of the running container when there is one; a
+  published port only changes at a recreate, so it has to be before.
 - **Split is the level wall, and it was a switch almost nobody knew of.**
   `M2_PLAYERBOT_WORLD_LAYOUT` has offered `unified` since 2.0.30, and on
   19 September players were passing each other screenshots of the line to paste
