@@ -308,6 +308,48 @@ if [ -n "$pitch_near" ]; then
         echo "[playerbot-migrate] WARNING: could not move the bots' offline shops onto the new pitches" >&2
     fi
 fi
+# The package's player dump carries the guild lands and buildings of the
+# server it was taken from - 28 player.guild_land rows and 62 player.object
+# rows - and none of the guilds they belong to. The engine stands its land
+# agent (NPC 20040) only on a land nobody owns (building::CManager, at boot),
+# so those lands could never be bought and their buildings stood on ground
+# nobody held, while a bot guild founded later under one of those numbers
+# (2, 3, 5, ...) held a land and buildings it never paid for ("stoja juz
+# budynki, pomimo ze teren nie jest zajety", Mat, 19 September; NerrVoVy
+# cleared his by hand). Once, and the dump's own rows exactly: a land a
+# player's guild has bought and the buildings it put up since (ids past the
+# dump's last) are left alone. Before the game container starts, because the
+# db core reads both at boot.
+lands_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = 'package_guild_lands_2081';" 2>/dev/null || echo x)
+if [ "$lands_done" = "0" ]; then
+    if lands_out=$(db -e "
+        START TRANSACTION;
+        DELETE FROM player.object WHERE (id, land_id, vnum) IN (
+            (1, 14, 14100), (2, 214, 14120), (3, 214, 14014), (4, 14, 14013), (5, 215, 14120), (6, 215, 14013), (7, 218, 14120), (8, 218, 14043),
+            (9, 16, 14100), (10, 16, 14014), (11, 16, 14043), (12, 108, 14100), (13, 108, 14014), (14, 214, 14050), (15, 14, 14051), (16, 215, 14051),
+            (17, 217, 14100), (18, 218, 14014), (19, 217, 14015), (20, 109, 14100), (21, 109, 14051), (22, 17, 14100), (23, 17, 14015), (24, 207, 14110),
+            (25, 207, 14014), (26, 15, 14100), (27, 15, 14015), (28, 217, 14051), (29, 18, 14110), (30, 18, 14055), (31, 115, 14120), (32, 115, 14014),
+            (33, 108, 14043), (34, 18, 14015), (35, 116, 14120), (36, 116, 14013), (37, 216, 14110), (38, 109, 14015), (39, 8, 14120), (40, 216, 14013),
+            (41, 212, 14100), (42, 117, 14110), (43, 216, 14055), (44, 117, 14055), (45, 117, 14014), (46, 205, 14120), (47, 205, 14055), (48, 15, 14055),
+            (49, 216, 14200), (50, 216, 14300), (51, 216, 14300), (52, 205, 14015), (53, 212, 14015), (54, 206, 14100), (55, 206, 14015), (56, 8, 14015),
+            (57, 115, 14050), (58, 212, 14055), (59, 207, 14055), (60, 8, 14055), (61, 208, 14110), (62, 201, 14100));
+        SELECT ROW_COUNT();
+        DELETE FROM player.guild_land WHERE (land_id, guild_id) IN (
+            (2, 408), (8, 78), (9, 108), (10, 69), (14, 3), (15, 395), (16, 2), (17, 52),
+            (18, 18), (108, 5), (109, 6), (115, 92), (116, 93), (117, 20), (118, 13), (201, 212),
+            (204, 712), (205, 57), (206, 9), (207, 58), (208, 25), (212, 19), (213, 14), (214, 15),
+            (215, 344), (216, 47), (217, 33), (218, 7));
+        SELECT ROW_COUNT();
+        INSERT IGNORE INTO player.playerbot_migrations (name, done_at) VALUES ('package_guild_lands_2081', NOW());
+        COMMIT;
+    "); then
+        lands_objects=$(printf '%s\n' "$lands_out" | awk 'NR == 1')
+        lands_rows=$(printf '%s\n' "$lands_out" | awk 'NR == 2')
+        echo "[playerbot-migrate] the package's guild lands cleared: ${lands_rows:-0} land(s), ${lands_objects:-0} building(s)"
+    else
+        echo "[playerbot-migrate] WARNING: could not clear the package's guild lands" >&2
+    fi
+fi
 # fish_log came from r40250's dump and has that engine's eight columns,
 # while this one writes six - so every catch failed with errno 1136 and the
 # table is empty on every 2.x world that ever ran. CREATE IF NOT EXISTS
