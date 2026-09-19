@@ -17,6 +17,45 @@ every version here.
 
 ---
 
+## 2.0.81 — 2026-09-19
+
+Serwer 2.0.81, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Tereny gildii z paczki są wolne (Mat, NerrVoVy)
+
+- Baza z paczki przyniosła 28 terenów gildii i 62 budynki z serwera, z którego
+  ją zrobiono, ale żadnej z gildii, do których należały. Te tereny uchodziły
+  więc za zajęte: nie stał przy nich zarządca terenu i nie dało się ich kupić,
+  a budynki stały na ziemi, której nikt nie miał. Gildia bota założona pod
+  jednym z tamtych numerów „dostawała” cudzy teren z budynkami.
+- Przy pierwszym starcie po aktualizacji te wpisy znikają: tereny z paczki są
+  do kupienia, zarządca terenu stoi na każdym, a budynki z paczki znikają.
+  Tereny kupione przez graczy i postawione na nich budynki zostają.
+
+### Dropki nie robią próby konia (Urtopy)
+
+- Dropki (Metinów, M2, M3, medali) to postacie do dropu: nie robią Biologa ani
+  próby konia bojowego. Status „Zdobywam konia bojowego na pustyni (0/100)”
+  u dropka stojącego w M3 był fałszywy i już się nie pokazuje, a dropek nie
+  jest też kierowany na pustynię.
+- Panel przy dropku pokazuje w Biologu „nie dotyczy — dropper nie robi
+  Biologa” zamiast 0/7.
+
+### Wieża Demonów: boty biją kilka potworów naraz (Nagash)
+
+- Paczka botów na piętrze nie ustawia się już w kolejce do jednego potwora.
+  Każdy bot bierze jednego z kilku potworów stojących najbliżej paczki
+  (mniej więcej dwa boty na potwora), więc piętra idą szybciej, a boty dalej
+  walczą w jednym miejscu. Metiny i bossów biją wszyscy razem.
+
+### Launcher po aktualizacji (Urtopy)
+
+- Po aktualizacji launcher uruchamia się ponownie sam. Na Windows 11 nowe
+  okno potrafiło paść z błędem „cmd.exe — Aplikacja nie została właściwie
+  uruchomiona (0xc0000142)”. Stare okno czeka teraz, aż nowe naprawdę
+  wystartuje, a gdy nowe padnie, launcher próbuje drugi raz inną drogą.
+  Zadziała od następnej aktualizacji, bo tę uruchamia jeszcze stary launcher.
+
 ## 2.0.80 — 2026-09-19
 
 Serwer 2.0.80, klient 2.0.17. W launcherze ZAINSTALUJ AKTUALIZACJE.
