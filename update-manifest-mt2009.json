@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-19T12:03:58Z",
-  "statusMessage": "2.0.82 (serwer 2.0.82, klient bez zmian 2.0.17): hostowanie w COOP (testy patronów) działa też przez VPN, gdy operator nie daje publicznego adresu. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-19T15:11:17Z",
+  "statusMessage": "2.0.83 (serwer 2.0.83, klient 2.0.18): magazyn z przyciskiem Scal i uporządkuj oraz łączeniem i rozdzielaniem stosów między magazynem a ekwipunkiem; boty na wojnach gildii nie giną już w kółko, a wyłączenie wojen kończy trwającą wojnę. W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.82",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.82/metin2-server-update-2.0.82.zip",
-    "sha256": "F9EBD4E2D3B2F090E3165D4F456DE79C27BF66D7ADD30608571D963685DE9B2D"
+    "version": "2.0.83",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.83/metin2-server-update-2.0.83.zip",
+    "sha256": "07BEE2950F0DB5108DBD19F5313D8D76F9E4158718777C3A35273EC29560D126"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.17",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.80/metin2-client-update-2.0.17.zip",
-    "sha256": "8F76491634F8E70306B6EEA4874F6E37C498E5D06D651D011C19689885DCFBE8"
+    "version": "2.0.18",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.83/metin2-client-update-2.0.18.zip",
+    "sha256": "D563EFE523177015267CA74419FB03D25E94394274AAD29D54292C8310852BE0"
   }
 }
