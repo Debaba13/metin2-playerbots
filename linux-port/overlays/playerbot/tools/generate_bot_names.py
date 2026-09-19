@@ -26,10 +26,18 @@ from the whole list. Before this the pool ran Chunjo first, in list order,
 so Chunjo took the first thousand names and Shinsoo and Jinno were named
 from the v2/v3 rounds while a third of the list stood idle.
 
-Names are handed out by PID within a kingdom, so a bot keeps its name across
-regenerations as long as the list does not change; a changed list is a new
-pool version, and every bot whose name came from an older version is renamed
-on the next start.
+Names are handed out by PID within a kingdom, to the bots that have none from
+the pool yet. A bot that has one keeps it, whatever becomes of the list: until
+19 September a changed list was a new pool version and every bot named from an
+older one was renamed on the next start, which was right the one time the whole
+world was to be renamed and wrong for every list after it - Iwakura's list of
+19 September adds three hundred names and drops nine, and the operator's word
+was to keep the names the bots already wear ("staraj sie nickow juz
+istniejacych playerbotow nie podmienic", Tieru). So a list only ever names the
+bots that come after it: a new world, a grown cohort, a bot that still wears
+its seed name. A name dropped from the list stays on the bot that wears it;
+the pool version is still written to common.playerbot_name_history, which is
+how to tell which list a name came from.
 
 Nothing about renaming is dangerous, and it is worth writing down why:
 CPlayerBotManager::LoadRegisteredBots accepts a character by its account login
@@ -170,10 +178,11 @@ TEMPLATE = u"""-- Nicknames for the playerbots. GENERATED - edit
 -- character of a person is reachable from here. A bot the operator renamed
 -- by hand - its name is neither the one this table gave it nor its seed name
 -- - is somebody's deliberate choice and keeps it, through every pool version;
--- its name is never dealt to another bot either. Names go out in list order by
--- PID, so a bot keeps its name for as long as the list in front of it does not
--- change; a bot whose name came from an older version of the pool is renamed
--- on the next start (common.playerbot_name_history.pool_version says which).
+-- its name is never dealt to another bot either. Names go out by PID to the
+-- bots that have none from the pool yet; a bot that has one keeps it through
+-- every later list (common.playerbot_name_history.pool_version says which list
+-- it came from), so a new list names a new world, a grown cohort and a bot
+-- still on its seed name, and renames nobody.
 -- The seed name stays in that table, which is what makes 'restore' possible.
 -- Each kingdom deals from its own share of the list (player_index.empire says
 -- whose a bot is), so Shinsoo and Jinno get written names and not the v2/v3
@@ -236,22 +245,24 @@ CREATE TEMPORARY TABLE playerbot_name_pool (
 @@VALUES@@
 
 -- --------------------------------------------------------------------------
--- Who gets one, and which. Every bot without a name from this version of the
--- pool waits, numbered by PID within its kingdom; every pool name of that
--- kingdom's share not worn by anybody who is not waiting is free, numbered by
--- its place in the share; the two are joined on kingdom and number. One
--- statement, stable: the first free name goes to the lowest waiting PID.
+-- Who gets one, and which. Every bot without a name from the pool - no
+-- history row at all - waits, numbered by PID within its kingdom; every pool
+-- name of that kingdom's share not worn by anybody who is not waiting is free,
+-- numbered by its place in the share; the two are joined on kingdom and
+-- number. One statement, stable: the first free name goes to the lowest
+-- waiting PID.
 --
 -- "Not worn by anybody who is not waiting" is the whole point of the free
 -- side. It used to exclude only people's characters, on the argument that
--- every bot was being renamed at once - which was true of a version change
--- and false of the other way a bot comes to wait: a cohort seeded later.
--- 2.0.8 switched the kingdoms on and seeded a thousand Shinsoo and Jinno
--- bots into worlds whose Chunjo bots were already named; those thousand
--- were numbered from one and dealt the names of the first thousand Chunjo
--- bots, so a world had two of each. A settled bot - a history row of this
--- version whose name it still wears - keeps its name off the free list;
--- on a version change nobody is settled and the whole pool is dealt afresh.
+-- every bot was being renamed at once - which was never true of the other way
+-- a bot comes to wait: a cohort seeded later. 2.0.8 switched the kingdoms on
+-- and seeded a thousand Shinsoo and Jinno bots into worlds whose Chunjo bots
+-- were already named; those thousand were numbered from one and dealt the
+-- names of the first thousand Chunjo bots, so a world had two of each. Every
+-- settled bot - a history row of any version - keeps the name it wears off
+-- the free list, and so does a person's character. A later list lands its
+-- names in other kingdoms' shares than the earlier one did, which is why the
+-- free side asks who wears a name and not which share it came from.
 -- player.name is indexed, not unique, so nothing else would have caught it.
 -- --------------------------------------------------------------------------
 DROP TEMPORARY TABLE IF EXISTS playerbot_name_plan;
@@ -276,15 +287,12 @@ SELECT waiting.pid, waiting.seed_name, free.name
           LEFT JOIN player.player_index AS pi ON pi.id = p.account_id
           LEFT JOIN common.playerbot_name_history AS h ON h.pid = p.id
          WHERE LEFT(a.login, 10) = 'playerbot_'
-           AND (h.pid IS NULL
-                OR (h.pool_version <> @playerbot_pool_version
-                    AND BINARY p.name = BINARY h.human_name))
-           -- A hand-made rename is kept: a name that is neither the pool's
-           -- nor the seed's was chosen by a person ("bot ADAM dostal ode mnie
-           -- miecz +9, rano juz nie bylo bota o tym nicku" - the first
-           -- version renamed it with the rest).
-           AND (h.pid IS NULL OR BINARY p.name = BINARY h.human_name
-                OR BINARY p.name = BINARY h.seed_name)
+           -- Only a bot the pool has never named. A history row of any
+           -- version is a bot that keeps its name - the pool's, or a
+           -- person's choice made over it ("bot ADAM dostal ode mnie miecz
+           -- +9, rano juz nie bylo bota o tym nicku" - the first version
+           -- renamed it with the rest).
+           AND h.pid IS NULL
        ) AS waiting
   JOIN (
         SELECT np.name, np.empire,
@@ -295,12 +303,7 @@ SELECT waiting.pid, waiting.seed_name, free.name
                              JOIN account.account AS ax ON ax.id = px.account_id
                              LEFT JOIN common.playerbot_name_history AS hx ON hx.pid = px.id
                             WHERE px.name = np.name
-                              AND (LEFT(ax.login, 10) <> 'playerbot_'
-                                   OR (hx.pool_version = @playerbot_pool_version
-                                       AND BINARY px.name = BINARY hx.human_name)
-                                   OR (hx.pid IS NOT NULL
-                                       AND BINARY px.name <> BINARY hx.human_name
-                                       AND BINARY px.name <> BINARY hx.seed_name)))
+                              AND NOT (LEFT(ax.login, 10) = 'playerbot_' AND hx.pid IS NULL))
        ) AS free
     ON free.empire = waiting.empire AND free.rn = waiting.rn
  WHERE @playerbot_human_names = '1';
@@ -333,9 +336,7 @@ SELECT CONCAT('playerbot names: WARNING ', COUNT(*),
   LEFT JOIN common.playerbot_name_history AS h ON h.pid = p.id
  WHERE @playerbot_human_names = '1'
    AND LEFT(a.login, 10) = 'playerbot_'
-   AND (h.pid IS NULL
-        OR (h.pool_version <> @playerbot_pool_version
-            AND BINARY p.name = BINARY h.human_name))
+   AND h.pid IS NULL
 HAVING COUNT(*) > 0;
 
 -- The hand-renamed, so the operator sees them counted rather than wondering
