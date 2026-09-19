@@ -6023,9 +6023,11 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   ten) and one step a gate of two minutes (`common.playerbot_channel_control`)
   - `PlanChannelMoves`: straight in under the cap, one for one at it (3% a
   gate), a drain's worth more out than in over it, and with nobody waiting a
-  drain (2% a gate): over the cap anybody not pinned, the cheapest first, and
-  between the cap and the target only bots with no live stand - with most bots
-  behind a stand, that gentle drain alone found two of 686. The cap
+  drain (2% a gate): over the cap back to the cap, with anybody not pinned,
+  the cheapest first, and between the cap and the target only bots with no
+  live stand - with most bots behind a stand, that gentle drain alone found
+  two of 686, and a first build that drained towards the target at any cost
+  took twenty-one bots off a channel one over its cap. The cap
   and the target come from the slider: 100 minus the share, and ten under that
   (60 and 50 at 40). Who steps out is chosen by `MoveCost`: a village +1, an
   errand +1, a live stand +2; a service visit, a shop operation in flight, a

@@ -68,13 +68,23 @@ int main()
 	// percent of the bots a gate and never under the target.
 	{
 		TChannelMovePlan p = PlanChannelMoves(1000, 600, 0, 60, 50);
-		assert(p.kind == MOVE_DRAIN && p.count == 20);
+		assert(p.kind == MOVE_DRAIN && p.count == 20 && !p.overCap);
 		p = PlanChannelMoves(1000, 505, 0, 60, 50);
 		assert(p.kind == MOVE_DRAIN && p.count == 5);
 		p = PlanChannelMoves(1000, 500, 0, 60, 50);
 		assert(p.kind == MOVE_NONE);
 		p = PlanChannelMoves(10, 9, 0, 60, 50);
 		assert(p.kind == MOVE_DRAIN && p.count == 1);
+	}
+	// Over the cap with nobody waiting: back to the cap and no further, with
+	// anybody not pinned - one over the cap is one bot, not a drain's worth.
+	{
+		TChannelMovePlan p = PlanChannelMoves(1099, 660, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 1 && p.overCap);
+		p = PlanChannelMoves(1000, 650, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 20 && p.overCap);
+		p = PlanChannelMoves(1000, 605, 0, 60, 50);
+		assert(p.kind == MOVE_DRAIN && p.count == 5 && p.overCap);
 	}
 	// Somebody waiting with room under the cap: straight in, as many as fit.
 	{

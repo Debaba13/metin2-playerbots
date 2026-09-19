@@ -147,8 +147,11 @@ namespace playerbot_channel_rules
 	// the shop channel, and how many requests have stood long enough.
 	enum EChannelMove { MOVE_NONE = 0, MOVE_DRAIN, MOVE_PROMOTE, MOVE_SWAP };
 	// count: how many move (a swap: how many each way); extraOut: a swap
-	// over the cap sends this many more out than it brings in.
-	struct TChannelMovePlan { int kind; unsigned int count; unsigned int extraOut; };
+	// over the cap sends this many more out than it brings in; overCap: a
+	// drain that brings the shop channel back to its cap, which anybody not
+	// pinned may be taken for - a drain below the cap takes only bots with
+	// no live stand.
+	struct TChannelMovePlan { int kind; unsigned int count; unsigned int extraOut; bool overCap; };
 	// A swap batch moves at most this share of the bots each way (a relog
 	// storm shows as a longer tick), easing back at most this share a gate.
 	const unsigned int MOVE_BATCH_PERCENT = 3;
@@ -157,7 +160,7 @@ namespace playerbot_channel_rules
 	inline TChannelMovePlan PlanChannelMoves(unsigned int total, unsigned int onShopChannel,
 			unsigned int waiting, int capPercent, int targetPercent)
 	{
-		TChannelMovePlan plan = { MOVE_NONE, 0, 0 };
+		TChannelMovePlan plan = { MOVE_NONE, 0, 0, false };
 		if (total == 0)
 			return plan;
 		if (targetPercent > capPercent)
@@ -169,7 +172,16 @@ namespace playerbot_channel_rules
 			drainMost = 1;
 		if (waiting == 0)
 		{
-			if (onShopChannel > target)
+			// Over the cap: back to the cap and no further this gate - a
+			// channel one over its cap lost twenty-one bots to the first
+			// build, which drained towards the target at any cost.
+			if (onShopChannel > cap)
+			{
+				plan.kind = MOVE_DRAIN;
+				plan.count = onShopChannel - cap < drainMost ? onShopChannel - cap : drainMost;
+				plan.overCap = true;
+			}
+			else if (onShopChannel > target)
 			{
 				plan.kind = MOVE_DRAIN;
 				plan.count = onShopChannel - target < drainMost ? onShopChannel - target : drainMost;

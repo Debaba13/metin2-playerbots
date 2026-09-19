@@ -3834,7 +3834,7 @@ void CPlayerBotManager::OnChannelCensus(void* pvMsg)
 			// anybody not pinned goes, the cheapest first. With most bots
 			// behind a stand, the gentle drain found two bots in 686.
 			SendChannelSql(PB_CHSQL_DRAIN, 0, plan.count, 0, 0, PlayerBotChannelSwapOutQuery(plan.count,
-					onShopChannel > cap ? playerbot_channel_rules::MOVE_COST_PINNED - 1 : 1));
+					plan.overCap ? playerbot_channel_rules::MOVE_COST_PINNED - 1 : 1));
 			return;
 		case playerbot_channel_rules::MOVE_PROMOTE:
 			SendChannelSql(PB_CHSQL_PROMOTE, waiting - plan.count, cap, onShopChannel, batch,
