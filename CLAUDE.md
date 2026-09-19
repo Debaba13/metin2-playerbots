@@ -6418,6 +6418,32 @@ or devlog line may mention it, and the branch is never pushed.
   agreement is compiled out, so a password in LOGIN3 can be read on the way.
   That is why friends' passwords are random and per world; say so before any
   of this goes public.
+- **A handshake over a hotspot needs time and slack, and gets neither from
+  the package.** The login handshake is accepted only when one exchange's
+  round trip is within 50 ms of the previous one, and
+  `DESC_MANAGER::ConnectionCollector` (martysama's anti-flood pass) destroys
+  every connection still handshaking five seconds after it opened, with no
+  line in any log. The first test from a laptop on a phone's hotspot sat on
+  "Zostaniesz polaczony z serwerem" for good: two auth connections, each
+  closed after five to six seconds, the round trip swinging by 600 ms between
+  exchanges - and the client never noticed, because
+  `CAccountConnector::OnRemoteDisconnect` only goes offline and tells Python
+  nothing. From the host's own network the same handshake takes 0.24 s, which
+  is why no local test could have shown it. `apply_coop_handshake_window`
+  (playerbotify.py) widens the window by 100 ms a retry up to a second and
+  gives the collector thirty seconds; the lower bound stays at zero, because a
+  client clock ahead of the server's is what the speed hack check in
+  `CInputMain::Move` kicks. Through a local relay adding 50-700 ms each way
+  (`scratchpad/jitter_proxy.py` of session 82d3ab90 is the shape) ten
+  handshakes of ten completed in 2.9-7.3 s. `desc.cpp` and `desc_manager.cpp`
+  already ship staged in `server-update-files.mt2009.txt`.
+- **A test install's `overlays` is the source its next build compiles.** The
+  launcher's start copies `linux-port/overlays/playerbot/src/game/src` over the
+  staged tree (`Sync-M2PlayerbotOverlay`), and the copy of m2zip carried the
+  2.0.74 package's overlays under a 2.0.79 engine staged by hand: the first
+  rebuild of m2coop stopped at `input_db.cpp` ("no member named
+  SplitForThisChannel") while the running image was fine. Put the repository's
+  overlay into both before building a copy.
 - UIAutomation sees the launcher's flat buttons as Pane with no Invoke
   pattern; `PostMessage(BM_CLICK)` to the NativeWindowHandle clicks them. A
   form started by `Start-Process -WindowStyle Hidden` stays hidden, because

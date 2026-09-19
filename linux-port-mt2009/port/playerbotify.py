@@ -1413,6 +1413,7 @@ def main(root):
     apply_costume_block(game)
     apply_costume_hair_allowed(game)
     apply_mark_login_quiet(game)
+    apply_coop_handshake_window(game)
     apply_horse_rider_links(game)
     apply_gm_transfer_bots(game)
     apply_refine_log_way(game)
@@ -1891,6 +1892,51 @@ def apply_costume_hair_allowed(game):
          '\t{\n'
          '\t\tChatPacket(CHAT_TYPE_INFO, "Kostiumy sa na tym serwerze wylaczone.");\n',
          marker='playerbotify.py, apply_costume_hair_allowed).')
+
+
+def apply_coop_handshake_window(game):
+    """A handshake over the Internet is given the time and the slack to finish.
+
+    The login handshake (DESC::HandshakeProcess) is accepted only when one
+    exchange's round trip is within 50 ms of the one before, and
+    DESC_MANAGER::ConnectionCollector - an anti-flood pass of this package -
+    destroys, with no line anywhere, every connection still handshaking five
+    seconds after it opened. Over a mobile hotspot the round trip swings by
+    hundreds of milliseconds from one packet to the next, so the window never
+    closed and the collector killed the connection at five or six seconds;
+    the client never learns (CAccountConnector::OnRemoteDisconnect only goes
+    offline) and sits on "Zostaniesz polaczony z serwerem" for ever - the
+    first COOP test from a laptop on a phone's hotspot (19 September), while
+    the same handshake from the host's own network finished in 0.24 s.
+
+    The window widens by 100 ms with every retry up to a second, and the
+    collector waits thirty seconds, which still ends a connection that never
+    answers. The lower bound stays at zero: a positive bias leaves the
+    client's clock behind the server's, which the speed hack check in
+    CInputMain::Move allows, and a client clock ahead of the server's is what
+    that check kicks. The in-game resync (bInfiniteRetry) keeps its 50 ms: it
+    retries for ever and closes nothing.
+    """
+    edit(os.path.join(game, 'desc.cpp'),
+         '\tint bias = (int) (dwCurTime - (dwTime + lDelta));\n'
+         '\n'
+         '\tif (bias >= 0 && bias <= 50)\n',
+         '\tint bias = (int) (dwCurTime - (dwTime + lDelta));\n'
+         '\n'
+         '\t// The login handshake widens its window with every retry (playerbotify.py,\n'
+         '\t// apply_coop_handshake_window): over a mobile network the round trip swings\n'
+         '\t// by hundreds of milliseconds and 50 ms never closed. Never below zero - a\n'
+         '\t// client clock ahead of the server is what the speed hack check kicks.\n'
+         '\tconst int iAllowedBias = bInfiniteRetry ? 50 : MIN(50 + 100 * m_iHandshakeRetry, 1000);\n'
+         '\n'
+         '\tif (bias >= 0 && bias <= iAllowedBias)\n',
+         marker='const int iAllowedBias = bInfiniteRetry ? 50')
+    edit(os.path.join(game, 'desc_manager.cpp'),
+         '\tstatic const DWORD HANDSHAKE_ELAPSE_TIME = 5;\n',
+         '\t// Thirty seconds, not five: a handshake over a mobile network takes several\n'
+         '\t// round trips to settle (playerbotify.py, apply_coop_handshake_window).\n'
+         '\tstatic const DWORD HANDSHAKE_ELAPSE_TIME = 30;\n',
+         marker='static const DWORD HANDSHAKE_ELAPSE_TIME = 30;')
 
 
 def apply_mark_login_quiet(game):
