@@ -6365,7 +6365,7 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   four minutes after the launcher had rewritten .env (it appended new keys),
   and came back with the file's 21 395 bytes all zero - NTFS had kept the
   length and not the data - and the launcher's own log with the same hole at
-  the same minute. Compose refused line 1 ("unexpected character  "), the
+  the same minute. Compose refused line 1 ("unexpected character \x00"), the
   old launcher appended the example's defaults to a file it could no longer
   read (a fresh panel password among them), and every GRAJ failed on the same
   line. start-server.ps1 now writes .env and .m2install.json durably
