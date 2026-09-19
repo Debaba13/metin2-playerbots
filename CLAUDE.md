@@ -6342,6 +6342,95 @@ PLAYERBOT: autospawn requested=750 registered_started=511 in Chunjo
   Singleplayer" - so it could never have started anything. Checked with a
   harness (a .bat exiting 0xC0000142, then a script in a folder with a space);
   like every launcher fix it reaches a player one update late.
+- **A pass that claims the tick above the potions has to keep the bot alive
+  itself.** `ManagePlayerBotGuildWar` runs above the potions, the emergency
+  recovery and `HandlePostDeathRecovery` and `continue`s, so a bot that fell at
+  war stood up where it fell (`restart_here`) at a fifth of its health and went
+  straight back at its killer, while the enemies swung at a foe that was still
+  invisible - which mt2009's `battle_is_attackable` refuses, so the field "stood
+  still". Hiob, 19 September: "boty w nieskonczonosc sie bija ... nie wychodza z
+  m3 tylko sie bija w miejscu"; his bundle has 141 bots on game1 standing up
+  1662 times in three and a half minutes, seventeen the most, after he had
+  switched the wars off. `KeepPlayerBotAliveAtWar` runs the recovery and the
+  potions from inside the pass, as `KeepPlayerBotTowerAlive` does in the tower,
+  and a foe that is recovering (`bRecoveringAfterDeath` or
+  `AFF_REVIVE_INVISIBLE`) is no foe for the search or the held target. A bot at
+  war still does not break off at `PLAYERBOT_RECOVERY_INITIAL_HP_PERCENT`: a
+  kill is the war's score. And the panel's WARS switch ends the bots' part in a
+  war under way (`GetPlayerBotWarEnemy` answers nothing, the bots on the ground
+  go home by `guild_war_over`); it used to stop the next declaration only, and
+  the engine's war ran its half hour with the bots in it. Measured on m2zip,
+  with `scratchpad/war_deaths2.py` of session 82d3ab90 (deaths within a radius
+  of the battlefield, and how many came within fifteen seconds of standing up):
+  the Chunjo war before the change, 2065 deaths of 40 bots in 29 minutes, 80%
+  of them within fifteen seconds of standing up, the worst bots 101-116 each;
+  the Shinsoo war after it, 721 deaths of 62 bots in 10 minutes, 26%, the worst
+  16-18 - a third fewer deaths a bot and half as many for the worst. What is
+  left is the fight itself: of those 721, 135 came within three seconds of a
+  recovery ending, because every bot takes the nearest foe and a side of 39
+  focuses a side of 23. Spreading the blows (the tower's pid slot,
+  `PickPlayerBotTowerObjective`) is the next step if a war should look less like
+  an execution; the escape walk in `HandlePostDeathRecovery` also left some bots
+  where they fell (43 deaths on the spot of the previous one).
+- **An open safebox blocked every move in the bag, and its packets carry no
+  count.** blasty's proposal of 19 September (Tieru: "Jasne"): the bag's
+  "Scal i uporzadkuj" for the safebox, and a stack split or poured across the
+  two windows. Three things stood in the way. `CHARACTER::MoveItem` asks
+  `CanHandleItem()` with the default exclusion, and an open safebox is busy to
+  `IsBusy`, so with the safebox open the server silently refused every move,
+  split and merge inside the bag - `apply_safebox_hands` (playerbotify)
+  excludes the safebox there, and the bag's own "Scal i uporzadkuj"
+  (`ArrangeInventory`) lets it through the same way; every other busy state,
+  the item shop included, still refuses. The client's safebox packets
+  (checkin, checkout, item move) name cells and no count, and a drop from the
+  bag onto a taken safebox cell was a commented-out packet; so a part of a
+  stack, and a stack dropped on the same item, go as `/safebox_put`,
+  `/safebox_take` and `/safebox_move` with a count (one `do_safebox_transfer`,
+  the subcommand is `playerbot_arrange::ETransferOp`), a whole stack onto a free
+  place still goes by the packet, and `/safebox_arrange` is the button in the
+  safebox's title bar (client-root/safeboxtransfer.py, answered
+  `SafeboxArrangeResult` and `SafeboxTransferResult`). The work is in
+  `playerbot_arrange.cpp` beside the bag's own arrange, and the decision for a
+  transfer is `playerbot_arrange_rules::PlanTransfer` (unit-tested). Third, the
+  package's `ENABLE_MT2009_DISABLE_SAFEBOX_STACK` stays on, and for a reason
+  worth knowing: `CSafebox::Remove` and `Add` refuse while the owner is
+  `IsBusy(BUSY_SAFEBOX)` - which includes browsing the item shop, a state
+  `CanHandleItem`'s default lets through - and the old stacking path destroyed
+  the item `Remove` had just refused to take out, leaving a freed item in the
+  box. `SafeboxHands` asks `CanHandleItem(false, false, BUSY_SAFEBOX)` before
+  the first change. Two engine facts the code is shaped round: the db core
+  writes the SAFEBOX window straight to the table (`QUERY_ITEM_SAVE` caches
+  every other window) and `QUERY_SAFEBOX_LOAD` reads the table, so a count
+  changed in the box goes out with `FlushDelayedSave` and whatever changed in
+  the bag with `FlushRow` (checkout's own HEADER_GD_ITEM_FLUSH); and
+  `CItem::SetCount(0)` on a safebox item only clears its owner, because
+  `RemoveFromCharacter` leaves the box's pointer and grid alone for that
+  window - an emptied safebox stack is `CSafebox::Remove`d and then destroyed.
+  The ITEM_UPDATE a safebox item's `SetCount` sends is dropped by the client
+  (`IsValidItemPosition` says no to SAFEBOX), so every count change is
+  followed by `CSafebox::Refresh`. And the safebox's grid is one `CGrid` of
+  five columns and nine rows a page with no page edge in it, so a two-cell
+  item may stand across two pages: `MakePlan(items, pages, false)` reads the
+  box by that rule (`ValidGrid`) and lays it out inside the pages. The bots on
+  mt2009 run `ArrangeSafebox` at the end of every safebox visit in place of the
+  sixteen merges a visit, which is what puts that code through hundreds of
+  boxes on the test world. The transfers no bot makes were checked on m2zip by
+  a self-test built into the deploy copy only (`make_selftest_town.py` of
+  session 82d3ab90): on six bots' real boxes, twelve steps each - a part put
+  in, poured onto, split and poured back inside the box, taken out onto the
+  bag's stack and onto a free cell, whole stacks moved every way, a move onto
+  itself and a take from nothing refused - with the units of the kind in bag
+  and box counted after every step: 72 of 72, every bag stack back at its
+  count, and the same six boxes then arranged (10-43 moves each) with nothing
+  in syserr. The engine's own pulses (`SafeboxCheckInOut`, 250 ms) refuse a
+  second transfer in the same tick, so a test like that has to
+  `PulseManager::ClearClock` between steps. When adding a clientrootify edit, anchor it where
+  no other edit's new text runs: the first version put the safebox handlers
+  in game.py right after the bag's handler, split the text by which the older
+  edit knows it has been applied, and a second run added the bag's handler
+  again - the idempotency check (copy client-root, render it with `--root` on
+  the copy, `diff -r`) is what caught it, and it overwrites client-root, so
+  render from the published root again afterwards.
 
 ## Engine facts worth not re-deriving
 
