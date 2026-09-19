@@ -6539,7 +6539,34 @@ anywhere public until the operator does.
 - **The traffic is not private.** The client's XTEA key is fixed and key
   agreement is compiled out, so a password in LOGIN3 can be read on the way.
   That is why friends' passwords are random and per world; say so before any
-  of this goes public.
+  of this goes public. Hosting through a VPN (below) is the one way it is
+  encrypted.
+- **A host behind CGNAT is offered through a VPN, not refused.** The patrons'
+  first question after 2.0.80 was CGNAT (mobile Internet, part of the fibre),
+  and there nothing in the host's router can help. The module finds Radmin
+  VPN, Tailscale, ZeroTier and Hamachi by their adapters
+  (`Select-M2CoopVpnAdapters`, pure, `tests/coop_vpn_test.ps1`); CoopHost
+  takes `-CoopVia auto|internet|vpn|radmin|tailscale|zerotier|hamachi`, and
+  `Resolve-M2CoopHostingVia` keeps the Internet wherever it can work and takes
+  a VPN only on `cgnat`/`double-nat` (auto), so nobody who hosted before sees
+  a change. Through a VPN nothing is opened in the router - the mappings an
+  earlier Internet hosting left are closed - the binding is 0.0.0.0 as before,
+  and the state's `hosting` carries `mode`, `vpn`, `vpnName` and
+  `friendAddress`, which is what the invites (`Get-M2CoopInviteTarget`) and the
+  lease renewal (skipped) read. An invite gets a `vpn` field only when it has
+  one, so an Internet code is byte for byte 2.0.80's, and the friend's side
+  (`Get-M2CoopJoinAdvice`, the join tab, Dolacz.ps1 from the next client)
+  says which VPN is missing and probes the world's auth (`Test-M2CoopHostAnswers`,
+  the handshake bytes). Not bound to the VPN address alone on purpose: a
+  container published on an adapter that is not up yet does not start, and
+  the VPN comes up after Docker Desktop at boot. Tested on stubs and on this
+  machine's own adapters, which hold no VPN; no world has been hosted through
+  a real one yet.
+- **`@($list)` of a `List[object]` is an error in Windows PowerShell 5.1.**
+  "Argument types do not match" ("Niezgodne typy argumentów"), empty or not,
+  at the `return @($found)` that wrote it; `List[int]` is fine, which is why
+  `Get-M2CoopGamePorts` never showed it. Return `$found.ToArray()` and wrap
+  at the call site as everywhere else.
 - **A handshake over a hotspot needs time and slack, and gets neither from
   the package.** The login handshake is accepted only when one exchange's
   round trip is within 50 ms of the previous one, and
