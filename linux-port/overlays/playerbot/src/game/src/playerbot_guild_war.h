@@ -128,6 +128,14 @@ namespace
 	{
 		if (!mine)
 			return NULL;
+		// The panel's switch ends the bots' part in a war under way too, not
+		// only the next declaration: the engine's war runs out its half hour,
+		// but nobody walks to it or fights it, and whoever was on the ground
+		// goes home. It used to stop the declarations alone, so an operator who
+		// switched the wars off in the middle of one watched it go on to the
+		// end - "wylaczylem w panelu, nic to nie dalo" (Hiob, 19 September).
+		if (!IsPlayerBotGuildWarsEnabled())
+			return NULL;
 		const DWORD opp = mine->UnderAnyWar(GUILD_WAR_TYPE_FIELD);
 		if (opp == 0)
 			return NULL;
@@ -295,7 +303,9 @@ namespace
 								g1->GetName(), g2->GetName(), empire, battlefield,
 								CountPlayerBotGuildOnline(g1), CountPlayerBotGuildOnline(g2));
 					}
-					else if (g2->GetGuildWarState(g1->GetID()) == GUILD_WAR_RECV_DECLARE)
+					// A declaration the switch finds pending is left to run out
+					// (PLAYERBOT_GUILD_WAR_DECLARE_TIMEOUT) rather than accepted.
+					else if (enabled && g2->GetGuildWarState(g1->GetID()) == GUILD_WAR_RECV_DECLARE)
 					{
 						g2->RequestDeclareWar(g1->GetID(), GUILD_WAR_TYPE_FIELD);
 						sys_log(0, "PLAYERBOT_GUILD: war accepted by %s from %s", g2->GetName(), g1->GetName());
@@ -319,6 +329,10 @@ namespace
 					s_mapPlayerBotGuildWars.erase(it);
 					s_adwPlayerBotNextGuildWarTime[empire] = dwNow + PLAYERBOT_GUILD_WAR_INTERVAL;
 				}
+				else if (!enabled)
+					PlayerBotLogThrottled("guild_war_off", dwNow,
+							"PLAYERBOT_GUILD: wars switched off, the bots of %s and %s have left the war under way",
+							g1->GetName(), g2->GetName());
 				continue;
 			}
 
@@ -523,6 +537,40 @@ namespace
 		return other && !IsPlayerBotSafeZone(other->GetMapIndex(), other->GetX(), other->GetY());
 	}
 
+	// A foe that has just stood up is out of the fight until it has recovered.
+	// It is invisible meanwhile, which mt2009's battle_is_attackable refuses
+	// every blow at, so a bot that went on at it swung at nothing; and r40250
+	// refuses nothing there, so it would have killed the same bot again the
+	// moment it rose.
+	bool IsPlayerBotWarFoeRecovering(LPCHARACTER other)
+	{
+		if (other->IsAffectFlag(AFF_REVIVE_INVISIBLE))
+			return true;
+		TPlayerBotAIStateMap::const_iterator it = s_mapPlayerBotAIStates.find(other->GetPlayerID());
+		return it != s_mapPlayerBotAIStates.end() && it->second.bRecoveringAfterDeath;
+	}
+
+	// What the tick does for a bot's life before a fight, which this pass
+	// claims the tick above: the recovery after a death, and the potions. A bot
+	// that fell used to stand up where it fell at a fifth of its health and go
+	// straight back at its killer: on Hiob's world 141 bots stood up 1662 times
+	// in three and a half minutes, seventeen times the most, the others
+	// swinging at them while they were invisible, and the guild map read as
+	// "boty w nieskonczonosc sie bija ... w miejscu" (19 September). It
+	// comes back now only once the recovery the rest of the tick gives it has
+	// run (PLAYERBOT_RECOVERY_HP_PERCENT, invisible meanwhile). Unlike the
+	// tower, a bot at war does not break off at
+	// PLAYERBOT_RECOVERY_INITIAL_HP_PERCENT: a kill is the war's score, and a
+	// side that vanished at a fifth of its health would never lose one.
+	bool KeepPlayerBotAliveAtWar(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
+	{
+		if (HandlePostDeathRecovery(ch, state, dwNow))
+			return true;
+		UseHealthPotion(ch, state, dwNow);
+		UseManaPotion(ch, state, dwNow);
+		return false;
+	}
+
 	// The nearest bot of the enemy guild on the bot's map that a blow can
 	// reach. One standing in the safe zone was chosen like any other, so its
 	// enemies walked in after it and swung at nothing for as long as it stood
@@ -537,7 +585,8 @@ namespace
 		{
 			LPCHARACTER other = CHARACTER_MANAGER::instance().FindByPID(it->first);
 			if (!other || other == ch || other->IsDead() || other->GetGuild() != enemy ||
-					other->GetMapIndex() != ch->GetMapIndex() || !IsPlayerBotWarTargetable(other))
+					other->GetMapIndex() != ch->GetMapIndex() || !IsPlayerBotWarTargetable(other) ||
+					it->second.bRecoveringAfterDeath || other->IsAffectFlag(AFF_REVIVE_INVISIBLE))
 				continue;
 			const int distance = DISTANCE_APPROX(ch->GetX() - other->GetX(), ch->GetY() - other->GetY());
 			if (distance < bestDistance)
@@ -605,6 +654,10 @@ namespace
 			TransitionPlayerBotMap(ch, state, battlefield, rallyX, rallyY, dwNow, "guild_war");
 			return true;
 		}
+		// Ahead of the horse: the recovery walks off the ground on its own
+		// terms, and a dismount would only have it mount again.
+		if (KeepPlayerBotAliveAtWar(ch, state, dwNow))
+			return true;
 		// A transport horse comes off for the fight, as in a duel.
 		// On foot, every rider, and the horse sent away rather than left to
 		// trot behind the fight: the operator's rule for a war ("niech boty
@@ -627,7 +680,8 @@ namespace
 		{
 			LPCHARACTER held = CHARACTER_MANAGER::instance().Find(state.dwTargetVID);
 			if (held && !held->IsDead() && held->GetGuild() == enemy &&
-					held->GetMapIndex() == ch->GetMapIndex() && IsPlayerBotWarTargetable(held))
+					held->GetMapIndex() == ch->GetMapIndex() && IsPlayerBotWarTargetable(held) &&
+					!IsPlayerBotWarFoeRecovering(held))
 				foe = held;
 		}
 		if (!foe)
