@@ -1942,11 +1942,48 @@ function Show-CoopDialog {
     $list.HideSelection = $false
     $list.MultiSelect = $false
     $list.Location = [Drawing.Point]::new(12, 112)
-    $list.Size = [Drawing.Size]::new(430, 190)
+    $list.Size = [Drawing.Size]::new(430, 150)
     [void]$list.Columns.Add('Znajomy', 170)
     [void]$list.Columns.Add('Login', 130)
     [void]$list.Columns.Add('Stan', 110)
     $hostTab.Controls.Add($list)
+
+    # How the world is offered. A host the Internet cannot reach (CGNAT, a
+    # second router) is offered through a VPN both players are in; the VPNs
+    # are read off this machine's adapters when the window opens.
+    $viaLabel = [Windows.Forms.Label]::new()
+    $viaLabel.Text = 'Połączenie:'
+    $viaLabel.Location = [Drawing.Point]::new(12, 276)
+    $viaLabel.Size = [Drawing.Size]::new(80, 20)
+    $hostTab.Controls.Add($viaLabel)
+    $viaBox = [Windows.Forms.ComboBox]::new()
+    $viaBox.DropDownStyle = 'DropDownList'
+    $viaBox.Location = [Drawing.Point]::new(96, 272)
+    $viaBox.Size = [Drawing.Size]::new(346, 24)
+    $hostTab.Controls.Add($viaBox)
+    $viaValues = New-Object System.Collections.Generic.List[string]
+    [void]$viaBox.Items.Add('Automatycznie (internet, przy CGNAT przez VPN)')
+    $viaValues.Add('auto')
+    [void]$viaBox.Items.Add('Internet (porty w routerze, UPnP)')
+    $viaValues.Add('internet')
+    $viaFound = @()
+    if (-not $JoinOnly) { try { $viaFound = @(Get-M2CoopVpnAdapters) } catch { $viaFound = @() } }
+    foreach ($vpn in $viaFound) {
+        [void]$viaBox.Items.Add(('{0} - adres {1}' -f $vpn.Name, $vpn.Address))
+        $viaValues.Add([string]$vpn.Kind)
+    }
+    $viaBox.SelectedIndex = 0
+    if (-not $JoinOnly) {
+        # The way the world was last hosted, while that VPN is still here.
+        try {
+            $lastHosting = (Read-M2CoopState -ServerRoot $root).hosting
+            if ($lastHosting -and (@($lastHosting.PSObject.Properties.Name) -contains 'vpn')) {
+                $lastIndex = $viaValues.IndexOf([string]$lastHosting.vpn)
+                if ($lastIndex -ge 2) { $viaBox.SelectedIndex = $lastIndex }
+            }
+        }
+        catch { }
+    }
 
     $addButton = [Windows.Forms.Button]::new()
     $addButton.Text = 'Dodaj znajomego'
@@ -2001,8 +2038,10 @@ function Show-CoopDialog {
     $hostHelp = [Windows.Forms.Label]::new()
     $hostHelp.Text = ('Kolejność: Zabezpiecz konta, Dodaj znajomego, HOSTUJ ŚWIAT, a potem Kod zaproszenia - ' +
         'skopiuj go i wyślij znajomemu w prywatnej wiadomości (zawiera hasło). Hostowanie uruchamia ponownie ' +
-        'serwer gry (około minuty), prosi Windows o zgodę na regułę zapory dla portów 11000 i 13000-13002 ' +
-        'i otwiera je w routerze przez UPnP. Ty grasz dalej na serwerze 1, znajomy na serwerze Online.')
+        'serwer gry (około minuty) i prosi Windows o zgodę na regułę zapory dla portów 11000 i 13000-13002; ' +
+        'przez internet otwiera je w routerze (UPnP). Gdy operator nie daje publicznego adresu (CGNAT - częste ' +
+        'w internecie komórkowym), zainstalujcie Radmin VPN albo Tailscale i połączcie się w jednej sieci: ' +
+        'launcher ją wykryje i hostuje przez nią, bez routera. Ty grasz dalej na serwerze 1, znajomy na serwerze Online.')
     $hostHelp.Location = [Drawing.Point]::new(12, 368)
     $hostHelp.Size = [Drawing.Size]::new(594, 96)
     $hostHelp.ForeColor = [Drawing.Color]::DimGray
@@ -2055,9 +2094,15 @@ function Show-CoopDialog {
             if (-not $bindings.Running) { $lines += 'Serwer gry: nie działa - najpierw GRAJ.' }
             elseif ($bindings.Public) { $lines += 'Hostowanie: WŁĄCZONE - porty gry są otwarte dla sieci.' }
             else { $lines += 'Hostowanie: wyłączone - porty gry słuchają tylko na tym komputerze.' }
-            $public = ''
-            if ($state.hosting -and [string]$state.hosting.publicAddress) { $public = [string]$state.hosting.publicAddress }
-            if ($public) { $lines += ('Adres dla znajomych (ostatnio): {0}' -f $public) }
+            $public = ''; $viaName = ''
+            if ($state.hosting) {
+                $fields = @($state.hosting.PSObject.Properties.Name)
+                if (($fields -contains 'friendAddress') -and [string]$state.hosting.friendAddress) { $public = [string]$state.hosting.friendAddress }
+                elseif (($fields -contains 'publicAddress') -and [string]$state.hosting.publicAddress) { $public = [string]$state.hosting.publicAddress }
+                if (($fields -contains 'mode') -and [string]$state.hosting.mode -eq 'vpn' -and ($fields -contains 'vpnName')) { $viaName = [string]$state.hosting.vpnName }
+            }
+            if ($public -and $viaName) { $lines += ('Adres dla znajomych (ostatnio): {0}, przez {1}' -f $public, $viaName) }
+            elseif ($public) { $lines += ('Adres dla znajomych (ostatnio): {0}' -f $public) }
             $defaults = @()
             try { $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $root) }
             catch { $lines += 'Baza nie odpowiada - uruchom serwer (GRAJ).' }
@@ -2082,6 +2127,8 @@ function Show-CoopDialog {
             if ($text -match '(?m)^name=(.*)$') { $name = $Matches[1].Trim() }
             if ($text -match '(?m)^host=(.*)$') { $hostName = $Matches[1].Trim() }
             $joinStatus.Text = ("W Twoim kliencie jest świat znajomego: {0} ({1}).`r`nW kliencie wybierz serwer 'Online: {0}'." -f $name, $hostName)
+            $joinVpn = Get-M2CoopVpnProduct -Kind (Get-M2CoopVpnKindForAddress $hostName)
+            if ($joinVpn) { $joinStatus.Text += ("`r`nTen adres jest w sieci {0} - gra połączy się, gdy {0} jest włączony i jesteś w sieci znajomego." -f $joinVpn.Name) }
         }
         elseif ($client) { $joinStatus.Text = 'W Twoim kliencie nie ma jeszcze świata znajomego.' }
         else { $joinStatus.Text = 'Nie wiem, gdzie jest klient - wskaż go przyciskiem WYBIERZ KLIENTA w oknie launchera.' }
@@ -2116,15 +2163,19 @@ function Show-CoopDialog {
         if (-not $friend) { return }
         if ($friend.blocked) { [Windows.Forms.MessageBox]::Show('To konto jest zablokowane - najpierw je odblokuj.', 'COOP', 'OK', 'Information') | Out-Null; return }
         $dialog.Cursor = [Windows.Forms.Cursors]::WaitCursor
-        $public = Get-M2CoopPublicAddress
+        $target = Get-M2CoopInviteTarget -ServerRoot $root
         $dialog.Cursor = [Windows.Forms.Cursors]::Default
-        if (-not $public) { [Windows.Forms.MessageBox]::Show('Nie udało się odczytać Twojego adresu w internecie.', 'COOP', 'OK', 'Warning') | Out-Null; return }
-        $code = Get-M2CoopFriendInvite -ServerRoot $root -Friend $friend -HostAddress $public
+        if (-not $target.Address) {
+            $why = $(if ($target.Vpn) { ('Nie udało się odczytać Twojego adresu w {0} - uruchom go i spróbuj jeszcze raz.' -f $target.VpnName) } else { 'Nie udało się odczytać Twojego adresu w internecie.' })
+            [Windows.Forms.MessageBox]::Show($why, 'COOP', 'OK', 'Warning') | Out-Null
+            return
+        }
+        $code = Get-M2CoopFriendInvite -ServerRoot $root -Friend $friend -HostAddress $target.Address -Vpn $target.Vpn
         try { [Windows.Forms.Clipboard]::SetText($code) } catch { }
         Write-LocalLog ("COOP: skopiowano kod zaproszenia dla loginu {0}." -f $friend.login)
-        Show-CoopSecretDialog -Title ('Kod zaproszenia - ' + [string]$friend.name) `
-            -Intro ("Kod jest już w schowku. Wyślij go znajomemu w prywatnej wiadomości - zawiera jego hasło. Znajomy wkleja go w swoim launcherze (przycisk COOP) albo w pliku Dolacz.bat w folderze klienta - hasło testów nie jest mu potrzebne.") `
-            -Secret $code
+        $intro = 'Kod jest już w schowku. Wyślij go znajomemu w prywatnej wiadomości - zawiera jego hasło. Znajomy wkleja go w swoim launcherze (przycisk COOP) albo w pliku Dolacz.bat w folderze klienta.'
+        if ($target.Vpn) { $intro = ('Kod jest już w schowku i prowadzi na Twój adres w {0}: znajomy musi najpierw dołączyć do Twojej sieci {0}. Wyślij mu kod w prywatnej wiadomości - zawiera jego hasło.' -f $target.VpnName) }
+        Show-CoopSecretDialog -Title ('Kod zaproszenia - ' + [string]$friend.name) -Intro $intro -Secret $code
     })
 
     $blockButton.Add_Click({
@@ -2174,13 +2225,20 @@ function Show-CoopDialog {
             [Windows.Forms.MessageBox]::Show(('Konta {0} mają hasła z paczki - każdy w internecie mógłby się na nie zalogować. Najpierw kliknij Zabezpiecz konta.' -f ($defaults -join ', ')), 'COOP', 'OK', 'Warning') | Out-Null
             return
         }
+        $via = $viaValues[[Math]::Max(0, $viaBox.SelectedIndex)]
+        $routerLine = "- otworzy te porty w routerze (UPnP), a gdy operator nie daje publicznego adresu (CGNAT), użyje VPN, jeśli go wykryje."
+        if ($via -eq 'internet') { $routerLine = '- otworzy te porty w routerze (UPnP).' }
+        elseif ($via -ne 'auto') {
+            $product = Get-M2CoopVpnProduct -Kind $via
+            $routerLine = ("- niczego nie otwiera w routerze: znajomi łączą się przez {0}, w Twojej sieci." -f $(if ($product) { $product.Name } else { 'VPN' }))
+        }
         $answer = [Windows.Forms.MessageBox]::Show(
             ("Hostowanie:`r`n- uruchomi ponownie serwer gry (około minuty) - wyloguj się z gry,`r`n" +
              "- poprosi Windows o zgodę na regułę zapory dla portów gry,`r`n" +
-             "- otworzy te porty w routerze (UPnP).`r`n`r`nKontynuować?"), 'Hostuj świat', 'YesNo', 'Question')
+             $routerLine + "`r`n`r`nKontynuować?"), 'Hostuj świat', 'YesNo', 'Question')
         if ($answer -ne [Windows.Forms.DialogResult]::Yes) { return }
         $dialog.Close()
-        Start-LauncherAction -Action 'CoopHost' -Yes
+        Start-LauncherAction -Action 'CoopHost' -Yes -ExtraArgs @('-CoopVia', $via)
     })
 
     $stopButtonCoop.Add_Click({
@@ -2207,8 +2265,19 @@ function Show-CoopDialog {
             try { [Windows.Forms.Clipboard]::SetText([string]$invite.password) } catch { }
             $codeBox.Text = ''
             & $refresh
-            Show-CoopSecretDialog -Title 'Świat znajomego dodany' `
-                -Intro ("Uruchom klienta i wybierz serwer 'Online: {0}'. Hasło jest w schowku." -f $invite.name) `
+            # What this machine can tell before the client is started: a VPN
+            # world needs that VPN here, and the world's auth either answers
+            # from here or it does not (not hosting right now, or no path).
+            $dialog.Cursor = [Windows.Forms.Cursors]::WaitCursor
+            $advice = Get-M2CoopJoinAdvice -Invite $invite
+            $answers = Test-M2CoopHostAnswers -HostAddress ([string]$invite.host) -Port ([int]$invite.auth)
+            $dialog.Cursor = [Windows.Forms.Cursors]::Default
+            Write-LocalLog ("COOP: serwer znajomego {0}." -f $(if ($answers) { 'odpowiada' } else { 'nie odpowiada' }))
+            $intro = ("Uruchom klienta i wybierz serwer 'Online: {0}'. Hasło jest w schowku." -f $invite.name)
+            if ($advice) { $intro = $advice + ' ' + $intro }
+            elseif ($answers) { $intro += ' Serwer znajomego odpowiada.' }
+            else { $intro += ' Serwer znajomego teraz nie odpowiada - sprawdź, czy ma włączone hostowanie.' }
+            Show-CoopSecretDialog -Title 'Świat znajomego dodany' -Intro $intro `
                 -Secret ("Login: {0}`r`nHasło: {1}" -f $invite.login, $invite.password)
         }
         catch { [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'COOP', 'OK', 'Error') | Out-Null }

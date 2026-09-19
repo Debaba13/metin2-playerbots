@@ -27,6 +27,11 @@ param(
     [string]$FriendName = '',
     [string]$FriendLogin = '',
     [string]$Invite = '',
+    # CoopHost: how the world is offered - auto (the Internet where it can
+    # reach this machine, a VPN found here where it cannot), internet, or one
+    # VPN by name (vpn = the first one found).
+    [ValidateSet('auto', 'internet', 'vpn', 'radmin', 'tailscale', 'zerotier', 'hamachi')]
+    [string]$CoopVia = 'auto',
     # ResetWorld only: bring the server up on the fresh world right away, so
     # "wyzeruj swiat i zacznij od nowa" is one click and not a reset followed
     # by GRAJ.
@@ -1376,6 +1381,19 @@ function Write-CoopNetworkReport {
     else { Write-Host 'Router: nie odpowiedział na UPnP' }
     $color = $(if ($Report.Verdict -eq 'public') { 'Green' } elseif ($Report.Verdict -eq 'no-upnp' -or $Report.Verdict -eq 'mismatch') { 'Yellow' } else { 'Red' })
     Write-Host ("Wynik: {0}" -f $Report.Text) -ForegroundColor $color
+    $vpns = @($Report.Vpns)
+    foreach ($vpn in $vpns) { Write-Host ("Sieć VPN: {0}, adres {1} (karta {2})" -f $vpn.Name, $vpn.Address, $vpn.Interface) }
+    if ($vpns.Count -eq 0) { Write-Host 'Sieć VPN: nie wykryto (Radmin VPN, Tailscale, ZeroTier, Hamachi).' }
+}
+
+function Get-CoopHostingField {
+    # One field of the hosting record, '' when the record or the field is not
+    # there (a state file written before a field existed). Under StrictMode a
+    # missing property is an error, not an empty value.
+    param($Hosting, [Parameter(Mandatory = $true)][string]$Name)
+    if (-not $Hosting) { return '' }
+    if (-not (@($Hosting.PSObject.Properties.Name) -contains $Name)) { return '' }
+    return [string]$Hosting.$Name
 }
 
 function Show-CoopCheckAction {
@@ -1383,12 +1401,24 @@ function Show-CoopCheckAction {
     Write-Phase 'sprawdzanie sieci'
     $report = Get-M2CoopNetworkReport
     Write-CoopNetworkReport -Report $report
+    if (@('cgnat', 'double-nat') -contains $report.Verdict) {
+        $vpns = @($report.Vpns)
+        if ($vpns.Count -gt 0) { Write-Host ("Rozwiązanie: hostuj przez {0} - HOSTUJ ŚWIAT wybierze go sam." -f $vpns[0].Name) -ForegroundColor Yellow }
+        else {
+            Write-Host ('Rozwiązanie: zainstaluj Radmin VPN albo Tailscale, połącz się ze znajomymi w jednej sieci i hostuj ponownie - ' +
+                'launcher wykryje VPN i użyje go zamiast routera.') -ForegroundColor Yellow
+        }
+    }
     $ports = Get-M2CoopGamePorts -ServerRoot $serverRoot
     Write-Host ("Porty gry: {0}" -f ($ports -join ', '))
     $bindings = Get-M2CoopGameBindings -ServerRoot $serverRoot
     if (-not $bindings.Running) { Write-Host 'Serwer gry nie działa (brak opublikowanych portów).' -ForegroundColor Yellow }
     elseif ($bindings.Public) { Write-Host 'Porty gry są otwarte na wszystkich kartach sieciowych - świat jest hostowany.' -ForegroundColor Green }
     else { Write-Host 'Porty gry słuchają tylko lokalnie (127.0.0.1) - świat nie jest hostowany.' }
+    $hostingState = (Read-M2CoopState -ServerRoot $serverRoot).hosting
+    if ((Get-CoopHostingField $hostingState 'mode') -eq 'vpn') {
+        Write-Host ("Ostatnie hostowanie: przez {0}, adres dla znajomych {1}." -f (Get-CoopHostingField $hostingState 'vpnName'), (Get-CoopHostingField $hostingState 'friendAddress'))
+    }
     if ($report.GatewayInfo) {
         foreach ($port in $ports) {
             $m = Get-M2CoopPortMapping -Gateway $report.GatewayInfo -Port $port
@@ -1434,10 +1464,11 @@ function Add-CoopFriendAction {
     if (-not $name) { throw 'Nie podano imienia znajomego.' }
     $friend = New-M2CoopFriend -ServerRoot $serverRoot -Name $name
     Write-Host ("Konto dla {0}: login {1}, hasło {2}, kod usuwania postaci {3}" -f $friend.name, $friend.login, $friend.password, $friend.socialId) -ForegroundColor Green
-    $public = Get-M2CoopPublicAddress
-    if ($public) {
+    $target = Get-M2CoopInviteTarget -ServerRoot $serverRoot
+    if ($target.Address) {
         Write-Host 'Kod zaproszenia (skopiuj i wyślij znajomemu):'
-        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $friend -HostAddress $public) -ForegroundColor Cyan
+        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $friend -HostAddress $target.Address -Vpn $target.Vpn) -ForegroundColor Cyan
+        if ($target.Vpn) { Write-Host ("Znajomy musi być w Twojej sieci {0} - kod prowadzi na adres {1}." -f $target.VpnName, $target.Address) -ForegroundColor Yellow }
     }
 }
 
@@ -1455,17 +1486,21 @@ function Set-CoopFriendBlockedAction {
 function Show-CoopInviteAction {
     Assert-CoopHostAccess
     $state = Read-M2CoopState -ServerRoot $serverRoot
-    $public = Get-M2CoopPublicAddress
-    if (-not $public) { throw 'Nie udało się odczytać adresu publicznego (brak internetu?).' }
+    $target = Get-M2CoopInviteTarget -ServerRoot $serverRoot
+    if (-not $target.Address) {
+        if ($target.Vpn) { throw ("Nie udało się odczytać adresu {0} - uruchom go i spróbuj jeszcze raz." -f $target.VpnName) }
+        throw 'Nie udało się odczytać adresu publicznego (brak internetu?).'
+    }
     $shown = 0
     foreach ($f in @($state.friends)) {
         if ($FriendLogin -and [string]$f.login -ne $FriendLogin) { continue }
         if ($f.blocked) { continue }
         Write-Host ("{0} (login {1}, hasło {2}):" -f $f.name, $f.login, $f.password)
-        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $f -HostAddress $public) -ForegroundColor Cyan
+        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $f -HostAddress $target.Address -Vpn $target.Vpn) -ForegroundColor Cyan
         $shown++
     }
     if ($shown -eq 0) { Write-Host 'Brak znajomych - dodaj ich najpierw.' -ForegroundColor Yellow }
+    elseif ($target.Vpn) { Write-Host ("Kody prowadzą na adres {0} w sieci {1} - znajomi muszą być w tej sieci." -f $target.Address, $target.VpnName) -ForegroundColor Yellow }
 }
 
 function Invoke-CoopGameRecreate {
@@ -1532,9 +1567,23 @@ function Start-CoopHostingAction {
     Write-Phase 'sprawdzanie sieci'
     $report = Get-M2CoopNetworkReport
     Write-CoopNetworkReport -Report $report
-    if (@('no-lan', 'offline', 'cgnat', 'double-nat') -contains $report.Verdict) {
-        throw 'Z tej sieci znajomi nie połączą się bezpośrednio - hostowanie przerwane, nic nie zmieniono.'
+    if (@('no-lan', 'offline') -contains $report.Verdict) {
+        throw 'Ten komputer nie ma połączenia z internetem - hostowanie przerwane, nic nie zmieniono.'
     }
+    # The text menu asks when there is a real choice - a VPN here and an
+    # Internet that could work too; the window's button passes its own answer.
+    $requested = $CoopVia
+    $vpns = @($report.Vpns)
+    if ($Action -eq 'Menu' -and $requested -eq 'auto' -and $vpns.Count -gt 0 -and -not (@('cgnat', 'double-nat') -contains $report.Verdict)) {
+        if (Confirm-Action ("Wykryto {0} (adres {1}). Hostować przez VPN zamiast przez internet?" -f $vpns[0].Name, $vpns[0].Address)) { $requested = $vpns[0].Kind }
+        else { $requested = 'internet' }
+    }
+    $via = Resolve-M2CoopHostingVia -Report $report -Requested $requested
+    if ($via.Mode -eq 'blocked') {
+        throw ('Z tej sieci znajomi nie połączą się bezpośrednio (operator albo drugi router nie daje publicznego adresu) - hostowanie przerwane, nic nie zmieniono. ' +
+            'Zainstaluj Radmin VPN albo Tailscale, połącz się ze znajomymi w jednej sieci i hostuj ponownie: launcher wykryje VPN i użyje go zamiast routera.')
+    }
+    if ($via.Mode -eq 'vpn') { Write-Host ("Hostowanie przez {0}, adres {1}." -f $via.Vpn.Name, $via.Vpn.Address) -ForegroundColor Green }
     $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $serverRoot)
     if ($defaults.Count -gt 0) {
         throw ("Konta {0} mają hasła z paczki - każdy w internecie mógłby się na nie zalogować. Najpierw 'Zabezpiecz konta'." -f ($defaults -join ', '))
@@ -1560,7 +1609,22 @@ function Start-CoopHostingAction {
         Write-Host ("UWAGA: zapora blokuje program {0} (reguła '{1}') - usuń tę regułę w Zaporze Windows, inaczej znajomi się nie połączą." -f $block.Program, $block.Name) -ForegroundColor Yellow
     }
     $mapped = @()
-    if ($report.GatewayInfo) {
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    if ($via.Mode -eq 'vpn') {
+        # Nothing is opened in the router, and what hosting over the Internet
+        # opened before is closed: through a VPN the world is for the VPN's
+        # members and the LAN, not for everybody who scans the address.
+        $wasMapped = @()
+        if ($state.hosting -and (@($state.hosting.PSObject.Properties.Name) -contains 'mapped')) { $wasMapped = @($state.hosting.mapped) }
+        if ($report.GatewayInfo -and $wasMapped.Count -gt 0) {
+            Write-Phase 'router: zamykanie portów z hostowania przez internet'
+            foreach ($port in $wasMapped) {
+                if (Remove-M2CoopPortMapping -Gateway $report.GatewayInfo -Port ([int]$port) -LanAddress $report.LanAddress) { Write-Host "  port $port zamknięty" }
+            }
+        }
+        Write-Host ("W routerze nic nie otwieram - znajomi łączą się przez {0}." -f $via.Vpn.Name)
+    }
+    elseif ($report.GatewayInfo) {
         Write-Phase 'przekierowania w routerze (UPnP)'
         foreach ($port in $ports) {
             $r = Add-M2CoopPortMapping -Gateway $report.GatewayInfo -Port $port -LanAddress $report.LanAddress
@@ -1575,14 +1639,20 @@ function Start-CoopHostingAction {
     else {
         Write-Host ("Router nie odpowiada na UPnP: przekieruj w nim ręcznie TCP {0} na {1}." -f ($ports -join ', '), $report.LanAddress) -ForegroundColor Yellow
     }
-    $state = Read-M2CoopState -ServerRoot $serverRoot
+    $friendAddress = $(if ($via.Mode -eq 'vpn') { $via.Vpn.Address } else { $report.PublicAddress })
     $state.hosting = [pscustomobject]@{
         active = $true; since = (Get-Date).ToString('s'); lanAddress = $report.LanAddress
         publicAddress = $report.PublicAddress; ports = @($ports); mapped = @($mapped)
+        mode = $via.Mode; vpn = $(if ($via.Vpn) { $via.Vpn.Kind } else { '' }); vpnName = $(if ($via.Vpn) { $via.Vpn.Name } else { '' })
+        friendAddress = $friendAddress
     }
     Save-M2CoopState -ServerRoot $serverRoot -State $state
     Write-Host ''
-    Write-Host ("Hostowanie włączone. Adres dla znajomych: {0}" -f $report.PublicAddress) -ForegroundColor Green
+    if ($via.Mode -eq 'vpn') {
+        Write-Host ("Hostowanie włączone przez {0}. Adres dla znajomych: {1}" -f $via.Vpn.Name, $friendAddress) -ForegroundColor Green
+        Write-Host ("Znajomi muszą dołączyć do Twojej sieci {0}, zanim wkleją kod zaproszenia." -f $via.Vpn.Name) -ForegroundColor Yellow
+    }
+    else { Write-Host ("Hostowanie włączone. Adres dla znajomych: {0}" -f $friendAddress) -ForegroundColor Green }
     Write-Host 'Ty grasz dalej na serwerze 1 (Metin2 SinglePlayer). Kody zaproszeń dla znajomych są w oknie COOP.'
     if (@($state.friends).Count -eq 0) { Write-Host 'Nie masz jeszcze znajomych - dodaj ich w oknie COOP.' -ForegroundColor Yellow }
     if ($mapped.Count -gt 0 -and $mapped.Count -lt $ports.Count) {
@@ -1624,6 +1694,8 @@ function Update-CoopHostingLease {
     if (-not (Get-Command Read-M2CoopState -ErrorAction SilentlyContinue)) { return }
     $state = Read-M2CoopState -ServerRoot $serverRoot
     if (-not ($state.hosting -and $state.hosting.active)) { return }
+    # Through a VPN nothing is leased in the router.
+    if ((Get-CoopHostingField $state.hosting 'mode') -eq 'vpn') { return }
     $lan = Get-M2CoopLanAddress
     if (-not $lan) { return }
     $gateway = Find-M2CoopGateway -LanAddress $lan.Address
@@ -1645,6 +1717,10 @@ function Join-CoopAction {
     $path = Write-M2CoopClientConfig -ClientFolder $client -Invite $inv
     Write-Host ("Zapisano {0}" -f $path) -ForegroundColor Green
     Write-Host ("W kliencie wybierz serwer 'Online: {0}' i zaloguj się: login {1}, hasło {2}" -f $inv.name, $inv.login, $inv.password) -ForegroundColor Cyan
+    $advice = Get-M2CoopJoinAdvice -Invite $inv
+    if ($advice) { Write-Host $advice -ForegroundColor Yellow }
+    if (Test-M2CoopHostAnswers -HostAddress ([string]$inv.host) -Port ([int]$inv.auth)) { Write-Host 'Serwer znajomego odpowiada z tego komputera.' -ForegroundColor Green }
+    else { Write-Host 'Serwer znajomego teraz nie odpowiada - sprawdź, czy ma uruchomiony serwer i włączone hostowanie.' -ForegroundColor Yellow }
 }
 
 function Invoke-Action {

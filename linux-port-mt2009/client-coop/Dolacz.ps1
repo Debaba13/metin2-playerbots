@@ -9,7 +9,9 @@
 # Samodzielny: na komputerze gracza, który tylko dołącza, nie ma serwera ani
 # launchera, więc ten plik nie importuje niczego. Kod zaproszenia czyta tak
 # samo jak launcher\Metin2Launcher.Coop.psm1 (Read-M2CoopInvite) i zapisuje
-# coop.cfg tak samo jak Write-M2CoopClientConfig.
+# coop.cfg tak samo jak Write-M2CoopClientConfig; świat w sieci VPN (Radmin VPN,
+# Tailscale, ZeroTier, Hamachi) rozpoznaje jak Get-M2CoopJoinAdvice, a to, czy
+# serwer znajomego odpowiada, sprawdza jak Test-M2CoopHostAnswers.
 param([string]$Invite = '', [switch]$NoWindow)
 $ErrorActionPreference = 'Stop'
 $clientDir = $PSScriptRoot
@@ -58,12 +60,81 @@ function Write-CoopConfig {
     return $path
 }
 
+# The world may be offered at an address in a VPN both players are in, for a
+# host the Internet cannot reach. The invite names the VPN (a launcher from
+# 2.0.82 writes it); an older code still gives Radmin VPN and Hamachi away by
+# the address, and 100.64.0.0/10 in an invite is Tailscale's.
+$vpnNames = @{ radmin = 'Radmin VPN'; tailscale = 'Tailscale'; zerotier = 'ZeroTier'; hamachi = 'Hamachi' }
+$vpnPatterns = @{ radmin = 'Radmin'; tailscale = 'Tailscale'; zerotier = 'ZeroTier'; hamachi = 'Hamachi' }
+
+function Get-CoopInviteVpn {
+    param([Parameter(Mandatory = $true)]$Invite)
+    $kind = ''
+    if ($Invite.PSObject.Properties.Name -contains 'vpn') { $kind = [string]$Invite.vpn }
+    if (-not $vpnNames.ContainsKey($kind)) { $kind = '' }
+    if (-not $kind) {
+        $address = [string]$Invite.host
+        if ($address -match '^26\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { $kind = 'radmin' }
+        elseif ($address -match '^25\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { $kind = 'hamachi' }
+        elseif ($address -match '^100\.(\d{1,3})\.\d{1,3}\.\d{1,3}$' -and [int]$Matches[1] -ge 64 -and [int]$Matches[1] -le 127) { $kind = 'tailscale' }
+    }
+    return $kind
+}
+
+function Test-CoopVpnHere {
+    # That VPN's adapter up on this machine, with an address of its own.
+    param([Parameter(Mandatory = $true)][string]$Kind)
+    try {
+        $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
+        foreach ($adapter in @(Get-NetAdapter -ErrorAction Stop)) {
+            if ([string]$adapter.Status -ne 'Up') { continue }
+            if ((([string]$adapter.Name) + ' ' + ([string]$adapter.InterfaceDescription)) -notmatch $vpnPatterns[$Kind]) { continue }
+            foreach ($a in @($addresses | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex })) {
+                if (-not ([string]$a.IPAddress).StartsWith('169.254.')) { return $true }
+            }
+        }
+    }
+    catch { return $true }
+    return $false
+}
+
+function Test-CoopHostAnswers {
+    # The server speaks first (its handshake), so bytes read back mean the
+    # whole way to the friend's world is open.
+    param([Parameter(Mandatory = $true)][string]$HostAddress, [Parameter(Mandatory = $true)][int]$Port)
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $wait = $client.BeginConnect($HostAddress, $Port, $null, $null)
+        if (-not ($wait.AsyncWaitHandle.WaitOne(4000) -and $client.Connected)) { return $false }
+        $client.EndConnect($wait)
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = 4000
+        $buffer = New-Object byte[] 16
+        return ($stream.Read($buffer, 0, $buffer.Length) -gt 0)
+    }
+    catch { return $false }
+    finally { $client.Close() }
+}
+
+function Get-CoopJoinNotes {
+    param([Parameter(Mandatory = $true)]$Invite)
+    $notes = @()
+    $kind = Get-CoopInviteVpn -Invite $Invite
+    if ($kind -and -not (Test-CoopVpnHere -Kind $kind)) {
+        $notes += ("Świat znajomego jest dostępny przez {0}. Zainstaluj {0} i dołącz do sieci znajomego (jak się nazywa i jakie ma hasło, powie Ci znajomy) - bez tego gra się nie połączy." -f $vpnNames[$kind])
+    }
+    elseif (Test-CoopHostAnswers -HostAddress ([string]$Invite.host) -Port ([int]$Invite.auth)) { $notes += 'Serwer znajomego odpowiada.' }
+    else { $notes += 'Serwer znajomego teraz nie odpowiada - poproś, żeby uruchomił serwer (GRAJ) i włączył hostowanie.' }
+    return $notes
+}
+
 if ($NoWindow) {
     if (-not $Invite) { $Invite = Read-Host 'Wklej kod zaproszenia' }
     $inv = Read-CoopInvite -Code $Invite
     $path = Write-CoopConfig -Invite $inv
     Write-Host ("Zapisano {0}" -f $path)
     Write-Host ("W kliencie wybierz serwer 'Online: {0}'. Login: {1}, hasło: {2}" -f $inv.name, $inv.login, $inv.password)
+    foreach ($note in @(Get-CoopJoinNotes -Invite $inv)) { Write-Host $note }
     return
 }
 
@@ -112,6 +183,7 @@ $result.Multiline = $true
 $result.ReadOnly = $true
 $result.Location = [Drawing.Point]::new(14, 228)
 $result.Size = [Drawing.Size]::new(556, 110)
+$result.ScrollBars = 'Vertical'
 $result.Font = [Drawing.Font]::new('Consolas', 10)
 $form.Controls.Add($result)
 
@@ -150,7 +222,10 @@ $joinButton.Add_Click({
         $inv = Read-CoopInvite -Code $codeBox.Text
         [void](Write-CoopConfig -Invite $inv)
         try { [Windows.Forms.Clipboard]::SetText([string]$inv.password) } catch { }
-        $result.Text = ("Gotowe. W grze wybierz serwer 'Online: {0}'.`r`n`r`nLogin: {1}`r`nHasło: {2}`r`n(hasło jest też w schowku)" -f $inv.name, $inv.login, $inv.password)
+        $form.Cursor = [Windows.Forms.Cursors]::WaitCursor
+        $notes = @(Get-CoopJoinNotes -Invite $inv)
+        $form.Cursor = [Windows.Forms.Cursors]::Default
+        $result.Text = ("Gotowe. W grze wybierz serwer 'Online: {0}'.`r`n`r`nLogin: {1}`r`nHasło: {2}`r`n(hasło jest też w schowku)`r`n`r`n{3}" -f $inv.name, $inv.login, $inv.password, ($notes -join "`r`n"))
         $playButton.Enabled = $true
     }
     catch {

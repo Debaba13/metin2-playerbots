@@ -9,6 +9,10 @@
 #   router    TCP mappings of our own, described and leased, for the auth
 #             port and every game core's port; a port somebody else mapped
 #             is refused, never overwritten or deleted;
+#   vpn       Radmin VPN, Tailscale, ZeroTier or Hamachi found on this
+#             machine, for a host the Internet cannot reach (CGNAT, a second
+#             router): the world is offered at the VPN address instead, and
+#             the router is left alone;
 #   firewall  one inbound rule for exactly those ports, added only through an
 #             administrator's consent (UAC);
 #   accounts  a game account for each friend on the host's world, the default
@@ -149,7 +153,9 @@ function Get-M2CoopLanAddress {
     $configs = @(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object {
         $_.IPv4DefaultGateway -and $_.IPv4Address -and $_.NetAdapter -and $_.NetAdapter.Status -eq 'Up'
     })
-    $physical = @($configs | Where-Object { $_.NetAdapter.InterfaceDescription -notmatch 'Hyper-V|Virtual|WSL|vEthernet|Docker|VPN|TAP|Loopback' })
+    # Tailscale's adapter is "Tailscale Tunnel", which none of the older words
+    # catch, and with an exit node it carries the default route.
+    $physical = @($configs | Where-Object { $_.NetAdapter.InterfaceDescription -notmatch 'Hyper-V|Virtual|WSL|vEthernet|Docker|VPN|TAP|Loopback|Tailscale|ZeroTier|Hamachi|Radmin|WireGuard|Wintun' })
     $pick = $null
     if ($physical.Count -gt 0) { $pick = $physical[0] } elseif ($configs.Count -gt 0) { $pick = $configs[0] }
     if (-not $pick) { return $null }
@@ -349,7 +355,142 @@ function Get-M2CoopNetworkReport {
         GatewayInfo   = $gateway
         Verdict       = $verdict
         Text          = $text
+        Vpns          = @(Get-M2CoopVpnAdapters)
     }
+}
+
+# ---------------------------------------------------------------- vpn
+# A host whose operator hands out no public address (CGNAT - most mobile
+# Internet and part of the fibre) or who sits behind a second router cannot be
+# reached from the Internet at all, and no setting in the host's own router
+# changes that. What does work is a VPN both players join: each of these puts
+# a virtual adapter with an address of its own on every member's machine, and
+# a friend's client connects to the host's VPN address exactly as it would to
+# a public one. Nothing in the router is opened for it, and the tunnel
+# encrypts what the game's fixed XTEA key does not.
+#
+# The adapters as the products name them: "Famatech Radmin VPN Ethernet
+# Adapter" (26.x), "Tailscale Tunnel" (100.64.0.0/10), "ZeroTier Virtual
+# Port" (whatever the network assigns) and "LogMeIn Hamachi Virtual Ethernet
+# Adapter" (25.x). The order is the order they are offered in: Radmin VPN is
+# what players here already use for LAN games, Hamachi's free tier takes five.
+$script:CoopVpnProducts = @(
+    [pscustomobject]@{ Kind = 'radmin'; Name = 'Radmin VPN'; Pattern = 'Radmin' }
+    [pscustomobject]@{ Kind = 'tailscale'; Name = 'Tailscale'; Pattern = 'Tailscale' }
+    [pscustomobject]@{ Kind = 'zerotier'; Name = 'ZeroTier'; Pattern = 'ZeroTier' }
+    [pscustomobject]@{ Kind = 'hamachi'; Name = 'Hamachi'; Pattern = 'Hamachi' }
+)
+
+function Get-M2CoopVpnProduct {
+    param([AllowEmptyString()][string]$Kind)
+    foreach ($product in $script:CoopVpnProducts) { if ($product.Kind -eq $Kind) { return $product } }
+    return $null
+}
+
+function Select-M2CoopVpnAdapters {
+    # Pure: adapter records in (Alias, Description, Status and Addresses, the
+    # adapter's IPv4 addresses), the VPNs among them out, in the order of the
+    # product table. Apart from Get-NetAdapter so it can be tried on adapters
+    # of machines it never ran on - this one has none of the four.
+    param([object[]]$Adapters = @())
+    $found = New-Object System.Collections.Generic.List[object]
+    foreach ($product in $script:CoopVpnProducts) {
+        foreach ($adapter in @($Adapters)) {
+            if (-not $adapter) { continue }
+            if ([string]$adapter.Status -ne 'Up') { continue }
+            $label = ([string]$adapter.Alias) + ' ' + ([string]$adapter.Description)
+            if ($label -notmatch [regex]::Escape($product.Pattern)) { continue }
+            $address = ''
+            foreach ($candidate in @($adapter.Addresses)) {
+                $text = [string]$candidate
+                if ($text -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { continue }
+                # An adapter still waiting for its network carries the
+                # link-local address Windows gives everything.
+                if ($text.StartsWith('169.254.') -or $text.StartsWith('127.')) { continue }
+                $address = $text
+                break
+            }
+            if (-not $address) { continue }
+            $found.Add([pscustomobject]@{ Kind = $product.Kind; Name = $product.Name; Address = $address; Interface = [string]$adapter.Alias })
+        }
+    }
+    # ToArray, never @($found): Windows PowerShell 5.1 answers @() of a
+    # List[object] with "Argument types do not match", empty or not.
+    return $found.ToArray()
+}
+
+function Get-M2CoopVpnAdapters {
+    $records = New-Object System.Collections.Generic.List[object]
+    try {
+        $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
+        foreach ($adapter in @(Get-NetAdapter -ErrorAction Stop)) {
+            $mine = @($addresses | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex } | ForEach-Object { [string]$_.IPAddress })
+            $records.Add([pscustomobject]@{ Alias = [string]$adapter.Name; Description = [string]$adapter.InterfaceDescription; Status = [string]$adapter.Status; Addresses = $mine })
+        }
+    }
+    catch { return @() }
+    return @(Select-M2CoopVpnAdapters -Adapters $records.ToArray())
+}
+
+function Get-M2CoopVpnKindForAddress {
+    # Two of the four say who they are by the address alone: Radmin VPN lives
+    # in 26.0.0.0/8 and Hamachi in 25.0.0.0/8 (ranges nobody routes on the
+    # Internet), and 100.64.0.0/10 in an invite is Tailscale's - a host behind
+    # CGNAT is refused before its CGNAT address could reach one. ZeroTier's are
+    # ordinary private ranges, so only the invite's own field names it.
+    param([AllowEmptyString()][string]$Address)
+    if ($Address -match '^26\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { return 'radmin' }
+    if ($Address -match '^25\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { return 'hamachi' }
+    if (Test-M2CoopCgnatAddress $Address) { return 'tailscale' }
+    return ''
+}
+
+function Resolve-M2CoopHostingVia {
+    # Which way the world is offered: 'internet' (the router's ports, as since
+    # 2.0.80) or one of the VPNs in the report. 'auto' keeps the Internet
+    # wherever it can work and takes a VPN only where it cannot - so nothing
+    # changes for anybody who hosted before. Mode 'blocked' is the one case
+    # with no way at all: the Internet cannot reach this host and it has no VPN.
+    param([Parameter(Mandatory = $true)]$Report, [AllowEmptyString()][string]$Requested = 'auto')
+    $vpns = @($Report.Vpns)
+    $want = $(if ($Requested) { $Requested.ToLowerInvariant() } else { 'auto' })
+    $unreachable = @('cgnat', 'double-nat') -contains [string]$Report.Verdict
+    if ($want -eq 'internet') {
+        if ($unreachable) { return [pscustomobject]@{ Mode = 'blocked'; Vpn = $null } }
+        return [pscustomobject]@{ Mode = 'internet'; Vpn = $null }
+    }
+    if ($want -ne 'auto') {
+        foreach ($vpn in $vpns) {
+            if ($want -eq 'vpn' -or $vpn.Kind -eq $want) { return [pscustomobject]@{ Mode = 'vpn'; Vpn = $vpn } }
+        }
+        $product = Get-M2CoopVpnProduct -Kind $want
+        $name = $(if ($product) { $product.Name } else { 'VPN' })
+        throw ("Nie widzę na tym komputerze połączonego {0} - uruchom go, dołącz do sieci i spróbuj jeszcze raz." -f $name)
+    }
+    if (-not $unreachable) { return [pscustomobject]@{ Mode = 'internet'; Vpn = $null } }
+    if ($vpns.Count -gt 0) { return [pscustomobject]@{ Mode = 'vpn'; Vpn = $vpns[0] } }
+    return [pscustomobject]@{ Mode = 'blocked'; Vpn = $null }
+}
+
+function Test-M2CoopHostAnswers {
+    # Whether a world's auth server answers from this machine. The server
+    # speaks first - its handshake - so bytes read back mean the whole path is
+    # open; a bare connection proves nothing through a proxy that accepts it
+    # before anything listens behind it (Test-CoopCoreAnswers says the same of
+    # Docker Desktop).
+    param([Parameter(Mandatory = $true)][string]$HostAddress, [Parameter(Mandatory = $true)][int]$Port, [int]$TimeoutMs = 4000)
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $wait = $client.BeginConnect($HostAddress, $Port, $null, $null)
+        if (-not ($wait.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)) { return $false }
+        $client.EndConnect($wait)
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = $TimeoutMs
+        $buffer = New-Object byte[] 16
+        return ($stream.Read($buffer, 0, $buffer.Length) -gt 0)
+    }
+    catch { return $false }
+    finally { $client.Close() }
 }
 
 # ---------------------------------------------------------------- firewall
@@ -551,17 +692,55 @@ function Get-M2CoopWorldName {
 
 function Get-M2CoopFriendInvite {
     param([Parameter(Mandatory = $true)][string]$ServerRoot, [Parameter(Mandatory = $true)]$Friend,
-        [Parameter(Mandatory = $true)][string]$HostAddress)
+        [Parameter(Mandatory = $true)][string]$HostAddress, [AllowEmptyString()][string]$Vpn = '')
     $ports = Get-M2CoopGamePorts -ServerRoot $ServerRoot
     return (New-M2CoopInvite -HostAddress $HostAddress -Ports $ports -WorldName (Get-M2CoopWorldName -ServerRoot $ServerRoot) `
-            -Login ([string]$Friend.login) -Password ([string]$Friend.password))
+            -Login ([string]$Friend.login) -Password ([string]$Friend.password) -Vpn $Vpn)
+}
+
+function Get-M2CoopInviteTarget {
+    # The address a friend's client is sent to: the host's VPN address when
+    # the world was last hosted through a VPN, the address the Internet sees
+    # otherwise. The VPN's address is read again rather than trusted from the
+    # state file, and the stored one stands in only while the VPN is off - a
+    # Radmin or Tailscale address stays with the machine. Address is empty when
+    # neither could be read.
+    param([Parameter(Mandatory = $true)][string]$ServerRoot)
+    $state = Read-M2CoopState -ServerRoot $ServerRoot
+    $hosting = $state.hosting
+    $names = @()
+    if ($hosting) { $names = @($hosting.PSObject.Properties.Name) }
+    if (($names -contains 'mode') -and [string]$hosting.mode -eq 'vpn' -and ($names -contains 'vpn')) {
+        $kind = [string]$hosting.vpn
+        $address = ''
+        foreach ($vpn in @(Get-M2CoopVpnAdapters)) { if ($vpn.Kind -eq $kind) { $address = $vpn.Address; break } }
+        if (-not $address -and ($names -contains 'friendAddress')) { $address = [string]$hosting.friendAddress }
+        $product = Get-M2CoopVpnProduct -Kind $kind
+        return [pscustomobject]@{ Address = $address; Vpn = $kind; VpnName = $(if ($product) { $product.Name } else { $kind }) }
+    }
+    return [pscustomobject]@{ Address = (Get-M2CoopPublicAddress); Vpn = ''; VpnName = '' }
+}
+
+function Get-M2CoopJoinAdvice {
+    # What the friend's own machine lacks to reach a world, as far as it can
+    # tell: for a world offered through a VPN, that VPN connected here. Empty
+    # when nothing is missing that this machine can see.
+    param([Parameter(Mandatory = $true)]$Invite)
+    $kind = ''
+    if ($Invite.PSObject.Properties.Name -contains 'vpn') { $kind = [string]$Invite.vpn }
+    if (-not $kind) { $kind = Get-M2CoopVpnKindForAddress ([string]$Invite.host) }
+    if (-not $kind) { return '' }
+    foreach ($vpn in @(Get-M2CoopVpnAdapters)) { if ($vpn.Kind -eq $kind) { return '' } }
+    $product = Get-M2CoopVpnProduct -Kind $kind
+    $name = $(if ($product) { $product.Name } else { 'VPN' })
+    return ("Świat znajomego jest dostępny przez {0}. Zainstaluj {0} i dołącz do sieci znajomego (jak się nazywa i jakie ma hasło, powie Ci znajomy) - bez tego gra się nie połączy." -f $name)
 }
 
 # ---------------------------------------------------------------- invite
 
 function New-M2CoopInvite {
     param([Parameter(Mandatory = $true)][string]$HostAddress, [Parameter(Mandatory = $true)][int[]]$Ports,
-        [string]$WorldName = '', [string]$Login = '', [string]$Password = '')
+        [string]$WorldName = '', [string]$Login = '', [string]$Password = '', [AllowEmptyString()][string]$Vpn = '')
     $auth = $Ports[0]
     $game = @($Ports | Select-Object -Skip 1)
     $channels = [Math]::Max(1, [int][Math]::Ceiling(($game | Measure-Object).Count / 3.0))
@@ -570,6 +749,10 @@ function New-M2CoopInvite {
         channel = $(if ($game.Count -gt 0) { $game[0] } else { 13000 }); channels = $channels
         login = $Login; password = $Password
     }
+    # Only a VPN invite carries the field, so an Internet invite is the same
+    # code it was in 2.0.80, and a reader that does not know the field - the
+    # client's Dolacz.ps1 of client 2.0.17 - skips it.
+    if ($Vpn) { $payload['vpn'] = $Vpn }
     $json = $payload | ConvertTo-Json -Compress
     $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
     return $script:CoopInvitePrefix + $b64
@@ -588,6 +771,15 @@ function Read-M2CoopInvite {
         $v = [int]$invite.$field
         if ($v -le 0 -or $v -ge 65536) { throw "Kod zaproszenia: zly port ($field)." }
     }
+    # Every invite leaves here with a vpn field, empty for an Internet one, so
+    # a caller under StrictMode can read it; an unknown product counts as none.
+    $vpn = ''
+    if ($invite.PSObject.Properties.Name -contains 'vpn') {
+        $vpn = [string]$invite.vpn
+        if (-not (Get-M2CoopVpnProduct -Kind $vpn)) { $vpn = '' }
+        $invite.vpn = $vpn
+    }
+    else { $invite | Add-Member -NotePropertyName vpn -NotePropertyValue $vpn }
     return $invite
 }
 
@@ -643,4 +835,6 @@ Export-ModuleMember -Function Get-M2CoopStatePath, Read-M2CoopState, Save-M2Coop
     Invoke-M2CoopSql, Get-M2CoopHashExpression, New-M2CoopSecret, Get-M2CoopDefaultPasswordAccounts, Set-M2CoopAccountPassword,
     Set-M2CoopAccountBlocked, New-M2CoopFriend, New-M2CoopInvite, Read-M2CoopInvite, Get-M2CoopClientFolder, Write-M2CoopClientConfig,
     Get-M2CoopFirewallBlocks, Get-M2CoopGameBindings, Set-M2CoopEnvValue, Protect-M2CoopAccounts, Set-M2CoopFriendBlocked,
-    Get-M2CoopWorldName, Get-M2CoopFriendInvite, Get-M2CoopAccessDigest, Test-M2CoopAccess, Grant-M2CoopAccess
+    Get-M2CoopWorldName, Get-M2CoopFriendInvite, Get-M2CoopAccessDigest, Test-M2CoopAccess, Grant-M2CoopAccess,
+    Get-M2CoopVpnProduct, Select-M2CoopVpnAdapters, Get-M2CoopVpnAdapters, Get-M2CoopVpnKindForAddress, Resolve-M2CoopHostingVia,
+    Test-M2CoopHostAnswers, Get-M2CoopInviteTarget, Get-M2CoopJoinAdvice

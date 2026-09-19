@@ -16,10 +16,21 @@ tylko tego folderu z klientem - bez serwera, bez Dockera, bez instalacji.
 Serwer 1 na liście ("Metin2 SinglePlayer") to świat na własnym komputerze -
 bez własnego serwera się nie połączy i tak ma być.
 
+Gdy znajomy hostuje przez VPN
+-----------------------------
+Jeśli operator internetu znajomego nie daje publicznego adresu (CGNAT -
+częste w internecie komórkowym), znajomy hostuje świat przez VPN: Radmin VPN,
+Tailscale, ZeroTier albo Hamachi. Wtedy przed krokiem 3:
+- zainstaluj ten sam program co znajomy (najczęściej Radmin VPN, darmowy)
+  i dołącz do jego sieci - nazwę sieci i hasło poda Ci znajomy;
+- program musi być włączony za każdym razem, gdy grasz u znajomego.
+Dolacz.bat powie, jeśli świat jest w sieci VPN, a na tym komputerze jej nie ma.
+
 Gdy nie działa
 --------------
 - "Nie można połączyć się z serwerem": znajomy musi mieć uruchomiony serwer
-  (GRAJ) i włączone hostowanie (launcher: COOP -> HOSTUJ ŚWIAT).
+  (GRAJ) i włączone hostowanie (launcher: COOP -> HOSTUJ ŚWIAT). Przy VPN
+  obaj musicie być w tej samej sieci, z włączonym programem VPN.
 - Działało, a przestało: adres znajomego w internecie mógł się zmienić
   (np. po restarcie routera). Poproś o nowy kod i wklej go w Dolacz.bat.
 - Kod zawiera Twoje hasło - nie wklejaj go na publicznym kanale.
