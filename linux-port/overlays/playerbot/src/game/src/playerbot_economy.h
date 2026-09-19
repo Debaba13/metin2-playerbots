@@ -762,6 +762,19 @@ namespace
 	// What the stack a counter's lines are cut from keeps back: the anvil's
 	// reserve of a material, the keys the bot holds on to, the scrolls of its
 	// own scroll work, one of anything else.
+	// The three stones a bot rerolls gear with: the change stone, the add
+	// stone and the blessing marble, by their subtype rather than by vnum -
+	// each comes in an ordinary and an ItemShop flavour (the 76xxx copies),
+	// and the green pair for gear of forty and under is a fourth and fifth.
+	bool IsPlayerBotBonusStoneItem(LPITEM item)
+	{
+		if (!item || item->GetType() != ITEM_USE)
+			return false;
+		const BYTE sub = item->GetSubType();
+		return sub == USE_ADD_ATTRIBUTE || sub == USE_CHANGE_ATTRIBUTE ||
+				sub == USE_ADD_ATTRIBUTE2;
+	}
+
 	int GetPlayerBotStallBaseKeep(LPCHARACTER ch, LPITEM item)
 	{
 		if (!item)
@@ -778,6 +791,8 @@ namespace
 			return std::max(1, GetPlayerBotRefineMaterialReserve(ch, item->GetVnum()));
 		if (item->GetType() == ITEM_TREASURE_KEY)
 			return PLAYERBOT_TREASURE_KEY_KEEP;
+		if (IsPlayerBotBonusStoneItem(item))
+			return PLAYERBOT_BONUS_STONE_KEEP;
 		// The medal dropper is the medal shop and keeps one back; everybody else
 		// keeps the ladder's two (PLAYERBOT_HORSE_MEDAL_KEEP) and lists the rest.
 		if (item->GetVnum() == PLAYERBOT_HORSE_MEDAL_VNUM)
@@ -951,6 +966,8 @@ namespace
 		}
 		if (item->GetVnum() == PLAYERBOT_GRAND_MASTER_STONE_VNUM)
 			return PlayerBotHasGrandMasterToTrain(ch) ? PLAYERBOT_GRAND_MASTER_STONE_KEEP : 1;
+		if (IsPlayerBotBonusStoneItem(item))
+			return PLAYERBOT_BONUS_STONE_KEEP;
 		return 0;
 	}
 

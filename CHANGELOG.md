@@ -48,6 +48,13 @@ Serwer 2.0.85. Klient bez zmian (2.0.19).
   jeden z graczy pokazal ponad czterdziesci sztuk w plecaku. Teraz wszystko
   ponad dwa medale trafia na sklep jak kazdy inny towar. Na swiecie testowym
   bylo 37 627 medali w plecakach przeciwko 5 346 na ladach.
+- **Boty wystawiaja nadmiar kamieni bonusu** (Nagash). Kamien zmiany, kamien
+  dodania i Marmur Blogoslawienstwa nigdy nie moga trafic do handlarza — i
+  zadna lada ich tez nie przyjmowala, wiec to, czego bot nie zdazyl zuzyc,
+  zostawalo w plecaku na zawsze; jeden z graczy pokazal sto dziewiecdziesiat
+  sztuk u jednego bota. Na swiecie testowym bylo 20 387 kamieni w plecakach i
+  **zero** na ladach, 374 boty ponad dziesiec sztuk. Teraz bot trzyma dziesiec
+  na wlasne mixowanie, a reszte wystawia.
 - **Drugi kanal jest osiagalny takze na Linuksie** (GorącyDelfin). Kanal 2
   nasluchuje na portach 13010-13012, ale otwieral je tylko launcher na
   Windows — wiec na serwerze linuksowym (i po wlaczeniu kanalu w panelu) boty

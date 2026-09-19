@@ -2232,6 +2232,15 @@ namespace
 					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item)) ? 800 : -1;
 		if (item->GetType() == ITEM_POLYMORPH || IsPlayerBotMetinDetector(item->GetVnum()))
 			return PLAYERBOT_SHOP_POLYMORPH_SCORE;
+		// A bonus stone over what the bot keeps for its own rerolling. It is
+		// exempt from the junk rule - no bot may vendor one - and until now no
+		// counter listed one either, so whatever a bot could not spend it kept
+		// for ever: a hundred and ninety change stones in one bag (Nagash).
+		// Above the books and below the materials, the way a marble sits.
+		if (IsPlayerBotBonusStoneItem(item))
+			return playerbot_stall_rules::HoldsSpare(CountPlayerBotVnumUnitsAhead(ch, item),
+					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item))
+					? PLAYERBOT_SHOP_BONUS_STONE_SCORE : -1;
 		// Seven of the Forgetting Scrolls are marked "do sprzedazy u
 		// handlarki" on Iwakura's sheet - the ones whose skill nobody buys a
 		// scroll for. They keep their merchant price and never take a counter

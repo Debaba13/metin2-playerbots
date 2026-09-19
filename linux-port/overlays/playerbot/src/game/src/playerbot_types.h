@@ -1009,6 +1009,14 @@ namespace
 	const DWORD PLAYERBOT_PROGRESSION_TRIP_RETRY_MAX_MS = 45 * 60 * 1000;
 	// Kamienie Duchowe a bot with a skill at G1..G10 keeps for its training.
 	const int PLAYERBOT_GRAND_MASTER_STONE_KEEP = 3;
+	// Bonus stones (the change stone, the add stone and the blessing marble)
+	// are exempt from the junk rule - a bot must never vendor one - and no
+	// counter ever listed them either, so a bot that found more than it could
+	// spend kept them for good: one player's screenshot had a hundred and
+	// ninety in a single bag (Nagash, 19 September, "mozna by im chociaz
+	// pozwolic wystawiac te dodania i zmianki na sklep"). This many are kept
+	// for the bot's own rerolling and the rest are goods.
+	const int PLAYERBOT_BONUS_STONE_KEEP = 10;
 	// How many refine-material cells a bot carries as stock for its own counter.
 	// They stack, so this is eight cells out of ninety however many pieces are
 	// held - and eight is one full stall, which is as much as it can display.
@@ -3059,6 +3067,9 @@ namespace
 	// PLAYERBOT_SHOP_MARBLE_LINES of them, never two of one monster; the rest
 	// are the merchant's under bag pressure (IsPlayerBotJunkItem).
 	const int PLAYERBOT_SHOP_POLYMORPH_SCORE = 380;
+	// A bonus stone over the keep: worth a counter slot, and worth it ahead of
+	// a marble, because every bot with gear to finish wants one.
+	const int PLAYERBOT_SHOP_BONUS_STONE_SCORE = 420;
 	const int PLAYERBOT_SHOP_MARBLE_LINES = 3;
 	// And no counter carries more than PLAYERBOT_SHOP_SAME_VNUM_LINES lines of
 	// one item. The caps above were each for a kind - a material, a heap, the

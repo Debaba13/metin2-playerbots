@@ -6611,6 +6611,21 @@ Four things the personalities changed that are easy to trip over later:
   lines agree - the medal dropper keeps one, being the medal shop. Any rule of
   the shape "may spend" beside one of the shape "may sell" wants reading
   together: the pair can refuse both ways at once.
+- **Exempt from the junk rule is not the same as listed anywhere.** The change
+  stone, the add stone and the blessing marble have been kept out of
+  `IsPlayerBotJunkItem` since the marble went in - no bot may vendor one - and
+  `ScorePlayerBotShopStock` had no branch for them at all, so a bot that found
+  more than its own rerolling could spend kept them for ever: 20 387 stones in
+  1 475 bag stacks on the test world, **none** on any counter, and 374 bots
+  holding more than ten. One player's screenshot had a hundred and ninety in a
+  single bag (Nagash, 19 September, "mozna by im chociaz pozwolic wystawiac te
+  dodania i zmianki na sklep"). `IsPlayerBotBonusStoneItem` asks the subtype,
+  not the vnum - each stone has an ItemShop copy and the green pair for gear of
+  forty and under - and `PLAYERBOT_BONUS_STONE_KEEP` is what stays; the rest
+  are goods at `PLAYERBOT_SHOP_BONUS_STONE_SCORE`, cut the way every counted
+  kind is. When a rule exempts an item from the merchant, read the counter's
+  scorer for it in the same breath: between the two there is a bag with no
+  bottom, and the medals above are the same shape found the same night.
 - **A channel nobody can reach is a channel that is running.** Channel N
   listens on 13000+10*(N-1)..+2 inside the container and compose publishes
   `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, so with the second
