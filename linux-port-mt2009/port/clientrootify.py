@@ -416,6 +416,16 @@ EDITS = {
          b'\t\tif not itemData:\r\n'
          b'\t\t\treturn\r\n'
          b'\t\tikashop.SendRemoveItem(itemData["id"])\r\n'),
+        # And "edit the price of similar items" (ctrl + right click) sent one
+        # packet per line in a single frame, while the server takes one shop
+        # action per 200 ms: the first line was repriced and every other one
+        # answered "wait a moment" (uxietoszef, then Nagash with a screenshot,
+        # 20 September). They leave through shoppricepump.py now, a quarter of
+        # a second apart - the same shape as the inventory's auto-stack.
+        (b'\t\t\t\tfor i in item_list:\r\n'
+         b'\t\t\t\t\tself.__SendEditItemPricePacket(i, inputPrice)\r\n',
+         b'\t\t\t\tshoppricepump.Queue([(i, inputPrice) for i in item_list])\r\n'),
+        (b'import ikashop\r\n', b'import ikashop\r\nimport shoppricepump\r\n'),
     ],
     'uisystem.py': [
         (b'\t\tutils.open_url("https://mt2009.pl/Identity/Account/Manage/Support")\r\n',
