@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-20T10:59:57Z",
-  "statusMessage": "2.0.87 (serwer 2.0.87, klient bez zmian - 2.0.20): nowy swiat startuje na stawkach, o ktore launcher pyta przy zerowaniu, i moze poczekac z botami, az wszystko ustawisz (przycisk \"Wpusc boty do swiata\" w panelu). Iwakura Community Patch 1: Grinder nie stoi cala wsia na jednym poziomie, Prawo Awansu od 35 lvl wymaga broni +8 i helmu +6, a przed 45 lvl bot bonuje najpierw naszyjnik, bransolete i buty. Cios bota trafia to, co ma przed soba, i jest wart tyle, ile liczy gra.",
+  "publishedAt": "2026-09-20T11:19:51Z",
+  "statusMessage": "2.0.88 (serwer 2.0.88, klient bez zmian - 2.0.20): nowy cennik Iwakury z 20 wrzesnia. Ruszyl sie prawie kazdy numer, wiekszosc materialow o jakies siedemdziesiat procent (Zab Orka 136 730 -> 232 441, Zwoj Blogoslawienstwa 180 000 -> 550 000), a receptury zielarskie maja cene po raz pierwszy - czterdziesci pozycji po 450 000. Stragany, ktore juz stoja, przeceniaja sie same przy najblizszej wizycie wlasciciela.",
   "server": {
-    "version": "2.0.87",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.87/metin2-server-update-2.0.87.zip",
-    "sha256": "62152A7AE244EB6AFBF492C588BC7D9146223A00C62428BCA802765F43A0E12D"
+    "version": "2.0.88",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.88/metin2-server-update-2.0.88.zip",
+    "sha256": "7E131B9BC92FCCE4865C3C3FCAAFB789E118A06A2748B6C6C797F417EEA8737F"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
