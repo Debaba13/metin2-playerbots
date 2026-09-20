@@ -40,6 +40,11 @@ function Get-M2DefaultLauncherConfig {
         # English-speaking, and a launcher nobody can read is a launcher nobody
         # runs correctly.
         language = 'pl'
+        # Whether PLAY starts the game client as well as the server. On by
+        # default, because that is what the button has always done and what
+        # most people want; an operator who only keeps the world running for
+        # other people turns it off and stops having a client open itself.
+        launchClientOnPlay = $true
         serverRoot = [IO.Path]::GetFullPath($ServerRoot)
     }
 }
@@ -61,6 +66,11 @@ function Get-M2LauncherConfig {
             $defaults.$name = [string]$loaded.$name
         }
     }
+    # Its own line, because the loop above casts to [string] and "False" is a
+    # non-empty string - every config would then read as "yes, start it".
+    if ($null -ne $loaded.PSObject.Properties['launchClientOnPlay']) {
+        $defaults.launchClientOnPlay = [bool]$loaded.launchClientOnPlay
+    }
     # A config saved before the client was unpacked beside the server, or
     # pointing at a client that has since moved, still gets the sibling.
     if (-not [string]$defaults.clientExecutable -or
@@ -80,7 +90,7 @@ function Save-M2LauncherConfig {
         [Parameter(Mandatory = $true)][string]$ConfigPath
     )
 
-    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl, language |
+    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl, language, launchClientOnPlay |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 }
 

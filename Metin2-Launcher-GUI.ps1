@@ -190,6 +190,8 @@ $script:Strings = @{
         subtitle     = 'Prosty launcher: Docker, serwer, klient, aktualizacje i diagnostyka w jednym miejscu.'
         install      = '1. ZAINSTALUJ / PRZYGOTUJ'
         play         = '2. GRAJ (SERWER + KLIENT)'
+        launchClient = 'Uruchom takze klienta gry'
+        playNoClient = '2. GRAJ (SAM SERWER)'
         docker       = 'URUCHOM DOCKER'
         stop         = 'ZATRZYMAJ I ZAPISZ'
         panel        = 'OTWORZ PANEL WWW'
@@ -246,6 +248,8 @@ $script:Strings = @{
         subtitle     = 'One launcher: Docker, the server, the client, updates and diagnostics in one place.'
         install      = '1. INSTALL / PREPARE'
         play         = '2. PLAY (SERVER + CLIENT)'
+        launchClient = 'Start the game client too'
+        playNoClient = '2. PLAY (SERVER ONLY)'
         docker       = 'START DOCKER'
         stop         = 'STOP AND SAVE'
         panel        = 'OPEN WEB PANEL'
@@ -1462,6 +1466,34 @@ $script:form.Controls.Add($script:serverStatus)
 
 $installButton = New-Button (T 'install') 28 128 338 58 ([Drawing.Color]::FromArgb(88, 82, 160))
 $playButton = New-Button (T 'play') 388 128 338 58 ([Drawing.Color]::FromArgb(27, 150, 88))
+# Whether PLAY opens the client as well. It sits in the gap under the PLAY
+# button, so no other control moves; the choice is kept in
+# launcher.config.json, because somebody who runs the world for other
+# people wants it off every time, not once.
+$script:launchClientCheck = [Windows.Forms.CheckBox]::new()
+$script:launchClientCheck.Text = (T 'launchClient')
+$script:launchClientCheck.Location = [Drawing.Point]::new(390, 187)
+$script:launchClientCheck.Size = [Drawing.Size]::new(336, 17)
+$script:launchClientCheck.Font = [Drawing.Font]::new('Segoe UI', 8)
+$script:launchClientCheck.ForeColor = [Drawing.Color]::Silver
+function Update-PlayButtonLabel {
+    $playButton.Text = if ($script:launchClientCheck.Checked) { (T 'play') } else { (T 'playNoClient') }
+}
+# Ustawiane przed podpieciem obslugi zmiany, zeby pierwsze przypisanie nie
+# zapisywalo pliku konfiguracji przy samym otwarciu okna.
+$script:launchClientCheck.Checked = [bool](Get-LauncherConfig).launchClientOnPlay
+Update-PlayButtonLabel
+$script:launchClientCheck.Add_CheckedChanged({
+    $config = Get-LauncherConfig
+    $config.launchClientOnPlay = $script:launchClientCheck.Checked
+    Save-M2LauncherConfig -Config $config -ConfigPath $configPath
+    Update-PlayButtonLabel
+    Write-LocalLog $(if ($script:launchClientCheck.Checked) {
+        'GRAJ bedzie uruchamiac takze klienta gry.' } else {
+        'GRAJ bedzie uruchamiac sam serwer - klient zostaje wylaczony.' })
+})
+$script:form.Controls.Add($script:launchClientCheck)
+
 $dockerButton = New-Button (T 'docker') 28 202 218 50
 $stopButton = New-Button (T 'stop') 268 202 218 50 ([Drawing.Color]::FromArgb(180, 75, 55))
 $panelButton = New-Button (T 'panel') 508 202 218 50 ([Drawing.Color]::FromArgb(180, 125, 35))
@@ -1652,10 +1684,13 @@ function Read-LatestServerVersion {
 
 $installButton.Add_Click({ Install-Or-Prepare })
 $playButton.Add_Click({
-    if (-not (Find-ClientExecutable)) {
-        if (-not (Select-ClientExecutable)) { return }
+    $withClient = $script:launchClientCheck.Checked
+    if ($withClient) {
+        if (-not (Find-ClientExecutable)) {
+            if (-not (Select-ClientExecutable)) { return }
+        }
     }
-    Start-LauncherAction -Action 'Start' -LaunchClient
+    Start-LauncherAction -Action 'Start' -LaunchClient:$withClient
 })
 $dockerButton.Add_Click({ Start-LauncherAction -Action 'StartDocker' })
 $stopButton.Add_Click({
