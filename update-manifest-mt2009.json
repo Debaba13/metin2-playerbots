@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-19T17:39:13Z",
-  "statusMessage": "2.0.84 (serwer 2.0.84, klient 2.0.19): drugi kanał dostaje tylu botów, ile ustawia suwak - boty przechodzą na CH1 do sklepów i wracają; Kamienie Duszy według tierów Iwakury; nowe nicki bez zmiany nicków istniejących botów; Auto Łowy od Colide'a w drugiej wersji; launcher naprawia plik .env zniszczony przez nagłe wyłączenie komputera. W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-20T07:44:18Z",
+  "statusMessage": "2.0.86 (serwer 2.0.86, klient 2.0.20): system osobowosci Iwakury - nastroje, Towarzysz zapraszajacy graczy, Najemnik i Lista Przydatnych Przedmiotow; wszystkie trzy krolestwa na jednym swiecie domyslnie; okno ulepszania nie zamyka sie po kazdej probie; zmiana ceny wielu przedmiotow w sklepie naraz; GRAJ moze uruchomic sam serwer; kazde ustawienie w .env opisane po polsku. ZALECAMY ZACZAC NA NOWYM SWIECIE (launcher: KOPIA / NOWY SWIAT). W launcherze ZAINSTALUJ AKTUALIZACJE.",
   "server": {
-    "version": "2.0.84",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.84/metin2-server-update-2.0.84.zip",
-    "sha256": "6086B942B23A50208338D596EF04ED6AEFBFA9C136A4B12847F7948EE6AEE221"
+    "version": "2.0.86",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.86/metin2-server-update-2.0.86.zip",
+    "sha256": "7100D5454AA1CAF382CDE6B77D54DF2DF4A0EB2FB14449015D59D2D0767CAFA6"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.19",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.84/metin2-client-update-2.0.19.zip",
-    "sha256": "EB99D664987A2A7472B4AD6AD1EAC87A0843277FD838C6ACBF607E33A5B80964"
+    "version": "2.0.20",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.86/metin2-client-update-2.0.20.zip",
+    "sha256": "70592474D3E2D46A53580A0B446E4F86C79F09A3BD7152D515B5D089D0917441"
   }
 }
