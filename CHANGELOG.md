@@ -17,6 +17,30 @@ every version here.
 
 ---
 
+## 2.0.88 — 2026-09-20
+
+Serwer 2.0.88. Zawiera wszystko z 2.0.87.
+
+### Nowy cennik Iwakury
+
+Ceny w tym projekcie nie są wpisywane ręcznie — są renderowane z arkusza
+Iwakury. Ten jest z 20 września i ruszył się w nim prawie każdy numer, większość
+materiałów o jakieś siedemdziesiąt procent:
+
+| | było | jest |
+|---|---|---|
+| Ząb Orka | 136 730 | 232 441 |
+| Zwój Błogosławieństwa | 180 000 | 550 000 |
+| Kamień duchowy | 500 000 | 750 000 |
+
+Doszły też **receptury zielarskie** — czterdzieści pozycji, wszystkie po 450 000,
+których cennik wcześniej w ogóle nie wyceniał.
+
+Stragany, które już stoją, przecenia się same przy najbliższej wizycie
+właściciela — nie trzeba nic robić ani zaczynać od nowa.
+
+---
+
 ## 2.0.87 — 2026-09-20
 
 Serwer 2.0.87. Zawiera wszystko z 2.0.86.
