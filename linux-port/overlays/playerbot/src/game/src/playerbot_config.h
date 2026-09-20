@@ -681,6 +681,80 @@ namespace
 		return true;
 	}
 
+	// ---------------------------------------------------------------------
+	//  The bots held at the door
+	// ---------------------------------------------------------------------
+	// A world that has just been made is a world whose rates, respawns and
+	// personalities nobody has set yet, and the moment the first bot walks in
+	// it is too late to set them without something having happened already
+	// (NerrVoVy, 20 September). So the migrator writes this file for a fresh
+	// world when the launcher was told to hold them, and the panel's "Wpusc
+	// boty do swiata" writes a zero into it.
+	//
+	// A file rather than a key of the weights, because the two are written by
+	// different hands at different moments and sharing one file would be a
+	// race for no reason; a file rather than an environment variable, because
+	// letting the bots in must outlive a restart of the cores, and .env cannot
+	// be edited from the panel. "1" holds, anything else - including no file
+	// at all - does not, so an install that never heard of this behaves as it
+	// always did.
+	const char* const PLAYERBOT_HOLD_PATH = "/opt/m2spool/playerbot_hold";
+	bool s_bPlayerBotSpawnHeld = false;
+	bool s_bPlayerBotSpawnHeldRead = false;
+	bool s_bPlayerBotSpawnHeldReported = false;
+	DWORD s_dwPlayerBotHoldNextCheck = 0;
+
+	void ReadPlayerBotHoldFile()
+	{
+		s_bPlayerBotSpawnHeldRead = true;
+		bool held = false;
+		FILE* fp = fopen(PLAYERBOT_HOLD_PATH, "r");
+		if (fp)
+		{
+			char line[32] = { 0 };
+			if (fgets(line, sizeof(line), fp))
+			{
+				for (size_t i = 0; i < sizeof(line) && line[i]; ++i)
+				{
+					if (line[i] == '1')
+					{
+						held = true;
+						break;
+					}
+					if (line[i] != ' ' && line[i] != '\t')
+						break;
+				}
+			}
+			fclose(fp);
+		}
+		if (held != s_bPlayerBotSpawnHeld || !s_bPlayerBotSpawnHeldReported)
+		{
+			s_bPlayerBotSpawnHeldReported = true;
+			sys_log(0, "PLAYERBOT_CONFIG: the bots are %s (%s)",
+					held ? "held at the door" : "free to come in", PLAYERBOT_HOLD_PATH);
+		}
+		s_bPlayerBotSpawnHeld = held;
+	}
+
+	// Asked by every path that would put a bot into the world. The first
+	// question reads the file itself: the bootstrap's own spawn runs before
+	// the first tick, so waiting for the clock would let a cohort in through
+	// the door this is supposed to hold shut.
+	bool IsPlayerBotSpawnHeld()
+	{
+		if (!s_bPlayerBotSpawnHeldRead)
+			ReadPlayerBotHoldFile();
+		return s_bPlayerBotSpawnHeld;
+	}
+
+	void RefreshPlayerBotHold(DWORD dwNow)
+	{
+		if (s_bPlayerBotSpawnHeldRead && dwNow < s_dwPlayerBotHoldNextCheck)
+			return;
+		s_dwPlayerBotHoldNextCheck = dwNow + PLAYERBOT_WEIGHT_RELOAD_INTERVAL;
+		ReadPlayerBotHoldFile();
+	}
+
 	// Called once per tick. Does nothing at all between checks, and nothing but
 	// a stat(2) when the file has not changed since the last one.
 	void RefreshPlayerBotWeights(DWORD dwNow)
@@ -690,6 +764,7 @@ namespace
 		if (dwNow < s_dwPlayerBotWeightNextCheck)
 			return;
 		s_dwPlayerBotWeightNextCheck = dwNow + PLAYERBOT_WEIGHT_RELOAD_INTERVAL;
+		RefreshPlayerBotHold(dwNow);
 
 		const char* szPath = GetPlayerBotWeightPath();
 		struct stat st;

@@ -87,11 +87,16 @@ services:
       M2_RATE_EXP: "${M2_RATE_EXP:-100}"
       M2_RATE_DROP: "${M2_RATE_DROP:-100}"
       M2_RATE_YANG: "${M2_RATE_YANG:-100}"
+      M2_PLAYERBOT_START_HELD: "${M2_PLAYERBOT_START_HELD:-0}"
 
     entrypoint: ["/bin/sh", "/opt/playerbot/apply.sh"]
 
     volumes:
       - ./mariadb/playerbot:/opt/playerbot:ro
+      # The spool, for one file: whether a world about to be made keeps its
+      # bots at the door until the operator lets them in. The migrator is the
+      # only step that runs before the cores and knows the world is fresh.
+      - rates-spool:/opt/m2spool
 
     read_only: true
     tmpfs:

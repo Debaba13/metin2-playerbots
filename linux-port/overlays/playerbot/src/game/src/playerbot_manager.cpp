@@ -2934,6 +2934,13 @@ void CPlayerBotManager::SpawnPendingBatch(DWORD dwNow)
 {
 	if (m_dequePendingSpawns.empty() || dwNow < m_dwNextSpawnBatchTime)
 		return;
+	// Held at the door: the world was made a moment ago and its rates, its
+	// respawns and its personalities are still whatever the install shipped
+	// with. Nothing is taken off the queue, so letting the bots in from the
+	// panel fills the world through the ordinary spawn window (see
+	// IsPlayerBotSpawnHeld).
+	if (IsPlayerBotSpawnHeld())
+		return;
 	m_dwNextSpawnBatchTime = dwNow + PLAYERBOT_SPAWN_BATCH_INTERVAL;
 	size_t sent = 0;
 	while (!m_dequePendingSpawns.empty() && sent < m_uSpawnBatchSize)
@@ -3021,6 +3028,8 @@ size_t CPlayerBotManager::ScheduleLateJoiners(size_t count, BYTE bEmpire, DWORD 
 
 void CPlayerBotManager::SpawnLateJoiners(DWORD dwNow)
 {
+	if (IsPlayerBotSpawnHeld())
+		return;
 	while (!m_dequeLateJoiners.empty() && (int)(dwNow - m_dequeLateJoiners.front().first) >= 0)
 	{
 		const DWORD pid = m_dequeLateJoiners.front().second;

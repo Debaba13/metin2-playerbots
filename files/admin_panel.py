@@ -1518,6 +1518,30 @@ def write_chest_switch(off, kill, stone):
     os.replace(tmp, CHEST_SWITCH)
 
 
+# Whether the bots are still waiting at the door. The migrator writes this
+# file for a world it has just made, when the launcher was told to hold them,
+# and this page is where they are let in. "1" holds; anything else, including
+# no file at all, does not - so an install that never heard of it behaves as
+# it always did. The core reads it on the weights clock, five seconds.
+BOT_HOLD_FILE = os.path.join(AI_SPOOL, "playerbot_hold")
+
+
+def read_bot_hold():
+    """True while the bots are held. A file nobody can read is not a hold."""
+    try:
+        with open(BOT_HOLD_FILE, encoding="utf-8", errors="replace") as fh:
+            return fh.read(32).strip().startswith("1")
+    except OSError:
+        return False
+
+
+def write_bot_hold(held):
+    tmp = BOT_HOLD_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("1\n" if held else "0\n")
+    os.replace(tmp, BOT_HOLD_FILE)
+
+
 LANG_SPOOL   = _env_path("M2PANEL_LANG_SPOOL", "/opt/m2spool")
 LANG_REQUEST = os.path.join(LANG_SPOOL, "lang.request")
 LANG_STATUS  = os.path.join(LANG_SPOOL, "lang.status")
@@ -3469,6 +3493,18 @@ T.update({
                   "de":"Etwa alle anderthalb Stunden ruft eine Bot-Gilde dieses Kerns ihre Mitglieder ab Stufe 40 ins Erdgeschoss des Turms (Ansage im Chat), nach vier Minuten zerschlagen sie gemeinsam den Metin der Härte und steigen die Etagen hinauf: Monster, Steine, Schlüssel und Siegel wie im Spiel; ab der sechsten Etage wird ein Bot mit Stufe 75 gebraucht, wie bei Spielern. Wer beim Zerbrechen des Steins im Erdgeschoss steht - ein Bot auf seinem Botengang, ein zuschauender Spieler - geht mit hinein. 'Jetzt' ruft beim nächsten Check des Kerns eine Expedition, wenn keine läuft.",
                   "tr":"Yaklaşık her bir buçuk saatte bu çekirdeğin bir bot loncası 40 ve üzeri üyelerini kulenin zemin katına çağırır (sohbette duyurulur), dört dakika sonra Sertlik Metini'ni birlikte kırar ve katları çıkarlar: canavarlar, taşlar, anahtarlar ve mühürler oyundaki gibi; 6. kattan itibaren oyuncularda olduğu gibi 75 seviye bir bot gerekir. Taş kırıldığında zemin katta duran herkes - görevindeki bir bot, izlemeye gelen bir oyuncu - onlarla girer. 'Şimdi', hiçbiri sürmüyorsa çekirdeğin bir sonraki kontrolünde bir sefer çağırır."},
  "ai_tower_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_bots_held_title": {"pl":"Boty czekają przy drzwiach","en":"The bots are waiting at the door",
+  "de":"Die Bots warten an der Tür","tr":"Botlar kapıda bekliyor"},
+ "ai_bots_held_help": {"pl":"Ten świat powstał przed chwilą i nie ma w nim jeszcze ani jednego bota - tak, jak poprosiłeś przy zakładaniu. Ustaw teraz spokojnie stawki, respawny i zachowanie botów, a potem wpuść je. Wejdą stopniowo, tak jak po zwykłym starcie.",
+  "en":"This world was made a moment ago and has not one bot in it yet - as you asked when you made it. Set the rates, the respawns and the bots' behaviour in peace, then let them in. They walk in gradually, as after any start.",
+  "de":"Diese Welt wurde gerade erstellt und hat noch keinen einzigen Bot - so wie gewünscht. Stelle in Ruhe Raten, Respawns und Bot-Verhalten ein und lasse sie dann herein.",
+  "tr":"Bu dünya az önce kuruldu ve içinde henüz tek bir bot yok. Oranları, respawn sürelerini ve bot davranışını rahatça ayarla, sonra onları içeri al."},
+ "ai_bots_release": {"pl":"Wpuść boty do świata","en":"Let the bots in",
+  "de":"Bots hereinlassen","tr":"Botları içeri al"},
+ "ai_bots_released": {"pl":"✅ Boty wchodzą do świata - pojawią się w ciągu kilku minut, tak jak po zwykłym starcie.",
+  "en":"✅ The bots are coming in - they will appear over the next few minutes, as after any start.",
+  "de":"✅ Die Bots kommen herein - sie erscheinen in den nächsten Minuten.",
+  "tr":"✅ Botlar geliyor - birkaç dakika içinde belirecekler."},
  "ai_tower_now": {"en":"Call a Demon Tower raid now","pl":"Wyprawa do Wieży Demonów teraz","de":"Jetzt eine Turm-Expedition rufen","tr":"Şimdi bir Kule seferi çağır"},
  "ai_tower_now_done": {"en":"Requested: the core calls a raid on its next check (within a minute) if none is under way.","pl":"Zlecone: rdzeń zwoła wyprawę przy najbliższym sprawdzeniu (do minuty), jeśli żadna nie trwa.","de":"Angefordert: der Kern ruft beim nächsten Check (binnen einer Minute) eine Expedition, wenn keine läuft.","tr":"İstendi: hiçbiri sürmüyorsa çekirdek bir sonraki kontrolde (bir dakika içinde) bir sefer çağırır."},
  "gl_tower":     {"en":"in the Demon Tower","pl":"w Wieży Demonów","de":"im Dämonenturm","tr":"Şeytan Kulesi'nde"},
@@ -5583,6 +5619,17 @@ TPL_GUILDS = BASE.replace("__BODY__", """
 """)
 
 TPL_AI = BASE.replace("__BODY__", """
+{% if bots_held %}
+<div class="card" style="border-color:#f59e0b">
+  <h2 style="color:#fbbf24">{{ t('ai_bots_held_title') }}</h2>
+  <p>{{ t('ai_bots_held_help') }}</p>
+  <form method="post" action="{{ url_for('ai_release_bots') }}">
+    <input type="hidden" name="_csrf" value="{{csrf_token}}">
+    <button type="submit" class="primary">{{ t('ai_bots_release') }}</button>
+  </form>
+</div>
+{% endif %}
+
 <p><a href="{{url_for('dash')}}">{{t('back_players')}}</a></p>
 <div class="card">
 <h3>{{t('ai_nav')}}</h3>
@@ -13294,7 +13341,7 @@ def ai_weights():
         cur["CHEST"] = chest_kill
         cur["CHEST_STONE"] = chest_stone
     return render_template_string(TPL_AI, cur=cur, chest_off=chest_off,
-                                  keys=keys, wmin=AI_W_MIN,
+                                  keys=keys, wmin=AI_W_MIN, bots_held=read_bot_hold(),
                                   wmax=AI_W_MAX, wneutral=AI_W_NEUTRAL)
 
 
@@ -13312,6 +13359,24 @@ def ai_tower_now():
         flash(t("ai_tower_now_done"))
     except OSError as e:
         flash("%s: %s" % (t("ai_tower_now"), e))
+    return redirect(url_for("ai_weights"))
+
+
+@app.route("/ai/release_bots", methods=["POST"])
+@login_required
+def ai_release_bots():
+    """Let a held world's bots in.
+
+    A world made a moment ago has nobody's rates, respawns or personalities in
+    it yet, so the launcher can ask for its bots to wait at the door; this is
+    the door. The core reads the file on the same five-second clock as the
+    weights and fills the world through the ordinary spawn window, so nothing
+    is restarted and nothing arrives all at once."""
+    try:
+        write_bot_hold(False)
+        flash(t("ai_bots_released"))
+    except OSError as e:
+        flash("%s: %s" % (t("ai_bots_release"), e))
     return redirect(url_for("ai_weights"))
 
 

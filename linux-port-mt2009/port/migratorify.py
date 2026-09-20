@@ -137,6 +137,22 @@ elif [ "$rates_set" = "0" ]; then
     else
         echo "[playerbot-migrate] WARNING: could not write the fresh world's rates" >&2
     fi
+    # And whether that world's bots wait at the door. The core reads this file
+    # on the weights clock and, the first time it is asked, before its own
+    # first tick - the bootstrap spawns a cohort before any tick runs, so a
+    # file written afterwards would hold a door the crowd had already walked
+    # through. Written only for a fresh world, because on any other one it is
+    # the panel's button that owns it.
+    if [ -d /opt/m2spool ]; then
+        if [ "$(printf '%s' "${M2_PLAYERBOT_START_HELD:-0}" | tr -d ' \r')" = "1" ]; then
+            printf '1\n' > /opt/m2spool/playerbot_hold 2>/dev/null \
+                && echo "[playerbot-migrate] the bots will wait at the door until you let them in" \
+                || echo "[playerbot-migrate] WARNING: could not hold the bots (/opt/m2spool not writable)" >&2
+        else
+            printf '0\n' > /opt/m2spool/playerbot_hold 2>/dev/null || true
+        fi
+        chmod 0664 /opt/m2spool/playerbot_hold 2>/dev/null || true
+    fi
 fi
 """
 

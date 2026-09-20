@@ -20,6 +20,15 @@ param(
     [string]$Difficulty = '',
     [string]$BiologistHours = '',
     [string]$HorseHours = '',
+    # The rates a fresh world starts on, asked for when one is about to be
+    # made (ResetWorld, and the first start of an install that has no database
+    # yet). -1 leaves .env as it is, which is what every other caller wants.
+    [int]$RateExp = -1,
+    [int]$RateDrop = -1,
+    [int]$RateYang = -1,
+    # And whether that world comes up with the bots held at the door: 1 = held
+    # until the operator lets them in, 0 = they walk in with the world.
+    [int]$HoldBots = -1,
     [string]$ImportSource = '',
     [string]$RestoreSource = '',
     # COOP (experimental): the friend's name for CoopAddFriend, a friend's
@@ -1111,6 +1120,91 @@ function Restore-DatabaseAction {
     Write-Host 'Kliknij GRAJ, aby uruchomić serwer z przywróconym światem.' -ForegroundColor Green
 }
 
+function Test-RatePercent {
+    param([int]$Value)
+    return ($Value -ge 1 -and $Value -le 10000)
+}
+
+function Set-FreshWorldSettings {
+    <#
+      .SYNOPSIS
+        The rates a world about to be made starts on, and whether its bots wait.
+
+      .DESCRIPTION
+        Both are read by the migrator before the cores come up, and only for a
+        world whose event flags do not exist yet - a world already set from the
+        panel is never touched by .env, so this is asked where a fresh world is
+        about to be made and nowhere else.
+
+        The panel used to promise 650% experience on a world the game ran at
+        100%, and the first press of its button - field untouched - was what
+        made the promise real. That is the window NerrVoVy asked us to close
+        (20 September): "zanim sie zmieni ustawienia to juz cos sie tam
+        podzieje".
+
+        Non-interactive when the numbers come in as parameters or -Yes is set,
+        which is how the GUI calls every action; the console path asks.
+    #>
+    param([string]$Reason = 'nowego świata')
+
+    $exp = $RateExp
+    $drop = $RateDrop
+    $yang = $RateYang
+    $hold = $HoldBots
+    $interactive = (-not $Yes) -and $exp -lt 0 -and $drop -lt 0 -and $yang -lt 0 -and $hold -lt 0
+    if ($interactive) {
+        Write-Host ''
+        Write-Host "Ustawienia $Reason - wchodzą w życie, zanim pojawi się pierwszy bot:" -ForegroundColor Cyan
+        Write-Host ' 1. Normalnie      - 100% doświadczenia, 100% dropu, 100% yang (tak, jak gra została stworzona)'
+        Write-Host ' 2. Spokojnie      - 300% / 200% / 200%'
+        Write-Host ' 3. Szybko         - 1000% / 500% / 500%'
+        Write-Host ' 4. Własne liczby'
+        Write-Host ' 5. Nie zmieniaj   - zostaw to, co jest w .env'
+        $answer = Read-Host 'Wybierz (1-5)'
+        switch ($answer) {
+            '1' { $exp = 100;  $drop = 100; $yang = 100 }
+            '2' { $exp = 300;  $drop = 200; $yang = 200 }
+            '3' { $exp = 1000; $drop = 500; $yang = 500 }
+            '4' {
+                $exp = [int](Read-Host 'Doświadczenie w procentach (100 = normalnie)')
+                $drop = [int](Read-Host 'Drop przedmiotów w procentach')
+                $yang = [int](Read-Host 'Yang w procentach')
+            }
+            default { $exp = -1; $drop = -1; $yang = -1 }
+        }
+        Write-Host ''
+        Write-Host 'Boty mogą poczekać przy drzwiach, żeby dało się spokojnie ustawić resztę:' -ForegroundColor Cyan
+        if (Confirm-Operation 'Wstrzymać boty po starcie (wpuścisz je przyciskiem w panelu)?') {
+            $hold = 1
+        }
+        else {
+            $hold = 0
+        }
+    }
+
+    $written = @()
+    foreach ($pair in @(
+            @{ Key = 'M2_RATE_EXP';  Value = $exp;  Label = 'doświadczenie' },
+            @{ Key = 'M2_RATE_DROP'; Value = $drop; Label = 'drop' },
+            @{ Key = 'M2_RATE_YANG'; Value = $yang; Label = 'yang' })) {
+        $v = [int]$pair.Value
+        if ($v -lt 0) { continue }
+        if (-not (Test-RatePercent -Value $v)) {
+            throw ("{0}: podaj całe procenty od 1 do 10000, nie '{1}'." -f $pair.Label, $v)
+        }
+        Set-DotEnvValue -Key $pair.Key -Value "$v"
+        $written += ('{0} {1}%' -f $pair.Label, $v)
+    }
+    if ($hold -ge 0) {
+        $heldValue = $(if ($hold -ge 1) { '1' } else { '0' })
+        Set-DotEnvValue -Key 'M2_PLAYERBOT_START_HELD' -Value $heldValue
+        $written += $(if ($heldValue -eq '1') { 'boty czekają na wpuszczenie' } else { 'boty wchodzą od razu' })
+    }
+    if ($written.Count -gt 0) {
+        Write-Host ('Zapisano: ' + ($written -join ', ') + '.') -ForegroundColor Green
+    }
+}
+
 function Reset-WorldAction {
     # "Zacznij od zera": the world a fresh install starts with, with the old one
     # kept as a zip. The volume is deleted, because that is the only thing that
@@ -1140,6 +1234,7 @@ function Reset-WorldAction {
     if (-not (Confirm-Operation 'Zresetować świat do stanu świeżej instalacji?')) {
         Write-Host 'Anulowano.' -ForegroundColor Yellow; return
     }
+    Set-FreshWorldSettings -Reason 'nowego świata'
     Write-Host 'Zatrzymuję serwer i Dockera po stronie stosu...' -ForegroundColor Cyan
     Stop-Server
     Write-Host 'Zapisuję kopię i kasuję bazę...' -ForegroundColor Cyan

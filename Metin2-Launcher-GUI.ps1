@@ -856,6 +856,124 @@ function Show-DifficultyDialog {
     return @{ Level = $chosen; Biologist = $bio; Horse = $horse }
 }
 
+function Show-FreshWorldDialog {
+    # The rates a world about to be made starts on, and whether its bots wait
+    # at the door. Both reach the migrator through .env and are read before the
+    # cores come up, so this is the only moment they can be chosen without
+    # something already happening in the world - which is what the window is
+    # for (NerrVoVy, 20 September). Returns @{ Exp; Drop; Yang; Hold } or $null.
+    $dialog = [Windows.Forms.Form]::new()
+    $dialog.Text = 'Nowy świat - ustawienia na start'
+    $dialog.Size = [Drawing.Size]::new(560, 392)
+    $dialog.StartPosition = 'CenterParent'
+    $dialog.FormBorderStyle = 'FixedDialog'
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+
+    $info = [Windows.Forms.Label]::new()
+    $info.Text = ("Jak szybko ma iść nowy świat? 100% to tyle, ile w oryginalnej grze.`r`n" +
+                  "Te liczby wchodzą w życie, zanim pojawi się pierwszy bot - później zmienia się je w panelu.")
+    $info.Location = [Drawing.Point]::new(14, 12)
+    $info.Size = [Drawing.Size]::new(520, 44)
+    $dialog.Controls.Add($info)
+
+    $presets = @(
+        @{ Key = 'normal'; Text = 'Normalnie - 100% doświadczenia, 100% dropu, 100% yang'; Exp = 100; Drop = 100; Yang = 100 },
+        @{ Key = 'relaxed'; Text = 'Spokojnie - 300% / 200% / 200%'; Exp = 300; Drop = 200; Yang = 200 },
+        @{ Key = 'fast'; Text = 'Szybko - 1000% / 500% / 500%'; Exp = 1000; Drop = 500; Yang = 500 },
+        @{ Key = 'custom'; Text = 'Własne liczby - poniżej'; Exp = 0; Drop = 0; Yang = 0 }
+    )
+    $radios = @{}
+    $y = 62
+    foreach ($preset in $presets) {
+        $radio = [Windows.Forms.RadioButton]::new()
+        $radio.Name = ('rate_' + $preset.Key)
+        $radio.Text = $preset.Text
+        $radio.Location = [Drawing.Point]::new(18, $y)
+        $radio.Size = [Drawing.Size]::new(516, 26)
+        $radio.Checked = ($preset.Key -eq 'normal')
+        $dialog.Controls.Add($radio)
+        $radios[$preset.Key] = $radio
+        $y += 30
+    }
+
+    $boxes = @{}
+    $x = 40
+    foreach ($field in @(
+            @{ Name = 'exp'; Label = 'Doświadczenie %' },
+            @{ Name = 'drop'; Label = 'Drop %' },
+            @{ Name = 'yang'; Label = 'Yang %' })) {
+        $label = [Windows.Forms.Label]::new()
+        $label.Text = $field.Label
+        $label.Location = [Drawing.Point]::new($x, $y + 10)
+        $label.Size = [Drawing.Size]::new(120, 22)
+        $dialog.Controls.Add($label)
+        $box = [Windows.Forms.NumericUpDown]::new()
+        $box.Name = ('num_' + $field.Name)
+        $box.Minimum = 1
+        $box.Maximum = 10000
+        $box.Increment = 50
+        $box.Value = 100
+        $box.Location = [Drawing.Point]::new($x, $y + 34)
+        $box.Size = [Drawing.Size]::new(110, 24)
+        $dialog.Controls.Add($box)
+        $boxes[$field.Name] = $box
+        $x += 160
+    }
+    $y += 70
+
+    $holdBox = [Windows.Forms.CheckBox]::new()
+    $holdBox.Text = 'Wstrzymaj boty po starcie (wpuszczę je sam, przyciskiem w panelu)'
+    $holdBox.Location = [Drawing.Point]::new(18, $y + 6)
+    $holdBox.Size = [Drawing.Size]::new(516, 26)
+    $holdBox.Checked = $false
+    $dialog.Controls.Add($holdBox)
+    $y += 34
+
+    # The boxes belong to "własne"; a preset says its own numbers.
+    $sync = {
+        $form = $this.FindForm()
+        if (-not $form) { return }
+        $custom = $form.Controls['rate_custom'].Checked
+        foreach ($name in @('num_exp', 'num_drop', 'num_yang')) { $form.Controls[$name].Enabled = $custom }
+    }
+    foreach ($radio in $radios.Values) { $radio.Add_CheckedChanged($sync) }
+    foreach ($box in $boxes.Values) { $box.Enabled = $false }
+
+    $okButton = [Windows.Forms.Button]::new()
+    $okButton.Text = 'Dalej'
+    $okButton.Location = [Drawing.Point]::new(332, $y + 16)
+    $okButton.Size = [Drawing.Size]::new(100, 32)
+    $okButton.DialogResult = [Windows.Forms.DialogResult]::OK
+    $dialog.Controls.Add($okButton)
+
+    $cancelButton = [Windows.Forms.Button]::new()
+    $cancelButton.Text = (T 'cancel')
+    $cancelButton.Location = [Drawing.Point]::new(438, $y + 16)
+    $cancelButton.Size = [Drawing.Size]::new(96, 32)
+    $cancelButton.DialogResult = [Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($cancelButton)
+    $dialog.AcceptButton = $okButton
+    $dialog.CancelButton = $cancelButton
+
+    $result = $dialog.ShowDialog()
+    $chosen = 'normal'
+    foreach ($key in $radios.Keys) { if ($radios[$key].Checked) { $chosen = $key } }
+    $values = @{ Exp = 100; Drop = 100; Yang = 100 }
+    if ($chosen -eq 'custom') {
+        $values = @{ Exp = [int]$boxes['exp'].Value; Drop = [int]$boxes['drop'].Value; Yang = [int]$boxes['yang'].Value }
+    }
+    else {
+        foreach ($preset in $presets) {
+            if ($preset.Key -eq $chosen) { $values = @{ Exp = $preset.Exp; Drop = $preset.Drop; Yang = $preset.Yang } }
+        }
+    }
+    $hold = $(if ($holdBox.Checked) { 1 } else { 0 })
+    $dialog.Dispose()
+    if ($result -ne [Windows.Forms.DialogResult]::OK) { return $null }
+    return @{ Exp = $values.Exp; Drop = $values.Drop; Yang = $values.Yang; Hold = $hold }
+}
+
 function Get-LauncherFingerprint {
     # An update replaces the launcher's own files, but this process already read
     # them - the new buttons cannot appear until it restarts.
@@ -2707,7 +2825,17 @@ $worldBackupButton.Add_Click({
         "Na pewno? To ostatnie pytanie.`r`n`r`nPo kliknięciu TAK obecny świat przestaje być światem tego serwera.",
         'Wyzerowanie świata', 'YesNo', 'Warning')
     if ($again -ne [Windows.Forms.DialogResult]::Yes) { return }
-    Start-LauncherAction -Action 'ResetWorld' -Yes -ExtraArgs @('-ThenStart')
+    # The new world's rates and whether its bots wait, asked before the old
+    # one goes: this is the last moment they can be set with nothing yet
+    # happening in the world.
+    $fresh = Show-FreshWorldDialog
+    if (-not $fresh) { return }
+    Start-LauncherAction -Action 'ResetWorld' -Yes -ExtraArgs @(
+        '-ThenStart',
+        '-RateExp', "$($fresh.Exp)",
+        '-RateDrop', "$($fresh.Drop)",
+        '-RateYang', "$($fresh.Yang)",
+        '-HoldBots', "$($fresh.Hold)")
 })
 $dbAccessButton.Add_Click({
     # In-process on purpose: an action would print through the log box and the
