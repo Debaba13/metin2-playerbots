@@ -19,7 +19,7 @@ every version here.
 
 ## 2.0.86 — 2026-09-20
 
-Serwer 2.0.86. Klient bez zmian (2.0.19). Zawiera wszystko z 2.0.85.
+Serwer 2.0.86, klient 2.0.20. Zawiera wszystko z 2.0.85.
 
 ### Okno ulepszania nie zamyka sie po kazdej probie
 
@@ -45,6 +45,14 @@ Serwer 2.0.86. Klient bez zmian (2.0.19). Zawiera wszystko z 2.0.85.
   opisany wylacznie po angielsku i to stad bralo sie najwiecej pytan.
 - Opis musi byc w osobnej linii **nad** ustawieniem. Dopisanie komentarza w tej
   samej linii (`KLUCZ=1 # opis`) psuje wartosc — Docker czyta wtedy „1 # opis”.
+
+### Zmiana ceny wielu przedmiotow w sklepie (klient 2.0.20)
+
+- Ctrl + prawy przycisk na przedmiocie w swoim sklepie zmienia cene wszystkich
+  takich samych. Dotad zmieniala sie cena jednego, a reszta wyrzucala blad
+  „poczekaj chwile” — serwer przyjmuje jedna operacje na 200 ms, a klient
+  wysylal wszystkie naraz (zglosili uxietoszef i Nagash). Teraz wychodza po
+  kolei; dwadziescia przedmiotow zajmuje okolo pieciu sekund.
 
 ### Poprawki
 
