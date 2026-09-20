@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Eventy · {{ panel_brand }}<script>
+{% block title %}Etkinlikler · {{ panel_brand }}<script>
 function syncChestBonus(row) {
   const kind = row.querySelector('select[name$="_kind"]').value;
   const bonus = row.querySelector('.bonus-input');
@@ -15,8 +15,8 @@ document.querySelectorAll('.planner-row').forEach(row => {
 });
 </script>\n{% endblock %}
 {% block content %}
-<p class="eyebrow">PLAYERBOTS · NA ŻYWO</p>
-<div class="events-heading"><div><h1>🎉 Planer eventów</h1><p class="muted">Uruchamiaj eventy od razu albo ustawiaj ich tygodniowy harmonogram. Rdzeń Playerbots odczytuje zmianę w ciągu pięciu sekund — restart nie jest potrzebny.</p></div><div class="events-core"><span>RDZEŃ</span><b>{{ 'połączony' if status else 'czeka na status' }}</b></div></div>
+<p class="eyebrow">PLAYERBOTS · CANLI</p>
+<div class="events-heading"><div><h1>🎉 Etkinlik Planlayıcı</h1><p class="muted">Etkinlikleri hemen başlatın veya haftalık takvimlerini ayarlayın. Playerbots çekirdeği değişikliği beş saniye içinde okur — yeniden başlatma gerekmez.</p></div><div class="events-core"><span>ÇEKİRDEK</span><b>{{ 'bağlı' if status else 'durum bekleniyor' }}</b></div></div>
 
 <section class="event-status-grid">
 {% for kind in event_kinds %}
@@ -24,46 +24,46 @@ document.querySelectorAll('.planner-row').forEach(row => {
   <article class="event-status {{ 'active' if st.active else ('scheduled' if st.scheduled else '') }}">
     <span class="event-icon">{{ {'chest':'🎁','exp':'⚡','drop':'📦','yang':'💰'}[kind] }}</span>
     <div><small>{{ event_labels[kind] }}</small>
-    {% if st.active %}<strong>Trwa{% if kind != 'chest' %} · +{{ st.value }}%{% endif %}</strong><em>do {{ st.until_text }}</em>
-    {% elif st.scheduled %}<strong>Zaplanowany{% if kind != 'chest' %} · +{{ st.next_value }}%{% endif %}</strong><em>następny: {{ st.next_start_text }}</em>
-    {% else %}<strong>Brak aktywnego eventu</strong><em>ustaw szybki event lub plan</em>{% endif %}</div>
+    {% if st.active %}<strong>Sürüyor{% if kind != 'chest' %} · +{{ st.value }}%{% endif %}</strong><em>bitiş: {{ st.until_text }}</em>
+    {% elif st.scheduled %}<strong>Planlandı{% if kind != 'chest' %} · +{{ st.next_value }}%{% endif %}</strong><em>sıradaki: {{ st.next_start_text }}</em>
+    {% else %}<strong>Aktif etkinlik yok</strong><em>hızlı etkinlik veya plan ayarlayın</em>{% endif %}</div>
   </article>
 {% endfor %}
 </section>
 
 <section class="panel events-quick">
-  <div><p class="eyebrow">SZYBKI START</p><h2>Aktywuj teraz</h2><p class="muted">Tymczasowy event działa niezależnie od harmonogramu i kończy się automatycznie.</p></div>
+  <div><p class="eyebrow">HIZLI BAŞLAT</p><h2>Şimdi etkinleştir</h2><p class="muted">Geçici etkinlik takvimden bağımsız çalışır ve otomatik olarak biter.</p></div>
   <div class="quick-event-grid">
   {% for kind in event_kinds %}
     {% set now = nows.get(kind) %}
     <form method="post" class="quick-event-card {{ 'is-running' if now and now.until > now_epoch else '' }}">
       <input type="hidden" name="kind" value="{{ kind }}">
       <div><span>{{ {'chest':'🎁','exp':'⚡','drop':'📦','yang':'💰'}[kind] }}</span><b>{{ event_labels[kind] }}</b></div>
-      {% if now and now.until > now_epoch %}<p>Aktywny do {{ status.get(kind,{}).until_text or 'końca odliczania' }}</p>{% else %}<p>Uruchom jednorazowo</p>{% endif %}
-      <label>Czas<select name="minutes">{% for minute in now_minutes %}<option value="{{ minute }}" {% if minute == 60 %}selected{% endif %}>{{ minute }} min</option>{% endfor %}</select></label>
-      {% if kind != 'chest' %}<label>Bonus<input name="value" type="number" min="1" max="1000" value="50"><small>% ponad ratę serwera</small></label>{% endif %}
-      {% if now and now.until > now_epoch %}<button name="action" value="stop" class="secondary">Zatrzymaj</button>{% else %}<button name="action" value="now">Aktywuj teraz</button>{% endif %}
+      {% if now and now.until > now_epoch %}<p>Bitiş: {{ status.get(kind,{}).until_text or 'geri sayım sonu' }}</p>{% else %}<p>Tek seferlik başlat</p>{% endif %}
+      <label>Süre<select name="minutes">{% for minute in now_minutes %}<option value="{{ minute }}" {% if minute == 60 %}selected{% endif %}>{{ minute }} dk</option>{% endfor %}</select></label>
+      {% if kind != 'chest' %}<label>Bonus<input name="value" type="number" min="1" max="1000" value="50"><small>% sunucu oranının üstüne</small></label>{% endif %}
+      {% if now and now.until > now_epoch %}<button name="action" value="stop" class="secondary">Durdur</button>{% else %}<button name="action" value="now">Şimdi etkinleştir</button>{% endif %}
     </form>
   {% endfor %}
   </div>
 </section>
 
 <section class="panel planner-panel">
-  <div class="planner-intro"><div><p class="eyebrow">TYDZIEŃ POWTARZALNY</p><h2>Harmonogram eventów</h2><p class="muted">Wybierz dni i przedział godzin. Okno 22:00–02:00 przechodzi przez północ. Dla rat wpisujesz bonus ponad bieżącą ratę serwera; 50 oznacza +50%. Harmonogram szkatułek blokuje ich drop poza wybranymi oknami.</p></div><div class="planner-legend"><span class="legend-live"></span> aktywny <span class="legend-plan"></span> zaplanowany</div></div>
+  <div class="planner-intro"><div><p class="eyebrow">HAFTALIK TEKRAR</p><h2>Etkinlik Takvimi</h2><p class="muted">Günleri ve saat aralığını seçin. 22:00–02:00 penceresi gece yarısını geçer. Oranlar için sunucunun güncel oranının üstüne bonus girersiniz; 50 = +50%. Sandık takvimi, seçili pencereler dışında düşmelerini engeller.</p></div><div class="planner-legend"><span class="legend-live"></span> aktif <span class="legend-plan"></span> planlandı</div></div>
   <form method="post" class="planner-form">
-    <div class="planner-columns"><span>Event</span><span>Dni tygodnia</span><span>Godziny</span><span>Bonus</span><span>Wł.</span><span>Usuń</span></div>
+    <div class="planner-columns"><span>Etkinlik</span><span>Haftanın Günleri</span><span>Saatler</span><span>Bonus</span><span>Açık</span><span>Sil</span></div>
     {% for row in rows %}
     {% set index = loop.index0 %}
     <div class="planner-row">
-      <select name="r{{index}}_kind" aria-label="Event {{ index + 1 }}"><option value="">— wybierz —</option>{% for kind in event_kinds %}<option value="{{kind}}" {% if row.kind == kind %}selected{% endif %}>{{ event_labels[kind] }}</option>{% endfor %}</select>
+      <select name="r{{index}}_kind" aria-label="Etkinlik {{ index + 1 }}"><option value="">— seçin —</option>{% for kind in event_kinds %}<option value="{{kind}}" {% if row.kind == kind %}selected{% endif %}>{{ event_labels[kind] }}</option>{% endfor %}</select>
       <div class="week-days">{% for day in range(1,8) %}<label title="{{ day_names[day-1] }}"><input type="checkbox" name="r{{index}}_d{{day}}" {% if day in row.days %}checked{% endif %}><span>{{ day_names[day-1] }}</span></label>{% endfor %}</div>
       <div class="time-range"><input type="time" name="r{{index}}_start" value="{{row.start}}" onclick="this.showPicker && this.showPicker()"><i>→</i><input type="time" name="r{{index}}_end" value="{{row.end}}" onclick="this.showPicker && this.showPicker()"></div>
-      <label class="bonus-input"><input type="number" name="r{{index}}_value" min="0" max="1000" value="{{row.value}}"><small>+%</small><em>dla Szkatułek: szansa z Zarządzania</em></label>
-      <label class="switch sw-8" title="Włącz lub wyłącz ten wiersz"><input type="checkbox" name="r{{index}}_on" {% if row.on %}checked{% endif %}><span class="track"><span class="thumb"></span></span></label>
-      <label class="delete-row"><input type="checkbox" name="r{{index}}_delete"><span>Usuń</span></label>
+      <label class="bonus-input"><input type="number" name="r{{index}}_value" min="0" max="1000" value="{{row.value}}"><small>+%</small><em>Sandıklar için: şans Yönetim'den</em></label>
+      <label class="switch sw-8" title="Bu satırı aç veya kapat"><input type="checkbox" name="r{{index}}_on" {% if row.on %}checked{% endif %}><span class="track"><span class="thumb"></span></span></label>
+      <label class="delete-row"><input type="checkbox" name="r{{index}}_delete"><span>Sil</span></label>
     </div>
     {% endfor %}
-    <div class="planner-footer"><p class="muted">Zostaw „— wybierz —”, aby pominąć pusty wiersz. Odznaczenie wszystkich dni zachowuje wiersz jako wyłączony czasowo.</p><button name="action" value="save">Zapisz harmonogram</button></div>
+    <div class="planner-footer"><p class="muted">Boş bir satırı atlamak için "— seçin —" bırakın. Tüm günlerin işaretini kaldırmak satırı geçici olarak kapalı tutar.</p><button name="action" value="save">Takvimi Kaydet</button></div>
   </form>
 </section>
 {% endblock %}

@@ -1072,12 +1072,12 @@ def queue_tieru_update(update_seban_panel=False):
 EVENTS_FILE = RATES_SPOOL / "playerbot_events.tsv"
 EVENT_KINDS = ("chest", "exp", "drop", "yang")
 EVENT_LABELS = {
-    "chest": "Szkatułki Blasku Księżyca",
-    "exp": "Doświadczenie",
-    "drop": "Drop przedmiotów",
+    "chest": "Ay Işığı Sandıkları",
+    "exp": "Tecrübe",
+    "drop": "Eşya Düşme",
     "yang": "Yang",
 }
-EVENT_DAY_NAMES = ("Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd")
+EVENT_DAY_NAMES = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
 EVENT_NOW_MINUTES = (15, 30, 60, 120, 180, 360)
 EVENT_HHMM = re.compile(r"^([01]?\d|2[0-4]):([0-5]\d)$")
 
@@ -3196,7 +3196,7 @@ def events():
                 except ValueError:
                     value = -1
                 if not start or not end or start == "24:00" or value < 0:
-                    flash(f"Wiersz {index + 1}: podaj poprawne godziny i wartość 0–1000%.", "error")
+                    flash(f"Satır {index + 1}: geçerli saatler ve 0-1000% değeri girin.", "error")
                     return redirect(url_for("events"))
                 days = [day for day in range(1, 8) if request.form.get(f"r{index}_d{day}")]
                 new_rows.append({"kind": kind, "days": days, "start": start, "end": end,
@@ -3205,9 +3205,9 @@ def events():
             try:
                 write_events(new_rows, nows)
             except OSError:
-                flash("Nie udało się zapisać harmonogramu eventów.", "error")
+                flash("Etkinlik takvimi kaydedilemedi.", "error")
             else:
-                flash("Harmonogram zapisany. Rdzeń zastosuje go w ciągu pięciu sekund.", "success")
+                flash("Takvim kaydedildi. Çekirdek beş saniye içinde uygular.", "success")
             return redirect(url_for("events"))
         kind = request.form.get("kind", "")
         if kind not in EVENT_KINDS:
@@ -3220,11 +3220,11 @@ def events():
                 minutes, value = 60, 50
             nows[kind] = {"until": int(time.time()) + minutes * 60, "value": 0 if kind == "chest" else value}
             write_events(rows, nows)
-            flash(f"Event aktywowany na {minutes} min. Rdzeń odczyta go w ciągu pięciu sekund.", "success")
+            flash(f"Etkinlik {minutes} dakikalığına etkinleştirildi. Çekirdek beş saniye içinde okur.", "success")
         elif action == "stop":
             nows.pop(kind, None)
             write_events(rows, nows)
-            flash("Natychmiastowy event został zatrzymany.", "success")
+            flash("Anlık etkinlik durduruldu.", "success")
         return redirect(url_for("events"))
     shown = list(rows) + [{"kind": "", "days": list(range(1, 8)), "start": "20:00", "end": "21:00", "value": 50, "on": True} for _ in range(max(0, 4 - len(rows)))]
     return render_template("events.html", rows=shown, nows=nows, status=read_events_status(),
