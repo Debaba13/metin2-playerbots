@@ -144,6 +144,23 @@ CREATE TABLE IF NOT EXISTS `fish_log` (
   KEY `time_idx` (`time`)
 ) ENGINE=InnoDB;
 
+-- b3f86626 (2026-09-14) redesigned this table (map_index/fish_id/fishing_level/
+-- waiting_time/success/size -> item_vnum/count/rod_level/bait_vnum) without a
+-- migration, so a table created before that commit is left with the old shape
+-- and every insert from the current FishLog() fails with errno 1136. These
+-- migrate it in place; a fresh CREATE TABLE above is already the new shape,
+-- so they are no-ops there.
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `map_index`;
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `fish_id`;
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `fishing_level`;
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `waiting_time`;
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `success`;
+ALTER TABLE `fish_log` DROP COLUMN IF EXISTS `size`;
+ALTER TABLE `fish_log` ADD COLUMN IF NOT EXISTS `item_vnum` int(10) unsigned NOT NULL DEFAULT 0 AFTER `player_id`;
+ALTER TABLE `fish_log` ADD COLUMN IF NOT EXISTS `count` int(11) NOT NULL DEFAULT 0 AFTER `item_vnum`;
+ALTER TABLE `fish_log` ADD COLUMN IF NOT EXISTS `rod_level` int(11) NOT NULL DEFAULT 0 AFTER `count`;
+ALTER TABLE `fish_log` ADD COLUMN IF NOT EXISTS `bait_vnum` int(10) unsigned NOT NULL DEFAULT 0 AFTER `rod_level`;
+
 CREATE TABLE IF NOT EXISTS `loginlog` (
   `type` varchar(10) NOT NULL DEFAULT 'LOGIN',
   `time` datetime NOT NULL DEFAULT current_timestamp(),
