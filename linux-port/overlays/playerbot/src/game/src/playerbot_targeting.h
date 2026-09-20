@@ -1722,10 +1722,24 @@ namespace
 	class CCollectPlayerBotMeleeTargets
 	{
 		public:
-			CCollectPlayerBotMeleeTargets(LPCHARACTER owner, DWORD primaryVID) :
+			CCollectPlayerBotMeleeTargets(LPCHARACTER owner, LPCHARACTER primary) :
 				m_owner(owner),
-				m_primaryVID(primaryVID)
+				m_primaryVID(primary->GetVID()),
+				m_dirX((float)(primary->GetX() - owner->GetX())),
+				m_dirY((float)(primary->GetY() - owner->GetY()))
 			{
+				// The direction of the blow is the line to what is being struck,
+				// not GetRotation(): the rotation is only set at the end of this
+				// swing, so on the first one of a fight it still points wherever
+				// the bot last walked.
+				const float length = sqrtf(m_dirX * m_dirX + m_dirY * m_dirY);
+				if (length > 0.0f)
+				{
+					m_dirX /= length;
+					m_dirY /= length;
+				}
+				else
+					m_dirX = m_dirY = 0.0f;
 			}
 
 			bool operator () (LPENTITY entity)
@@ -1751,9 +1765,10 @@ namespace
 				const int distance = DISTANCE_APPROX(
 						m_owner->GetX() - candidate->GetX(),
 						m_owner->GetY() - candidate->GetY());
-				if (distance <= PLAYERBOT_MELEE_SPLASH_RANGE)
-					m_targets.push_back(std::make_pair(distance, candidate->GetVID()));
+				if (distance > PLAYERBOT_MELEE_SPLASH_RANGE || !IsInFrontOfTheBlow(candidate))
+					return true;
 
+				m_targets.push_back(std::make_pair(distance, candidate->GetVID()));
 				return true;
 			}
 
@@ -1765,8 +1780,31 @@ namespace
 			const std::vector<std::pair<int, DWORD> >& GetTargets() const { return m_targets; }
 
 		private:
+			// The arc of the swing, as the client's collision spheres describe it
+			// for a player: the cosine of the angle between the blow and this
+			// candidate, against PLAYERBOT_MELEE_SPLASH_FACING_DOT. A candidate
+			// standing on the bot answers yes - the blow lands on whatever is
+			// inside the body whichever way it turns.
+			bool IsInFrontOfTheBlow(LPCHARACTER candidate) const
+			{
+				if (m_dirX == 0.0f && m_dirY == 0.0f)
+					return true;
+
+				float toX = (float)(candidate->GetX() - m_owner->GetX());
+				float toY = (float)(candidate->GetY() - m_owner->GetY());
+				const float length = sqrtf(toX * toX + toY * toY);
+				if (length <= 0.0f)
+					return true;
+
+				toX /= length;
+				toY /= length;
+				return (m_dirX * toX + m_dirY * toY) >= PLAYERBOT_MELEE_SPLASH_FACING_DOT;
+			}
+
 			LPCHARACTER m_owner;
 			DWORD m_primaryVID;
+			float m_dirX;
+			float m_dirY;
 			std::vector<std::pair<int, DWORD> > m_targets;
 	};
 
@@ -1805,9 +1843,15 @@ namespace
 				ch->GetArrowAndBow(&weapon, &arrow, 1) != 1))
 			return 0;
 
-		int iDamage = isBow ? CalcArrowDamage(ch, primary, weapon, arrow, false) : CalcMeleeDamage(ch, primary, false, false);
-		if (iDamage < 5)
-			iDamage = number(15, 35) + ch->GetLevel() * 4;
+		// What the game says this blow is worth, and nothing else. The invented
+		// figure that used to stand here - number(15, 35) + level * 4, so about
+		// three hundred for a bot of seventy whatever it held - made a weak
+		// weapon hit as hard as a good one, and no equipment decision below it
+		// could be read from the outside. The engine has a floor of its own and
+		// it is small: CalcBattleDamage ends in `if (iDam < 3) iDam =
+		// number(1, 5)`, which a player gets too.
+		const int iDamage = isBow ? CalcArrowDamage(ch, primary, weapon, arrow, false)
+				: CalcMeleeDamage(ch, primary, false, false);
 
 		DWORD hitCount = 1;
 		primary->Damage(ch, iDamage, DAMAGE_TYPE_NORMAL);
@@ -1823,7 +1867,7 @@ namespace
 		// duel drag bystanders in the moment that ever changed.
 		if (!isBow && !bIsDuel)
 		{
-			CCollectPlayerBotMeleeTargets collector(ch, primary->GetVID());
+			CCollectPlayerBotMeleeTargets collector(ch, primary);
 			ch->GetSectree()->ForEachAround(collector);
 			collector.Sort();
 
@@ -1834,11 +1878,8 @@ namespace
 				if (!secondary || secondary->IsDead() || (!secondary->IsMonster() && !secondary->IsStone()))
 					continue;
 
-				int iSecDamage = CalcMeleeDamage(ch, secondary, false, false);
-				if (iSecDamage < 5)
-					iSecDamage = number(12, 28) + ch->GetLevel() * 3;
-
-				secondary->Damage(ch, iSecDamage, DAMAGE_TYPE_NORMAL);
+				secondary->Damage(ch, CalcMeleeDamage(ch, secondary, false, false),
+						DAMAGE_TYPE_NORMAL);
 				++hitCount;
 			}
 		}

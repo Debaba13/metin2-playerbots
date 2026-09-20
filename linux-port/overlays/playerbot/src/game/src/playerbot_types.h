@@ -28,6 +28,17 @@ namespace
 	const int PLAYERBOT_MELEE_RANGE = 250;
 	const int PLAYERBOT_MELEE_SPLASH_RANGE = 300;
 	const size_t PLAYERBOT_MAX_MELEE_TARGETS = 4;
+	// A swing is a swing in front of the character, and the client is where
+	// that is decided for a player: CActorInstance::__NormalAttackProcess
+	// refuses a victim further than 300 units (this range, to the unit) and
+	// then tests the weapon's own collision spheres against it, which sweep an
+	// arc ahead of the body - so a player kills the monsters it is facing and
+	// never the one behind its back. A bot has no model to collide with
+	// anything, so the arc is a dot product instead: half an angle of sixty
+	// degrees either side of the blow. Without it a bot standing still cut down
+	// whatever stood round it, which is what "kazdy bot gra jakby mial hacka"
+	// was (Nagash, 20 September).
+	const float PLAYERBOT_MELEE_SPLASH_FACING_DOT = 0.5f;
 	const int PLAYERBOT_MAX_TARGET_LEVEL_DELTA = 15;
 	const int PLAYERBOT_LOOT_SEARCH_RANGE = 2500;
 	const int PLAYERBOT_PICKUP_RANGE = 300;
