@@ -133,10 +133,31 @@ namespace
 		TPlayerBotPersona& p = state.persona;
 		if (p.bAdvanced)
 			return 0;
-		if (p.bLockLevel != 0)
-			return p.bLockLevel;
 		const BYTE level = (BYTE)std::min<int>(255, ch->GetLevel());
 		const BYTE lock = playerbot_persona::GrinderLockFor(level, ch->GetPlayerID());
+		if (p.bLockLevel != 0)
+		{
+			// A lock written before Community Patch 1 is the old fixed number
+			// - fifteen for every bot of the first village, twenty-three for
+			// every bot of M3 - and a world that has been played holds
+			// thousands of them. Keeping them would leave the patch reaching
+			// no bot that already stands on one, which is the whole village.
+			// So a lock is raised to what this bot's pid draws today, and
+			// only raised: lowering it would hand a bot a level it has already
+			// passed, and only inside the tier it is already in, so nothing
+			// slides into the next tier's band.
+			if (lock > p.bLockLevel &&
+					playerbot_persona::GrinderTierFor(p.bLockLevel) ==
+						playerbot_persona::GrinderTierFor(level))
+			{
+				sys_log(0, "PLAYERBOT_PERSONA: grinder lock redrawn pid=%u name=%s was=%u now=%u",
+						ch->GetPlayerID(), ch->GetName(),
+						(unsigned int)p.bLockLevel, (unsigned int)lock);
+				p.bLockLevel = lock;
+				p.bDirty = true;
+			}
+			return p.bLockLevel;
+		}
 		if (lock != 0 && level >= lock)
 		{
 			p.bLockLevel = lock;
