@@ -21,6 +21,66 @@ every version here.
 
 Serwer 2.0.86, klient 2.0.20. Zawiera wszystko z 2.0.85.
 
+> **Zalecamy zaczac na nowym swiecie.** To wydanie zmienia zachowanie botow i
+> ich gospodarke mocniej niz jakiekolwiek wczesniej. Swiat, ktory gral na
+> starych zasadach, niesie ze soba plecaki, sklepy i magazyny ulozone pod nie.
+> Nowy swiat pokaze te systemy tak, jak maja dzialac. W launcherze:
+> **KOPIA / NOWY SWIAT**.
+
+### System osobowosci Iwakury
+
+Najwieksza zmiana w dzialaniu botow od poczatku projektu. Do tej pory bot
+dostawal osobowosc raz, przy wejsciu do gry, i trzymal sie jej do konca. Teraz
+o tym, kim jest w danej chwili, decyduje jego wlasna sytuacja — sprawdzana co
+dwie sekundy.
+
+**Nastroje (BMS).** Kazdy bot ma nastroj: SLABY, NORMALNY albo BARDZO DOBRY.
+Posucha bez niczego wartosciowego go obniza, dobry drop albo udane ulepszenie
+podnosi, spalenie przedmiotu na +8 czy +9 obniza o jeden, a piec smierci z reki
+gracza blokuje na SLABYM na trzy kwadranse. Tylko bot w slabym nastroju robi
+przerwy miedzy grupami potworow, odchodzi na chwile od klawiatury i odpoczywa w
+miescie. W towarzystwie — w druzynie, w lochu, na rajdzie, na wojnie, w
+pojedynku, na kontrakcie — kazdy gra jak NORMALNY, niezaleznie od tego, co
+czuje.
+
+**Kim bot jest teraz.** Kolejnosc jest taka: kontrakt najemnika, druzyna
+(Towarzysz), wedka, kilof, metin pod mlotkiem, sesja hazardzisty, kowadlo dla
+siebie (Perfekcjonista), plecak przy osiemdziesieciu procentach (Handlarz), a
+na koncu Grinder albo — gdy spelni Prawo Awansu — Zdobywca.
+
+**Towarzysz.** Suwak PT ustawia teraz udzial *czasu*, ktory bot spedza w
+druzynie, a nie sam ranking. Druzyna konczy sie tak, jak opisal Iwakura: przy
+pelnym plecaku, gdy poziomy sie rozjada, albo gdy reszta odejdzie — nie na
+minutnik. Bot zaprasza takze **graczy**: samotnego gracza zaprosi do druzyny, a
+do druzyny gracza z wolnym miejscem poprosi o przyjecie. Oba szanuja blokady z
+opcji gry i sa mocno racjonowane, zeby nikogo nie zasypac. Towarzysz-szaman
+trzyma buffy calej druzynie, graczom w pierwszej kolejnosci.
+
+**Najemnik.** Bot, ktory trzy razy w pol godziny zginal od potworow, jest w
+tarapatach. Silniejszy bot z jego krolestwa, na tej samej mapie, podchodzi i
+proponuje godzine opieki za 250 000 yang przeliczone przez stawki. Prowadzi
+druzyne, poluje tam, gdzie jest klient, klient dostaje polowe z kazdego zabicia.
+Pelny plecak najemnika wstrzymuje kontrakt — druzyna zostaje, zegar staje,
+najemnik wraca sam — a po godzinie klient placi dalej, jesli nadal potrzebuje.
+
+**Lista Przydatnych Przedmiotow.** Decyduje, co bot odklada u Dozorcy, zamiast
+sprzedawac: bizuteria i buty tieru 3-6, bronie z jego pasm poziomow, tarcze z
+61 i zbroje z 66, oraz kazdy przedmiot z linia tieru 5-6 wyrzucona co najmniej
+do polowy. Dwie sztuki broni albo zbroi i trzy drobne dla swojej klasy, jedna
+dla obcej. Co bot przerosnie — wraca na rynek.
+
+**Hazardzista** dokupuje bazy i materialy z lokalnych sklepow offline, w ramach
+budzetu sesji.
+
+Calosc chodzi na przelaczniku **OSOBOWOSCI** na stronie AI w panelu
+klasycznym — domyslnie wlaczonym. Wylaczenie wraca dokladnie do starego
+zachowania. Dawne osobowosci zostaly jako ukryty charakter, ktory tylko
+przechyla szanse; dropki Metinow, M2 i M3 zastapily progi Grindera, a kohorta
+dropkow medali operatora zostaje bez zmian.
+
+Nad glowa bota, w panelu i w pliku statusu widnieje ta sama odpowiedz;
+`PLAYERBOT_PERSONA: census` liczy je co dziesiec minut razem z nastrojami.
+
 ### Okno ulepszania nie zamyka sie po kazdej probie
 
 - Ulepszasz dalej bez klikania od nowa w kowala i w przedmiot. System byl w
