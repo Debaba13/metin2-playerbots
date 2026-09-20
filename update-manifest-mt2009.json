@@ -13,8 +13,8 @@
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.21",
-    "url": "https://github.com/debaba13/metin2-playerbots/releases/download/client-v2.0.21/metin2-client-update-2.0.21.zip",
-    "sha256": "59689569482946A5DE4F62D92E4D27EA1A0D801B32AC13137DB4BF211E2B3D62"
+    "version": "2.0.22",
+    "url": "https://github.com/debaba13/metin2-playerbots/releases/download/client-v2.0.22/metin2-client-update-2.0.22.zip",
+    "sha256": "66EECEAA918A167DB4A4A1529F34ED77386AAFEE3211DB20F9FBECB1AA73B665"
   }
 }
