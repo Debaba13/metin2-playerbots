@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-20T07:44:18Z",
-  "statusMessage": "2.0.86 (serwer 2.0.86, klient 2.0.20): system osobowosci Iwakury - nastroje, Towarzysz zapraszajacy graczy, Najemnik i Lista Przydatnych Przedmiotow; wszystkie trzy krolestwa na jednym swiecie domyslnie; okno ulepszania nie zamyka sie po kazdej probie; zmiana ceny wielu przedmiotow w sklepie naraz; GRAJ moze uruchomic sam serwer; kazde ustawienie w .env opisane po polsku. ZALECAMY ZACZAC NA NOWYM SWIECIE (launcher: KOPIA / NOWY SWIAT). W launcherze ZAINSTALUJ AKTUALIZACJE.",
+  "publishedAt": "2026-09-20T10:59:57Z",
+  "statusMessage": "2.0.87 (serwer 2.0.87, klient bez zmian - 2.0.20): nowy swiat startuje na stawkach, o ktore launcher pyta przy zerowaniu, i moze poczekac z botami, az wszystko ustawisz (przycisk \"Wpusc boty do swiata\" w panelu). Iwakura Community Patch 1: Grinder nie stoi cala wsia na jednym poziomie, Prawo Awansu od 35 lvl wymaga broni +8 i helmu +6, a przed 45 lvl bot bonuje najpierw naszyjnik, bransolete i buty. Cios bota trafia to, co ma przed soba, i jest wart tyle, ile liczy gra.",
   "server": {
-    "version": "2.0.86",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.86/metin2-server-update-2.0.86.zip",
-    "sha256": "7100D5454AA1CAF382CDE6B77D54DF2DF4A0EB2FB14449015D59D2D0767CAFA6"
+    "version": "2.0.87",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.87/metin2-server-update-2.0.87.zip",
+    "sha256": "62152A7AE244EB6AFBF492C588BC7D9146223A00C62428BCA802765F43A0E12D"
   },
   "support": {
     "contactUrl": "https://discord.gg/pt5tvnrN6",
