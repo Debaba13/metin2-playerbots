@@ -225,6 +225,11 @@ namespace
 		}
 	}
 
+	// Either side of a mercenary's contract, and the walk to offer one
+	// (playerbot_companions.h).
+	bool BuildPlayerBotMercStatus(LPCHARACTER ch, const TPlayerBotAIState& state, const char* prefix,
+			char* status, size_t statusSize);
+
 	void BuildPlayerBotStatusText(LPCHARACTER ch, const TPlayerBotAIState& state,
 			char* status, size_t statusSize)
 	{
@@ -233,6 +238,27 @@ namespace
 
 		const char* prefix = ch->GetParty() ? "[GRUP] " : "";
 		const char* goal = GetPlayerBotGoalLabel(state.bLongTermGoal);
+		// The Demon Tower: the floor a bot is on, or the raid it is going to
+		// (playerbot_demon_tower.h).
+		if (IsPlayerBotDemonTowerInstance(ch->GetMapIndex()))
+		{
+			LPDUNGEON dungeon = ch->GetDungeon();
+			snprintf(status, statusSize, "%sSeytan Kulesi: kat %d", prefix,
+					dungeon ? GetPlayerBotDungeonLevel(dungeon) + 2 : 0);
+			return;
+		}
+		if (state.dwTowerRaidGuild != 0 || state.bTowerSummoned)
+		{
+			snprintf(status, statusSize, "%sKlan toplanmasi: Seytan Kulesi", prefix);
+			return;
+		}
+		// A guild war outranks every errand while it lasts (playerbot_guild_war.h).
+		if (state.dwGuildWarEnemyGID != 0)
+		{
+			CGuild* enemy = CGuildManager::instance().FindGuild(state.dwGuildWarEnemyGID);
+			snprintf(status, statusSize, "%sKlan savasi: %s", prefix, enemy ? enemy->GetName() : "?");
+			return;
+		}
 		if (state.bVisitingShop)
 		{
 			// "Handluje bronia (cel: zapasy)" says what the bot is standing at
@@ -306,6 +332,27 @@ namespace
 			snprintf(status, statusSize, "%sOlumden sonra dinleniyorum", prefix);
 			return;
 		}
+		// The two habits of a weak mood (playerbot_persona.h): a player
+		// looking at a bot standing still is told why.
+		{
+			const DWORD now = get_dword_time();
+			if (state.persona.dwAfkUntil != 0 && now < state.persona.dwAfkUntil)
+			{
+				snprintf(status, statusSize, "%sAFK - hemen donuyorum", prefix);
+				return;
+			}
+			if (state.persona.dwPauseUntil != 0 && now < state.persona.dwPauseUntil)
+			{
+				snprintf(status, statusSize, "%sKisa bir mola", prefix);
+				return;
+			}
+		}
+
+		// A contract says whom the bot is with, unless it is fighting: then the
+		// fight says what it is fighting.
+		if (state.bCurrentAction != BOT_ACTION_FIGHT &&
+				BuildPlayerBotMercStatus(ch, state, prefix, status, statusSize))
+			return;
 
 		LPCHARACTER target = state.dwTargetVID != 0
 				? CHARACTER_MANAGER::instance().Find(state.dwTargetVID) : NULL;
@@ -350,6 +397,33 @@ namespace
 								target->GetName());
 					else if (distance > range)
 						snprintf(status, statusSize, "%s%s'nin pesindeyim", prefix, target->GetName());
+					else
+						snprintf(status, statusSize, "%s%s ile savasiyorum", prefix, target->GetName());
+				}
+				else if (target && target->IsPC())
+				{
+					// A player: the Anti-PK protocol says why (playerbot_anti_pk.h);
+					// otherwise a duel or a war, which this line used to call
+					// "looking for an opponent" in the middle of the fight.
+					if (state.persona.dwFoeVID == (DWORD)target->GetVID())
+						switch (state.persona.bFoeReason)
+						{
+							case BOT_FOE_STRUCK:
+								snprintf(status, statusSize, "%s%s'ye karsi kendimi koruyorum", prefix, target->GetName());
+								break;
+							case BOT_FOE_PARTY:
+								snprintf(status, statusSize, "%sGrubu %s'ye karsi koruyorum", prefix, target->GetName());
+								break;
+							case BOT_FOE_GRUDGE:
+								snprintf(status, statusSize, "%s%s'den rovansi aliyorum", prefix, target->GetName());
+								break;
+							case BOT_FOE_STONE_RIVAL:
+								snprintf(status, statusSize, "%s%s'yi Metin'den kovaliyorum", prefix, target->GetName());
+								break;
+							default:
+								snprintf(status, statusSize, "%s%s ile savasiyorum", prefix, target->GetName());
+								break;
+						}
 					else
 						snprintf(status, statusSize, "%s%s ile savasiyorum", prefix, target->GetName());
 				}
@@ -519,7 +593,19 @@ namespace
 				else if (state.bLongTermGoal == BOT_GOAL_REFINE)
 					snprintf(status, statusSize, "%sEsyalari basmak icin demirciye gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_BIOLOGIST)
-					snprintf(status, statusSize, "%sBiologa gidiyorum", prefix);
+				{
+					// The Biologist only for a bot carrying the hand-in or visiting
+					// him: a status of "going to the Biologist" with no item in
+					// the bag while hunting the row's monsters is misleading.
+					size_t missionIndex = 0;
+					const TPlayerBotBiologistMission* mission =
+							GetActivePlayerBotBiologistMission(ch, &missionIndex);
+					if (mission && !state.bVisitingBiologist &&
+							!PlayerBotBiologistHoldsHandIn(ch, mission, missionIndex))
+						snprintf(status, statusSize, "%sBiyolog icin topluyorum: %s", prefix, mission->itemLabel);
+					else
+						snprintf(status, statusSize, "%sBiologa gidiyorum", prefix);
+				}
 				else if (state.bLongTermGoal == BOT_GOAL_FISHING)
 					snprintf(status, statusSize, "%sNehirde balik tutmaya gidiyorum", prefix);
 				else if (state.bLongTermGoal == BOT_GOAL_GET_EQUIPMENT)
@@ -651,9 +737,15 @@ namespace
 			return;
 		}
 
+		// Under Iwakura's personalities the title is the one that claims the
+		// bot now, at PERSONA_TITLE_BASE + its id: a client that does not know
+		// those ids draws nothing, rather than an old personality's name.
+		const unsigned int titleId = (IsPlayerBotPersonaEnabled() && state.persona.bRestored)
+				? playerbot_persona::PERSONA_TITLE_BASE + (unsigned int)state.persona.bPersona
+				: (unsigned int)state.bPersonality;
 		char command[64];
 		int commandLen = snprintf(command, sizeof(command), "PlayerBotTitle %u %u",
-				(unsigned int)ch->GetVID(), (unsigned int)state.bPersonality);
+				(unsigned int)ch->GetVID(), titleId);
 		if (commandLen <= 0 || commandLen >= (int)sizeof(command))
 			return;
 		++commandLen;   // the trailing NUL every chat packet carries

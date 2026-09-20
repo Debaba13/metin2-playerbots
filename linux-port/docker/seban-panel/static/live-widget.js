@@ -37,7 +37,7 @@
     // used to spill past the fixed-height world-overview sidebar box.
     overviewMaps.innerHTML = '<h4>🗺 Haritalardaki Botlar</h4><div class="overview-maps-list">' + (entries.map(([id,count]) => `<div><span>${escape(mapLabels[id] || `Harita #${id}`)}</span><b>${count}</b></div>`).join('') || '<div class="muted">Çevrimiçi bot yok.</div>') + '</div>';
   }
-  const levelOK = (level) => currentLevel === 'all' || (currentLevel === '16+' ? level >= 16 : (() => { const [a,b] = currentLevel.split('-').map(Number); return level >= a && level <= b; })());
+  const levelOK = (level) => { if (currentLevel === 'all') return true; if (currentLevel.endsWith('+')) return level >= Number.parseInt(currentLevel, 10); const [from, to] = currentLevel.split('-').map(Number); return level >= from && level <= to; };
   const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const portrait = job => { const files = ["warrior_m.bmp","assassin_w.bmp","sura_m.bmp","shaman_w.bmp","warrior_w.bmp","assassin_m.bmp","sura_w.bmp","shaman_m.bmp"]; const index = Number.isInteger(Number(job)) && Number(job) >= 0 && Number(job) < files.length ? Number(job) : 0; return `/static/class-portraits/${files[index]}`; };
   function activityGroup(bot) {

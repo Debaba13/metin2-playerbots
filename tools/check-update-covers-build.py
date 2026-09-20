@@ -58,6 +58,9 @@ def is_shipped(path, patterns):
         # "a/b/*" ships the directory, and so everything under it.
         if pattern.endswith('/*') and (path + '/').startswith(pattern[:-1]):
             return pattern
+        # And a COPY of a directory needs only something under it to arrive.
+        if pattern.startswith(path.rstrip('/') + '/'):
+            return pattern
     return None
 
 
@@ -85,6 +88,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--docker', default=os.path.relpath(DOCKER, ROOT))
     parser.add_argument('--list', default=os.path.relpath(LIST, ROOT))
+    # The mt2009 compose builds the panels, the ItemShop and the updater from
+    # linux-port/docker, outside --docker, and a 2.x install on Linux stages
+    # nothing before its build: these contexts are checked with no prefix
+    # assumed staged. The panel's COPY schema/ was one - every package from
+    # 2.0.70 on lacked it and a VPS build stopped there (DUDU, 18 September).
+    parser.add_argument('--context', action='append', default=[])
     args = parser.parse_args()
     DOCKER = os.path.join(ROOT, args.docker.replace('/', os.sep))
     LIST = os.path.join(ROOT, args.list.replace('/', os.sep))
@@ -106,6 +115,21 @@ def main():
                 continue
             if not is_shipped(rel, patterns):
                 problems.append('%s: COPY %s - %s nie jedzie w aktualizacji' % (context, source, rel))
+
+    for extra in args.context:
+        extra_rel = extra.replace(os.sep, '/').rstrip('/')
+        dockerfile = os.path.join(ROOT, extra_rel.replace('/', os.sep), 'Dockerfile')
+        if not os.path.isfile(dockerfile):
+            problems.append('%s: nie ma Dockerfile' % extra_rel)
+            continue
+        for source in copies(dockerfile):
+            checked += 1
+            rel = '%s/%s' % (extra_rel, source.rstrip('/'))
+            if not os.path.exists(os.path.join(ROOT, rel.replace('/', os.sep))):
+                problems.append('%s: COPY %s - nie ma tego w repozytorium' % (extra_rel, source))
+                continue
+            if not is_shipped(rel, patterns):
+                problems.append('%s: COPY %s - %s nie jedzie w aktualizacji' % (extra_rel, source, rel))
 
     print('sprawdzone instrukcje COPY: %d' % checked)
     if problems:

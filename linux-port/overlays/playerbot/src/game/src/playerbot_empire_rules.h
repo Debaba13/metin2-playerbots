@@ -229,6 +229,27 @@ namespace playerbot_empire_rules
 		}
 	}
 
+	// The operator's own number for each kingdom instead of a share of one
+	// budget (the launcher's "Indywidualne wartosci dla krolestw", Greess).
+	// Each kingdom takes what it was asked for, cut to the identities it has,
+	// and nothing it cannot take is handed to another: the operator named
+	// every number, so a kingdom short of identities is short, not generous.
+	inline void TakeKingdomCounts(const int* asked, const int* registered, int* out)
+	{
+		if (!out)
+			return;
+		for (int e = 0; e < EMPIRE_COUNT; ++e)
+			out[e] = 0;
+		if (!asked || !registered)
+			return;
+		for (int e = EMPIRE_SHINSOO; e <= EMPIRE_JINNO; ++e)
+		{
+			const int want = asked[e] > 0 ? asked[e] : 0;
+			const int have = registered[e] > 0 ? registered[e] : 0;
+			out[e] = want < have ? want : have;
+		}
+	}
+
 	// -------------------------------------------------------------------
 	//  The points a bot walks to, per kingdom
 	// -------------------------------------------------------------------
@@ -374,6 +395,30 @@ namespace playerbot_empire_rules
 			{ 1,  { 499200, 957000 } },
 			{ 21, { 89800, 182100 } },
 			{ 41, { 950100, 233300 } },
+		};
+		for (unsigned int i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
+		{
+			if (rows[i].mapIndex == mapIndex)
+			{
+				out = rows[i].pitch;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Baek-Go, mob 20018 - the herbalist, who is NOT the Biologist above: two
+	// NPCs, both in every first village and nowhere else. His crafting board is
+	// what turns the herbs a bot picks up into potions, so herbalism is an M1
+	// errand exactly like the Biologist's hand-in, and a bot that walks to one
+	// is already standing beside the other. Read off each map's npc.txt through
+	// its own BasePosition (cell * 100 + base), the way the Biologist's row was.
+	inline bool GetHerbalist(long mapIndex, TPoint& out)
+	{
+		static const TTownPitchRow rows[] = {
+			{ 1,  { 479100, 961700 } },
+			{ 21, { 67400, 161400 } },
+			{ 41, { 968100, 266000 } },
 		};
 		for (unsigned int i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i)
 		{

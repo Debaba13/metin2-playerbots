@@ -17,6 +17,23 @@
 
 namespace
 {
+	// "Write this item's row now." The db core keeps a changed item in its
+	// cache for PLAYER_CACHE_FLUSH_SECONDS - seven minutes by default, which
+	// is what this world runs - before MariaDB sees it, so anything reading
+	// player.item (both panels) is that far behind a bot's bag. The engine's
+	// own answer is HEADER_GD_ITEM_FLUSH, which CInputMain sends after a shop
+	// deal; it costs one write, so it is for the rare, visible changes - what
+	// a bot wears - and never for a bag that turns over every few seconds.
+	void FlushPlayerBotItemRow(LPITEM item)
+	{
+		if (!item || item->GetID() == 0 || !db_clientdesc)
+			return;
+		ITEM_MANAGER::instance().FlushDelayedSave(item);
+		const DWORD dwID = item->GetID();
+		db_clientdesc->DBPacketHeader(HEADER_GD_ITEM_FLUSH, 0, sizeof(DWORD));
+		db_clientdesc->Packet(&dwID, sizeof(DWORD));
+	}
+
 	// Defined with the town code. Buying anything means standing at an NPC
 	// first, and where exactly is a town concern, not a gear one.
 	void GetPlayerBotNpcApproach(DWORD playerID, long npcX, long npcY, DWORD salt,
@@ -534,6 +551,59 @@ namespace
 		return GetPlayerBotWeaponHitDamageAt(item, item->GetProto(), ch);
 	}
 
+	// Iwakura's PvE tier of this piece's family for this character, or 0
+	// when his list does not rate the family (body armour, helmets, shields,
+	// everything he judges by level and lines). The family is the +0 vnum,
+	// the same arithmetic the price table uses.
+	int GetPlayerBotItemTierOf(LPITEM item, LPCHARACTER ch)
+	{
+		if (!item || (item->GetType() != ITEM_WEAPON && item->GetType() != ITEM_ARMOR))
+			return 0;
+		const BYTE refine = item->GetRefineLevel();
+		if (refine > 9)
+			return 0;
+		return GetPlayerBotItemTier(item->GetVnum() - refine, ch ? (int)ch->GetJob() : -1, false);
+	}
+
+	// A line's worth, scaled by Iwakura's PvE tier of that kind of line
+	// (PLAYERBOT_BONUS_TIER_PERCENT) - the same scale the reroll pass applies
+	// in ScorePlayerBotBonusLine, so the pass that buys a piece and the pass
+	// that rerolls it agree about what a line is worth.
+	long long ScorePlayerBotApplyTiered(BYTE bType, long lValue, LPCHARACTER ch)
+	{
+		const long long raw = ScorePlayerBotApply(bType, lValue, ch);
+		const int tier = ch ? GetPlayerBotBonusTier(bType, (int)ch->GetJob(), false) : 0;
+		return tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
+	}
+
+	// A stone already in a socket, as the equipment score counts it: its own
+	// lines, by his tier of the stone the way a bonus line goes by his tier of
+	// the line. A stone seated before his list (a +0 to +2, or one he rates
+	// low) still does what it does and counts at face value - a socket cannot
+	// be emptied, so the piece is worth exactly what it holds.
+	long long ScorePlayerBotSeatedSoulStones(LPITEM item, LPCHARACTER ch)
+	{
+		if (!item || (item->GetType() != ITEM_WEAPON && item->GetType() != ITEM_ARMOR))
+			return 0;
+		long long score = 0;
+		for (int socketIdx = 0; socketIdx < ITEM_SOCKET_MAX_NUM; ++socketIdx)
+		{
+			const DWORD inSocket = (DWORD)item->GetSocket(socketIdx);
+			if (inSocket <= 2 || inSocket == PLAYERBOT_BROKEN_SOUL_STONE_VNUM)
+				continue;
+			const TItemTable* stone = ITEM_MANAGER::instance().GetTable(inSocket);
+			if (!stone || stone->bType != ITEM_METIN)
+				continue;
+			const int tier = GetPlayerBotSoulStoneTier(inSocket, false);
+			for (int i = 0; i < ITEM_APPLY_MAX_NUM; ++i)
+			{
+				const long long raw = ScorePlayerBotApply(stone->aApplies[i].bType, stone->aApplies[i].lValue, ch);
+				score += tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
+			}
+		}
+		return score;
+	}
+
 	long long GetPlayerBotEquipmentScore(LPITEM item, LPCHARACTER ch = NULL)
 	{
 		if (!item || !item->GetProto())
@@ -626,15 +696,20 @@ namespace
 			const BYTE t = item->GetProto()->aApplies[i].bType;
 			if (bWeaponHitDone && IsPlayerBotHitModelApply(t, ch))
 				continue;
-			score += ScorePlayerBotApply(t, item->GetProto()->aApplies[i].lValue, ch);
+			score += ScorePlayerBotApplyTiered(t, item->GetProto()->aApplies[i].lValue, ch);
 		}
 		for (int i = 0; i < ITEM_ATTRIBUTE_MAX_NUM; ++i)
 		{
 			const BYTE t = item->GetAttributeType(i);
 			if (bWeaponHitDone && IsPlayerBotHitModelApply(t, ch))
 				continue;
-			score += ScorePlayerBotApply(t, item->GetAttributeValue(i), ch);
+			score += ScorePlayerBotApplyTiered(t, item->GetAttributeValue(i), ch);
 		}
+		// The soul stones in its sockets are lines of the piece too: a weapon
+		// holding Potwora and Smierci +4 is a different weapon from the same
+		// one with the sockets open, and a swap for a bare one of a point
+		// more would throw both stones away.
+		score += ScorePlayerBotSeatedSoulStones(item, ch);
 
 		if (item->GetImmuneFlag() != 0)
 			score += 1000;
@@ -667,6 +742,18 @@ namespace
 						score += (long long)item->GetProto()->aApplies[i].lValue * perPoint;
 				}
 			}
+		}
+
+		// Iwakura's tier of the family, as a nudge on the whole: the family's
+		// own lines are already in the score, so this is his verdict on what
+		// they are worth together, not a second count of them. Bounded by
+		// PLAYERBOT_TIER_SCORE_PERCENT a step so that a +9 with lines still
+		// beats a +1 of a better family with none.
+		if (ch)
+		{
+			const int tier = GetPlayerBotItemTierOf(item, ch);
+			if (tier > 0)
+				score = score * (100 + (tier - 3) * PLAYERBOT_TIER_SCORE_PERCENT) / 100;
 		}
 
 		return score;
@@ -1010,6 +1097,15 @@ namespace
 			char szHint[64];
 			snprintf(szHint, sizeof(szHint), "slot %d zamiast %u", bestWearCell, oldVnum);
 			LogManager::instance().ItemLog(ch, bestItem, "PLAYERBOT_EQUIP", szHint);
+			// And the row is written now, not in seven minutes. The panel reads
+			// player.item, while the db core keeps a changed item in its cache
+			// for PLAYER_CACHE_FLUSH_SECONDS - so a bot that had just put a
+			// shield on showed an empty shield slot in the panel for minutes
+			// ("chyba na www klasycznym jest bug synchronizacji eq", Tieru,
+			// 17 September; the row was there five minutes later). Both pieces:
+			// the one worn and the one taken off.
+			FlushPlayerBotItemRow(bestItem);
+			FlushPlayerBotItemRow(bestOldItem);
 			// What came off stays in the bag: a bot trades its spares, it does
 			// not give them away.
 			return true;
@@ -1509,6 +1605,10 @@ namespace
 		for (size_t i = 0; i < sizeof(PLAYERBOT_PICKUP_GOODS_VNUMS) / sizeof(PLAYERBOT_PICKUP_GOODS_VNUMS[0]); ++i)
 			if (PLAYERBOT_PICKUP_GOODS_VNUMS[i] == vnum)
 				return true;
+		// Every herb of the herbalist's range, not the two the Biologist's rows
+		// happen to want: they are the materials Baek-Go's board runs on.
+		if (vnum >= PLAYERBOT_HERB_VNUM_FIRST && vnum <= PLAYERBOT_HERB_VNUM_LAST)
+			return true;
 		if ((vnum >= PLAYERBOT_PICKUP_EARRING_FIRST && vnum <= PLAYERBOT_PICKUP_EARRING_FIRST + 9) ||
 				(vnum >= PLAYERBOT_PICKUP_ARMOUR_FIRST && vnum <= PLAYERBOT_PICKUP_ARMOUR_FIRST + 9))
 			return true;
@@ -1572,6 +1672,47 @@ namespace
 				skill += item->GetAttributeValue(i);
 		}
 		return avg >= PLAYERBOT_WEAPON_SCROLL_ONLY_AVERAGE || skill >= PLAYERBOT_WEAPON_SCROLL_ONLY_SKILL;
+	}
+
+	// The operator's anvil ceiling for a level-30 weapon, by its average line.
+	// Below it the bot grinds at the blacksmith and takes the risk; at or above
+	// it the step belongs to a scroll. A weapon over the scroll-only line never
+	// reaches this at all - IsPlayerBotScrollOnlyWeapon answers first.
+	int GetPlayerBotLevel30AnvilCeiling(long average)
+	{
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_CHEAP)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_CHEAP;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_GOOD)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_GOOD;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_BETTER)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_BETTER;
+		if (average <= PLAYERBOT_LEVEL30_ANVIL_AVG_HIGH)
+			return PLAYERBOT_LEVEL30_ANVIL_PLUS_HIGH;
+		return 0;
+	}
+
+	// Whether this bot grinds THIS level-30 weapon of another class for sale
+	// (PLAYERBOT_LEVEL30_SALE_REFINE_PERCENT). The id is the item's own, or an
+	// offline counter line's, which is the same item. A weapon over the
+	// scroll-only line never meets the plain anvil, so it is sold as it is.
+	bool PlayerBotRefinesLevel30ForSale(LPCHARACTER ch, LPITEM item, DWORD itemId)
+	{
+		if (!ch || !item || !IsPlayerBotSpecialLevel30Weapon(item) || item->CanUsedBy(ch) ||
+				IsPlayerBotScrollOnlyWeapon(item))
+			return false;
+		const DWORD salt = ch->GetPlayerID() ^ (itemId * 2246822519U) ^ 0x53414c45U;
+		return (int)(PlayerBotNavHash(salt) % 100U) < PLAYERBOT_LEVEL30_SALE_REFINE_PERCENT;
+	}
+
+	bool PlayerBotRefinesLevel30ForSale(LPCHARACTER ch, LPITEM item)
+	{
+		return item && PlayerBotRefinesLevel30ForSale(ch, item, item->GetID());
+	}
+
+	// How far: the operator's anvil ceiling for its average line.
+	BYTE GetPlayerBotLevel30SaleTarget(LPITEM item)
+	{
+		return (BYTE)GetPlayerBotLevel30AnvilCeiling(SumPlayerBotItemLines(item, APPLY_NORMAL_HIT_DAMAGE_BONUS));
 	}
 
 	// What a level-30 weapon will hit for once ground to
@@ -1651,6 +1792,38 @@ namespace
 		return view.project == item;
 	}
 
+	// Whether this bot works THIS level-30 weapon at the anvil rather than
+	// listing it. "Niech botom zalezy na takich broniach ... 65% do kowala,
+	// reszta na rynek" - so the draw is per weapon, not per bot, and it is a
+	// hash of the pair rather than a roll: a keeper that changed its mind would
+	// put the same weapon up and take it back every service visit. The bag
+	// still has a ceiling, because the bots hold 276 of these at +0 between
+	// them and grinding all of them would be a purse emptied for nothing.
+	bool PlayerBotKeepsLevel30ForAnvil(LPCHARACTER ch, LPITEM item)
+	{
+		if (!ch || !item || !IsPlayerBotSpecialLevel30Weapon(item))
+			return false;
+		if (IsPlayerBotLevel30Project(ch, item))
+			return true;   // the project is kept whatever the draw says
+		const DWORD salt = ch->GetPlayerID() ^ (item->GetID() * 2654435761U);
+		if ((int)(PlayerBotNavHash(salt) % 100U) >= PLAYERBOT_LEVEL30_KEEP_PERCENT)
+			return false;
+		// Count what the bag already works on, so a bot keeps a few and lists
+		// the rest instead of hoarding every one it picks up.
+		int kept = 0;
+		for (int cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
+		{
+			LPITEM other = ch->GetInventoryItem(cell);
+			if (!other || other == item || !IsPlayerBotSpecialLevel30Weapon(other))
+				continue;
+			const DWORD otherSalt = ch->GetPlayerID() ^ (other->GetID() * 2654435761U);
+			if ((int)(PlayerBotNavHash(otherSalt) % 100U) < PLAYERBOT_LEVEL30_KEEP_PERCENT)
+				++kept;
+		}
+		return kept < PLAYERBOT_LEVEL30_KEEP_MAX;
+	}
+
+
 	// A level-30 weapon on somebody's counter is worth buying when its
 	// potential beats both the best blow the bot has and its own project.
 	bool IsPlayerBotBetterLevel30Offer(LPCHARACTER ch, LPITEM offer)
@@ -1677,8 +1850,14 @@ namespace
 		LPITEM worn = ch->GetWear(WEAR_WEAPON);
 		if (worn && !IsPlayerBotWeapon(ch, worn))
 			return false;
-		if (IsPlayerBotSpecialLevel30Weapon(worn) && worn->GetRefineLevel() >= PLAYERBOT_LEVEL30_PROJECT_PLUS)
-			return false;
+		// A finished refine is not a finished weapon. This used to answer "no
+		// thank you" to the whole market for any bot already wearing a special
+		// level-30 weapon at +7, whatever was rolled on it - so a Full Moon
+		// Sword +7 with nothing on it stopped its owner from ever looking at a
+		// better one (audit of 17 September). The comparison below is the real
+		// test and it is the stricter one where it should be: toBeat counts a
+		// worn level-30 weapon AT ITS POTENTIAL, so a good +7 still refuses
+		// every offer, and only a poor one lets the search go on.
 		TPlayerBotLevel30View view;
 		ReadPlayerBotLevel30View(ch, view);
 		if (view.project)
@@ -1697,10 +1876,18 @@ namespace
 		return false;
 	}
 
+	// Defined in playerbot_persona.h, further down: M3's door by Iwakura's
+	// document - a weapon at +6 and an armour at +5, the Mental Warrior with the
+	// weapon alone.
+	bool MeetsPlayerBotM3Survival(LPCHARACTER ch);
+
 	bool HasPlayerBotM3ReadyEquipment(LPCHARACTER ch)
 	{
 		if (!ch)
 			return false;
+		// The document's second tier starts at fifteen, as the old rule did.
+		if (IsPlayerBotPersonaEnabled())
+			return ch->GetLevel() >= 15 && MeetsPlayerBotM3Survival(ch);
 		LPITEM weapon = ch->GetWear(WEAR_WEAPON);
 		LPITEM armor = ch->GetWear(WEAR_BODY);
 		LPITEM shield = ch->GetWear(WEAR_SHIELD);
@@ -1792,9 +1979,58 @@ namespace
 		return scrolls;
 	}
 
+	bool PlayerBotWantsShield(LPCHARACTER ch);
+
+	// Iwakura's Perfectionist ranks the gear: the weapon first, the armour,
+	// the shield, and the rest - helmet, boots, jewellery - only once those
+	// three stand at +7 ("wielka trojca"). A bow or a two-hander has no shield
+	// to wait for.
+	bool IsPlayerBotBigThreeSlot(int wearCell)
+	{
+		return wearCell == WEAR_WEAPON || wearCell == WEAR_BODY || wearCell == WEAR_SHIELD;
+	}
+
+	bool IsPlayerBotBigThreeAtPlus(LPCHARACTER ch, BYTE plus)
+	{
+		if (!ch)
+			return false;
+		LPITEM weapon = GetPlayerBotHandWeapon(ch);
+		LPITEM body = ch->GetWear(WEAR_BODY);
+		if (!weapon || weapon->GetRefineLevel() < plus || !body || body->GetRefineLevel() < plus)
+			return false;
+		if (!PlayerBotWantsShield(ch))
+			return true;
+		LPITEM shield = ch->GetWear(WEAR_SHIELD);
+		return shield && shield->GetRefineLevel() >= plus;
+	}
+
+	// The Perfectionist's rank of a piece for the anvil: 0 the weapon, 1 the
+	// armour, 2 the shield, 3 the rest.
+	BYTE GetPlayerBotPerfectionistRank(LPCHARACTER ch, LPITEM item)
+	{
+		const int cell = item ? item->FindEquipCell(ch) : -1;
+		return cell == WEAR_WEAPON ? 0 : (cell == WEAR_BODY ? 1 : (cell == WEAR_SHIELD ? 2 : 3));
+	}
+
 	// How far a bot means to take a piece on the plain anvil, where a failed
 	// step burns it. What a scroll in the bag changes is GetPlayerBotRefineTarget.
+	BYTE GetPlayerBotRefineAmbitionDrawn(LPCHARACTER ch, LPITEM item);
+
 	BYTE GetPlayerBotRefineAmbition(LPCHARACTER ch, LPITEM item)
+	{
+		const BYTE drawn = GetPlayerBotRefineAmbitionDrawn(ch, item);
+		if (!ch || !item || drawn == 0 || !IsPlayerBotPersonaEnabled() || IsPlayerBotArcherStoneWeapon(ch, item))
+			return drawn;
+		// The Perfectionist aims the three at +7 whatever the draw - the Law of
+		// Advancement asks the weapon for +7 - and lets the draw carry them to
+		// +8 and +9 ("dazac do progu +7, a docelowo +8 i +9"). The rest waits
+		// for the three.
+		if (IsPlayerBotBigThreeSlot(item->FindEquipCell(ch)))
+			return std::max<BYTE>(drawn, 7);
+		return IsPlayerBotBigThreeAtPlus(ch, 7) ? drawn : 0;
+	}
+
+	BYTE GetPlayerBotRefineAmbitionDrawn(LPCHARACTER ch, LPITEM item)
 	{
 		if (!ch || !item)
 			return 0;
@@ -1849,6 +2085,16 @@ namespace
 		if (IsPlayerBotSpecialLevel30Weapon(item) && IsPlayerBotWeapon(ch, item) &&
 				(item->IsEquipped() || IsPlayerBotLevel30Project(ch, item)))
 			return PLAYERBOT_SCROLL_REFINE_MAX_PLUS;
+		// One of another class, ground for sale, as far as its ceiling.
+		if (PlayerBotRefinesLevel30ForSale(ch, item))
+			return GetPlayerBotLevel30SaleTarget(item);
+		// Under Iwakura's personalities the helmet, the boots and the jewellery
+		// wait for the weapon, the armour and the shield to stand at +7
+		// (GetPlayerBotRefineAmbition) - and a scroll in the bag, which would
+		// otherwise make a ladder of any piece, does not change that.
+		if (IsPlayerBotPersonaEnabled() && !IsPlayerBotArcherStoneWeapon(ch, item) &&
+				!IsPlayerBotBigThreeSlot(item->FindEquipCell(ch)) && !IsPlayerBotBigThreeAtPlus(ch, 7))
+			return 0;
 		// A scroll in the bag is a ladder to +9 for everybody: under it a
 		// failure costs a level or nothing, never the piece, so the ambition -
 		// which is about not burning what was earned - does not apply while
@@ -2108,8 +2354,12 @@ namespace
 	// bought once the bot stands at the counter.
 	bool WantsPlayerBotArrowTopUp(LPCHARACTER ch)
 	{
+		// A trial archer too: the hundred kills of the battle-horse trial cost
+		// more arrows than the hundred the restock threshold leaves, and every
+		// trip back for them is a stay on the desert lost.
 		return ch && ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2 &&
-				IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())) &&
+				(IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())) ||
+				 IsPlayerBotOnBattleHorseTrial(ch)) &&
 				CountPlayerBotArrows(ch) < PLAYERBOT_DROPPER_ARROW_STOCK;
 	}
 
@@ -2131,31 +2381,37 @@ namespace
 	bool IsPlayerBotWeaponSoulStoneKind(int kind) { return kind >= 30 && kind <= 37; }
 	bool IsPlayerBotArmorSoulStoneKind(int kind) { return kind >= 38 && kind <= 43; }
 
-	// The set, by what the school does with it. In a world of monsters the
-	// class stones (33-36) are worth nothing to anybody; Potwora is first for
-	// everybody; the blow schools take crit and pierce, the skill schools the
-	// cooldown stone. On armour: health, then block for the ones that stand in
-	// the pack, move for the ones that keep away from it, then defence.
-	int GetPlayerBotSoulStoneWorth(LPCHARACTER ch, int kind)
+	// What a stone is worth to the hunting set, by Iwakura's list alone: his
+	// PvE tier when he lets it into a socket and rates it neutral or better,
+	// else nothing. Before his list this was a table of our own by school, and
+	// it seated a +0 to +2 on anything under +6 - which his list forbids
+	// ("Boty maja calkowity zakaz umieszczania Kamieni Duszy +0, +1 i +2 w
+	// broniach i zbrojach") outside the operator's exception for weak pieces
+	// (PLAYERBOT_SOUL_STONE_WEAK_GEAR_*). A stone of a banned grade takes the
+	// best tier his list gives its kind, so the exception seats the kinds he
+	// wants and not Magii or Powtorki. The class stones he keeps for a PvP
+	// weapon, which no bot assembles, so they are never seated.
+	int GetPlayerBotSoulStoneSeatTier(DWORD vnum)
 	{
-		const int style = GetPlayerBotSchoolStyle(ch);
-		const bool ranged = ch && ((ch->GetJob() == JOB_ASSASSIN && ch->GetSkillGroup() == 2) ||
-				(ch->GetJob() == JOB_SURA && ch->GetSkillGroup() == 2) || ch->GetJob() == JOB_SHAMAN);
-		switch (kind)
+		int tier = GetPlayerBotSoulStoneTier(vnum, false);
+		if (GetPlayerBotSoulStoneGrade(vnum) < PLAYERBOT_SOUL_STONE_MIN_GRADE)
 		{
-			case 37: return 600;                          // Potwora
-			case 31: return 500;                          // Smierci (kryt)
-			case 30: return style > 0 ? 250 : 450;       // Penetracji
-			case 32: return style > 0 ? 500 : 150;       // Powtorki
-			case 33: case 34: case 35: case 36: return 0; // klasowe: PvP
-			case 41: return 600;                          // Witalnosci
-			case 38: return ranged ? 250 : 500;          // Uchylenia (blok)
-			case 43: return ranged ? 450 : 200;          // Przyspieszenia
-			case 42: return 400;                          // Obrony
-			case 39: return 250;                          // Uniku
-			case 40: return style > 0 ? 150 : 0;         // Magii (PE)
-			default: return 0;
+			const int kind = GetPlayerBotSoulStoneKind(vnum);
+			for (size_t i = 0; i < sizeof(PLAYERBOT_SOUL_STONE_TIERS) / sizeof(PLAYERBOT_SOUL_STONE_TIERS[0]); ++i)
+			{
+				const TPlayerBotSoulStoneTier& row = PLAYERBOT_SOUL_STONE_TIERS[i];
+				if (GetPlayerBotSoulStoneKind(row.dwVnum) == kind && !row.bPvpOnly)
+					tier = std::max<int>(tier, row.bPve);
+			}
 		}
+		return tier >= PLAYERBOT_SOUL_STONE_MIN_PVE_TIER ? tier : 0;
+	}
+
+	// The operator's weak piece: level 21 or less and +6 or less.
+	bool IsPlayerBotWeakSoulStoneGear(LPITEM gear)
+	{
+		return gear && gear->GetLevelLimit() <= PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_LEVEL &&
+				gear->GetRefineLevel() <= PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_REFINE;
 	}
 
 	// Whether the worn piece for this kind of stone has a socket open for it
@@ -2190,30 +2446,41 @@ namespace
 	}
 
 	// A seating is a 30% roll, and the other 70% welds a cracked stone into
-	// the socket for good. On a piece the bot will outgrow that costs nothing;
-	// on the +6 it keeps, a socket is worth waiting for a +3, and on a +8 for
-	// the +4. A +3 or +4 is never spent on a piece below +6.
+	// the socket for good. A stone under Iwakura's lowest grade goes only into
+	// the operator's weak piece; a +3 or +4 is never spent on a piece below
+	// +6, and on a +8 or +9 the socket waits for the +4.
 	bool ShouldPlayerBotSeatSoulStone(LPITEM gear, int grade)
 	{
 		if (!gear)
 			return false;
+		if (grade < PLAYERBOT_SOUL_STONE_MIN_GRADE)
+			return grade >= PLAYERBOT_SOUL_STONE_WEAK_MIN_GRADE &&
+					IsPlayerBotWeakSoulStoneGear(gear);
 		const int refine = gear->GetRefineLevel();
-		if (refine >= 8)
-			return grade >= 4;
-		if (refine >= 6)
-			return grade >= 3;
-		return grade <= 2;
+		if (refine >= PLAYERBOT_SOUL_STONE_TOP_GEAR_REFINE)
+			return grade >= PLAYERBOT_SOUL_STONE_TOP_GEAR_MIN_GRADE;
+		return refine >= PLAYERBOT_SOUL_STONE_MIN_GEAR_REFINE;
 	}
 
-	bool WantsPlayerBotSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
+	// Whether this stone would go into a socket of what the bot wears now:
+	// what the counter must not sell.
+	bool CanPlayerBotSeatSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
 	{
 		const int kind = GetPlayerBotSoulStoneKind(vnum);
-		if (GetPlayerBotSoulStoneWorth(ch, kind) <= 0)
+		if (GetPlayerBotSoulStoneSeatTier(vnum) <= 0)
 			return false;
 		LPITEM gear = NULL;
 		int socket = -1;
 		return FindPlayerBotSoulStoneSocket(ch, kind, stoneValue5, &gear, &socket) &&
 				ShouldPlayerBotSeatSoulStone(gear, GetPlayerBotSoulStoneGrade(vnum));
+	}
+
+	// Whether the bot would buy this stone off a counter: one it would seat,
+	// of Iwakura's grades - the weak piece's +0..+2 are for what drops.
+	bool WantsPlayerBotSoulStone(LPCHARACTER ch, DWORD vnum, DWORD stoneValue5)
+	{
+		return GetPlayerBotSoulStoneGrade(vnum) >= PLAYERBOT_SOUL_STONE_MIN_GRADE &&
+				CanPlayerBotSeatSoulStone(ch, vnum, stoneValue5);
 	}
 
 	// Does this bot have a socket that a stone worth having could still fill?
@@ -2226,7 +2493,7 @@ namespace
 		for (int s = 0; s < 2; ++s)
 		{
 			LPITEM gear = ch->GetWear(slots[s]);
-			if (!gear || gear->GetRefineLevel() < PLAYERBOT_PRECIOUS_REFINE)
+			if (!gear || gear->GetRefineLevel() < PLAYERBOT_SOUL_STONE_MIN_GEAR_REFINE)
 				continue;
 			for (int socketIdx = 0; socketIdx < ITEM_SOCKET_MAX_NUM; ++socketIdx)
 				if ((DWORD)gear->GetSocket(socketIdx) == 1)

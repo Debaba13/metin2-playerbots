@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-16T13:49:32Z",
-  "statusMessage": "2.0.59: **Stopniowe wpuszczanie botów (okno wejścia kohorty i dodatkowi boty dołączający w ciągu godzin — w launcherze pod LICZBA BOTÓW), przełącznik „Boty grają jak żywi ludzie” w panelu (sesje i odpoczynki, eksperymentalne, domyślnie wyłączone), metiny w przedziale 16 poziomów, kamienie Wieży Demonów jako cel piętra dla bota w drużynie gracza, a zmiana poziomu trudności skraca też trwające czekanie u Stajennego.** Serwer; klient bez zmian (2.0.11).",
+  "publishedAt": "2026-09-20T11:53:45Z",
+  "statusMessage": "2.0.88 (serwer 2.0.88, klient 2.0.21): nowy cennik Iwakury z 20 wrzesnia - ruszyl sie prawie kazdy numer, wiekszosc materialow o jakies siedemdziesiat procent, a receptury zielarskie maja cene po raz pierwszy. W kliencie wracaja nazwy osobowosci nad glowami botow (Grinder, Zdobywca, Handlarz...) - klient 2.0.20 ich nie znal i dlatego nic nie pokazywal - oraz poprawka Colide'a do Auto Lowow: odpaly ida po jednym, wiec silnik nie odrzuca trzech z czterech. Zaktualizuj takze klienta.",
   "server": {
     "version": "2.0.46",
     "url": "https://github.com/debaba13/metin2-playerbots/releases/download/v2.0.46/metin2-server-update-2.0.46.zip",

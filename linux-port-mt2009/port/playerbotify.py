@@ -1174,7 +1174,64 @@ def main(root):
          '\t}\n'
          '\n'
          '\tif (pkKiller->IsHorseRiding() &&\n'
-         '\t\t\tGetDropPerKillPct(1000, 1000000, iDeltaPercent, "horse_skill_book_drop") >= number(1, iRandRange))\n')
+         '\t\t\tGetDropPerKillPct(1000, 1000000, iDeltaPercent, "horse_skill_book_drop") >= number(1, iRandRange))\n',
+         # A stable marker: with the whole text as the marker, every rewording
+         # of these comments found "not applied" and inserted the group again -
+         # the shipped item_manager.cpp rolled the chest and the voucher twice
+         # per kill from 2.0.50 to 2.0.63 (three times in the staging of
+         # 17 September). A group already there, in any wording, is left alone.
+         marker='The Moonlight Treasure Chest event. What a chest holds is decided by')
+
+    # 2.0.64 the package's own drop tables carry the Moonlight chest (50011)
+    # too, and the panel's chest window and switch reached only the roll
+    # above: "dropia tez poza konkursem" (NerrVoVy, 17 September). With both
+    # permilles at zero - the gate shut, or the switch off - the tables'
+    # chests are taken out of the drop as well. A new edit with its own
+    # anchor, so a staged tree that already carries the roll takes it.
+    edit(p,
+         '\t\t\titem = CreateItem(50011, 1, 0, true);\n'
+         '\t\t\tif (item) vec_item.emplace_back(item);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\t// A Dragon Coin voucher (Kupon SM 50, vnum 80017) from a Metin stone\n',
+         '\t\t\titem = CreateItem(50011, 1, 0, true);\n'
+         '\t\t\tif (item) vec_item.emplace_back(item);\n'
+         '\t\t}\n'
+         '\t\t// The tables\' own chests obey the same zero: a chest window that is\n'
+         '\t\t// shut, or the switch off, means no Moonlight chest from anybody.\n'
+         '\t\tif (g_iMoonlightChestPermille <= 0 && g_iMoonlightChestStonePermille <= 0)\n'
+         '\t\t{\n'
+         '\t\t\tfor (size_t i = 0; i < vec_item.size();)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif (vec_item[i] && vec_item[i]->GetVnum() == 50011)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tM2_DESTROY_ITEM(vec_item[i]);\n'
+         '\t\t\t\t\tvec_item.erase(vec_item.begin() + i);\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\telse\n'
+         '\t\t\t\t\t++i;\n'
+         '\t\t\t}\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\t// A Dragon Coin voucher (Kupon SM 50, vnum 80017) from a Metin stone\n',
+         marker='The tables\' own chests obey the same zero')
+
+    # ======================================================================
+    # 2.0.64 respawn on a slider. regen_event already scales the next spawn
+    # by the event flags fastBossSpawn<map> / fastMobSpawn<map> (Seban's
+    # per-map console); the map-less names are the fallback the classic
+    # panel's /rates page sets for the whole world (Hiob, 17 September).
+    # ======================================================================
+    edit(os.path.join(game, 'regen.cpp'),
+         '\tconst int flagValue = MINMAX(0, quest::CQuestManager::instance().GetEventFlag(flagName.c_str()), 100);\n',
+         '\tint flagValue = MINMAX(0, quest::CQuestManager::instance().GetEventFlag(flagName.c_str()), 100);\n'
+         '\t// playerbot: the map-less flag is the world-wide fallback (the classic\n'
+         '\t// panel\'s /rates page); a per-map flag, when set, still wins.\n'
+         '\tif (flagValue == 0)\n'
+         '\t\tflagValue = MINMAX(0, quest::CQuestManager::instance().GetEventFlag(regen->is_boss_or_stone ? "fastBossSpawn" : "fastMobSpawn"), 100);\n',
+         marker='the map-less flag is the world-wide fallback')
 
     # ======================================================================
     # 0007 the chat reaches the bots: a shout, a whisper, a counter to read.
@@ -1356,13 +1413,60 @@ def main(root):
     apply_costume_block(game)
     apply_costume_hair_allowed(game)
     apply_mark_login_quiet(game)
+    apply_coop_handshake_window(game)
     apply_horse_rider_links(game)
     apply_gm_transfer_bots(game)
     apply_refine_log_way(game)
     apply_auto_hunt(game)
     apply_auto_hunt_offsets(game)
     apply_hwang_curse_removed(game)
+    apply_playerbot_guild_invites(game)
+    apply_bot_warpset(game)
+    apply_quest_item_use_log(game)
+    apply_quest_item_event_log(game)
+    apply_four_inventory_pages(common, game, db)
+    apply_world_clock(game)
+    apply_auto_hunt_stone_priority(game)
+    apply_inventory_arrange(game)
+    apply_quickslot_chain_word(game)
+    apply_regen_spawn_count(game)
+    apply_pickup_nearby(game)
+    apply_bot_population_plan(game)
+    apply_shops_first_channel(game)
+    apply_event_cancel_in_flight(game)
+    apply_safebox_hands(game)
+    apply_safebox_commands(game)
+    apply_channel_connection(game)
+    apply_player_struck(game)
     print('playerbotify: done')
+
+
+def apply_playerbot_guild_invites(game):
+    """A player's guild invitation reaches the bot and is answered.
+
+    CGuild::Invite ends by sending GUILD_SUBHEADER_GC_GUILD_INVITE to the
+    invitee's descriptor and arming a ten-second event; a bot's descriptor
+    has no client behind it, so nothing ever answered and the invitation
+    expired in silence ("niech boty akceptuja zaproszenia jesli nie sa w
+    zadnej gildii a my je zapraszamy", Tieru, 16 September). Unlike the
+    party invitation (apply_playerbot_party_invites), the acceptance is the
+    guild's own method with the invitee as its argument, so it can be run on
+    the spot: the manager decides (AcceptPlayerBotGuildInvite in
+    playerbot_guild.h) and calls InviteAccept while the event is alive.
+    """
+    edit(os.path.join(game, 'guild.cpp'),
+         '#include "war_map.h"\n',
+         '#include "war_map.h"\n#include "playerbot_manager.h"\n',
+         marker='#include "playerbot_manager.h"\n')
+    edit(os.path.join(game, 'guild.cpp'),
+         '\tpchInvitee->GetDesc()->Packet( buf.read_peek(), buf.size() );\n',
+         '\tpchInvitee->GetDesc()->Packet( buf.read_peek(), buf.size() );\n'
+         '\n'
+         '\t// A bot has no client to press "Accept": its manager answers now, while\n'
+         '\t// the invitation event is alive (playerbotify.py, apply_playerbot_guild_invites).\n'
+         '\tif (pchInvitee->GetDesc()->IsBot())\n'
+         '\t\tCPlayerBotManager::instance().OnGuildInvite(this, pchInviter, pchInvitee);\n',
+         marker='CPlayerBotManager::instance().OnGuildInvite(')
 
 
 def apply_hwang_curse_removed(game):
@@ -1794,6 +1898,51 @@ def apply_costume_hair_allowed(game):
          marker='playerbotify.py, apply_costume_hair_allowed).')
 
 
+def apply_coop_handshake_window(game):
+    """A handshake over the Internet is given the time and the slack to finish.
+
+    The login handshake (DESC::HandshakeProcess) is accepted only when one
+    exchange's round trip is within 50 ms of the one before, and
+    DESC_MANAGER::ConnectionCollector - an anti-flood pass of this package -
+    destroys, with no line anywhere, every connection still handshaking five
+    seconds after it opened. Over a mobile hotspot the round trip swings by
+    hundreds of milliseconds from one packet to the next, so the window never
+    closed and the collector killed the connection at five or six seconds;
+    the client never learns (CAccountConnector::OnRemoteDisconnect only goes
+    offline) and sits on "Zostaniesz polaczony z serwerem" for ever - the
+    first COOP test from a laptop on a phone's hotspot (19 September), while
+    the same handshake from the host's own network finished in 0.24 s.
+
+    The window widens by 100 ms with every retry up to a second, and the
+    collector waits thirty seconds, which still ends a connection that never
+    answers. The lower bound stays at zero: a positive bias leaves the
+    client's clock behind the server's, which the speed hack check in
+    CInputMain::Move allows, and a client clock ahead of the server's is what
+    that check kicks. The in-game resync (bInfiniteRetry) keeps its 50 ms: it
+    retries for ever and closes nothing.
+    """
+    edit(os.path.join(game, 'desc.cpp'),
+         '\tint bias = (int) (dwCurTime - (dwTime + lDelta));\n'
+         '\n'
+         '\tif (bias >= 0 && bias <= 50)\n',
+         '\tint bias = (int) (dwCurTime - (dwTime + lDelta));\n'
+         '\n'
+         '\t// The login handshake widens its window with every retry (playerbotify.py,\n'
+         '\t// apply_coop_handshake_window): over a mobile network the round trip swings\n'
+         '\t// by hundreds of milliseconds and 50 ms never closed. Never below zero - a\n'
+         '\t// client clock ahead of the server is what the speed hack check kicks.\n'
+         '\tconst int iAllowedBias = bInfiniteRetry ? 50 : MIN(50 + 100 * m_iHandshakeRetry, 1000);\n'
+         '\n'
+         '\tif (bias >= 0 && bias <= iAllowedBias)\n',
+         marker='const int iAllowedBias = bInfiniteRetry ? 50')
+    edit(os.path.join(game, 'desc_manager.cpp'),
+         '\tstatic const DWORD HANDSHAKE_ELAPSE_TIME = 5;\n',
+         '\t// Thirty seconds, not five: a handshake over a mobile network takes several\n'
+         '\t// round trips to settle (playerbotify.py, apply_coop_handshake_window).\n'
+         '\tstatic const DWORD HANDSHAKE_ELAPSE_TIME = 30;\n',
+         marker='static const DWORD HANDSHAKE_ELAPSE_TIME = 30;')
+
+
 def apply_mark_login_quiet(game):
     """The guild-mark connection's login is not an unknown packet.
 
@@ -2090,8 +2239,12 @@ def apply_refine_quality_of_life(game):
     # nietkniete, a REFINE_TYPE_MONEY_ONLY (Wieza Demona) celowo nie dostaje
     # keep-open.
     #
-    # Przelacznik to flaga specjalna "refine.keep_open": przezywa relog, jest
-    # wysylana do klienta i wlacza sie komenda /refine_keep_open 1.
+    # Przelacznik to flaga specjalna "refine.keep_open": przezywa relog i jest
+    # wysylana do klienta. Od 2.0.86 wlaczony dla kazdego - brak wpisu i 1
+    # znacza "trzymaj otwarte", a /refine_keep_open 0 zapisuje 2, czyli
+    # "zamykaj". Dwojka zamiast zera, bo GetSpecialFlag zwraca zero takze dla
+    # postaci, ktora nigdy nic nie ustawila; jedynka zostaje tym, czym byla
+    # dla tych, ktorzy komende znali.
     # UWAGA: kliencka polowa (dwa checkboxy i potwierdzanie Enterem w
     # uirefine.py) NIE jedzie w tej paczce - linux-port/client-root nie zawiera
     # uirefine.py ani special_flags.py, wiec to osobna zmiana klienta i osobne
@@ -2121,7 +2274,7 @@ def apply_refine_quality_of_life(game):
          '// Refine QoL: "nie zamykaj okna". skipSave=false, bo wybor ma przezyc relog.\n'
          'ACMD(do_refine_keep_open)\n{\n\tchar arg1[256];\n\tone_argument(argument, arg1, sizeof(arg1));\n\n'
          '\tif (*arg1)\n\t{\n\t\tBYTE flag = 0;\n\t\tstr_to_number(flag, arg1);\n'
-         '\t\tch->SetSpecialFlag("refine.keep_open", flag ? 1 : 0, false);\n\t}\n}\n')
+         '\t\tch->SetSpecialFlag("refine.keep_open", flag ? 1 : 2, false);\n\t}\n}\n')
     edit(os.path.join(game, 'constants.cpp'),
          '\tif (flag == "shop_unlock_slot")\n\t\treturn true;\n',
          '\tif (flag == "refine.keep_open")\n\t\treturn true;\n\n'
@@ -2139,7 +2292,11 @@ def apply_refine_quality_of_life(game):
          '\t\treturn;\n'
          '\t}\n\n',
          '\t// Refine QoL (Pabloo): stan sesji zapamietany zanim cokolwiek ja wyczysci.\n'
-         '\tconst bool bKeepRefineOpen = ch->GetSpecialFlag("refine.keep_open") != 0;\n'
+         '\t// Wlaczone dla kazdego od 2.0.86: brak wpisu i 1 znacza "trzymaj okno\n'
+         '\t// otwarte", 2 znaczy "zamykaj". Dwojka, a nie zero, bo GetSpecialFlag\n'
+         '\t// zwraca zero rowniez dla postaci, ktora nigdy nic nie ustawila, a\n'
+         '\t// jedynka musi dalej znaczyc to, co znaczyla przed ta zmiana.\n'
+         '\tconst bool bKeepRefineOpen = ch->GetSpecialFlag("refine.keep_open") != 2;\n'
          '\tconst int iRefineAdditionalCell = ch->GetRefineAdditionalCell();\n'
          '\tconst DWORD dwRefineNPCVID = ch->GetRefineNPCVID();\n\n')
     edit(os.path.join(game, 'input_main.cpp'),
@@ -2468,6 +2625,88 @@ def apply_gm_gameplay(game):
          marker='a GM opens a stall without the kill count')
 
 
+def apply_quest_item_use_log(game):
+    # A plain use of an ITEM_QUEST (Pierscien Teleportacji 70058 above all)
+    # left nothing in any log when the quest did not answer: NerrVoVy's ring
+    # on 2.0.64, "nic sie nie dzieje", a bundle with no line to read. The
+    # 2.0.62 diagnosis read the ring's flag 8192 as ITEM_FLAG_APPLICABLE and
+    # cleared it in apply.sh; on this engine APPLICABLE is 1 << 14 and 8192 is
+    # ITEM_FLAG_LOG, so the DND branch below was never the cause. Every such
+    # use writes QUEST_ITEM: with the flags and whether the player's quest
+    # state is suspended (NPC::HandleEvent refuses that silently, off the
+    # test server), and a suspended state is told to the player. The bundle's
+    # grep list carries the tag.
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\t\t\tif (GetArena() != NULL || IsObserverMode() == true)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif (item->GetVnum() == 50051 || item->GetVnum() == 50052 || item->GetVnum() == 50053)\n',
+         '\t\t\t{\n'
+         '\t\t\t\tquest::PC* questPC = quest::CQuestManager::instance().GetPCForce(GetPlayerID());\n'
+         '\t\t\t\tconst bool questRunning = questPC && questPC->IsRunning();\n'
+         '\t\t\t\tsys_log(0, "QUEST_ITEM: use pid=%u name=%s vnum=%u flag=%u map=%ld level=%d running=%d quest=%s",\n'
+         '\t\t\t\t\t\tGetPlayerID(), GetName(), item->GetVnum(), item->GetFlag(), GetMapIndex(), (int)GetLevel(),\n'
+         '\t\t\t\t\t\tquestRunning ? 1 : 0, questRunning ? questPC->GetCurrentQuestName().c_str() : "-");\n'
+         '\t\t\t\tif (questRunning)\n'
+         '\t\t\t\t\tChatPacket(CHAT_TYPE_INFO, "Najpierw zamknij otwarte okno zadania (albo zaloguj sie ponownie), potem uzyj przedmiotu.");\n'
+         '\t\t\t}\n'
+         '\t\t\tif (GetArena() != NULL || IsObserverMode() == true)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif (item->GetVnum() == 50051 || item->GetVnum() == 50052 || item->GetVnum() == 50053)\n',
+         marker='QUEST_ITEM: use pid=')
+
+
+def apply_quest_item_event_log(game):
+    # The ring's second bundle (NerrVoVy, 12:43): QUEST_ITEM: use twenty times,
+    # flag=0 running=0, and the quest never ran, no Lua error. HandleEvent says
+    # how many quests it matched and missed for an item-use event, and a use
+    # of the ring whose teleport_ring.__status is not the start state resets
+    # it first - the quest has one state, so the reset loses nothing, and a
+    # stale state is the one thing MatchingQuest cannot start (a matched
+    # state with no script for it is neither a match nor a miss).
+    edit(os.path.join(game, 'questnpc.cpp'),
+         '\t\tMatchingQuest(pc, m_mapOwnQuest[EventIndex], fMatch, fMiss);\n'
+         '\n'
+         '\t\tbool r = false;\n'
+         '\t\tif (fMatch.Matched())\n'
+         '\t\t{\n'
+         '\t\t\tfor (int i = 0; i < fMatch.size; i++)\n',
+         '\t\tMatchingQuest(pc, m_mapOwnQuest[EventIndex], fMatch, fMiss);\n'
+         '\t\tif (EventIndex == QUEST_ITEM_USE_EVENT)\n'
+         '\t\t\tsys_log(0, "QUEST_ITEM: event npc=%u pid=%u matched=%d missed=%d",\n'
+         '\t\t\t\t\tm_vnum, pc.GetID(), fMatch.size, fMiss.size);\n'
+         '\n'
+         '\t\tbool r = false;\n'
+         '\t\tif (fMatch.Matched())\n'
+         '\t\t{\n'
+         '\t\t\tfor (int i = 0; i < fMatch.size; i++)\n',
+         marker='QUEST_ITEM: event npc=')
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\t\t\t\tif (questRunning)\n'
+         '\t\t\t\t\tChatPacket(CHAT_TYPE_INFO, "Najpierw zamknij otwarte okno zadania (albo zaloguj sie ponownie), potem uzyj przedmiotu.");\n'
+         '\t\t\t}\n',
+         '\t\t\t\tif (questRunning)\n'
+         '\t\t\t\t\tChatPacket(CHAT_TYPE_INFO, "Najpierw zamknij otwarte okno zadania (albo zaloguj sie ponownie), potem uzyj przedmiotu.");\n'
+         '\t\t\t\t// Pierscien Teleportacji has one state. A __status that is not it\n'
+         '\t\t\t\t// is a use MatchingQuest can neither match nor start, and nothing\n'
+         '\t\t\t\t// says so; start it over.\n'
+         '\t\t\t\tif (item->GetVnum() == 70058 && questPC && !questRunning)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tconst std::string ringQuest("teleport_ring");\n'
+         '\t\t\t\t\tconst int ringState = questPC->GetFlag(ringQuest + ".__status");\n'
+         '\t\t\t\t\tif (ringState != 0)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tsys_log(0, "QUEST_ITEM: teleport_ring state %d for pid=%u, reset to start", ringState, GetPlayerID());\n'
+         '\t\t\t\t\t\tquestPC->SetFlag(ringQuest + ".__status", 0);\n'
+         '\t\t\t\t\t\tconst unsigned int ringIndex = quest::CQuestManager::instance().GetQuestIndexByName(ringQuest);\n'
+         '\t\t\t\t\t\tfor (quest::PC::QuestInfoIterator qit = questPC->quest_begin(); qit != questPC->quest_end(); ++qit)\n'
+         '\t\t\t\t\t\t\tif (qit->first == ringIndex)\n'
+         '\t\t\t\t\t\t\t\tqit->second.st = 0;\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t}\n',
+         marker='QUEST_ITEM: teleport_ring state %d for pid=')
+
+
 def apply_party_pickup_to_owner(game):
     # CHARACTER::PickupItem's party branch - a party member picking up an item
     # another member owns - put the item into the owner's bag with two faults
@@ -2779,6 +3018,1245 @@ def apply_gm_transfer_bots(game):
          '\t}\n'
          '\ttch->WarpSet(ch->GetX(), ch->GetY(), ch->GetMapIndex());\n',
          marker='CPlayerBotManager::instance().TransferBot(tch, ch);')
+
+
+def apply_bot_warpset(game):
+    """A bot's WarpSet is made server-side by its own AI.
+
+    CHARACTER::WarpSet takes the character off its sectree and tells the
+    client to reconnect to the core hosting the target map; a bot has no
+    client, so every WarpSet at a bot - a dungeon's JumpAll and ExitAll, a
+    quest's pc.warp, the GM's /warp - left it off the map until the sectree
+    rescue put it back at its own map's start (nine bots at 660000 on 14
+    September, all back on the Demon Tower's ground floor). A bot's move is
+    CPlayerBotManager::WarpBot now (playerbot_manager.cpp): the map change the
+    AI makes itself, onto a map this core hosts, with the dungeon membership
+    Entergame would give a reconnecting player. The Demon Tower is the first
+    thing that needs it (playerbot_demon_tower.h).
+    """
+    edit(os.path.join(game, 'char.cpp'),
+         '#include "playerbot_party_policy.h"\n',
+         '#include "playerbot_party_policy.h"\n#include "playerbot_manager.h"\n',
+         marker='#include "playerbot_party_policy.h"\n#include "playerbot_manager.h"\n')
+    edit(os.path.join(game, 'char.cpp'),
+         'bool CHARACTER::WarpSet(long x, long y, long lPrivateMapIndex)\n'
+         '{\n'
+         '\tif (!IsPC())\n'
+         '\t\treturn false;\n',
+         'bool CHARACTER::WarpSet(long x, long y, long lPrivateMapIndex)\n'
+         '{\n'
+         '\tif (!IsPC())\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\t// Playerbot: a bot has no client to reconnect to another core, so its\n'
+         '\t// own AI makes the move server-side when this core hosts the map - a\n'
+         "\t// dungeon's jump, d.exit_all and a quest's pc.warp reach a bot this\n"
+         '\t// way (playerbotify.py, apply_bot_warpset).\n'
+         '\tif (GetDesc() && GetDesc()->IsBot())\n'
+         '\t\treturn CPlayerBotManager::instance().WarpBot(this, x, y, lPrivateMapIndex);\n',
+         marker='CPlayerBotManager::instance().WarpBot(this, x, y, lPrivateMapIndex);')
+
+
+def apply_four_inventory_pages(common, game, db):
+    """Four bag pages of 45 cells, the horse page after them.
+
+    The package had two pages and the horse inventory as a third
+    (ENABLE_EXTEND_INVEN_SYSTEM); most servers give four, and so do we (Tieru,
+    18 September). Two pages go in at cell 90 and every constant after the bag
+    moves up by them: bag 0-179, horse 180-224, equipment 225-256, dragon soul
+    257-286, belt 287-302, INVENTORY_AND_EQUIP_SLOT_MAX 303. What the engine
+    derives from those constants follows by itself; what does not is here:
+
+    - the item grid holds cell + 1 for every cell, and a belt cell's mark no
+      longer fits a BYTE (bItemGrid, GetInventoryItemGrid, is_empty_page_grid);
+    - a quickslot names a belt cell (TQuickslot.pos), and SyncQuickslot and
+      SwapItem took their cells as BYTEs;
+    - the exchange's room check was two pages and the horse page written out;
+    - a shop sale carried the cell in a byte, so a belt potion sold whatever
+      lay on the bag cell 256 below it;
+    - IsHorseInventory was a chain C++ reads as (cell >= 90) <= 135, true for
+      every inventory cell, so MoveItem refused every move into the belt.
+
+    The rows a world already holds are moved by the db core at boot
+    (__MigrateInventoryFourPages), once, before any game core can load one.
+    The client is clientify.py's half of the change, and CONFIG's
+    server_version (m2-render-config) refuses a client of the old layout.
+    """
+    edit(os.path.join(common, 'length.h'),
+         '\tINVENTORY_DEFAULT_PAGE_COUNT = 2,\n',
+         '\t// Four bag pages, the horse page after them (playerbotify.py,\n'
+         '\t// apply_four_inventory_pages).\n'
+         '\tINVENTORY_DEFAULT_PAGE_COUNT = 4,\n',
+         marker='\tINVENTORY_DEFAULT_PAGE_COUNT = 4,\n')
+    edit(os.path.join(common, 'tables.h'),
+         'typedef struct SQuickslot\n{\n\tBYTE\ttype;\n\tBYTE\tpos;\n} TQuickslot;\n',
+         'typedef struct SQuickslot\n{\n\tBYTE\ttype;\n'
+         '\t// A WORD since the four inventory pages put the belt at 287-302\n'
+         '\t// (playerbotify.py); the db core widens the stored rows once.\n'
+         '\tWORD\tpos;\n} TQuickslot;\n',
+         marker='\tWORD\tpos;\n} TQuickslot;\n')
+
+    char_h = os.path.join(game, 'char.h')
+    edit(char_h,
+         '\tstd::array<BYTE,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n',
+         '\t// cell + 1 for every cell, and the belt runs to 302 (four pages).\n'
+         '\tstd::array<WORD,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n',
+         marker='\tstd::array<WORD,INVENTORY_AND_EQUIP_SLOT_MAX> bItemGrid;\n')
+    edit(char_h,
+         '\t\tvoid\t\t\tSyncQuickslot(BYTE bType, BYTE bOldPos, BYTE bNewPos);\n',
+         '\t\tvoid\t\t\tSyncQuickslot(BYTE bType, WORD bOldPos, WORD bNewPos);\n')
+    edit(char_h,
+         '\t\tBYTE* GetInventoryItemGrid() { return (m_PlayerSlots) ? m_PlayerSlots->bItemGrid.data() : nullptr; }\n',
+         '\t\tWORD* GetInventoryItemGrid() { return (m_PlayerSlots) ? m_PlayerSlots->bItemGrid.data() : nullptr; }\n')
+    edit(char_h,
+         '\t\tbool\t\t\tSwapItem(BYTE bCell, BYTE bDestCell);\n',
+         '\t\tbool\t\t\tSwapItem(WORD bCell, WORD bDestCell);\n')
+
+    char_item = os.path.join(game, 'char_item.cpp')
+    edit(char_item,
+         '\t\t\tBYTE* gridPtr = m_PlayerSlots->bItemGrid.data();\n',
+         '\t\t\tWORD* gridPtr = m_PlayerSlots->bItemGrid.data();\n')
+    edit(char_item,
+         'bool CHARACTER::SwapItem(BYTE bCell, BYTE bDestCell)\n',
+         'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n')
+    edit(char_item,
+         '\t\tBYTE bInvenCell = item1->GetCell();\n',
+         '\t\tWORD bInvenCell = item1->GetCell();\n')
+    edit(char_item,
+         '\t\tBYTE bCell1 = item1->GetCell();\n\t\tBYTE bCell2 = item2->GetCell();\n',
+         '\t\tWORD bCell1 = item1->GetCell();\n\t\tWORD bCell2 = item2->GetCell();\n')
+
+    edit(os.path.join(game, 'utils.h'),
+         'extern bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n',
+         'extern bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n'
+         "// The character's item grid is a WORD one since the four pages (playerbotify.py).\n"
+         'extern bool is_empty_page_grid(WORD* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory=false, BYTE customGridSize=INVENTORY_DEFAULT_MAX_NUM);\n',
+         marker='extern bool is_empty_page_grid(WORD* grid,')
+    utils_cpp = os.path.join(game, 'utils.cpp')
+    edit(utils_cpp,
+         'bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n{\n',
+         "// One body for the character's WORD item grid and the offline shop's BYTE\n"
+         '// scratch copy of the bag (playerbotify.py, apply_four_inventory_pages).\n'
+         'template <typename TGridCell>\n'
+         'static bool is_empty_page_grid_t(const TGridCell* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n{\n',
+         marker='static bool is_empty_page_grid_t(const TGridCell* grid,')
+    edit(utils_cpp,
+         '\t\tBYTE bPage = bCell / (dwGridMaxNum / bPageCount);\n',
+         '\t\tint bPage = bCell / (dwGridMaxNum / bPageCount);\n')
+    edit(utils_cpp,
+         '\t\t\tBYTE p = bCell + (dwGridWidth * j);\n',
+         '\t\t\tint p = bCell + (dwGridWidth * j);\n')
+    edit(utils_cpp,
+         '\t\t} while (++j < bSize);\n\t}\n\treturn true;\n}\n\nstd::string decrypt_aes_hash(',
+         '\t\t} while (++j < bSize);\n\t}\n\treturn true;\n}\n\n'
+         'bool is_empty_page_grid(BYTE* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n'
+         '{\n'
+         '\treturn is_empty_page_grid_t(grid, bCell, bSize, iExceptionCell, dwGridWidth, dwGridHeight, bPageCount, check_inventory, customGridSize);\n'
+         '}\n\n'
+         'bool is_empty_page_grid(WORD* grid, WORD bCell, BYTE bSize, int iExceptionCell, DWORD dwGridWidth, DWORD dwGridHeight, BYTE bPageCount, bool check_inventory, BYTE customGridSize)\n'
+         '{\n'
+         '\treturn is_empty_page_grid_t(grid, bCell, bSize, iExceptionCell, dwGridWidth, dwGridHeight, bPageCount, check_inventory, customGridSize);\n'
+         '}\n\n'
+         'std::string decrypt_aes_hash(',
+         marker='bool is_empty_page_grid(WORD* grid, WORD bCell,')
+
+    edit(os.path.join(game, 'char.cpp'),
+         '\treturn cell.window_type == INVENTORY && cell.cell >= INVENTORY_DEFAULT_MAX_NUM <= INVENTORY_MAX_NUM;\n',
+         '\t// The chain this replaces read as (cell >= 90) <= 135, true for every\n'
+         '\t// inventory cell, and MoveItem refused each move into the belt with it.\n'
+         '\treturn cell.window_type == INVENTORY && cell.cell >= INVENTORY_DEFAULT_MAX_NUM && cell.cell < INVENTORY_MAX_NUM;\n',
+         marker='cell.cell >= INVENTORY_DEFAULT_MAX_NUM && cell.cell < INVENTORY_MAX_NUM;\n')
+
+    edit(os.path.join(game, 'char_quickslot.cpp'),
+         'void CHARACTER::SyncQuickslot(BYTE bType, BYTE bOldPos, BYTE bNewPos)\n',
+         'void CHARACTER::SyncQuickslot(BYTE bType, WORD bOldPos, WORD bNewPos)\n')
+
+    exchange = os.path.join(game, 'exchange.cpp')
+    edit(exchange,
+         '\tstatic CGrid s_grid1(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 1\n'
+         '\tstatic CGrid s_grid2(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 2\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\tstatic CGrid s_grid3(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 3\n'
+         '\t//static CGrid s_grid4(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW); // inven page 4\n'
+         '#endif\n'
+         '\n'
+         '\ts_grid1.Clear();\n'
+         '\ts_grid2.Clear();\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\ts_grid3.Clear();\n'
+         '\t//s_grid4.Clear();\n'
+         '#endif\n'
+         '\n'
+         '\tLPCHARACTER\tvictim = GetCompany()->GetOwner();\n'
+         '\tLPITEM item;\n'
+         '\n'
+         '\tint i;\n'
+         '\n'
+         '\tfor (i = 0; i < INVENTORY_PAGE_SIZE*1; ++i)\n'
+         '\t{\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid1.Put(i, 1, item->GetSize());\n'
+         '\t}\n'
+         '\tfor (i = INVENTORY_PAGE_SIZE*1; i < INVENTORY_PAGE_SIZE*2; ++i)\n'
+         '\t{\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid2.Put(i - INVENTORY_PAGE_SIZE*1, 1, item->GetSize());\n'
+         '\t}\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\tint maxHorseInventorySize = victim->GetInventoryMaxCount();\n'
+         '\tfor (i = INVENTORY_PAGE_SIZE*2; i < INVENTORY_PAGE_SIZE*3; ++i)\n'
+         '\t{\n'
+         '\t\tif (i >= maxHorseInventorySize)\n'
+         '\t\t{\n'
+         '\t\t\ts_grid3.Put(i - INVENTORY_PAGE_SIZE * 2, 1, 1);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\ts_grid3.Put(i - INVENTORY_PAGE_SIZE*2, 1, item->GetSize());\n'
+         '\t}\n'
+         '\t//for (i = INVENTORY_PAGE_SIZE*3; i < INVENTORY_PAGE_SIZE*4; ++i)\n'
+         '\t//{\n'
+         '\t//\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t//\t\tcontinue;\n'
+         '\n'
+         '\t//\ts_grid4.Put(i - INVENTORY_PAGE_SIZE*3, 1, item->GetSize());\n'
+         '\t//}\n'
+         '#endif\n',
+         '\t// One grid a page, the horse page last, each placed on by itself: an\n'
+         '\t// item never stands across two pages (playerbotify.py, four pages).\n'
+         '\tstatic CGrid * s_apGrid[INVENTORY_PAGE_COUNT] = {};\n'
+         '\tfor (int page = 0; page < INVENTORY_PAGE_COUNT; ++page)\n'
+         '\t{\n'
+         '\t\tif (!s_apGrid[page])\n'
+         '\t\t\ts_apGrid[page] = M2_NEW CGrid(INVENTORY_PAGE_COLUMN, INVENTORY_PAGE_ROW);\n'
+         '\t\ts_apGrid[page]->Clear();\n'
+         '\t}\n'
+         '\n'
+         '\tLPCHARACTER\tvictim = GetCompany()->GetOwner();\n'
+         '\tLPITEM item;\n'
+         '\n'
+         '\tint i;\n'
+         '\n'
+         '\t// A row of the horse page the victim cannot use takes nothing.\n'
+         '\tconst int iUsableCells = victim->GetInventoryMaxCount();\n'
+         '\tfor (i = 0; i < INVENTORY_MAX_NUM; ++i)\n'
+         '\t{\n'
+         '\t\tCGrid * pkGrid = s_apGrid[i / INVENTORY_PAGE_SIZE];\n'
+         '\t\tconst int iLocal = i % INVENTORY_PAGE_SIZE;\n'
+         '\n'
+         '\t\tif (i >= iUsableCells)\n'
+         '\t\t{\n'
+         '\t\t\tpkGrid->Put(iLocal, 1, 1);\n'
+         '\t\t\tcontinue;\n'
+         '\t\t}\n'
+         '\n'
+         '\t\tif (!(item = victim->GetInventoryItem(i)))\n'
+         '\t\t\tcontinue;\n'
+         '\n'
+         '\t\tpkGrid->Put(iLocal, 1, item->GetSize());\n'
+         '\t}\n',
+         marker='\tstatic CGrid * s_apGrid[INVENTORY_PAGE_COUNT] = {};\n')
+    edit(exchange,
+         '\t\t\tint iPos;\n'
+         '\n'
+         '\t\t\tif ((iPos = s_grid1.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid1.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '\t\t\telse if ((iPos = s_grid2.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid2.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '#ifdef ENABLE_EXTEND_INVEN_SYSTEM\n'
+         '\t\t\telse if ((iPos = s_grid3.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t{\n'
+         '\t\t\t\ts_grid3.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t}\n'
+         '\t\t\t//else if ((iPos = s_grid4.FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t//{\n'
+         '\t\t\t//\ts_grid4.Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t//}\n'
+         '#endif\n'
+         '\t\t\telse\n'
+         '\t\t\t\treturn false;\n',
+         '\t\t\tint iPos = -1;\n'
+         '\n'
+         '\t\t\tfor (int page = 0; page < INVENTORY_PAGE_COUNT; ++page)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif ((iPos = s_apGrid[page]->FindBlank(1, item->GetSize())) >= 0)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\ts_apGrid[page]->Put(iPos, 1, item->GetSize());\n'
+         '\t\t\t\t\tbreak;\n'
+         '\t\t\t\t}\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tif (iPos < 0)\n'
+         '\t\t\t\treturn false;\n',
+         marker='\t\t\t\tif ((iPos = s_apGrid[page]->FindBlank(1, item->GetSize())) >= 0)\n')
+
+    edit(os.path.join(game, 'input_main.cpp'),
+         '\t\t\t\tif (uiBytes < sizeof(BYTE) + sizeof(ITEM_COUNT))\n'
+         '\t\t\t\t\treturn -1;\n'
+         '\n'
+         '\t\t\t\tBYTE pos = *(c_pData++);\n'
+         '\t\t\t\tITEM_COUNT count = *(c_pData);\n'
+         '\n'
+         '\t\t\t\tsys_log(0, "INPUT: %s SHOP: SELL2", ch->GetName());\n'
+         '\t\t\t\tCShopManager::instance().Sell(ch, pos, count);\n'
+         '\t\t\t\treturn sizeof(BYTE) + sizeof(ITEM_COUNT);\n',
+         '\t\t\t\t// The cell is a WORD since the four inventory pages put the belt\n'
+         '\t\t\t\t// at 287-302, and the count is read whole: its low byte alone\n'
+         '\t\t\t\t// made a thousand arrows 232 (playerbotify.py, clientify.py).\n'
+         '\t\t\t\tif (uiBytes < sizeof(WORD) + sizeof(ITEM_COUNT))\n'
+         '\t\t\t\t\treturn -1;\n'
+         '\n'
+         '\t\t\t\tWORD pos;\n'
+         '\t\t\t\tmemcpy(&pos, c_pData, sizeof(WORD));\n'
+         '\t\t\t\tITEM_COUNT count;\n'
+         '\t\t\t\tmemcpy(&count, c_pData + sizeof(WORD), sizeof(ITEM_COUNT));\n'
+         '\n'
+         '\t\t\t\tsys_log(0, "INPUT: %s SHOP: SELL2", ch->GetName());\n'
+         '\t\t\t\tCShopManager::instance().Sell(ch, pos, count);\n'
+         '\t\t\t\treturn sizeof(WORD) + sizeof(ITEM_COUNT);\n',
+         marker='\t\t\t\tmemcpy(&count, c_pData + sizeof(WORD), sizeof(ITEM_COUNT));\n')
+    edit(os.path.join(game, 'shop_manager.h'),
+         '\tvoid\tSell(LPCHARACTER ch, BYTE bCell, ITEM_COUNT bCount=0);\n',
+         '\tvoid\tSell(LPCHARACTER ch, WORD bCell, ITEM_COUNT bCount=0);\n')
+    edit(os.path.join(game, 'shop_manager.cpp'),
+         'void CShopManager::Sell(LPCHARACTER ch, BYTE bCell, ITEM_COUNT bCount)\n',
+         'void CShopManager::Sell(LPCHARACTER ch, WORD bCell, ITEM_COUNT bCount)\n')
+
+    client_manager = os.path.join(db, 'ClientManager.cpp')
+    edit(client_manager,
+         'bool CClientManager::Initialize()\n',
+         '// Four inventory pages (playerbotify.py, apply_four_inventory_pages): two\n'
+         '// bag pages went in at cell 90, so every INVENTORY row at 90 or above - the\n'
+         '// horse page, the belt - moves up by those 90 cells, and a quickslot\'s\n'
+         '// position became a WORD so that it can name a belt cell again. It is done\n'
+         '// here, once, before a game core can ask for a character: this is the one\n'
+         '// process that never runs beside an older build (the migrate container does,\n'
+         '// while an update recreates the stack), and a character loaded by the old\n'
+         '// layout and saved by the new one would keep its horse page on page three.\n'
+         '// A failure stops the db core - starting the new layout on the old rows is\n'
+         '// that same mistake - and InnoDB takes the half-done work back.\n'
+         'static bool __FourPagesQuery(const char * c_pszQuery, std::unique_ptr<SQLMsg> * pMsg = NULL)\n'
+         '{\n'
+         '\tstd::unique_ptr<SQLMsg> msg = CDBManager::instance().DirectQuery(c_pszQuery);\n'
+         '\tif (msg->uiSQLErrno != 0)\n'
+         '\t{\n'
+         '\t\tsys_err("INVENTORY_PAGES: query failed (errno %u): %s", msg->uiSQLErrno, c_pszQuery);\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\tif (pMsg)\n'
+         '\t\t*pMsg = std::move(msg);\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'static bool __MigrateInventoryFourPagesInside(const char * c_pszPostfix)\n'
+         '{\n'
+         '\tconst int c_iShift = INVENTORY_PAGE_SIZE * 2;\n'
+         '\tconst unsigned int c_uiOldQuickslotBytes = 2 * QUICKSLOT_MAX_NUM;\n'
+         '\tchar szQuery[1024];\n'
+         '\n'
+         '\t// What is about to move, for the log: the old horse page, the old belt.\n'
+         '\tstd::unique_ptr<SQLMsg> count;\n'
+         '\tsnprintf(szQuery, sizeof(szQuery),\n'
+         '\t\t\t"SELECT COUNT(*), COALESCE(SUM(pos >= %d AND pos < %d), 0), COALESCE(SUM(pos >= %d AND pos < %d), 0)"\n'
+         '\t\t\t" FROM item%s WHERE window = \'INVENTORY\' AND pos >= %d",\n'
+         '\t\t\tINVENTORY_DEFAULT_MAX_NUM - c_iShift, INVENTORY_MAX_NUM - c_iShift,\n'
+         '\t\t\tBELT_INVENTORY_SLOT_START - c_iShift, BELT_INVENTORY_SLOT_END - c_iShift,\n'
+         '\t\t\tc_pszPostfix, c_iShift);\n'
+         '\tif (!__FourPagesQuery(szQuery, &count))\n'
+         '\t\treturn false;\n'
+         '\tunsigned int uiRows = 0, uiHorse = 0, uiBelt = 0;\n'
+         '\tif (count->Get() && count->Get()->pSQLResult)\n'
+         '\t{\n'
+         '\t\tMYSQL_ROW row = mysql_fetch_row(count->Get()->pSQLResult);\n'
+         '\t\tif (row && row[0] && row[1] && row[2])\n'
+         '\t\t{\n'
+         '\t\t\tuiRows = strtoul(row[0], NULL, 10);\n'
+         '\t\t\tuiHorse = strtoul(row[1], NULL, 10);\n'
+         '\t\t\tuiBelt = strtoul(row[2], NULL, 10);\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\t// Highest first, although no key forbids two rows on one cell for a moment.\n'
+         '\tsnprintf(szQuery, sizeof(szQuery),\n'
+         '\t\t\t"UPDATE item%s SET pos = pos + %d WHERE window = \'INVENTORY\' AND pos >= %d ORDER BY pos DESC",\n'
+         '\t\t\tc_pszPostfix, c_iShift, c_iShift);\n'
+         '\tif (!__FourPagesQuery(szQuery))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\t// A quickslot row is two bytes a slot in the old form and three in the new,\n'
+         '\t// so its length says which one it is.\n'
+         '\tstd::unique_ptr<SQLMsg> slots;\n'
+         '\tsnprintf(szQuery, sizeof(szQuery), "SELECT id, quickslot FROM player%s WHERE LENGTH(quickslot) = %u",\n'
+         '\t\t\tc_pszPostfix, c_uiOldQuickslotBytes);\n'
+         '\tif (!__FourPagesQuery(szQuery, &slots))\n'
+         '\t\treturn false;\n'
+         '\tunsigned int uiQuickslots = 0;\n'
+         '\tif (slots->Get() && slots->Get()->pSQLResult)\n'
+         '\t{\n'
+         '\t\tMYSQL_RES * pRes = slots->Get()->pSQLResult;\n'
+         '\t\tMYSQL_ROW row;\n'
+         '\t\twhile ((row = mysql_fetch_row(pRes)))\n'
+         '\t\t{\n'
+         '\t\t\tunsigned long * pLengths = mysql_fetch_lengths(pRes);\n'
+         '\t\t\tif (!row[0] || !row[1] || !pLengths || pLengths[1] != c_uiOldQuickslotBytes)\n'
+         '\t\t\t\tcontinue;\n'
+         '\n'
+         '\t\t\tconst BYTE * pOld = (const BYTE *) row[1];\n'
+         '\t\t\tTQuickslot aSlot[QUICKSLOT_MAX_NUM];\n'
+         '\t\t\tmemset(aSlot, 0, sizeof(aSlot));\n'
+         '\t\t\tfor (int i = 0; i < QUICKSLOT_MAX_NUM; ++i)\n'
+         '\t\t\t{\n'
+         '\t\t\t\taSlot[i].type = pOld[i * 2];\n'
+         '\t\t\t\tWORD wPos = pOld[i * 2 + 1];\n'
+         '\t\t\t\tif (aSlot[i].type == QUICKSLOT_TYPE_ITEM && wPos >= c_iShift)\n'
+         '\t\t\t\t\twPos += c_iShift;\n'
+         '\t\t\t\taSlot[i].pos = wPos;\n'
+         '\t\t\t}\n'
+         '\n'
+         '\t\t\tchar szEscaped[sizeof(aSlot) * 2 + 1];\n'
+         '\t\t\tCDBManager::instance().EscapeString(szEscaped, aSlot, sizeof(aSlot));\n'
+         '\t\t\tchar szUpdate[512];\n'
+         '\t\t\tsnprintf(szUpdate, sizeof(szUpdate), "UPDATE player%s SET quickslot = \'%s\' WHERE id = %u",\n'
+         '\t\t\t\t\tc_pszPostfix, szEscaped, (unsigned int) strtoul(row[0], NULL, 10));\n'
+         '\t\t\tif (!__FourPagesQuery(szUpdate))\n'
+         '\t\t\t\treturn false;\n'
+         '\t\t\t++uiQuickslots;\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\n'
+         '\tif (!__FourPagesQuery("INSERT INTO playerbot_migrations (name, done_at) VALUES (\'inventory_four_pages\', NOW())"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tsys_log(0, "INVENTORY_PAGES: four pages: %u item rows moved up by %d (horse page %u, belt %u, other %u), %u quickslot rows widened",\n'
+         '\t\t\tuiRows, c_iShift, uiHorse, uiBelt, uiRows - uiHorse - uiBelt, uiQuickslots);\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'static bool __MigrateInventoryFourPages(const char * c_pszPostfix)\n'
+         '{\n'
+         '\tstatic_assert(sizeof(TQuickslot) == 3, "a quickslot is a BYTE type and a WORD position");\n'
+         '\n'
+         '\tif (!__FourPagesQuery("CREATE TABLE IF NOT EXISTS playerbot_migrations (name VARCHAR(64) NOT NULL PRIMARY KEY, done_at DATETIME NOT NULL) ENGINE=InnoDB"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tstd::unique_ptr<SQLMsg> done;\n'
+         '\tif (!__FourPagesQuery("SELECT 1 FROM playerbot_migrations WHERE name = \'inventory_four_pages\'", &done))\n'
+         '\t\treturn false;\n'
+         '\tif (done->Get() && done->Get()->uiNumRows > 0)\n'
+         '\t\treturn true;\n'
+         '\n'
+         '\tif (!__FourPagesQuery("START TRANSACTION"))\n'
+         '\t\treturn false;\n'
+         '\n'
+         '\tif (!__MigrateInventoryFourPagesInside(c_pszPostfix) || !__FourPagesQuery("COMMIT"))\n'
+         '\t{\n'
+         '\t\t__FourPagesQuery("ROLLBACK");\n'
+         '\t\tsys_err("INVENTORY_PAGES: the move to four inventory pages failed and was rolled back");\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\treturn true;\n'
+         '}\n'
+         '\n'
+         'bool CClientManager::Initialize()\n',
+         marker='static bool __MigrateInventoryFourPages(const char * c_pszPostfix)\n')
+    edit(client_manager,
+         '\t//END_ITEM_UNIQUE_ID\n',
+         '\t//END_ITEM_UNIQUE_ID\n'
+         '\n'
+         '\t// Before any game core connects (playerbotify.py, four inventory pages).\n'
+         '\tif (!__MigrateInventoryFourPages(GetTablePostfix()))\n'
+         '\t{\n'
+         '\t\tfprintf(stderr, "Inventory layout migration failed. Exit DBCache Server\\n");\n'
+         '\t\treturn false;\n'
+         '\t}\n',
+         marker='\tif (!__MigrateInventoryFourPages(GetTablePostfix()))\n')
+
+
+def apply_world_clock(game):
+    """Every core keeps the world's clock, bots or none.
+
+    The manager's Update - the weights file, the timed events and the chest
+    gate among everything else - only starts with the first bot a core loads,
+    and every core rolls its own Moonlight chests (CreateDropItem). A core
+    that hosts no bot therefore never shut the chests outside their event
+    (first and game2 under the unified layout: "mimo harmonogramu blaskow
+    dropia one takze poza nim", NerrVoVy, 18 September).
+    CPlayerBotManager::StartWorldClock runs that part on a clock of its own
+    from MapLocations, the first point a core knows its maps, until Update
+    takes over.
+    """
+    edit(os.path.join(game, 'input_db.cpp'),
+         '\t// single number, split between the kingdoms that have registered identities.\n'
+         '\tif (CPlayerBotManager::instance().GetCount() == 0)\n',
+         '\t// single number, split between the kingdoms that have registered identities.\n'
+         '\t//\n'
+         '\t// Every core keeps the world\'s clock - the weights and the timed events\n'
+         '\t// with their chest gate - whether or not it will host a single bot\n'
+         '\t// (CPlayerBotManager::StartWorldClock, playerbotify.py).\n'
+         '\tCPlayerBotManager::instance().StartWorldClock();\n'
+         '\tif (CPlayerBotManager::instance().GetCount() == 0)\n',
+         marker='\tCPlayerBotManager::instance().StartWorldClock();\n')
+
+
+def apply_auto_hunt_stone_priority(game):
+    """Auto Lowy's "Metiny" is a priority, not a permission.
+
+    The window's switch only let stones into the pool, where the nearest
+    monster beat them: "ten priorytet na metiny by sie przydal, bo aktualnie
+    troche zbedna opcja" (blasty, 18 September). With it on, any stone in range
+    comes before every monster, the nearest stone first. And a stone the
+    client could not reach - uiautohunt.py gives a target up after
+    STUCK_SECONDS - is named in a fifth argument and passed over, or the
+    priority would send the hunter back to the same wall for ever.
+    """
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         "// has one. Monsters, and Metin stones when the window asks for them; only what\n"
+         "// battle_is_attackable lets this character hit; within the range of the point\n"
+         "// the hunt started from. What is already hitting the hunter comes first, then\n"
+         "// the nearest. The answer is \"AutoHuntTarget <vid>\", zero for nothing.\n",
+         "// has one. Monsters, and Metin stones when the window asks for them; only what\n"
+         "// battle_is_attackable lets this character hit; within the range of the point\n"
+         "// the hunt started from. What is already hitting the hunter comes first, then\n"
+         "// the nearest - except that a stone, when the window asks for stones, comes\n"
+         "// before every monster (playerbotify.py, apply_auto_hunt_stone_priority).\n"
+         "// A fifth argument names a VID the client gave up on as out of its reach.\n"
+         "// The answer is \"AutoHuntTarget <vid>\", zero for nothing.\n",
+         marker="// A fifth argument names a VID the client gave up on as out of its reach.\n")
+    edit(path,
+         '\tbool\t\tm_bStones;\n'
+         '\tLPCHARACTER\tm_pkBest;\n'
+         '\tint\t\tm_iBestScore;\n'
+         '\n'
+         '\tFAutoHuntTarget(LPCHARACTER ch, int anchorX, int anchorY, int range, bool stones)\n'
+         '\t\t: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_bStones(stones),\n'
+         '\t\tm_pkBest(NULL), m_iBestScore(0x7fffffff)\n',
+         '\tbool\t\tm_bStones;\n'
+         '\tDWORD\t\tm_dwSkipVID;\n'
+         '\tLPCHARACTER\tm_pkBest;\n'
+         '\tint\t\tm_iBestScore;\n'
+         '\n'
+         '\tFAutoHuntTarget(LPCHARACTER ch, int anchorX, int anchorY, int range, bool stones, DWORD skipVID)\n'
+         '\t\t: m_ch(ch), m_iAnchorX(anchorX), m_iAnchorY(anchorY), m_iRange(range), m_bStones(stones),\n'
+         '\t\tm_dwSkipVID(skipVID), m_pkBest(NULL), m_iBestScore(0x7fffffff)\n',
+         marker='\tDWORD\t\tm_dwSkipVID;\n')
+    edit(path,
+         '\t\tif (victim == m_ch || victim->IsDead())\n'
+         '\t\t\treturn;\n'
+         '\t\tif (!victim->IsMonster() && !(m_bStones && victim->IsStone()))\n',
+         '\t\tif (victim == m_ch || victim->IsDead())\n'
+         '\t\t\treturn;\n'
+         '\t\tif (m_dwSkipVID && (DWORD) victim->GetVID() == m_dwSkipVID)\n'
+         '\t\t\treturn;\n'
+         '\t\tif (!victim->IsMonster() && !(m_bStones && victim->IsStone()))\n',
+         marker='\t\tif (m_dwSkipVID && (DWORD) victim->GetVID() == m_dwSkipVID)\n')
+    edit(path,
+         '\t\tif (victim->GetVictim() == m_ch)\n'
+         '\t\t\tscore /= 4;\n'
+         '\t\tif (score < m_iBestScore)\n',
+         '\t\tif (victim->GetVictim() == m_ch)\n'
+         '\t\t\tscore /= 4;\n'
+         '\t\t// Asked for, a stone outranks every monster; the nearest stone wins.\n'
+         '\t\tif (m_bStones && victim->IsStone())\n'
+         '\t\t\tscore -= 1000000;\n'
+         '\t\tif (score < m_iBestScore)\n',
+         marker='\t\t// Asked for, a stone outranks every monster; the nearest stone wins.\n')
+    edit(path,
+         '\tchar arg1[256], arg2[256], arg3[256], arg4[256];\n'
+         '\tconst char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));\n'
+         '\ttwo_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));\n'
+         '\n'
+         '\tif (!ch->GetSectree() || ch->IsDead())\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget 0");\n',
+         '\tchar arg1[256], arg2[256], arg3[256], arg4[256], arg5[256];\n'
+         '\tconst char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));\n'
+         '\trest = two_arguments(rest, arg3, sizeof(arg3), arg4, sizeof(arg4));\n'
+         '\tone_argument(rest, arg5, sizeof(arg5));\n'
+         '\n'
+         '\tif (!ch->GetSectree() || ch->IsDead())\n'
+         '\t{\n'
+         '\t\tch->ChatPacket(CHAT_TYPE_COMMAND, "AutoHuntTarget 0");\n',
+         marker='\tone_argument(rest, arg5, sizeof(arg5));\n')
+    edit(path,
+         '\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0);\n',
+         '\t// The VID the client gave up on, if it names one (uiautohunt.py).\n'
+         '\tDWORD skipVID = 0;\n'
+         '\tif (*arg5)\n'
+         '\t\tstr_to_number(skipVID, arg5);\n'
+         '\n'
+         '\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n',
+         marker='\tFAutoHuntTarget f(ch, anchorX, anchorY, range, stones != 0, skipVID);\n')
+
+
+
+INVENTORY_ARRANGE_COMMAND = r"""// "Scal i uporzadkuj" - the inventory's button (client-root/inventoryarrange.py).
+// One request instead of a move for every pair of stacks: the old button sent
+// three hundred in a frame and the flood limit closed the connection, and a
+// queue of moves could only pour stacks, never lay the pages out. The server
+// does both at once (playerbot_arrange.cpp) and answers with what it did.
+// No option is known yet, and one that is not is refused rather than guessed.
+ACMD(do_inventory_arrange)
+{
+	char arg1[256];
+	one_argument(argument, arg1, sizeof(arg1));
+	playerbot_arrange::TResult result;
+	if (*arg1)
+		result.code = playerbot_arrange::RESULT_BAD_REQUEST;
+	else
+		result = playerbot_arrange::ArrangeInventory(ch, true);
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "InventoryArrangeResult %d %d %d %u",
+			result.code, result.moved, result.merged, result.units);
+}
+"""
+
+
+def apply_inventory_arrange(game):
+    # "Scal i uporzadkuj" dla graczy i botow (Tieru, 18 wrzesnia; audyt Codexa
+    # tego samego dnia): przycisk ekwipunku wysyla jedno polecenie, a serwer
+    # scala stosy i uklada cztery strony od nowa. Wykonanie jest w
+    # playerbot_arrange.cpp (Makefile bierze kazdy *.cpp z game/src), tu tylko
+    # polecenie i jego wpis w tabeli.
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         '#include "battle.h"\n',
+         '#include "battle.h"\n'
+         '#include "playerbot_arrange.h"\n',
+         marker='#include "playerbot_arrange.h"\n')
+    edit(path,
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         INVENTORY_ARRANGE_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_inventory_arrange)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_autohunt_loot);\n',
+         'ACMD(do_autohunt_loot);\n'
+         'ACMD(do_inventory_arrange);\n',
+         marker='ACMD(do_inventory_arrange);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "autohunt_loot",\tdo_autohunt_loot,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "autohunt_loot",\tdo_autohunt_loot,\t0,\t\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "inventory_arrange",')
+
+
+def apply_quickslot_chain_word(game):
+    # Cztery strony przesunely pas na pola 287-302, a ChainQuickslotItem wciaz
+    # bral stara pozycje jako BYTE: gdy konczyl sie stos mikstur w pasie,
+    # CItem::SetCount przekazywal 290 jako 34 i przepinal skrot, ktory wskazywal
+    # pole 34 w torbie, a skrot pasa zostawal na pustym polu. SyncQuickslot i
+    # TQuickslot.pos sa WORD od 2.0.74; to byl ostatni BYTE po drodze.
+    edit(os.path.join(game, 'char.h'),
+         '\t\tvoid\t\t\tChainQuickslotItem(LPITEM pItem, BYTE bType, BYTE bOldPos);\n',
+         '\t\tvoid\t\t\tChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos);\n',
+         marker='ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos);\n')
+    edit(os.path.join(game, 'char_quickslot.cpp'),
+         'void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, BYTE bOldPos)\n',
+         'void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos)\n',
+         marker='void CHARACTER::ChainQuickslotItem(LPITEM pItem, BYTE bType, WORD bOldPos)\n')
+
+
+def apply_regen_spawn_count(game):
+    # Liczba potworow w respie (Kiciamol, 18 wrzesnia: "chodzilo mi o
+    # podwajanie/potrajanie mobow/metkow", zrobione u siebie w regen.cpp i
+    # wlasnie dlatego - przepada z kazda aktualizacja). regen_spawn dosypuje
+    # do max_count linii regenu; teraz do max_count razy procent z flag
+    # m2_mob_count / m2_boss_count, ktore pisze strona /rates panelu.
+    # The groups a group of groups may draw: the manager keeps them private
+    # and hands out one at a time, at random.
+    edit(os.path.join(game, 'mob_manager.h'),
+         '\t\tDWORD\t\tGetGroupFromGroupGroup(DWORD dwVnum);\n',
+         '\t\tDWORD\t\tGetGroupFromGroupGroup(DWORD dwVnum);\n'
+         '\t\t// playerbot: every group a group of groups may draw. regen.cpp asks\n'
+         '\t\t// what a respawn line can put on the map - a boss, a Metin stone, an\n'
+         '\t\t// ore vein - and GetGroupFromGroupGroup answers with one group, at\n'
+         '\t\t// random.\n'
+         '\t\tconst std::vector<DWORD>* GetGroupGroupMembers(DWORD dwVnum)\n'
+         '\t\t{\n'
+         '\t\t\tauto it = m_map_pkMobGroupGroup.find(dwVnum);\n'
+         '\t\t\treturn it == m_map_pkMobGroupGroup.end() ? NULL : &it->second->m_vec_dwMemberVnum;\n'
+         '\t\t}\n',
+         marker='const std::vector<DWORD>* GetGroupGroupMembers(DWORD dwVnum)\n')
+    path = os.path.join(game, 'regen.cpp')
+    edit(path,
+         'static bool read_line(FILE *fp, LPREGEN regen)\n',
+         '// playerbot: every monster a respawn line can put on the map - the vnum\n'
+         '// of a single line, every member of a group (its leader too), every\n'
+         '// member of every group a group of groups may draw. The boss test below\n'
+         '// asked a group and never a group of groups, and stone.txt writes its ore\n'
+         '// veins and herbs that way, as a few maps write their Metin stones.\n'
+         'static void regen_member_vnums(LPREGEN regen, std::vector<DWORD>& vnums)\n'
+         '{\n'
+         '\tvnums.clear();\n'
+         '\tif (regen->type == REGEN_TYPE_GROUP)\n'
+         '\t{\n'
+         '\t\tCMobGroup* pkGroup = CMobManager::instance().GetGroup(regen->vnum);\n'
+         '\t\tif (pkGroup)\n'
+         '\t\t\tvnums = pkGroup->GetMemberVector();\n'
+         '\t}\n'
+         '\telse if (regen->type == REGEN_TYPE_GROUP_GROUP)\n'
+         '\t{\n'
+         '\t\tconst std::vector<DWORD>* groups = CMobManager::instance().GetGroupGroupMembers(regen->vnum);\n'
+         '\t\tif (!groups)\n'
+         '\t\t\treturn;\n'
+         '\t\tfor (DWORD dwGroup : *groups)\n'
+         '\t\t{\n'
+         '\t\t\tCMobGroup* pkGroup = CMobManager::instance().GetGroup(dwGroup);\n'
+         '\t\t\tif (pkGroup)\n'
+         '\t\t\t\tvnums.insert(vnums.end(), pkGroup->GetMemberVector().begin(), pkGroup->GetMemberVector().end());\n'
+         '\t\t}\n'
+         '\t}\n'
+         '\telse if (regen->type == REGEN_TYPE_MOB || regen->type == REGEN_TYPE_ANYWHERE)\n'
+         '\t\tvnums.push_back(regen->vnum);\n'
+         '}\n'
+         '\n'
+         'static bool read_line(FILE *fp, LPREGEN regen)\n',
+         marker='static void regen_member_vnums(LPREGEN regen, std::vector<DWORD>& vnums)\n')
+    edit(path,
+         '\t\t\tcase MODE_VNUM:\n'
+         '\t\t\t{\n'
+         '\t\t\t\tif (regen->type == REGEN_TYPE_GROUP)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tCMobGroup* pkGroup = CMobManager::Instance().GetGroup(regen->vnum);\n'
+         '\t\t\t\t\tif (pkGroup)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tfor (auto mobVnum : pkGroup->GetMemberVector())\n'
+         '\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\tauto pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\t\t\t\t\t\tif (pkMob)\n'
+         '\t\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\t\tif (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(mobVnum))\n'
+         '\t\t\t\t\t\t\t\t{\n'
+         '\t\t\t\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t\t\t\t\tbreak;\n'
+         '\t\t\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t\t}\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\telse\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tauto pkMob = CMobManager::instance().Get(regen->vnum);\n'
+         '\t\t\t\t\tif (pkMob)\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tif (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(regen->vnum))\n'
+         '\t\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\tstr_to_number(regen->vnum, szTmp);\n'
+         '\t\t\t\t++mode;\n',
+         '\t\t\tcase MODE_VNUM:\n'
+         '\t\t\t{\n'
+         '\t\t\t\t// playerbot: the vnum is read before it is asked about. The boss\n'
+         '\t\t\t\t// test looked at the zero of a fresh REGEN, so no line was ever a\n'
+         '\t\t\t\t// boss or a stone and fastBossSpawn (the /rates page\'s "Metiny i\n'
+         '\t\t\t\t// bossowie") reached nothing; and a group of groups is asked the\n'
+         '\t\t\t\t// way a group is - a boss or a stone among what it may put down.\n'
+         '\t\t\t\tstr_to_number(regen->vnum, szTmp);\n'
+         '\t\t\t\tstd::vector<DWORD> vnums;\n'
+         '\t\t\t\tregen_member_vnums(regen, vnums);\n'
+         '\t\t\t\tfor (DWORD mobVnum : vnums)\n'
+         '\t\t\t\t{\n'
+         '\t\t\t\t\tconst CMob* pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\t\t\t\tif (pkMob && (pkMob->m_table.bRank >= MOB_RANK_BOSS || IsMiniBoss(mobVnum)))\n'
+         '\t\t\t\t\t{\n'
+         '\t\t\t\t\t\tregen->is_boss_or_stone = true;\n'
+         '\t\t\t\t\t\tbreak;\n'
+         '\t\t\t\t\t}\n'
+         '\t\t\t\t}\n'
+         '\t\t\t\t++mode;\n',
+         marker='// playerbot: the vnum is read before it is asked about. The boss\n')
+    edit(path,
+         'static void regen_spawn(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tDWORD\tnum;\n'
+         '\tDWORD\ti;\n'
+         '\n'
+         '\tnum = (regen->max_count - regen->count);\n'
+         '\n'
+         '\tif (!num)\n'
+         '\t\treturn;\n',
+         '// playerbot: how many a respawn line keeps standing - its own count times\n'
+         '// the operator\'s multiplier (m2_boss_count for the lines of bosses and\n'
+         '// Metin stones, m2_mob_count for the rest; a percent, 100 or unset being\n'
+         '// the line as written, 400 the most). Only a line all of whose monsters\n'
+         '// are monsters or stones is multiplied: an NPC, a portal or a shop keeper\n'
+         '// stays as written, and so do the groups of ore veins, herbs and horses\n'
+         '// that stone.txt and npc.txt carry. Nor is a spawn a quest asks for once;\n'
+         '// the dungeons keep their own regen_spawn_dungeon and are not touched.\n'
+         'static DWORD regen_target_count(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tif (regen->max_count <= 0)\n'
+         '\t\treturn 0;\n'
+         '\tif (bOnce)\n'
+         '\t\treturn regen->max_count;\n'
+         '\tconst int percent = quest::CQuestManager::instance().GetEventFlag(regen->is_boss_or_stone ? "m2_boss_count" : "m2_mob_count");\n'
+         '\tif (percent <= 100)\n'
+         '\t\treturn regen->max_count;\n'
+         '\tstd::vector<DWORD> vnums;\n'
+         '\tregen_member_vnums(regen, vnums);\n'
+         '\tif (vnums.empty())\n'
+         '\t\treturn regen->max_count;\n'
+         '\tfor (DWORD mobVnum : vnums)\n'
+         '\t{\n'
+         '\t\tconst CMob* pkMob = CMobManager::instance().Get(mobVnum);\n'
+         '\t\tif (!pkMob || (pkMob->m_table.bType != CHAR_TYPE_MONSTER && pkMob->m_table.bType != CHAR_TYPE_STONE))\n'
+         '\t\t\treturn regen->max_count;\n'
+         '\t}\n'
+         '\treturn (DWORD)regen->max_count * (DWORD)MIN(percent, 400) / 100;\n'
+         '}\n'
+         '\n'
+         'static void regen_spawn(LPREGEN regen, bool bOnce)\n'
+         '{\n'
+         '\tDWORD\tnum;\n'
+         '\tDWORD\ti;\n'
+         '\n'
+         '\t// playerbot: up to the target; a count above it (the multiplier was\n'
+         '\t// lowered while the extra ones still stand) spawns nothing, where\n'
+         '\t// max_count - count would have wrapped round to four billion.\n'
+         '\tconst DWORD target = regen_target_count(regen, bOnce);\n'
+         '\tif (regen->count < 0 || (DWORD)regen->count >= target)\n'
+         '\t\treturn;\n'
+         '\tnum = target - (DWORD)regen->count;\n',
+         marker='// are monsters or stones is multiplied: an NPC, a portal or a shop keeper\n')
+
+
+PICKUP_NEARBY_METHOD = r"""// "Podnies caly drop" - the ` key (client-root/pickupnearby.py; the shape is
+// SIZOWSKI's patch of 18 September). Every item on the ground within the
+// pickup range that is this character's or may be its party's, nearest
+// first, handed to PickupItem one at a time - so ownership, the party's
+// split, stacking and every item's own rule are the ones the Z key applies,
+// and PickupItem itself is not touched. It allows one pickup per half second
+// (m_lastPickupTime); the batch lifts that for its own items and leaves it
+// set afterwards, and is itself allowed once per half second a character.
+// A pile stops the batch at PICKUP_NEARBY_MAX items, and a bag with no room
+// for the next one stops it at once, rather than saying so for every item.
+int CHARACTER::PickupNearbyItems()
+{
+	const size_t PICKUP_NEARBY_MAX = 40;
+	const DWORD PICKUP_NEARBY_COOLDOWN_MS = 500;
+	if (!HasPlayerData() || IsObserverMode() || IsDead() || !GetSectree())
+		return 0;
+	static std::map<DWORD, DWORD> s_nextBatch;
+	const DWORD now = get_dword_time();
+	DWORD& next = s_nextBatch[GetPlayerID()];
+	if (now < next)
+		return 0;
+	next = now + PICKUP_NEARBY_COOLDOWN_MS;
+	if (!CanHandleItem(false, false, 0))
+	{
+		ChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot pickup item while busy."));
+		return 0;
+	}
+
+	struct FCollectNearby
+	{
+		LPCHARACTER ch;
+		std::vector<std::pair<int, DWORD> > found;
+		explicit FCollectNearby(LPCHARACTER c) : ch(c) {}
+		void operator()(LPENTITY ent)
+		{
+			if (!ent || !ent->IsType(ENTITY_ITEM))
+				return;
+			LPITEM item = static_cast<LPITEM>(ent);
+			if (!item->GetSectree() || !item->DistanceValid(ch))
+				return;
+			// Somebody else's drop is refused by PickupItem without a word; not
+			// asking at all is cheaper. With a party, PickupItem decides.
+			if (!item->IsOwnership(ch) && !ch->GetParty())
+				return;
+			found.push_back(std::make_pair(
+					DISTANCE_APPROX(ch->GetX() - item->GetX(), ch->GetY() - item->GetY()),
+					(DWORD)item->GetVID()));
+		}
+	} collect(this);
+	GetSectree()->ForEachAround(collect);
+	std::sort(collect.found.begin(), collect.found.end());
+
+	const DWORD held = playerData->m_lastPickupTime;
+	int picked = 0;
+	for (size_t i = 0; i < collect.found.size() && i < PICKUP_NEARBY_MAX; ++i)
+	{
+		// Re-found by VID: an earlier pickup can move or remove other items.
+		LPITEM item = ITEM_MANAGER::instance().FindByVID(collect.found[i].second);
+		if (!item || !item->GetSectree() || !item->DistanceValid(this))
+			continue;
+		const BYTE size = item->GetSize();
+		playerData->m_lastPickupTime = 0;
+		if (PickupItem(collect.found[i].second))
+		{
+			++picked;
+			continue;
+		}
+		if (GetEmptyInventory(size) < 0)
+			break;
+	}
+	playerData->m_lastPickupTime = std::max<DWORD>(held, now + 500);
+	return picked;
+}
+
+"""
+
+PICKUP_NEARBY_COMMAND = r"""// "Podnies caly drop" - the ` key (client-root/pickupnearby.py); the work is
+// CHARACTER::PickupNearbyItems in char_item.cpp.
+ACMD(do_pickup_nearby)
+{
+	ch->PickupNearbyItems();
+}
+"""
+
+
+def apply_pickup_nearby(game):
+    # The whole drop under the ` key (vanderro's suggestion of 18 September;
+    # Tieru: "jedno Z niech bedzie klasycznie, a ` najwyzej jako caly drop"; the
+    # shape of SIZOWSKI's patch). The character's method hands every item in
+    # reach to PickupItem one at a time; /pickup_nearby calls it.
+    edit(os.path.join(game, 'char.h'),
+         '\t\tbool\t\t\tPickupItem(DWORD vid);\n',
+         '\t\tbool\t\t\tPickupItem(DWORD vid);\n'
+         '\t\tint\t\t\t\tPickupNearbyItems();\n',
+         marker='\t\tint\t\t\t\tPickupNearbyItems();\n')
+    path = os.path.join(game, 'char_item.cpp')
+    edit(path,
+         '#include "item_manager.h"\n',
+         '#include "item_manager.h"\n'
+         '#include "sectree_manager.h"\n',
+         marker='#include "sectree_manager.h"\n')
+    edit(path,
+         'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n',
+         PICKUP_NEARBY_METHOD + 'bool CHARACTER::SwapItem(WORD bCell, WORD bDestCell)\n',
+         marker='int CHARACTER::PickupNearbyItems()\n')
+    edit(os.path.join(game, 'cmd_general.cpp'),
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         PICKUP_NEARBY_COMMAND + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_pickup_nearby)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_inventory_arrange);\n',
+         'ACMD(do_inventory_arrange);\n'
+         'ACMD(do_pickup_nearby);\n',
+         marker='ACMD(do_pickup_nearby);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "inventory_arrange",\tdo_inventory_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "pickup_nearby",')
+
+
+SAFEBOX_COMMANDS = r"""// The safebox's "Scal i uporzadkuj", and a stack moved by count across the
+// safebox and the bag or inside the safebox (blasty's proposal, 19 September;
+// client-root/safeboxtransfer.py). The safebox's packets name cells and no
+// count, so a part of a stack, and a stack dropped on the same item, go by
+// command; a whole stack dropped on a free place still goes by the packet.
+// playerbot_arrange.cpp does the work, and every answer goes back for the
+// client to put the refusals into words.
+ACMD(do_safebox_arrange)
+{
+	char arg1[256];
+	one_argument(argument, arg1, sizeof(arg1));
+	playerbot_arrange::TResult result;
+	if (*arg1)
+		result.code = playerbot_arrange::RESULT_BAD_REQUEST;
+	else
+		result = playerbot_arrange::ArrangeSafebox(ch, true);
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "SafeboxArrangeResult %d %d %d %u",
+			result.code, result.moved, result.merged, result.units);
+}
+
+// /safebox_put <bag cell> <safebox cell> [count], /safebox_take <safebox cell>
+// <bag cell> [count], /safebox_move <safebox cell> <safebox cell> [count]; the
+// subcommand is playerbot_arrange::ETransferOp, and no count, or 0, is the
+// whole stack.
+ACMD(do_safebox_transfer)
+{
+	char arg1[256], arg2[256], arg3[256];
+	const char * rest = two_arguments(argument, arg1, sizeof(arg1), arg2, sizeof(arg2));
+	one_argument(rest, arg3, sizeof(arg3));
+	unsigned int from = 0, to = 0, count = 0;
+	playerbot_arrange::TTransfer result;
+	result.code = playerbot_arrange::TRANSFER_BAD_REQUEST;
+	if (*arg1 && *arg2 && str_to_number(from, arg1) && str_to_number(to, arg2) &&
+			(!*arg3 || str_to_number(count, arg3)))
+	{
+		switch (subcmd)
+		{
+			case playerbot_arrange::TRANSFER_OP_PUT:
+				result = playerbot_arrange::PutIntoSafebox(ch, from, to, count);
+				break;
+			case playerbot_arrange::TRANSFER_OP_TAKE:
+				result = playerbot_arrange::TakeFromSafebox(ch, from, to, count);
+				break;
+			case playerbot_arrange::TRANSFER_OP_MOVE:
+				result = playerbot_arrange::MoveInSafebox(ch, from, to, count);
+				break;
+		}
+	}
+	ch->ChatPacket(CHAT_TYPE_COMMAND, "SafeboxTransferResult %d %d %u", subcmd, result.code, result.units);
+}
+"""
+
+
+def apply_safebox_hands(game):
+    # Rozdzielanie i laczenie stosow w torbie przy otwartym magazynie
+    # (propozycja blasty'ego, 19 wrzesnia; Tieru: "Jasne"). CHARACTER::MoveItem
+    # pytal CanHandleItem() z domyslnym wykluczeniem, a otwarty magazyn to dla
+    # IsBusy zajetosc - wiec przy otwartym depo serwer po cichu odrzucal kazde
+    # przesuniecie, rozdzielenie i polaczenie w ekwipunku, dokladnie wtedy, gdy
+    # gracz przeklada rzeczy miedzy oknami. Wykluczamy tylko magazyn: handel,
+    # sklepy i reszta nadal blokuja.
+    edit(os.path.join(game, 'char_item.cpp'),
+         '\tif (!CanHandleItem())\n'
+         '\t{\n'
+         '\t\tif (NULL != DragonSoul_RefineWindow_GetOpener())\n'
+         '\t\t\tChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot move the item within the refinement window."));\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\n'
+         '\tif (DestCell.IsBeltInventoryPosition() && false == CBeltInventoryHelper::CanMoveIntoBeltInventory(item))\n',
+         '\t// Metin2 SinglePlayer: an open safebox is no reason to refuse a move\n'
+         '\t// inside the bag - splitting and pouring stacks beside it is the point\n'
+         '\t// of having both windows open (blasty, 19 September). Every other busy\n'
+         '\t// state still refuses.\n'
+         '\tif (!CanHandleItem(false, false, BUSY_CAN_HANDLE_ITEM_EXCLUDE | BUSY_SAFEBOX))\n'
+         '\t{\n'
+         '\t\tif (NULL != DragonSoul_RefineWindow_GetOpener())\n'
+         '\t\t\tChatPacket(CHAT_TYPE_INFO, LC_TEXT("You cannot move the item within the refinement window."));\n'
+         '\t\treturn false;\n'
+         '\t}\n'
+         '\n'
+         '\tif (DestCell.IsBeltInventoryPosition() && false == CBeltInventoryHelper::CanMoveIntoBeltInventory(item))\n',
+         marker='\tif (!CanHandleItem(false, false, BUSY_CAN_HANDLE_ITEM_EXCLUDE | BUSY_SAFEBOX))\n')
+
+
+def apply_safebox_commands(game):
+    # Sortowanie magazynu i przenoszenie stosow z liczba sztuk miedzy
+    # magazynem a torba i w samym magazynie (propozycja blasty'ego, 19
+    # wrzesnia). Wykonanie jest w playerbot_arrange.cpp, tu polecenia i ich
+    # wpisy w tabeli - trzy przeniesienia to jedno polecenie z podkomenda
+    # (playerbot_arrange::ETransferOp: 1 put, 2 take, 3 move).
+    path = os.path.join(game, 'cmd_general.cpp')
+    edit(path,
+         "//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         SAFEBOX_COMMANDS + "\n//martysama0134's 4e4e75d8b719b9240e033009cf4d7b0f\n",
+         marker='ACMD(do_safebox_arrange)\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         'ACMD(do_pickup_nearby);\n',
+         'ACMD(do_pickup_nearby);\n'
+         'ACMD(do_safebox_arrange);\n'
+         'ACMD(do_safebox_transfer);\n',
+         marker='ACMD(do_safebox_transfer);\n')
+    edit(os.path.join(game, 'cmd.cpp'),
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         '\t{ "pickup_nearby",\tdo_pickup_nearby,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_arrange",\tdo_safebox_arrange,\t0,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_put",\tdo_safebox_transfer,\t1,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_take",\tdo_safebox_transfer,\t2,\t\tPOS_DEAD,\tGM_PLAYER\t},\n'
+         '\t{ "safebox_move",\tdo_safebox_transfer,\t3,\t\tPOS_DEAD,\tGM_PLAYER\t},\n',
+         marker='{ "safebox_arrange",')
+
+
+def apply_bot_population_plan(game):
+    # Who starts where, on top of the one number: the second channel's part of
+    # it (M2_PLAYERBOT_CH2, CPlayerBotManager::SplitForThisChannel - the
+    # registry itself is split in LoadRegisteredBots) and the operator's own
+    # number per kingdom (PLAYERBOT_AUTOSPAWN_PER_KINGDOM, Greess). Both edit
+    # the bootstrap in input_db.cpp that the first block of main() wrote.
+    p = os.path.join(game, 'input_db.cpp')
+    edit(p,
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\t\t// The operator\'s medal droppers, on top of the population: this many in\n',
+         '\t\tplayerbot_empire_rules::SplitPopulation(autoSpawnCount, registered, want);\n'
+         '\t\t// The number is the whole world\'s. With the second channel on, it is\n'
+         '\t\t// split between the kingdoms over every channel\'s identities first -\n'
+         '\t\t// a kingdom has the same share with the channel on as off - and each\n'
+         '\t\t// kingdom\'s part then between the channels. With it off, nothing\n'
+         '\t\t// changes on the first channel and any other starts nobody.\n'
+         '\t\tCPlayerBotManager::instance().SplitForThisChannel(autoSpawnCount, registered, want);\n'
+         '\t\t// The operator\'s own number for each kingdom instead of a share of the\n'
+         '\t\t// one above (the launcher\'s "Indywidualne wartosci dla krolestw",\n'
+         '\t\t// Greess): PLAYERBOT_AUTOSPAWN_PER_KINGDOM=1 and one\n'
+         '\t\t// PLAYERBOT_AUTOSPAWN_<KINGDOM> each, this channel\'s part of it, cut to\n'
+         '\t\t// the identities the kingdom has here - so M2_PLAYERBOT_KINGDOMS=0 above\n'
+         '\t\t// still leaves Shinsoo and Jinno with none.\n'
+         '\t\tconst char* configuredPerKingdom = std::getenv("PLAYERBOT_AUTOSPAWN_PER_KINGDOM");\n'
+         '\t\tif (configuredPerKingdom && *configuredPerKingdom && std::atoi(configuredPerKingdom) != 0)\n'
+         '\t\t{\n'
+         '\t\t\tconst char* const kingdomCountKeys[playerbot_empire_rules::EMPIRE_COUNT] = {\n'
+         '\t\t\t\tNULL, "PLAYERBOT_AUTOSPAWN_SHINSOO", "PLAYERBOT_AUTOSPAWN_CHUNJO",\n'
+         '\t\t\t\t"PLAYERBOT_AUTOSPAWN_JINNO" };\n'
+         '\t\t\tint asked[playerbot_empire_rules::EMPIRE_COUNT] = { 0, 0, 0, 0 };\n'
+         '\t\t\tfor (int e = playerbot_empire_rules::EMPIRE_SHINSOO;\n'
+         '\t\t\t\t\te <= playerbot_empire_rules::EMPIRE_JINNO; ++e)\n'
+         '\t\t\t{\n'
+         '\t\t\t\tconst char* value = std::getenv(kingdomCountKeys[e]);\n'
+         '\t\t\t\tint count = value && *value ? std::atoi(value) : 0;\n'
+         '\t\t\t\tif (count > autoSpawnCeiling)\n'
+         '\t\t\t\t\tcount = autoSpawnCeiling;\n'
+         '\t\t\t\tasked[e] = CPlayerBotManager::instance().ScaleToThisChannel(count, (BYTE)e);\n'
+         '\t\t\t}\n'
+         '\t\t\tplayerbot_empire_rules::TakeKingdomCounts(asked, registered, want);\n'
+         '\t\t\tsys_log(0, "PLAYERBOT: autospawn per kingdom asked=%d/%d/%d registered=%d/%d/%d want=%d/%d/%d",\n'
+         '\t\t\t\t\tasked[1], asked[2], asked[3], registered[1], registered[2], registered[3],\n'
+         '\t\t\t\t\twant[1], want[2], want[3]);\n'
+         '\t\t}\n'
+         '\t\t// The operator\'s medal droppers, on top of the population: this many in\n',
+         marker='PLAYERBOT_AUTOSPAWN_PER_KINGDOM')
+    edit(p,
+         '\t\tplayerbot_empire_rules::SplitPopulation(lateJoiners, registeredLeft, lateWant);\n',
+         '\t\tplayerbot_empire_rules::SplitPopulation(lateJoiners, registeredLeft, lateWant);\n'
+         '\t\tCPlayerBotManager::instance().SplitForThisChannel(lateJoiners, registeredLeft, lateWant);\n',
+         marker='SplitForThisChannel(lateJoiners, registeredLeft, lateWant);')
+
+
+def apply_shops_first_channel(game):
+    # Every shop in the world stands on the first channel (the operator's rule
+    # for the second one: "wszystkie sklepy tylko na ch1"). A shop's entity
+    # lives on the channel it was opened on, the bots of the second channel
+    # neither sell nor serve a counter, and a keeper is pinned to the first
+    # channel for good (playerbot_channel_rules.h) - so a player's shop opened
+    # on the second channel would stand where no bot ever buys. Refused for
+    # everybody, the reopen included (it goes through OpenOfflineShop too).
+    edit(os.path.join(game, 'ikarus_shop_manager.cpp'),
+         '\tbool CShopManager::OpenOfflineShop(LPCHARACTER ch, const char* shopSign, TShopItemTable* pItemTable, BYTE bItemCount, BYTE bTimeIndex)\n'
+         '\t{\n'
+         '\t\tif(!ch)\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\tif (!CheckGMLevel(ch))\n'
+         '\t\t\treturn false;\n',
+         '\tbool CShopManager::OpenOfflineShop(LPCHARACTER ch, const char* shopSign, TShopItemTable* pItemTable, BYTE bItemCount, BYTE bTimeIndex)\n'
+         '\t{\n'
+         '\t\tif(!ch)\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\tif (!CheckGMLevel(ch))\n'
+         '\t\t\treturn false;\n'
+         '\n'
+         '\t\t// playerbot: shops are the first channel\'s (playerbot_channel_rules.h).\n'
+         '\t\tif (g_bChannel != 1)\n'
+         '\t\t{\n'
+         '\t\t\tch->ChatPacket(CHAT_TYPE_INFO, "Sklep offline mozna otworzyc tylko na CH1.");\n'
+         '\t\t\treturn false;\n'
+         '\t\t}\n',
+         marker='// playerbot: shops are the first channel\'s (playerbot_channel_rules.h).')
+
+
+
+def apply_event_cancel_in_flight(game):
+    # event_process frees an event's queue element (cxx_q.Delete) before it
+    # calls the event, and left the event's q_el pointing at it for the whole
+    # call - so an event that cancels itself from inside wrote bCancel = TRUE
+    # into freed memory (event_cancel, the is_processing branch). A quest's
+    # target.delete on its own arrow is exactly that: target_event runs the
+    # "arrive" script, the script deletes the target, DeleteTarget cancels the
+    # running event. The chunk had often gone to the script compiled a moment
+    # before, and the core died in luaV_execute on the next global the script
+    # read - Dearminder's horse training on the fire land, twice at the third
+    # point and again at every login beside it (18 September, game2,
+    # target_event -> NPC::OnTarget -> lua_resume -> luaV_execute+0xac7, an
+    # OP_GETGLOBAL through a Proto's k that was no longer one). Nothing points
+    # at the element once it is freed; every reader of q_el handles NULL.
+    # event.cpp mixes line ends, so the anchor is tried with both.
+    path = os.path.join(game, 'event.cpp')
+    data = read(path)
+    if b'nothing may point at it' in data:
+        print('  already: %s' % os.path.relpath(path))
+        return
+    for eol in (b'\n', b'\r\n'):
+        old = (b'\t\tcxx_q.Delete(pElem);' + eol + eol +
+               b'\t\tthe_event->is_processing = TRUE;' + eol)
+        if data.count(old) != 1:
+            continue
+        new = (b'\t\tcxx_q.Delete(pElem);' + eol +
+               b'\t\t// playerbot: the element is freed above, so nothing may point at it:' + eol +
+               b'\t\t// an event cancelling itself from inside (a quest\'s target.delete on' + eol +
+               b'\t\t// its own arrow) wrote bCancel into whatever was allocated there next.' + eol +
+               b'\t\tthe_event->q_el = NULL;' + eol + eol +
+               b'\t\tthe_event->is_processing = TRUE;' + eol)
+        write(path, data.replace(old, new, 1))
+        print('  edited:  %s' % os.path.relpath(path))
+        return
+    raise SystemExit('playerbotify: event_process anchor not found in %s' % path)
+
+
+def apply_channel_connection(game):
+    # The two channels with moves (playerbot_channel_rules.h, SIZOWSKI's
+    # design) keep their table on a database connection and a thread of their
+    # own, so the game thread never waits for it: his first version queried on
+    # the game thread, and a slow database threw players out at the character
+    # screen. The common database's credentials are locals of the config reader
+    # and nothing keeps them, so config.cpp keeps a copy and hands out a
+    # connection made with them (CPlayerBotManager::EnsureChannelSql). His
+    # snippet, as he sent it; no header changes - db.h is included by half the
+    # engine.
+    p = os.path.join(game, 'config.cpp')
+    edit(p,
+         'static bool __LoadConnectConfigFile(const char* configName)\n',
+         '// The common database\'s credentials, kept for the playerbots\' channel\n'
+         '// assignment (the two channels with moves): it runs on a connection and a\n'
+         '// thread of its own so the game thread never waits on the database.\n'
+         'static std::string s_stChannelSqlHost, s_stChannelSqlUser, s_stChannelSqlPwd, s_stChannelSqlDb;\n'
+         'static int s_iChannelSqlPort = 0;\n'
+         '\n'
+         'bool PlayerBotOpenChannelConnection(CAsyncSQL* pkDest)\n'
+         '{\n'
+         '\tif (!pkDest || s_stChannelSqlHost.empty())\n'
+         '\t\treturn false;\n'
+         '\treturn pkDest->Setup(s_stChannelSqlHost.c_str(), s_stChannelSqlUser.c_str(),\n'
+         '\t\t\ts_stChannelSqlPwd.c_str(), s_stChannelSqlDb.c_str(), g_stLocale.c_str(),\n'
+         '\t\t\tfalse, s_iChannelSqlPort);\n'
+         '}\n'
+         '\n'
+         'static bool __LoadConnectConfigFile(const char* configName)\n',
+         marker='bool PlayerBotOpenChannelConnection(CAsyncSQL* pkDest)')
+    edit(p,
+         '\tAccountDB::instance().ConnectAsync(db_host[COMMON_SQL_INDEX], mysql_db_port[COMMON_SQL_INDEX], db_user[COMMON_SQL_INDEX], db_pwd[COMMON_SQL_INDEX], db_db[COMMON_SQL_INDEX], g_stLocale.c_str());\n',
+         '\tAccountDB::instance().ConnectAsync(db_host[COMMON_SQL_INDEX], mysql_db_port[COMMON_SQL_INDEX], db_user[COMMON_SQL_INDEX], db_pwd[COMMON_SQL_INDEX], db_db[COMMON_SQL_INDEX], g_stLocale.c_str());\n'
+         '\ts_stChannelSqlHost = db_host[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlUser = db_user[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlPwd = db_pwd[COMMON_SQL_INDEX];\n'
+         '\ts_stChannelSqlDb = db_db[COMMON_SQL_INDEX];\n'
+         '\ts_iChannelSqlPort = mysql_db_port[COMMON_SQL_INDEX];\n',
+         marker='s_stChannelSqlHost = db_host[COMMON_SQL_INDEX];')
+
+
+def apply_player_struck(game):
+    # Iwakura's Anti-PK protocol (playerbot_anti_pk.h): a bot struck by a
+    # player fights back, and its party answers for it. The engine keeps no
+    # record of who struck a player - m_dwKillerPID is private and set only at
+    # the moment of death - so CHARACTER::Damage tells the manager, for a
+    # player's blow at a bot or at a person in a party (a party with bots in
+    # it answers for its person). Placed after the system damage's own return
+    # (poison ticks and the like carry no fight) and before anything that
+    # could turn the blow away: a blow aimed is a blow taken, whatever the
+    # dodge. A monster's blow and a player's blow at a monster fail the first
+    # two tests, so the hot path pays two comparisons.
+    p = os.path.join(game, 'char_battle.cpp')
+    edit(p,
+         '#include "char_ai.h"\n',
+         '#include "char_ai.h"\n'
+         '#include "playerbot_manager.h"\n',
+         marker='#include "char_ai.h"\n#include "playerbot_manager.h"\n')
+    edit(p,
+         '\tif (DAMAGE_TYPE_MAGIC == type && pAttacker)\n',
+         '\t// Playerbot: a player\'s blow at a bot, or at a person in a party, is\n'
+         '\t// told to the manager - the Anti-PK protocol\'s only way of knowing who\n'
+         '\t// attacks a bot (playerbotify apply_player_struck).\n'
+         '\tif (pAttacker && pAttacker != this && pAttacker->IsPC() && IsPC() && GetDesc() &&\n'
+         '\t\t\t(GetDesc()->IsBot() || GetParty()))\n'
+         '\t\tCPlayerBotManager::instance().OnPlayerStruck(this, pAttacker);\n'
+         '\n'
+         '\tif (DAMAGE_TYPE_MAGIC == type && pAttacker)\n',
+         marker='\t// Playerbot: a player\'s blow at a bot, or at a person in a party, is\n')
 
 
 if __name__ == '__main__':

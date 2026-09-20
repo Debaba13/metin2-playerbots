@@ -89,6 +89,20 @@ namespace
 				NeedsPlayerBotArrows(ch) ||
 				ch->GetEmptyInventory(3) < 0)
 			return true;
+		// The soft half - a bag at 45 percent - is what a keeper with goods
+		// carries for good, and through the village branches of the world
+		// travel it was a town visit every ten minutes for a bot whose errand
+		// is a hundred kills on the desert: 126 trial bots in the villages,
+		// three on the desert in twenty-five minutes, one of seventy in Joan
+		// all day on town visit -> market -> party -> town visit (m2zip, 17
+		// September). The trial is the errand; the bag waits for the horse.
+		if (IsPlayerBotOnBattleHorseTrial(ch))
+			return false;
+
+		// Iwakura's Trader goes back to town at eighty percent: a break is for
+		// what the game makes the bot do, and a bag at half is not that.
+		if (IsPlayerBotPersonaEnabled())
+			return IsPlayerBotBagFull(ch);
 
 		size_t occupiedGridCells = 0;
 		for (WORD cell = 0; cell < PLAYERBOT_BAG_CELLS; ++cell)
@@ -184,8 +198,9 @@ namespace
 		return true;
 	}
 
-	bool NeedsPlayerBotM1OnlyServices(LPCHARACTER ch, const TPlayerBotAIState& state, DWORD dwNow)
+	bool NeedsPlayerBotM1OnlyServices(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
+		if (ShouldPlayerBotVisitProgressionMarket(ch, state, dwNow)) return true;
 		if (!ch)
 			return false;
 		// Bokjung has no profession trainers, no Biologist and no old woman.
@@ -194,26 +209,50 @@ namespace
 		if (ch->GetLevel() >= 5 && ch->GetSkillGroup() == 0 &&
 				ch->GetJob() <= JOB_SHAMAN)
 			return true;
+		// Baek-Go stands in the first villages too, and a bot that already has
+		// everything a row needs is the cheapest possible traveller: it knows
+		// the recipe, the bag holds the herbs and the purse the fee, and the
+		// only thing missing is the counter. Measured on 17 September, this is
+		// why the board stayed idle - PiratTanaka and MordercaBezSerca3 each
+		// stood in Bokjung with eleven Peach Blossoms and the recipe learnt,
+		// and the visit only ever fires for a bot already standing in M1. The
+		// gate is deliberately the whole shopping list, so this can never
+		// become the crowd at the gates that 2.0.60 was.
+		if (PlayerBotHasReadyCraftRow(ch))
+			return true;
 		// Her too: a skill stuck at seventeen with no points left to try
 		// anything else is worth a trip to Joan while the character is still
 		// young enough for her to serve it.
 		if (ShouldPlayerBotResetSkills(ch, state, dwNow))
 			return true;
+		// Iwakura's Rybak: a bot back in a second village in a mood for the
+		// water gives up the grind for the bank ("po powrocie do miasta
+		// zrezygnuje z dalszego grindu"), and the banks are the first villages'.
+		// Only from a village: a bot on the frontier goes home first.
+		if (IsPlayerBotPersonaEnabled() && state.persona.bRestored &&
+				IsPlayerBotVillageMap(ch->GetMapIndex()) && !IsPlayerBotM1Map(ch->GetMapIndex()) &&
+				!state.bFishingSession && dwNow >= state.dwNextFishingCheckTime &&
+				IsPlayerBotAngler(ch, state))
+			return true;
 
 		size_t missionIndex = 0;
+		// One of the two owners of the errand queue: this is where a trip is
+		// actually decided, so this is where a place may be taken.
 		const TPlayerBotBiologistMission* mission =
-				GetActivePlayerBotBiologistMission(ch, &missionIndex);
+				GetActivePlayerBotBiologistMission(ch, &missionIndex, true);
 		if (!mission)
 			return false;
-		int required = mission->requiredCount;
-		const DWORD wantedVnum = GetPlayerBotBiologistWantedItem(ch, missionIndex, &required);
-		const int accepted = IsPlayerBotBiologistKeyPhase(ch, missionIndex) ? 0 : std::max(0, ch->GetQuestFlag(
-				GetPlayerBotBiologistFlag(*mission, "collect_count")));
-		const int remaining = std::max(0, required - accepted);
-		// Same threshold as the hand-in itself, or the trip would never start
-		// for a bot the Biologist would happily serve.
-		return remaining > 0 && ch->CountSpecifyItem(wantedVnum) >=
-				std::min(remaining, PLAYERBOT_BIOLOGIST_MIN_HANDIN);
+		// The hand-in: same threshold as the hand-in itself, or the trip would
+		// never start for a bot the Biologist would happily serve.
+		if (PlayerBotBiologistHoldsHandIn(ch, mission, missionIndex))
+			return true;
+		// The hunt for a first-village row: the six herb rows' monsters stand
+		// in Joan and its two mirrors and nowhere else, so a bot anywhere else
+		// with such a row open goes there for them - at seventy-eight as at
+		// fifteen (Tieru, 16 September). The wander then picks the hubs for
+		// the row's level (GetPlayerBotVillageHuntLevel).
+		const DWORD huntMob = GetPlayerBotBiologistHuntMob(ch);
+		return huntMob != 0 && huntMob < 500 && !IsPlayerBotM1Map(ch->GetMapIndex());
 	}
 
 	// Above this level Bokjung has nothing left to offer, so nothing there is
@@ -407,6 +446,17 @@ namespace
 		// Valley, and the Black Wind band it needs lives in the desert.
 		if (IsPlayerBotOnBattleHorseTrial(ch))
 			return PLAYERBOT_MAP_DESERT;
+		// The Biologist's row is done where its monster stands, whatever the
+		// level says: the Orc Tooth and the Curse Book in the valley, the Demon
+		// Souvenir in the tower. A row is finished before the next is begun,
+		// at any level ("nie ma czegos takiego jak za niskie dla bota", Tieru,
+		// 16 September); the specimen comes from the quest's own kill hook,
+		// which asks nothing about the level gap.
+		{
+			const long rowHome = GetPlayerBotHuntingMobHome(GetPlayerBotBiologistHuntMob(ch, true));
+			if (rowHome != 0 && IsPlayerBotFrontierMapIndex(rowHome) && IsPlayerBotMapHostedHere(rowHome))
+				return rowHome;
+		}
 		// And the military trial is in the Demon Tower, for the same reason: the
 		// bot hunts where the trial is, whatever its level would otherwise say.
 		if (IsPlayerBotOnMilitaryHorseTrial(ch))
@@ -610,6 +660,22 @@ namespace
 		}
 	}
 
+	// The M3 dropper is on the guild map for the level-30 weapons it will
+	// sell, so a weapon in its bag is goods and never the reason to leave;
+	// it farms while the exp lock's band still holds it. Both the door
+	// (ShouldPlayerBotVisitM3) and the exit (the M3 branch of the world
+	// travel) ask this, because they used to disagree: the door sent a
+	// dropper by level alone and the exit sent any bot holding a weapon
+	// home, and the Teleporter's arrival stands beside the return gate,
+	// so four droppers of seban latino's world crossed M2 <-> M3 every
+	// five seconds for as long as the log runs (16 September).
+	bool IsPlayerBotM3DropperOnFarm(LPCHARACTER ch)
+	{
+		return ch &&
+				GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_M3_DROPPER &&
+				ch->GetLevel() <= PLAYERBOT_EXP_LOCK_M3_DROPPER + PLAYERBOT_DROPPER_OUTGROWN_LEVELS;
+	}
+
 	bool ShouldPlayerBotVisitM3(LPCHARACTER ch)
 	{
 		if (!ch || !HasPlayerBotM3ReadyEquipment(ch))
@@ -620,7 +686,7 @@ namespace
 		// The M3 dropper is there for the weapons it will sell, so owning one
 		// changes nothing, and it stays as long as the map can still be hunted.
 		if (GetPlayerBotPersonalityByPID(ch->GetPlayerID()) == BOT_PERSONALITY_M3_DROPPER)
-			return ch->GetLevel() <= 32;
+			return IsPlayerBotM3DropperOnFarm(ch);
 		if (HasPlayerBotSpecialLevel30Weapon(ch, true))
 			return false;
 		// Twenty-four was the cap, and it made the weapon a thing a bot either
@@ -832,6 +898,9 @@ namespace
 
 	// Defined beside the party pass in playerbot_manager.cpp.
 	bool IsPlayerBotHumanLedParty(LPPARTY party);
+	// A contract's client, a mercenary whose contract runs, and a bot leading
+	// a party with a person in it keep their map (playerbot_companions.h).
+	bool IsPlayerBotHeldForCompany(LPCHARACTER ch);
 
 	bool TransitionPlayerBotMap(LPCHARACTER ch, TPlayerBotAIState& state,
 			long targetMap, long targetX, long targetY, DWORD dwNow, const char* reason)
@@ -1338,10 +1407,18 @@ namespace
 		return true;
 	}
 
+	// Defined in playerbot_gambler.h, after the town visit that runs it.
+	bool IsPlayerBotGambling(const TPlayerBotAIState& state, DWORD dwNow);
+
 	bool ManagePlayerBotWorldTravel(LPCHARACTER ch, TPlayerBotAIState& state, DWORD dwNow)
 	{
 		if (!ch || state.bVisitingShop || state.bVisitingBiologist ||
 				state.bVisitingStable || state.bRecoveringAfterDeath || state.bTacticalRetreat)
+			return false;
+		// A gambler whose visit was cut short (a death, the watchdog) is back at
+		// the anvil when the town check comes round again in a minute or two;
+		// the road would take it to another map for the rest of its session.
+		if (IsPlayerBotGambling(state, dwNow) && IsPlayerBotVillageMap(ch->GetMapIndex()))
 			return false;
 		// A bot in a player's party goes where the player goes
 		// (ManagePlayerBotFollowHumanLeader), not where its own plans send it.
@@ -1357,14 +1434,28 @@ namespace
 			state.lDesertCrossingTo = 0;
 			return false;
 		}
+		// A mercenary's contract is played on the client's map: the client
+		// stays for it, and the mercenary until the town wants it - a paused
+		// contract lets it go and brings it back itself. A party a bot leads
+		// with a person in it keeps its map the way a person's party does.
+		if (IsPlayerBotHeldForCompany(ch))
+		{
+			state.lDesertCrossingTo = 0;
+			return false;
+		}
 
 		const long mapIndex = ch->GetMapIndex();
 		const bool hasMedal = ch->CountSpecifyItem(PLAYERBOT_HORSE_MEDAL_VNUM) > 0;
 		// A medal in a medal dropper's bag is stock for its counter, not an errand
 		// at the stable: neither village holds such a bot back for one, and its
 		// expedition goes on past it (GetPlayerBotDesiredHorseMedalStock).
+		// Under Iwakura's system only a medal the stable would take holds a bot
+		// back: a Grinder on its first horse carries them as stock for a
+		// counter (IsPlayerBotGrinderRider), and a village that held it for one
+		// would hold it for good.
 		const bool holdsMedalToHandIn = hasMedal &&
-				state.bPersonality != BOT_PERSONALITY_MEDAL_DROPPER;
+				state.bPersonality != BOT_PERSONALITY_MEDAL_DROPPER &&
+				(!IsPlayerBotPersonaEnabled() || CanPlayerBotAdvanceHorse(ch));
 		// A trader does not down tools to go and farm horse medals in the Monkey
 		// Dungeon. That errand takes a bot right across the world for the better
 		// part of an hour, and it is exactly the striving this personality exists
@@ -1544,8 +1635,11 @@ namespace
 			// The soft needs get one town visit to be met. If the bot has just
 			// been shopping and still wants something, the town cannot supply it,
 			// and standing here is worse than moving on.
+			// A herb row of the Biologist is hunted here and nowhere else, so it
+			// holds the bot exactly as the errand that brought it (see
+			// PlayerBotHuntsVillageHerbs for the four-second Joan <-> Bokjung loop).
 			if (holdsMedalToHandIn || BlocksPlayerBotTravel(ch) || needsM1OnlyServices ||
-					HasPlayerBotExcessPotions(ch) ||
+					PlayerBotHuntsVillageHerbs(ch) || HasPlayerBotExcessPotions(ch) ||
 					((needsTownPreparation || needsCriticalTownServices) &&
 					 !townVisitRecentlyCompleted))
 				return false;
@@ -1808,10 +1902,13 @@ namespace
 			// gate. So it stood on the arrival point with "going to town for
 			// supplies" over its head until the twenty-minute visit timer ran
 			// out. Two of them were photographed doing exactly that.
+			// The weapon is what everybody else came for; the M3 dropper came
+			// for the ones it will sell (see IsPlayerBotM3DropperOnFarm).
+			const bool weaponFound = !IsPlayerBotM3DropperOnFarm(ch) &&
+					HasPlayerBotSpecialLevel30Weapon(ch, true);
 			if (!visitExpired && !state.bVisitingShop &&
 					!needsCriticalTownServices && !needsM1OnlyServices &&
-					!scheduledRemoteRefine &&
-					!HasPlayerBotSpecialLevel30Weapon(ch, true))
+					!scheduledRemoteRefine && !weaponFound)
 				return false;
 
 			// The walk does not own the goal - see the desert crossing above. This
@@ -1839,7 +1936,14 @@ namespace
 			if (state.dwFrontierEnteredTime == 0)
 				state.dwFrontierEnteredTime = dwNow;
 			const DWORD stayed = dwNow - state.dwFrontierEnteredTime;
-			const bool visitExpired = stayed >=
+			// The battle-horse trial is a hundred kills of two archers on this one
+			// map; everything below that would send the bot home before the
+			// hundredth waits for it (2.0.66, 2.0.67).
+			const bool onBattleTrialHere = mapIndex == PLAYERBOT_MAP_DESERT &&
+					IsPlayerBotOnBattleHorseTrial(ch);
+			// The personality's visit clock ended a trial two-thirds done
+			// ("frontier_visit_complete" after 41 minutes, m2zip 17 September).
+			const bool visitExpired = !onBattleTrialHere && stayed >=
 					GetPlayerBotFrontierVisitTime(state.bPersonality);
 			// Two minutes of actually playing here before anything but a real
 			// emergency may send the bot home again.
@@ -1854,9 +1958,25 @@ namespace
 			// A blocking need still wins immediately - a bot with no weapon left
 			// cannot wait out a timer. Everything else waits until the bot has
 			// been here long enough for the trip to have been worth making.
-			const bool blocked = BlocksPlayerBotTravel(ch);
+			// A trial bot is blocked by what stops the fight - no weapon, no
+			// armour, no potions, no arrows - and not by the bag with no free
+			// three-cell column that stops a pickup: an assassin of fifty-two
+			// with a full belt and sixteen free cells came home from the desert
+			// five times in forty minutes for that column, 97 to 426 s a stay
+			// (GumbASSx, m2zip 17 September), and the town visit could not make
+			// one either.
+			const bool blocked = onBattleTrialHere
+					? (ch->IsItemLoaded() &&
+						(ch->GetWear(WEAR_WEAPON) == NULL || ch->GetWear(WEAR_BODY) == NULL ||
+						 NeedsPlayerBotEmergencyPotions(ch) || NeedsPlayerBotArrows(ch)))
+					: BlocksPlayerBotTravel(ch);
+			// The Biologist hand-in a trial bot carries sent it home for the
+			// hand-in every few minutes: 75 desert stays of 344 s on average in
+			// an hour, 67 under ten minutes, the trial's kills 25 at a time half
+			// an hour apart, and 102 of 120 trial bots at 0/100 in the villages
+			// (m2zip, 17 September). The hand-in waits for the horse.
 			const bool needsTown = blocked ||
-					(settledIn && (needsM1OnlyServices || needsEssentialWeaponSupply));
+					(settledIn && ((needsM1OnlyServices && !onBattleTrialHere) || needsEssentialWeaponSupply));
 			// The Monkey Dungeons are reached from Bokjung, and nothing here ever
 			// went back for one: the roll that sends a bot for a medal was only
 			// read in town, and a bot past forty lives out here - which is how

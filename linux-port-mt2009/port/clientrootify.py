@@ -14,6 +14,7 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
                     button - there is no Facebook - opens the buycoffee page;
                     also drops the gatekeeper ping to the original commercial
                     site's server on every launch, whose result nothing reads;
+                    a channel past the first is listed only while it answers;
   * uiitemshop.py, itemshop_subscriptionwindow.py - "Doladuj SM!" and the
                     subscription button open the buycoffee page, not mt2009.pl;
   * uisystem.py   - the system menu's support button opens our Discord.
@@ -22,15 +23,28 @@ Writes into client-root/ (beside serverinfo.py, which is hand-written):
   * game.py       - the "PlayerBotStatus" server command, handed to
                     playerbot_status_tail.py (hand-written, beside serverinfo.py);
                     Auto Lowy: the "AutoHuntTarget" and "AutoHuntLoot" commands, the K key and the
-                    hunt among the updateables (uiautohunt.py, hand-written).
-  * uiinventory.py - the auto-stack button queues its moves for
-                    autostackpump.py (hand-written) instead of sending them all
-                    in one frame, which the server's flood limit closed on.
+                    hunt among the updateables (uiautohunt.py, hand-written);
+                    the "InventoryArrangeResult" command (inventoryarrange.py);
+                    the ` key picks up every drop in range (pickupnearby.py).
+  * uiinventory.py - the auto-stack button is "Scal i uporzadkuj": one
+                    /inventory_arrange to the server, which pours the stacks
+                    and lays the four pages out (inventoryarrange.py,
+                    hand-written; playerbot_arrange.cpp on the server). The
+                    method the button used to call stays under another name
+                    and is never called.
   * offlineshopmanage.py - a click on an empty slot of the shop's edit grid
                     removes nothing instead of raising KeyError.
   * uigameoption.py, uiscript/gameoptiondialog.py - the "Tytuly botow" row of
                     the game options: a bot's personality title or the classic
                     alignment title (playerbot_status_tail.py keeps the choice).
+  * uiscript/inventorywindow.py - four page tabs instead of two; uiinventory.py
+                    already makes one tab per page but the horse page, reading
+                    player.INVENTORY_PAGE_COUNT from the exe.
+  * utils.py      - the requirement counts (a horse-bag slot, a special
+                    shop) read all four bag pages and the horse page.
+  * constinfo.py  - GAME_VERSION 1.1.0: the version the client sends before
+                    logging in, and the server's server_version refuses the
+                    two-page client below it (m2-render-config).
 
 Exact-string edits on the stock CP1250/CRLF files, byte for byte otherwise.
 Idempotent; re-run after a new client package.
@@ -177,29 +191,220 @@ EDITS = {
          b'\t\t\tself.RegisterUpdatable(self.playerbotTitleKeeper)\r\n'
          b'\r\n'
          b'\tdef __PlayerbotAdmin_AchievementsEnd(self):\r\n'),
+        # "Scal i uporzadkuj" answers "InventoryArrangeResult <code> <moved>
+        # <merged> <units>" (playerbot_arrange.cpp) and inventoryarrange.py says
+        # what happened. The entry follows the fishing block and the handler
+        # precedes the ItemShop's: text no other edit here reads or writes.
+        (b'\t\t\t"FishingGameEvent": self.FishingGameEvent,\r\n',
+         b'\t\t\t"FishingGameEvent": self.FishingGameEvent,\r\n'
+         b'\r\n'
+         b'\t\t\t# "Scal i uporzadkuj" (inventoryarrange.py)\r\n'
+         b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n'),
+        (b'\tdef __InGameShop_Show(self, url):\r\n',
+         b'\tdef __InventoryArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):\r\n'
+         b'\t\timport inventoryarrange\r\n'
+         b'\t\tinventoryarrange.OnResult(code, moved, merged, units)\r\n'
+         b'\r\n'
+         b'\tdef __InGameShop_Show(self, url):\r\n'),
+        # "Podnies caly drop" (vanderro, 18 September; Tieru: "jedno Z niech
+        # bedzie klasycznie, a ` najwyzej jako caly drop"): ` asks the server
+        # for every drop in range (pickupnearby.py, hand-written;
+        # CHARACTER::PickupNearbyItems), Z keeps the single pickup. The key's
+        # line is replaced whole, and the method goes after PickUpItem, whose
+        # own lines are the anchor and stay as they are.
+        (b'\t\tonPressKeyDict[app.DIK_GRAVE]\t\t= lambda : self.PickUpItem()\r\n',
+         b'\t\tonPressKeyDict[app.DIK_GRAVE]\t\t= lambda : self.PickUpNearbyItems()\r\n'),
+        (b'\tdef PickUpItem(self):\r\n'
+         b'\t\tplayer.PickCloseItem()\r\n'
+         b'\r\n',
+         b'\tdef PickUpItem(self):\r\n'
+         b'\t\tplayer.PickCloseItem()\r\n'
+         b'\r\n'
+         b'\tdef PickUpNearbyItems(self):\r\n'
+         b'\t\timport pickupnearby\r\n'
+         b'\t\tpickupnearby.Request()\r\n'
+         b'\r\n'),
+        # The safebox's answers (safeboxtransfer.py): its "Scal i uporzadkuj",
+        # and a stack moved by count. The entry follows the bag's own, which
+        # ends its line; the handlers go after the Top1 badge's, whose end no
+        # other edit reads - placed after the bag's handler they would have
+        # split the text by which the edit above knows it has been applied, and
+        # a second run would have added that handler again.
+        (b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n',
+         b'\t\t\t"InventoryArrangeResult"\t: self.__InventoryArrangeResult,\r\n'
+         b'\t\t\t"SafeboxArrangeResult"\t: self.__SafeboxArrangeResult,\r\n'
+         b'\t\t\t"SafeboxTransferResult"\t: self.__SafeboxTransferResult,\r\n'),
+        (b'\t\t\tself.interface.wndTop1Badge.Refresh(vid)\r\n'
+         b'\r\n',
+         b'\t\t\tself.interface.wndTop1Badge.Refresh(vid)\r\n'
+         b'\r\n'
+         b'\tdef __SafeboxArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):\r\n'
+         b'\t\timport safeboxtransfer\r\n'
+         b'\t\tsafeboxtransfer.OnArrangeResult(code, moved, merged, units)\r\n'
+         b'\r\n'
+         b'\tdef __SafeboxTransferResult(self, op="0", code="0", units="0", *rest):\r\n'
+         b'\t\timport safeboxtransfer\r\n'
+         b'\t\tsafeboxtransfer.OnTransferResult(op, code, units)\r\n'
+         b'\r\n'),
     ],
-    # The inventory's auto-stack button sent a move for every pair of stacks of
-    # one item in a single frame - 300 moves for 25 stacks - and 300 packets in
-    # a second is the server's flood limit (CInputMain::Analyze logs
-    # FLOOD_HEADER_13 and closes the connection): "loga postac do ekranu
-    # logowania" (l0st3k, 15 September). The same moves now leave a few at a
-    # time through autostackpump.py (hand-written beside this file).
+    # "Scal i uporzadkuj" (Tieru, 18 September; Codex's audit the same day):
+    # the inventory's auto-stack button asks the server once
+    # (inventoryarrange.py) instead of sending a move for every pair of stacks.
+    # Those moves were three hundred in a frame - the flood limit closed the
+    # connection on them ("loga postac do ekranu logowania", l0st3k, 15
+    # September) - and spread out a few at a time (autostackpump.py) they
+    # could still only pour stacks, never lay a page out. Only the method's
+    # first line is the anchor, and the old body stays under another name,
+    # never called: the same edit applies to the stock root, to a published
+    # root that carries the pump, and to one that carries this.
     'uiinventory.py': [
-        (b'\tdef __OnAutoStackButton(self):\r\n'
-         b'\t\tTOTAL_SLOTS = player.INVENTORY_MAX_NUM\r\n',
+        (b'\tdef __OnAutoStackButton(self):\r\n',
          b'\tdef __OnAutoStackButton(self):\r\n'
-         b'\t\timport autostackpump\r\n'
-         b'\t\tmoves = []\r\n'
-         b'\t\tTOTAL_SLOTS = player.INVENTORY_MAX_NUM\r\n'),
-        (b'\t\t\t\t\tif destItemVnum == srcItemVnum:\r\n'
-         b'\t\t\t\t\t\tself.__SendMoveItemPacket(destSlot, sourceSlot, 0)\r\n'
+         b'\t\timport inventoryarrange\r\n'
+         b'\t\tinventoryarrange.Request()\r\n'
          b'\r\n'
-         b'\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.AUTOSTACK_INVENTORY)\r\n',
-         b'\t\t\t\t\tif destItemVnum == srcItemVnum:\r\n'
-         b'\t\t\t\t\t\tmoves.append((destSlot, sourceSlot))\r\n'
+         b'\tdef __OnAutoStackButtonByMoves(self):\r\n'),
+        # A stack from the safebox dropped on the bag (blasty, 19 September;
+        # safeboxtransfer.py): a part of it, or onto the same item, goes to the
+        # server as a command with the count; a whole stack onto a free cell
+        # keeps the packet. Dropped on a stack in the bag it used to do nothing.
+        (b'\t\t\t\telse:\r\n'
+         b'\t\t\t\t\tnet.SendSafeboxCheckoutPacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\telse:\r\n'
+         b'\t\t\t\t\timport safeboxtransfer\r\n'
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoBag(attachedSlotPos, selectedSlotPos, attachedItemCount, False)\r\n'),
+        (b'\t\t\t\tself.__DropSrcItemToDestItemInInventory(attachedItemVID, attachedSlotPos, itemSlotIndex)\r\n'
          b'\r\n'
-         b'\t\tautostackpump.Queue(moves)\r\n'
-         b'\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.AUTOSTACK_INVENTORY)\r\n'),
+         b'\t\t\tmouseModule.mouseController.DeattachObject()\r\n',
+         b'\t\t\t\tself.__DropSrcItemToDestItemInInventory(attachedItemVID, attachedSlotPos, itemSlotIndex)\r\n'
+         b'\r\n'
+         b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType and player.ITEM_MONEY != attachedItemVID:\r\n'
+         b'\t\t\t\timport safeboxtransfer\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropIntoBag(attachedSlotPos, itemSlotIndex, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'
+         b'\r\n'
+         b'\t\t\tmouseModule.mouseController.DeattachObject()\r\n'),
+    ],
+    # The safebox's side (blasty's proposal, 19 September; Tieru: "Jasne"):
+    # "Scal i uporzadkuj" in the title bar, Shift and a click to split one of its
+    # stacks, and a stack dropped on the same item poured into it - bag into
+    # safebox, safebox into bag and inside the safebox (safeboxtransfer.py,
+    # hand-written; playerbot_arrange.cpp on the server). The drop onto a taken
+    # place from the bag was a commented-out packet; it is a command with the
+    # count now, and the packets stay for whole stacks onto free places.
+    'uisafebox.py': [
+        (b'import item\r\n'
+         b'\r\n'
+         b'EVENT_QUICK_REMOVE_SAFEBOX_ITEM',
+         b'import item\r\n'
+         b'import safeboxtransfer\r\n'
+         b'\r\n'
+         b'EVENT_QUICK_REMOVE_SAFEBOX_ITEM'),
+        (b'\t\tif self.dlgPickMoney:\r\n'
+         b'\t\t\tself.dlgPickMoney.Destroy()\r\n'
+         b'\t\t\tself.dlgPickMoney = None\r\n',
+         b'\t\tif self.dlgPickMoney:\r\n'
+         b'\t\t\tself.dlgPickMoney.Destroy()\r\n'
+         b'\t\t\tself.dlgPickMoney = None\r\n'
+         b'\t\tif getattr(self, "dlgPickItem", None):\r\n'
+         b'\t\t\tself.dlgPickItem.Destroy()\r\n'
+         b'\t\t\tself.dlgPickItem = None\r\n'),
+        (b'\t\tself.GetChild("ChangePasswordButton").SetEvent(ui.__mem_func__(self.OnChangePassword))\r\n'
+         b'\t\tself.GetChild("ExitButton").SetEvent(ui.__mem_func__(self.Close))\r\n',
+         b'\t\tself.GetChild("ChangePasswordButton").SetEvent(ui.__mem_func__(self.OnChangePassword))\r\n'
+         b'\t\tself.GetChild("ExitButton").SetEvent(ui.__mem_func__(self.Close))\r\n'
+         b'\t\t# "Scal i uporzadkuj" (uiscript/safeboxwindow.py) and the count a\r\n'
+         b'\t\t# stack is split with (safeboxtransfer.py).\r\n'
+         b'\t\ttry:\r\n'
+         b'\t\t\tself.GetChild("ArrangeButton").SetEvent(ui.__mem_func__(self.__OnArrangeButton))\r\n'
+         b'\t\texcept KeyError:\r\n'
+         b'\t\t\tpass\r\n'
+         b'\t\tself.dlgPickItem = safeboxtransfer.MakePickDialog(ui.__mem_func__(self.__OnPickItem))\r\n'),
+        (b'\t\tself.dlgPickMoney.Close()\r\n'
+         b'\t\tself.dlgChangePassword.Close()\r\n'
+         b'\t\tself.Hide()\r\n',
+         b'\t\tself.dlgPickMoney.Close()\r\n'
+         b'\t\tself.dlgChangePassword.Close()\r\n'
+         b'\t\tif getattr(self, "dlgPickItem", None):\r\n'
+         b'\t\t\tself.dlgPickItem.Close()\r\n'
+         b'\t\tself.Hide()\r\n'),
+        (b'\t\t\tif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\r\n'
+         b'\t\t\t\tnet.SendSafeboxItemMovePacket(attachedSlotPos, selectedSlotPos)\r\n'
+         b'\t\t\t\t#snd.PlaySound("sound/ui/drop.wav")\r\n',
+         b'\t\t\tif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropInSafebox(attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), False)\r\n'
+         b'\t\t\t\t#snd.PlaySound("sound/ui/drop.wav")\r\n'),
+        (b'\t\t\t\t\tself.AddItemToSafebox(attachedInvenType, attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoSafebox(attachedInvenType, attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), False)\r\n'),
+        (b'\t\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\t\t#net.SendSafeboxCheckinPacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\t\tsafeboxtransfer.DropIntoSafebox(player.INVENTORY, attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'),
+        (b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\tnet.SendSafeboxItemMovePacket(attachedSlotPos, selectedSlotPos)\r\n',
+         b'\t\t\telif player.SLOT_TYPE_SAFEBOX == attachedSlotType:\r\n'
+         b'\t\t\t\tattachedSlotPos = mouseModule.mouseController.GetAttachedSlotNumber()\r\n'
+         b'\t\t\t\tsafeboxtransfer.DropInSafebox(attachedSlotPos, selectedSlotPos, mouseModule.mouseController.GetAttachedItemCount(), True)\r\n'),
+        (b'\t\t\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.SHOP_BUY_INFO)\r\n'
+         b'\r\n'
+         b'\t\t\telse:\r\n'
+         b'\t\t\t\tselectedItemID = safebox.GetItemID(selectedSlotPos)\r\n',
+         b'\t\t\t\tchat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.SHOP_BUY_INFO)\r\n'
+         b'\r\n'
+         b'\t\t\telif app.IsPressed(app.DIK_LSHIFT) and safebox.GetItemCount(selectedSlotPos) > 1:\r\n'
+         b'\t\t\t\tself.__OpenPickItem(selectedSlotPos)\r\n'
+         b'\r\n'
+         b'\t\t\telse:\r\n'
+         b'\t\t\t\tselectedItemID = safebox.GetItemID(selectedSlotPos)\r\n'),
+        (b'\tdef RemoveItemFromSafebox(self, slotPos):\r\n'
+         b'\t\tpass\r\n',
+         b'\tdef RemoveItemFromSafebox(self, slotPos):\r\n'
+         b'\t\tpass\r\n'
+         b'\r\n'
+         b'\tdef __OnArrangeButton(self):\r\n'
+         b'\t\tsafeboxtransfer.RequestArrange()\r\n'
+         b'\r\n'
+         b'\tdef __OpenPickItem(self, slotPos):\r\n'
+         b'\t\tself.dlgPickItem.SetTitleName(localeInfo.PICK_ITEM_TITLE)\r\n'
+         b'\t\tself.dlgPickItem.Open(safebox.GetItemCount(slotPos))\r\n'
+         b'\t\tself.dlgPickItem.itemGlobalSlotIndex = slotPos\r\n'
+         b'\r\n'
+         b'\tdef __OnPickItem(self, count, *rest):\r\n'
+         b'\t\tslotPos = self.dlgPickItem.itemGlobalSlotIndex\r\n'
+         b'\t\tmouseModule.mouseController.AttachObject(self, player.SLOT_TYPE_SAFEBOX, slotPos, safebox.GetItemID(slotPos), count)\r\n'
+         b'\t\tsnd.PlaySound("sound/ui/pick.wav")\r\n'),
+    ],
+    # The safebox's "Scal i uporzadkuj": the bag's button and images, in the
+    # title bar where the bag has its own.
+    'uiscript/safeboxwindow.py': [
+        (b'import uiScriptLocale\r\n'
+         b'\r\n'
+         b'window = {\r\n',
+         b'import uiScriptLocale\r\n'
+         b'import flamewindPath\r\n'
+         b'\r\n'
+         b'window = {\r\n'),
+        (b'\t\t\t\t\t\t{ "name":"TitleName", "type":"text", "x":77, "y":3, "text":uiScriptLocale.SAFE_TITLE, "text_horizontal_align":"center" },\r\n'
+         b'\t\t\t\t\t),\r\n',
+         b'\t\t\t\t\t\t{ "name":"TitleName", "type":"text", "x":77, "y":3, "text":uiScriptLocale.SAFE_TITLE, "text_horizontal_align":"center" },\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t\t{\r\n'
+         b'\t\t\t\t\t\t\t"name" : "ArrangeButton",\r\n'
+         b'\t\t\t\t\t\t\t"type" : "button",\r\n'
+         b'\t\t\t\t\t\t\t"x" : 42,\r\n'
+         b'\t\t\t\t\t\t\t"y" : -1,\r\n'
+         b'\t\t\t\t\t\t\t"horizontal_align": "right",\r\n'
+         b'\t\t\t\t\t\t\t"vertical_align": "center",\r\n'
+         b'\t\t\t\t\t\t\t"default_image" : flamewindPath.GetInventory("autostack_01"),\r\n'
+         b'\t\t\t\t\t\t\t"over_image" : flamewindPath.GetInventory("autostack_02"),\r\n'
+         b'\t\t\t\t\t\t\t"down_image" : flamewindPath.GetInventory("autostack_03"),\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_text" : "Scal i uporz\\xb9dkuj",\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_y": -19,\r\n'
+         b'\t\t\t\t\t\t\t"tooltip_x": -30,\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'),
     ],
     # The offline shop's edit grid removes an item on a left click and never
     # asked whether the slot held one: a click on an empty slot was a KeyError
@@ -213,12 +418,47 @@ EDITS = {
          b'\t\tif not itemData:\r\n'
          b'\t\t\treturn\r\n'
          b'\t\tikashop.SendRemoveItem(itemData["id"])\r\n'),
+        # And "edit the price of similar items" (ctrl + right click) sent one
+        # packet per line in a single frame, while the server takes one shop
+        # action per 200 ms: the first line was repriced and every other one
+        # answered "wait a moment" (uxietoszef, then Nagash with a screenshot,
+        # 20 September). They leave through shoppricepump.py now, a quarter of
+        # a second apart - the same shape as the inventory's auto-stack.
+        (b'\t\t\t\tfor i in item_list:\r\n'
+         b'\t\t\t\t\tself.__SendEditItemPricePacket(i, inputPrice)\r\n',
+         b'\t\t\t\tshoppricepump.Queue([(i, inputPrice) for i in item_list])\r\n'),
+        (b'import ikashop\r\n', b'import ikashop\r\nimport shoppricepump\r\n'),
     ],
     'uisystem.py': [
         (b'\t\tutils.open_url("https://mt2009.pl/Identity/Account/Manage/Support")\r\n',
          b'\t\tutils.open_url("https://discord.gg/pt5tvnrN6")\r\n'),
     ],
     'intrologin.py': [
+        # The second channel (serverinfo.py lists two) is the server's to
+        # switch on (M2_PLAYERBOT_CH2): a channel that does not answer is not
+        # listed, CH1 always is, and a selection left on a hidden channel
+        # falls back to CH1. The list is keyed by line, and CH1 is line 0.
+        (b'\t\tfor channelID, channelDataDict in channelDict.items():\r\n'
+         b'\t\t\tchannelName = channelDataDict["name"]\r\n'
+         b'\t\t\tchannelState = channelDataDict["state"]\r\n'
+         b'\t\t\tself.channelList.InsertItem(channelID, "%s %s" % (channelName, channelState))\r\n'
+         b'\r\n'
+         b'\t\tself.channelList.SelectItem(bakChannelID)\r\n',
+         b'\t\tshown = []\r\n'
+         b'\t\tfor channelID, channelDataDict in channelDict.items():\r\n'
+         b'\t\t\tchannelName = channelDataDict["name"]\r\n'
+         b'\t\t\tchannelState = channelDataDict["state"]\r\n'
+         b'\t\t\t# The second channel runs only when the server switches it on\r\n'
+         b'\t\t\t# (M2_PLAYERBOT_CH2): listed once it answers, never as a dead line.\r\n'
+         b'\t\t\t# CH1 is always the first line, so a line is still its channel.\r\n'
+         b'\t\t\tif channelID > 0 and channelState in (serverInfo.STATE_NONE, serverInfo.STATE_DICT[0]):\r\n'
+         b'\t\t\t\tcontinue\r\n'
+         b'\t\t\tself.channelList.InsertItem(channelID, "%s %s" % (channelName, channelState))\r\n'
+         b'\t\t\tshown.append(channelID)\r\n'
+         b'\r\n'
+         b'\t\tif bakChannelID not in shown:\r\n'
+         b'\t\t\tbakChannelID = 0\r\n'
+         b'\t\tself.channelList.SelectItem(bakChannelID)\r\n'),
         (b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://mt2009.pl/")\r\n',
          b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/Debaba13/metin2-playerbots")\r\n'),
         (b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://www.facebook.com/Metin2009PL")\r\n',
@@ -281,8 +521,10 @@ EDITS = {
          b'\t\tsystemSetting.SetShowFloatingText(state)\r\n'
          b'\t\tself.RefreshFloatingTextButtons()\r\n'
          b'\r\n'
-         b'\t# A bot\'s personality title or the classic alignment title (NerrVoVy):\r\n'
-         b'\t# playerbot_status_tail.py keeps the choice in playerbot_titles.cfg.\r\n'
+         b'\t# Whether a bot\'s personality shows in its own row over its head\r\n'
+         b'\t# (NerrVoVy, 15 September; that row moved off the ranga/title spot\r\n'
+         b'\t# 2026-09-16 - see playerbot_status_tail.py). playerbot_titles.cfg keeps\r\n'
+         b'\t# the choice; the classic alignment title (ranga) is unaffected either way.\r\n'
          b'\tdef __OnClickBotTitleButton(self, enabled):\r\n'
          b'\t\timport playerbot_status_tail\r\n'
          b'\t\tplayerbot_status_tail.SetTitlesEnabled(enabled)\r\n'
@@ -321,9 +563,10 @@ EDITS = {
          b'\t\t\t\t\t"down_image" : ROOT_PATH + "middle_button_03.sub",\r\n'
          b'\t\t\t\t},\r\n'
          b'\r\n'
-         b'\t\t\t\t## BOT TITLES (playerbot_status_tail.py): the personality or the\r\n'
-         b'\t\t\t\t## classic alignment title. The strings are CP1250 escapes so the\r\n'
-         b'\t\t\t\t## file stays ASCII like the rest of the root.\r\n'
+         b'\t\t\t\t## BOT PERSONALITIES (playerbot_status_tail.py): shown in their own\r\n'
+         b'\t\t\t\t## row over each bot\'s head, independent of the classic alignment\r\n'
+         b'\t\t\t\t## title (ranga). The strings are CP1250 escapes so the file stays\r\n'
+         b'\t\t\t\t## ASCII like the rest of the root.\r\n'
          b'\t\t\t\t{\r\n'
          b'\t\t\t\t\t"name" : "bot_title_text",\r\n'
          b'\t\t\t\t\t"type" : "text",\r\n'
@@ -353,13 +596,118 @@ EDITS = {
          b'\t\t\t\t\t"x" : LINE_DATA_X+MIDDLE_BUTTON_WIDTH,\r\n'
          b'\t\t\t\t\t"y" : 382,\r\n'
          b'\r\n'
-         b'\t\t\t\t\t"text" : "Klasyczne",\r\n'
+         b'\t\t\t\t\t"text" : "Wy\xb3\xb9czone",\r\n'
          b'\r\n'
          b'\t\t\t\t\t"default_image" : ROOT_PATH + "middle_button_01.sub",\r\n'
          b'\t\t\t\t\t"over_image" : ROOT_PATH + "middle_button_02.sub",\r\n'
          b'\t\t\t\t\t"down_image" : ROOT_PATH + "middle_button_03.sub",\r\n'
          b'\t\t\t\t},\r\n'
          b'\t\t\t],\r\n'),
+    ],
+    # Four bag pages (playerbotify.py and clientify.py, four pages): the two
+    # large tabs become four small ones, 32 pixels each, spread under the
+    # 160-pixel grid that starts at x 8. The locale has tooltips for the first
+    # two pages only, and a script under the loader's sandbox is no place for
+    # getattr, so the new ones say it themselves.
+    'uiscript/inventorywindow.py': [
+        (b'\t\t\t\t\t"x" : 10,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_large_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_large_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_large_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_1,\r\n',
+         b'\t\t\t\t\t"x" : 12,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_1,\r\n'),
+        (b'\t\t\t\t\t"x" : 10 + 78,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_large_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_large_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_large_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_2,\r\n',
+         b'\t\t\t\t\t"x" : 52,\r\n'
+         b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+         b'\r\n'
+         b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+         b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+         b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+         b'\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_PAGE_BUTTON_TOOLTIP_2,\r\n'),
+        (b'\t\t\t\t\t\t\t"text" : "II",\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'
+         b'\t\t\t\t},\r\n'
+         b'\r\n'
+         b'\t\t\t\t# {\r\n'
+         b'\t\t\t\t# \t"name" : "Inventory_Tab_03",\r\n',
+         b'\t\t\t\t\t\t\t"text" : "II",\r\n'
+         b'\t\t\t\t\t\t},\r\n'
+         b'\t\t\t\t\t),\r\n'
+         b'\t\t\t\t},\r\n'
+         + b''.join(
+             b'\t\t\t\t{\r\n'
+             b'\t\t\t\t\t"name" : "Inventory_Tab_%s",\r\n'
+             b'\t\t\t\t\t"type" : "radio_button",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"x" : %s,\r\n'
+             b'\t\t\t\t\t"y" : 33 + 191,\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"default_image" : "d:/ymir work/ui/game/windows/tab_button_small_01.sub",\r\n'
+             b'\t\t\t\t\t"over_image" : "d:/ymir work/ui/game/windows/tab_button_small_02.sub",\r\n'
+             b'\t\t\t\t\t"down_image" : "d:/ymir work/ui/game/windows/tab_button_small_03.sub",\r\n'
+             b'\t\t\t\t\t"tooltip_text" : "%s. Ekwipunek",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t"children" :\r\n'
+             b'\t\t\t\t\t(\r\n'
+             b'\t\t\t\t\t\t{\r\n'
+             b'\t\t\t\t\t\t\t"name" : "Inventory_Tab_%s_Print",\r\n'
+             b'\t\t\t\t\t\t\t"type" : "text",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"x" : 0,\r\n'
+             b'\t\t\t\t\t\t\t"y" : 0,\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"all_align" : "center",\r\n'
+             b'\r\n'
+             b'\t\t\t\t\t\t\t"text" : "%s",\r\n'
+             b'\t\t\t\t\t\t},\r\n'
+             b'\t\t\t\t\t),\r\n'
+             b'\t\t\t\t},\r\n' % (num, x, page, num, label)
+             for num, x, page, label in ((b'03', b'92', b'3', b'III'), (b'04', b'132', b'4', b'IV')))
+         + b'\r\n'
+         b'\t\t\t\t# {\r\n'
+         b'\t\t\t\t# \t"name" : "Inventory_Tab_03",\r\n'),
+        # The auto-stack button's tooltip: it pours and orders now. CP1250 as
+        # an escape, like the options' row, so the script stays ASCII.
+        (b'\t\t\t\t\t\t\t"tooltip_text" : uiScriptLocale.INVENTORY_AUTOSTACK,\r\n',
+         b'\t\t\t\t\t\t\t"tooltip_text" : "Scal i uporz\\xb9dkuj",\r\n'),
+    ],
+    # The requirement counts under a locked horse-bag slot and a special
+    # shop's price ("(0 na 60)") read two bag pages and, with the horse out,
+    # the third - the horse page when the bag had two. With four pages that
+    # left pages III and IV and the horse bag uncounted (blasty, 18
+    # September). The server's own check (CountSpecifyItem) was right all
+    # along; the window only said otherwise.
+    'utils.py': [
+        (b'\tpageCount = 2\r\n'
+         b'\tif constInfo.IS_HORSE_SUMMONED:\r\n'
+         b'\t\tpageCount += 1\r\n'
+         b'\r\n'
+         b'\tfor i in xrange(player.INVENTORY_PAGE_SIZE * pageCount):\r\n',
+         b'\t# Every bag page, and the horse page while the horse is out.\r\n'
+         b'\tslotCount = player.INVENTORY_DEFAULT_MAX_NUM\r\n'
+         b'\tif constInfo.IS_HORSE_SUMMONED:\r\n'
+         b'\t\tslotCount = player.INVENTORY_MAX_NUM\r\n'
+         b'\r\n'
+         b'\tfor i in xrange(slotCount):\r\n'),
+    ],
+    'constinfo.py': [
+        (b'\t"major" : 0,\r\n\t"minor" : 15,\r\n',
+         b'\t"major" : 1,\r\n\t"minor" : 0,\r\n'),
     ],
 }
 
@@ -375,9 +723,13 @@ def main():
             raise SystemExit('clientrootify: no %s in %s' % (name, args.root))
         data = io.open(src, 'rb').read()
         for old, new in edits:
+            # Already ours, asked first: an edit that inserts after its anchor
+            # keeps the anchor in its result, and asking for the anchor first
+            # put the options' title methods into uigameoption.py twice each
+            # time a published root was the base.
+            if data.count(new) == 1:
+                continue
             if data.count(old) != 1:
-                if data.count(new) == 1:
-                    continue  # already ours (re-run on our own output)
                 raise SystemExit('clientrootify: %s: expected exactly one %r, found %d' % (name, old[:50], data.count(old)))
             data = data.replace(old, new)
         out = os.path.join(OUT, name)

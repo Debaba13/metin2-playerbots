@@ -39,6 +39,29 @@ namespace
 		return std::max(0, ch->GetQuestFlag(PLAYERBOT_BATTLE_HORSE_KILLS_FLAG));
 	}
 
+	// playerbot_travel.h; the trial is asked about long before the travel is
+	// included.
+	bool IsPlayerBotMapHostedHere(long mapIndex);
+
+	// A trial is open only on the core that hosts its map. A bot cannot
+	// cross to a map its core does not host, and on a split world the
+	// desert and the Demon Tower are on one core each: 58 Shinsoo and 42
+	// Jinno bots stood in their second villages reading "Zdobywam konia
+	// bojowego na pustyni (0/100)" (seban latino, 16 September) - the
+	// frontier draw answered the desert and was filtered to nothing, and
+	// since 2.0.61 the Biologist yielded to the trial as well, so those
+	// bots had neither. The answer is kept per map because the target
+	// collector asks it per candidate monster; the maps are loaded before
+	// the first bot ticks.
+	bool IsPlayerBotHorseTrialOpenHere(long trialMap)
+	{
+		static std::map<long, bool> s_mapTrialHosted;
+		std::map<long, bool>::iterator it = s_mapTrialHosted.find(trialMap);
+		if (it == s_mapTrialHosted.end())
+			it = s_mapTrialHosted.insert(std::make_pair(trialMap, IsPlayerBotMapHostedHere(trialMap))).first;
+		return it->second;
+	}
+
 	// Everything the stable keeper checks before it will talk about a battle
 	// horse, minus the two items this world cannot supply.
 	bool IsPlayerBotBattleHorseCandidate(LPCHARACTER ch)
@@ -50,10 +73,26 @@ namespace
 				ch->GetHorseHealth() > 0;
 	}
 
+	// A dropper is a drop character and takes no trial - the operator's rule of
+	// 15 September, which the Biologist and the guild already follow. The two
+	// "on trial" predicates below did not ask, so a Metin dropper of thirty-six
+	// with a horse at ten was on the battle trial as far as every reader was
+	// concerned: the frontier draw pointed it at the desert, and its status read
+	// "Zdobywam konia bojowego na pustyni (0/100)" from the guild map it farms
+	// (GG1249125 and MORDEGAPOTEGA, Urtopy, 18 September). The stable keeper's
+	// side (IsPlayerBotBattleHorseEarned) is left alone: a horse already earned
+	// is still handed over.
+	bool IsPlayerBotTrialExempt(LPCHARACTER ch)
+	{
+		return ch && IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID()));
+	}
+
 	// Out in the desert working on it.
 	bool IsPlayerBotOnBattleHorseTrial(LPCHARACTER ch)
 	{
-		return IsPlayerBotBattleHorseCandidate(ch) &&
+		return IsPlayerBotHorseTrialOpenHere(PLAYERBOT_MAP_DESERT) &&
+				IsPlayerBotBattleHorseCandidate(ch) &&
+				!IsPlayerBotTrialExempt(ch) &&
 				GetPlayerBotBattleHorseKills(ch) < PLAYERBOT_BATTLE_HORSE_KILLS;
 	}
 
@@ -95,7 +134,9 @@ namespace
 
 	bool IsPlayerBotOnMilitaryHorseTrial(LPCHARACTER ch)
 	{
-		return IsPlayerBotMilitaryHorseCandidate(ch) &&
+		return IsPlayerBotHorseTrialOpenHere(PLAYERBOT_MAP_DEMON_TOWER) &&
+				IsPlayerBotMilitaryHorseCandidate(ch) &&
+				!IsPlayerBotTrialExempt(ch) &&
 				GetPlayerBotMilitaryHorseKills(ch) < PLAYERBOT_MILITARY_HORSE_KILLS;
 	}
 
@@ -114,6 +155,10 @@ namespace
 		return false;
 	}
 
+	// The Biologist's share of a kill (playerbot_missions.h, later in the
+	// include order).
+	void NotePlayerBotBiologistCarrierKill(LPCHARACTER ch, LPCHARACTER target);
+
 	// Called wherever a bot has just swung at something. The engine has no hook
 	// that says "you killed this", so the kill is read off the target the tick
 	// after the blow: still the bot's pointer, now dead. The VID is remembered
@@ -127,6 +172,8 @@ namespace
 		if (state.dwLastKillCreditedVID == vid)
 			return;
 		state.dwLastKillCreditedVID = vid;
+		// Under the same guard, so a corpse is one roll.
+		NotePlayerBotBiologistCarrierKill(ch, target);
 
 		// The military trial is credited from the same place and under the same
 		// VID guard. A second hook of its own would have had to share

@@ -197,6 +197,20 @@ db -e "ALTER TABLE account.account ADD COLUMN IF NOT EXISTS jackpot INT NOT NULL
 # of world.item_proto here (PROTO_FROM_DB = 1), which is why this sticks;
 # idempotent, and it touches only rods still carrying the old fifty.
 db -e "UPDATE world.item_proto SET limitvalue0 = 30 WHERE type = 13 AND limittype0 = 1 AND limitvalue0 = 50;"
+# And the pass the rod needs. Karta Wedkarska (27620), which CHARACTER::fishing()
+# wants worn, is sold in one place, the Fisherman's special shop (9009, opened
+# by fishing_pass_shop.quest), and the package asks level fifty for it - so a
+# player of thirty to forty-nine could wear the rod the line above allows and
+# never fish (Tieru, 17 September). The db core reads shop_special_proto at
+# boot, so this is live on the next start; idempotent, and only a fifty moves.
+db -e "UPDATE world.shop_special_proto SET limitvalue0 = 30 WHERE item_vnum = 27620 AND limittype0 = 'LEVEL' AND limitvalue0 = 50; UPDATE world.shop_special_proto SET limitvalue1 = 30 WHERE item_vnum = 27620 AND limittype1 = 'LEVEL' AND limitvalue1 = 50;"
+# Pierscien Teleportacji (70058) carries ITEM_FLAG_APPLICABLE (8192) in this
+# package, and under ENABLE_QUEST_DND_EVENT that flag makes UseItemEx treat an
+# ITEM_QUEST as "drop it onto another item": a plain use finds no target cell
+# and returns before the quest is asked, so teleport_ring.quest never ran for
+# a player ("caly czas nie dziala pierscien teleportu", Tieru, 16 September).
+# The ring is dragged onto nothing; the flag comes off. Idempotent.
+db -e "UPDATE world.item_proto SET flag = flag & ~8192 WHERE vnum = 70058 AND (flag & 8192) <> 0;"
 # Maska Sabaha left the world with the Hwang curse (playerbotify
 # apply_hwang_curse_removed, the share step of the game Dockerfile): the shop
 # that sold one sells it no more. The db core reads the shops at boot, so this
@@ -233,6 +247,24 @@ fi
 # own shop is left where its owner put it. Before the game container starts,
 # because the db core reads the shops at boot.
 db -e "CREATE TABLE IF NOT EXISTS player.playerbot_migrations (name VARCHAR(64) NOT NULL PRIMARY KEY, done_at DATETIME NOT NULL) ENGINE=InnoDB;"
+# The bot guilds' tiers (playerbot_guild.h): a guild outlives every core
+# restart, so its tier and kingdom live here; the core reads the table once
+# and writes a row when it founds or adopts a guild.
+db -e "CREATE TABLE IF NOT EXISTS player.playerbot_guild (guild_id INT UNSIGNED NOT NULL PRIMARY KEY, tier TINYINT UNSIGNED NOT NULL DEFAULT 3, empire TINYINT UNSIGNED NOT NULL DEFAULT 0, founder_pid INT UNSIGNED NOT NULL DEFAULT 0, founded_at DATETIME NOT NULL) ENGINE=InnoDB;"
+# And when each last went to war (playerbot_guild_war.h), in unix seconds, so
+# the pick that keeps a kingdom's last pair out of its next war survives the
+# restart every update makes.
+db -e "ALTER TABLE player.playerbot_guild ADD COLUMN IF NOT EXISTS last_war_at INT UNSIGNED NOT NULL DEFAULT 0;" \
+    || echo "playerbot-migrate: could not add last_war_at to player.playerbot_guild" >&2
+# The second channel's pins (playerbot_channel_rules.h): every bot that has
+# ever kept an offline shop lives on the first channel for good, because the
+# shops are the first channel's. The table only grows - each core adds the
+# owners it sees before it reads it - and this adds them before any core has
+# started, so the start that switches the second channel on finds every keeper
+# of the last session already pinned. Written whatever the switch says.
+db -e "CREATE TABLE IF NOT EXISTS player.playerbot_channel_pin (pid INT UNSIGNED NOT NULL PRIMARY KEY, pinned_at DATETIME NOT NULL) ENGINE=InnoDB;"
+db -e "INSERT IGNORE INTO player.playerbot_channel_pin (pid, pinned_at) SELECT owner, NOW() FROM player.ikashop_offlineshop;" 2>/dev/null \
+    || echo "playerbot-migrate: could not pin the shop keepers to the first channel" >&2
 pitch_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = 'pitch_on_guard_2052';" 2>/dev/null || echo x)
 case "$pitch_done" in
     0) pitch_near=1700; pitch_far=1700 ;;
@@ -274,6 +306,48 @@ if [ -n "$pitch_near" ]; then
         fi
     else
         echo "[playerbot-migrate] WARNING: could not move the bots' offline shops onto the new pitches" >&2
+    fi
+fi
+# The package's player dump carries the guild lands and buildings of the
+# server it was taken from - 28 player.guild_land rows and 62 player.object
+# rows - and none of the guilds they belong to. The engine stands its land
+# agent (NPC 20040) only on a land nobody owns (building::CManager, at boot),
+# so those lands could never be bought and their buildings stood on ground
+# nobody held, while a bot guild founded later under one of those numbers
+# (2, 3, 5, ...) held a land and buildings it never paid for ("stoja juz
+# budynki, pomimo ze teren nie jest zajety", Mat, 19 September; NerrVoVy
+# cleared his by hand). Once, and the dump's own rows exactly: a land a
+# player's guild has bought and the buildings it put up since (ids past the
+# dump's last) are left alone. Before the game container starts, because the
+# db core reads both at boot.
+lands_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = 'package_guild_lands_2081';" 2>/dev/null || echo x)
+if [ "$lands_done" = "0" ]; then
+    if lands_out=$(db -e "
+        START TRANSACTION;
+        DELETE FROM player.object WHERE (id, land_id, vnum) IN (
+            (1, 14, 14100), (2, 214, 14120), (3, 214, 14014), (4, 14, 14013), (5, 215, 14120), (6, 215, 14013), (7, 218, 14120), (8, 218, 14043),
+            (9, 16, 14100), (10, 16, 14014), (11, 16, 14043), (12, 108, 14100), (13, 108, 14014), (14, 214, 14050), (15, 14, 14051), (16, 215, 14051),
+            (17, 217, 14100), (18, 218, 14014), (19, 217, 14015), (20, 109, 14100), (21, 109, 14051), (22, 17, 14100), (23, 17, 14015), (24, 207, 14110),
+            (25, 207, 14014), (26, 15, 14100), (27, 15, 14015), (28, 217, 14051), (29, 18, 14110), (30, 18, 14055), (31, 115, 14120), (32, 115, 14014),
+            (33, 108, 14043), (34, 18, 14015), (35, 116, 14120), (36, 116, 14013), (37, 216, 14110), (38, 109, 14015), (39, 8, 14120), (40, 216, 14013),
+            (41, 212, 14100), (42, 117, 14110), (43, 216, 14055), (44, 117, 14055), (45, 117, 14014), (46, 205, 14120), (47, 205, 14055), (48, 15, 14055),
+            (49, 216, 14200), (50, 216, 14300), (51, 216, 14300), (52, 205, 14015), (53, 212, 14015), (54, 206, 14100), (55, 206, 14015), (56, 8, 14015),
+            (57, 115, 14050), (58, 212, 14055), (59, 207, 14055), (60, 8, 14055), (61, 208, 14110), (62, 201, 14100));
+        SELECT ROW_COUNT();
+        DELETE FROM player.guild_land WHERE (land_id, guild_id) IN (
+            (2, 408), (8, 78), (9, 108), (10, 69), (14, 3), (15, 395), (16, 2), (17, 52),
+            (18, 18), (108, 5), (109, 6), (115, 92), (116, 93), (117, 20), (118, 13), (201, 212),
+            (204, 712), (205, 57), (206, 9), (207, 58), (208, 25), (212, 19), (213, 14), (214, 15),
+            (215, 344), (216, 47), (217, 33), (218, 7));
+        SELECT ROW_COUNT();
+        INSERT IGNORE INTO player.playerbot_migrations (name, done_at) VALUES ('package_guild_lands_2081', NOW());
+        COMMIT;
+    "); then
+        lands_objects=$(printf '%s\n' "$lands_out" | awk 'NR == 1')
+        lands_rows=$(printf '%s\n' "$lands_out" | awk 'NR == 2')
+        echo "[playerbot-migrate] the package's guild lands cleared: ${lands_rows:-0} land(s), ${lands_objects:-0} building(s)"
+    else
+        echo "[playerbot-migrate] WARNING: could not clear the package's guild lands" >&2
     fi
 fi
 # fish_log came from r40250's dump and has that engine's eight columns,
@@ -425,6 +499,65 @@ before=$(db -e "
      WHERE id BETWEEN $first_pid AND $last_pid;
 ")
 
+# The rates of a world that has never had any, before the cores start. On this
+# engine a rate is not a rewritten table but three event flags (player.quest,
+# dwPID 0) that CQuestManager::SetEventFlag maps onto CHARACTER_MANAGER's
+# multipliers, and until somebody presses "Zastosuj" in the panel those rows do
+# not exist - so a fresh world ran at 100% whatever the panel's own table said.
+# It said 650% experience, seeded into web_admin_rates by the panel's schema
+# for a test cycle long ago, and that number reached every player as a promise
+# the game never kept: the panel showed it, the bots levelled at 100%, and the
+# first press of the button - even without touching a field - was what made it
+# real (NerrVoVy and Tieru, 20 September).
+#
+# So the numbers the launcher asked for are written here, into both places at
+# once, and only while the flags are absent: a world that has been set from the
+# panel is never touched again, whatever this file says. That is also why the
+# panel's schema no longer seeds the table.
+rate_ok() {
+    # A newline, because awk reads no record from an empty input and
+    # the substitution would then be empty - not a number, so the SQL
+    # below would be a syntax error rather than a default.
+    printf '%s\n' "$1" | tr -d ' \r' | awk -v d="$2" '{ v = $1 + 0; if (v < 1 || v > 10000) v = d; printf "%d", v }'
+}
+r_exp=$(rate_ok "${M2_RATE_EXP:-100}" 100)
+r_drop=$(rate_ok "${M2_RATE_DROP:-100}" 100)
+r_yang=$(rate_ok "${M2_RATE_YANG:-100}" 100)
+db -e "CREATE TABLE IF NOT EXISTS player.web_admin_rates (
+        name VARCHAR(24) PRIMARY KEY, value INT NOT NULL DEFAULT 100);" >/dev/null 2>&1 \
+    || echo "[playerbot-migrate] WARNING: could not make player.web_admin_rates" >&2
+rates_set=$(db -e "SELECT COUNT(*) FROM player.quest WHERE dwPID = 0 AND szName = 'mob_exp';" 2>/dev/null || echo x)
+if [ "$rates_set" = "x" ]; then
+    echo "[playerbot-migrate] WARNING: could not read the rate flags; leaving them alone" >&2
+elif [ "$rates_set" = "0" ]; then
+    if db -e "REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES
+            (0, 'mob_exp', '', $r_exp),   (0, 'mob_exp_buyer', '', $r_exp),
+            (0, 'mob_item', '', $r_drop), (0, 'mob_item_buyer', '', $r_drop),
+            (0, 'mob_gold', '', $r_yang), (0, 'mob_gold_buyer', '', $r_yang);
+        REPLACE INTO player.web_admin_rates (name, value) VALUES
+            ('exp', $r_exp), ('drop', $r_drop), ('yang', $r_yang);"; then
+        echo "[playerbot-migrate] fresh world: experience ${r_exp}%, item drops ${r_drop}%, yang ${r_yang}%"
+    else
+        echo "[playerbot-migrate] WARNING: could not write the fresh world's rates" >&2
+    fi
+    # And whether that world's bots wait at the door. The core reads this file
+    # on the weights clock and, the first time it is asked, before its own
+    # first tick - the bootstrap spawns a cohort before any tick runs, so a
+    # file written afterwards would hold a door the crowd had already walked
+    # through. Written only for a fresh world, because on any other one it is
+    # the panel's button that owns it.
+    if [ -d /opt/m2spool ]; then
+        if [ "$(printf '%s' "${M2_PLAYERBOT_START_HELD:-0}" | tr -d ' \r')" = "1" ]; then
+            printf '1\n' > /opt/m2spool/playerbot_hold 2>/dev/null \
+                && echo "[playerbot-migrate] the bots will wait at the door until you let them in" \
+                || echo "[playerbot-migrate] WARNING: could not hold the bots (/opt/m2spool not writable)" >&2
+        else
+            printf '0\n' > /opt/m2spool/playerbot_hold 2>/dev/null || true
+        fi
+        chmod 0664 /opt/m2spool/playerbot_hold 2>/dev/null || true
+    fi
+fi
+
 # The world's difficulty, as event flags in seconds (player.quest, dwPID 0 -
 # what the db core loads at boot and pushes to every game core, the package's
 # own idiom for a world-wide switch). quest/m2_difficulty.lua reads them: the
@@ -440,8 +573,8 @@ case "$difficulty" in
     hard)   dlevel=2; bio=86400; hbuy=43200; hup=43200; htr=64800; htr2=75600 ;;
     custom)
         dlevel=3
-        bio=$(printf '%s' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
-        hbuy=$(printf '%s' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        bio=$(printf '%s\n' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        hbuy=$(printf '%s\n' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
         hup=$hbuy; htr=$hbuy; htr2=$hbuy ;;
     *)      difficulty=easy; dlevel=0; bio=0; hbuy=0; hup=0; htr=0; htr2=0 ;;
 esac

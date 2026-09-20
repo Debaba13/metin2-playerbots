@@ -212,6 +212,147 @@ migrate_timezone() {
     printf 'M2_TZ_DEFAULTED=1\n' >> "$_env"
 }
 
+# Split puts each kingdom on its own core and no bot can cross between them, so
+# Shinsoo and Jinno stop at about thirty-six; unified has been the switch out of
+# that since 2.0.30 and hardly anybody knew of it. Flipped exactly once, the way
+# the three kingdoms were - unless this world asks for more bots than one core
+# was measured to carry (9.4 s of every 60 at 1500), where split stays.
+migrate_world_layout() {
+    _env="$COMPOSE_DIR/.env"
+    [ -f "$_env" ] || return 0
+    grep -q '^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=' "$_env" && return 0
+    # How big this world is. Since 2.0.83 an operator may ask per kingdom
+    # instead of once, and then PLAYERBOT_AUTOSPAWN_COUNT says nothing about
+    # the size - three times seven hundred is the world one core would carry.
+    if [ "$(kv "$_env" PLAYERBOT_AUTOSPAWN_PER_KINGDOM | tr -d ' \r')" = 1 ]; then
+        _bots=0
+        for _k in PLAYERBOT_AUTOSPAWN_SHINSOO PLAYERBOT_AUTOSPAWN_CHUNJO PLAYERBOT_AUTOSPAWN_JINNO; do
+            _one=$(kv "$_env" "$_k" | tr -d ' \r')
+            case "$_one" in
+                ''|*[!0-9]*) _one=0 ;;
+            esac
+            _bots=$((_bots + _one))
+        done
+    else
+        _bots=$(kv "$_env" PLAYERBOT_AUTOSPAWN_COUNT | tr -d ' \r')
+        case "$_bots" in
+            ''|*[!0-9]*) _bots=0 ;;
+        esac
+    fi
+    [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
+    if [ "$_bots" -gt 1500 ]; then
+        note "   the world layout stays split: this world asks for $_bots bots"
+        printf 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1\n' >> "$_env"
+        return 0
+    fi
+    if grep -q '^M2_PLAYERBOT_WORLD_LAYOUT=' "$_env"; then
+        sed -i 's|^M2_PLAYERBOT_WORLD_LAYOUT=.*|M2_PLAYERBOT_WORLD_LAYOUT=unified|' "$_env"
+    else
+        printf 'M2_PLAYERBOT_WORLD_LAYOUT=unified\n' >> "$_env"
+    fi
+    note "   the world layout: M2_PLAYERBOT_WORLD_LAYOUT=unified (every kingdom reaches the frontier)"
+    printf 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1\n' >> "$_env"
+}
+
+# Channel N listens on 13000+10*(N-1)..+2 inside the container, and compose
+# publishes M2_GAME_PORT_RANGE onto M2_GAME_CONTAINER_PORT_RANGE - so with the
+# second channel on and the range left at 13000-13002 the cores are up, the
+# bots play on CH2 and nobody outside the machine can reach it. Only the
+# Windows launcher ever widened it, so a Linux host, or anyone who switched the
+# channel on in the panel, had CH2 running and unreachable: "Boty graly na ch2
+# lecz ja nie moglem sie logowac" (GoracyDelfin, 19 September), fixed by hand
+# in .env. The wish the panel writes lives on a volume, so it is read from the
+# running container when there is one; .env alone answers otherwise.
+sync_channel_ports() {
+    _env="$COMPOSE_DIR/.env"
+    [ -f "$_env" ] || return 0
+    _ch2=$(kv "$_env" M2_PLAYERBOT_CH2 | tr -d ' \r')
+    _wish=$( (cd "$COMPOSE_DIR" && docker compose exec -T game cat /opt/m2spool/channels.wanted) 2>/dev/null |
+        sed -n 's/^CH2=//p' | head -n 1 | tr -d ' \r')
+    case "$_wish" in
+        0|1) _ch2="$_wish" ;;
+    esac
+    if [ "$_ch2" = 1 ]; then
+        _want=13000-13012
+    else
+        _want=13000-13002
+    fi
+    _changed=0
+    for _key in M2_GAME_PORT_RANGE M2_GAME_CONTAINER_PORT_RANGE; do
+        _cur=$(kv "$_env" "$_key" | tr -d ' \r')
+        [ "$_cur" = "$_want" ] && continue
+        [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
+        if grep -q "^$_key=" "$_env"; then
+            sed -i "s|^$_key=.*|$_key=$_want|" "$_env"
+        else
+            printf '%s=%s\n' "$_key" "$_want" >> "$_env"
+        fi
+        _changed=1
+    done
+    [ "$_changed" = 1 ] && note "   the channels' ports: $_want (second channel $([ "$_ch2" = 1 ] && echo on || echo off))"
+    return 0
+}
+
+# A new key in .env.example reaches nobody who already installed: .env is
+# written at install and never rewritten, and only the Windows launcher
+# (Add-MissingDotEnvKeys) ever appended the keys a release added - a Linux
+# host updated by this script had no M2_DIFFICULTY and no wait hours after
+# 2.0.57 (GoracyDelfin, 17 September). Every KEY=value line of the example
+# whose key .env does not carry is appended with the example's value - only
+# the keys named below, whose example value is the compose default (an
+# absent key already meant that), never a password, a port or an address;
+# a key already there, empty included, is the operator's and is left alone.
+ENV_KEYS_FROM_EXAMPLE="M2_DIFFICULTY M2_BIOLOGIST_WAIT_HOURS M2_HORSE_WAIT_HOURS PLAYERBOT_SPAWN_WINDOW_MINUTES PLAYERBOT_LATE_JOINERS PLAYERBOT_LATE_JOIN_HOURS PLAYERBOT_MEDAL_DROPPERS PLAYERBOT_MEDAL_DROPPER_LEVEL M2_MOONLIGHT_CHEST_PERMILLE M2_MOONLIGHT_CHEST_STONE_PERMILLE M2_PLAYERBOT_WORLD_LAYOUT PLAYERBOT_AUTOSPAWN_PER_KINGDOM PLAYERBOT_AUTOSPAWN_SHINSOO PLAYERBOT_AUTOSPAWN_CHUNJO PLAYERBOT_AUTOSPAWN_JINNO M2_PLAYERBOT_CH2 PLAYERBOT_CH2_SHARE M2_PLAYERBOT_CH2_SET_AT M2_RATE_EXP M2_RATE_DROP M2_RATE_YANG M2_PLAYERBOT_START_HELD"
+add_missing_env_keys() {
+    _env="$COMPOSE_DIR/.env"
+    _ex="$COMPOSE_DIR/.env.example"
+    [ -f "$_env" ] && [ -f "$_ex" ] || return 0
+    _added=""
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        _line=$(printf '%s' "$_line" | tr -d '\r')
+        case "$_line" in
+            [A-Z_0-9]*=*) ;;
+            *) continue ;;
+        esac
+        _key=${_line%%=*}
+        case " $ENV_KEYS_FROM_EXAMPLE " in
+            *" $_key "*) ;;
+            *) continue ;;
+        esac
+        grep -q "^$_key=" "$_env" && continue
+        [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
+        printf '%s\n' "$_line" >> "$_env"
+        _added="$_added $_key"
+    done < "$_ex"
+    [ -n "$_added" ] && note "   new .env keys, at the example's defaults:$_added"
+    return 0
+}
+
+# The panel's build context is staged from files/ on the player's machine: the
+# Windows launcher does it before every build (Sync-M2PlayerbotOverlay), and
+# nothing did it here. The panel's Dockerfile COPYs schema/ and app/, so a
+# Linux install built from the package alone stopped at "/schema: not found"
+# and the whole compose build was cancelled with it (DUDU's VPS, 18 September).
+# The same list as the launcher's; `sh update.sh stage' runs it alone.
+stage_panel_context() {
+    _panel="$COMPOSE_DIR/panel"
+    [ -d "$_panel" ] || return 0
+    mkdir -p "$_panel/app" "$_panel/schema" || return 1
+    for _pair in "VERSION:app/VERSION" "CHANGELOG.md:app/CHANGELOG.md" \
+            "files/admin_panel.py:app/admin_panel.py" "files/items.json:app/items.json" \
+            "files/favicon.png:app/favicon.png" \
+            "files/web_admin_schema.sql:schema/web_admin_schema.sql"; do
+        _from="$ROOT/${_pair%%:*}"
+        [ -f "$_from" ] || continue
+        cp -f "$_from" "$_panel/${_pair#*:}" || return 1
+    done
+    if [ -d "$ROOT/files/static" ]; then
+        mkdir -p "$_panel/app/static" || return 1
+        cp -R "$ROOT/files/static/." "$_panel/app/static/" || return 1
+    fi
+    return 0
+}
+
 run_update() {
     STEP=0
     rm -rf "$WORK"; mkdir -p "$WORK" || { fail "cannot create $WORK"; return 1; }
@@ -235,6 +376,13 @@ run_update() {
     unpack_over "$WORK/update.zip" "$ROOT" || { fail "the zip could not be unpacked"; return 1; }
     note "   the folder now says version $(installed_version)"
     migrate_timezone
+    add_missing_env_keys
+    # After the keys, so a world that had no layout line at all gets the
+    # example's and then this.
+    migrate_world_layout
+    # Before compose, because a published port range only changes at a recreate.
+    sync_channel_ports
+    stage_panel_context || { fail "the panel's build context could not be staged from files/"; return 1; }
     step "building and starting the new version (docker compose up -d --build)"
     # By hand the build talks to the terminal; under the panel it goes to the
     # spool's log, which is what the panel's progress page tails.
@@ -274,5 +422,6 @@ case "${1:-run}" in
     run)   check_tree; run_update ;;
     check) check_tree; fetch_manifest > "$WORK.m" && printf 'installed %s, published %s\n' "$(installed_version)" "$(manifest_field "$WORK.m" version)"; rm -f "$WORK.m" ;;
     watch) check_tree; watch ;;
-    *) printf 'usage: sh %s [run|check|watch]\n' "$0"; exit 2 ;;
+    stage) check_tree; stage_panel_context && say "the panel's build context is staged from files/" || die "staging the panel's build context failed" ;;
+    *) printf 'usage: sh %s [run|check|watch|stage]\n' "$0"; exit 2 ;;
 esac

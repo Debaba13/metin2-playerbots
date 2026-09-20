@@ -208,6 +208,22 @@ int main()
 		registered[EMPIRE_CHUNJO] = 500;
 		SplitPopulation(0, registered, want);
 		assert(want[EMPIRE_CHUNJO] == 0);
+
+		// The operator's own number per kingdom: each takes its own, cut to
+		// what it has, and nothing it cannot take goes to the others.
+		int asked[EMPIRE_COUNT] = { 0, 60, 900, 60 };
+		registered[EMPIRE_SHINSOO] = 500;
+		registered[EMPIRE_CHUNJO] = 1012;
+		registered[EMPIRE_JINNO] = 40;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[EMPIRE_SHINSOO] == 60 && want[EMPIRE_CHUNJO] == 900 && want[EMPIRE_JINNO] == 40);
+		asked[EMPIRE_CHUNJO] = -5;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[0] == 0 && want[EMPIRE_CHUNJO] == 0);
+		// A kingdom switched off (no identities) takes nothing.
+		registered[EMPIRE_JINNO] = 0;
+		TakeKingdomCounts(asked, registered, want);
+		assert(want[EMPIRE_JINNO] == 0 && want[EMPIRE_SHINSOO] == 60);
 	}
 
 	// -----------------------------------------------------------------
@@ -270,6 +286,22 @@ int main()
 		assert(GetBiologist(21, p) && p.x == 89800 && p.y == 182100);
 		assert(GetBiologist(1, p) && GetBiologist(41, p));
 		assert(!GetBiologist(3, p) && !GetBiologist(23, p) && !GetBiologist(43, p));
+
+		// Baek-Go keeps the same shape and is a different NPC in the same
+		// villages: a row copied from the Biologist would send every herbalist
+		// errand to the wrong corner of the town.
+		assert(GetHerbalist(21, p) && p.x == 67400 && p.y == 161400);
+		assert(GetHerbalist(1, p) && GetHerbalist(41, p));
+		assert(!GetHerbalist(3, p) && !GetHerbalist(23, p) && !GetHerbalist(43, p));
+		{
+			TPoint herb, bio;
+			for (int k = 0; k < 3; ++k)
+			{
+				const long map = k == 0 ? 1 : (k == 1 ? 21 : 41);
+				assert(GetHerbalist(map, herb) && GetBiologist(map, bio));
+				assert(herb.x != bio.x || herb.y != bio.y);
+			}
+		}
 
 		// Every service point of every village is on that village's own ground:
 		// a table row copied from the wrong kingdom is caught here rather than

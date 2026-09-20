@@ -1,4 +1,28 @@
-# Zmiany
+## 2026-09-17 01:05 CEST · 1.55.0 · Playerbots 2.x i ItemShop
+
+- `/manage`: dodano plan wejścia botów — okno wejścia kohorty, liczbę późno dołączających botów oraz czas ich wejścia. Zapis ustawia parametry Playerbots 2.x i odtwarza wyłącznie kontener gry.
+- Gildie: rozbudowano zestawienie o dane mechanizmu doboru, aktywność i czytelniejsze sortowanie zgodne z aktualizacjami Playerbots 2.x.
+- Eventy: dodano planer oraz obsługę zdarzeń z panelu Playerbots.
+- ItemShop: saldo obejmuje konta botów działające i zablokowane, a Smocze Znaki są liczone z `account.cash_mark`.
+- ItemShop: ostatnie zakupy i popularność przedmiotów korzystają z natywnego dziennika `log.itemshop`; w paczce znajduje się bezpieczny generator brakującej tabeli.
+- Naprawiono konfigurację referencyjnej instalacji wędkarstwa: karta wędkarska 27620 ma ponownie właściwy typ przedmiotu i może zostać wyposażona przez boty.
+
+## 2026-09-17 01:05 CEST · 1.55.0 · Playerbots 2.x i ItemShop
+
+- `/manage`: dodano plan wejścia botów — okno wejścia kohorty, liczbę późno dołączających botów oraz czas ich wejścia. Zapis ustawia parametry Playerbots 2.x i odtwarza wyłącznie kontener gry.
+- Gildie: rozbudowano zestawienie o dane mechanizmu doboru, aktywność i czytelniejsze sortowanie zgodne z aktualizacjami Playerbots 2.x.
+- Eventy: dodano planer oraz obsługę zdarzeń z panelu Playerbots.
+- ItemShop: saldo obejmuje konta botów działające i zablokowane, a Smocze Znaki są liczone z `account.cash_mark`.
+- ItemShop: ostatnie zakupy i popularność przedmiotów korzystają z natywnego dziennika `log.itemshop`; w paczce znajduje się bezpieczny generator brakującej tabeli.
+- Naprawiono konfigurację referencyjnej instalacji wędkarstwa: karta wędkarska 27620 ma ponownie właściwy typ przedmiotu i może zostać wyposażona przez boty.
+
+## 2026-09-16 14:15 CEST · 1.54.2 · ulepszenia interfejsu
+
+- `/manage`: poprawiono układ aktualizatora — checkbox aktualizacji Seban Panel jest wyrównany z pozostałymi opcjami, a modal nie tworzy poziomego paska przewijania.
+- `/rankings`: pierwszy wiersz otrzymał spójne wyróżnienie na całej szerokości tabeli oraz animowany efekt gwiezdnego blasku na nicku, dopasowany do aktywnego motywu.
+- Nawigacja „Gospodarka” na desktopie pokazuje pozycje podmenu w czytelnym układzie; na dashboardzie dodano dokładniejsze zakresy poziomów botów i uproszczono informacje o wersjach Playerbots.
+- `/guilds`: dodano kolumnę Królestwo z flagą i nazwą Shinsoo, Chunjo lub Jinno, ustalaną na podstawie lidera gildii.
+- `/economy/shops`: usunięto mylącą mapę z ostatnich sprzedaży, sprzedawca prowadzi teraz do karty postaci, a wyszukiwanie przedmiotów po odświeżeniu przenosi bezpośrednio do wyników.
 ## 2026-09-16 02:30 CEST · 1.54.1
 
 - Dodano domyślnie wyłączony checkbox „Aktualizuj także Seban Panel do wersji dołączonej przez Tieru”. Decyzja jest zapisywana trwale i dołączana do konkretnego zlecenia aktualizacji. Po włączeniu aktualizator przebudowuje również `seban-panel`, `seban-collector` i `seban-item-grants`; po wyłączeniu zachowuje aktualny panel oraz lokalne zmiany. Porównanie wersji blokuje przypadkowy downgrade, gdy paczka Tieru zawiera panel starszy od już zainstalowanego.

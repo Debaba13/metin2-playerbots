@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'SetDifficulty', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword', 'FreePorts')]
+    [ValidateSet('Menu', 'Start', 'Stop', 'StartDocker', 'StopAll', 'Check', 'UpdateServer', 'UpdateClient', 'UpdateAll', 'Diagnose', 'Logs', 'SendLogs', 'Configure', 'SetBots', 'SetDifficulty', 'ImportDb', 'BackupDb', 'RestoreDb', 'ResetWorld', 'RepairDb', 'DbAccess', 'PanelPassword', 'FreePorts', 'CoopCheck', 'CoopSecure', 'CoopAddFriend', 'CoopBlockFriend', 'CoopUnblockFriend', 'CoopInvite', 'CoopHost', 'CoopStop', 'CoopRenew', 'CoopJoin')]
     [string]$Action = 'Menu',
     [string]$Manifest = '',
     [int]$BotCount = -1,
@@ -8,12 +8,39 @@ param(
     [int]$SpawnMinutes = -1,
     [int]$LateJoiners = -1,
     [int]$LateHours = -1,
+    # SetBots: the operator's own number per kingdom (1 = on, 0 = off, -1 =
+    # leave it) and the three numbers, and the second channel with its share.
+    [int]$PerKingdom = -1,
+    [int]$ShinsooBots = -1,
+    [int]$ChunjoBots = -1,
+    [int]$JinnoBots = -1,
+    [int]$Channel2 = -1,
+    [int]$Channel2Share = -1,
     # SetDifficulty: easy | medium | hard | custom, and the hours custom reads.
     [string]$Difficulty = '',
     [string]$BiologistHours = '',
     [string]$HorseHours = '',
+    # The rates a fresh world starts on, asked for when one is about to be
+    # made (ResetWorld, and the first start of an install that has no database
+    # yet). -1 leaves .env as it is, which is what every other caller wants.
+    [int]$RateExp = -1,
+    [int]$RateDrop = -1,
+    [int]$RateYang = -1,
+    # And whether that world comes up with the bots held at the door: 1 = held
+    # until the operator lets them in, 0 = they walk in with the world.
+    [int]$HoldBots = -1,
     [string]$ImportSource = '',
     [string]$RestoreSource = '',
+    # COOP (experimental): the friend's name for CoopAddFriend, a friend's
+    # login for CoopBlockFriend/CoopInvite, and the code CoopJoin reads.
+    [string]$FriendName = '',
+    [string]$FriendLogin = '',
+    [string]$Invite = '',
+    # CoopHost: how the world is offered - auto (the Internet where it can
+    # reach this machine, a VPN found here where it cannot), internet, or one
+    # VPN by name (vpn = the first one found).
+    [ValidateSet('auto', 'internet', 'vpn', 'radmin', 'tailscale', 'zerotier', 'hamachi')]
+    [string]$CoopVia = 'auto',
     # ResetWorld only: bring the server up on the fresh world right away, so
     # "wyzeruj swiat i zacznij od nowa" is one click and not a reset followed
     # by GRAJ.
@@ -63,6 +90,10 @@ function Write-Phase {
     Write-Host ("[faza] {0} (+{1} s od poczatku akcji)" -f $Name, [int]$script:phaseWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
 }
 Import-Module $diagnosticsModulePath -Force
+# COOP (experimental, the local branch "coop"): an optional module; without
+# it the Coop* actions say so and nothing else changes.
+$coopModulePath = Join-Path $serverRoot 'launcher\Metin2Launcher.Coop.psm1'
+if (Test-Path -LiteralPath $coopModulePath -PathType Leaf) { Import-Module $coopModulePath -Force }
 
 function Write-Header {
     Clear-Host
@@ -179,6 +210,9 @@ function Start-Server {
     Clear-PortConflicts -Quiet | Out-Null
     Assert-DockerPrerequisites -CheckPanelPort
     Write-Phase 'Docker sprawdzony'
+    # A second-channel wish left in the web panel, before .env is read.
+    try { Sync-ChannelWishFromPanel }
+    catch { Write-Host "Nie udalo sie odczytac ustawienia kanalow z panelu WWW: $($_.Exception.Message)" -ForegroundColor Yellow }
     # start-server.ps1 brings the stack up from the images that already exist.
     # After an interrupted update those are the old ones, so finish the build
     # first - otherwise the player keeps running the previous server and the
@@ -193,6 +227,10 @@ function Start-Server {
     & $script
     if ($LASTEXITCODE -ne 0) { throw "Uruchamianie serwera zakończyło się kodem $LASTEXITCODE." }
     Write-Phase 'Serwer uruchomiony'
+    # COOP: a world hosted before this start is still hosted - .env keeps the
+    # address - so the router's four-hour lease is renewed here.
+    try { Update-CoopHostingLease }
+    catch { Write-Host "COOP: nie udalo sie odnowic przekierowan w routerze: $($_.Exception.Message)" -ForegroundColor Yellow }
 }
 
 function Stop-Server {
@@ -458,6 +496,22 @@ function Update-Server {
     Write-Host "Serwer działa w wersji $($result.Version)." -ForegroundColor Green
 }
 
+function Assert-ClientNotRunning {
+    # The client's exe cannot be replaced while the game runs, and Windows
+    # says so only when the file is copied - after the whole download.
+    # Ratorex (18 September) tried five times in a quarter of an hour, each
+    # time 65 MB and the same "used by another process". Asked first now,
+    # and before the server as well, so an "update everything" does not
+    # leave a new server beside a client that cannot log in to it.
+    param($Config)
+    $clientRoot = [string]$Config.clientRoot
+    if (-not $clientRoot -or -not (Test-Path -LiteralPath $clientRoot -PathType Container)) { return }
+    $running = @(Get-M2FolderProcesses -Root $clientRoot)
+    if ($running.Count -gt 0) {
+        throw ("Klient gry jest uruchomiony ({0}). Zamknij gre - sprawdz tez Menedzer zadan, czy metin2client.exe nie zostal w tle - i kliknij ZAINSTALUJ AKTUALIZACJE jeszcze raz." -f ($running -join ', '))
+    }
+}
+
 function Update-Client {
     param($RemoteManifest, $Config)
     $component = Get-ManifestComponent -RemoteManifest $RemoteManifest -Name 'client'
@@ -477,6 +531,7 @@ function Update-Client {
     if (-not (Test-Path -LiteralPath $clientRoot -PathType Container)) {
         throw "Nie znaleziono folderu klienta: $clientRoot"
     }
+    Assert-ClientNotRunning -Config $Config
     if (-not (Confirm-Operation "Zaktualizować klienta w $clientRoot?")) {
         Write-Host 'Anulowano.' -ForegroundColor Yellow
         return
@@ -577,6 +632,96 @@ function Set-SpawnPlan {
     return @{ Minutes = $Minutes; Late = $Late; Hours = $Hours }
 }
 
+function Get-KingdomCountsFromEnv {
+    # PLAYERBOT_AUTOSPAWN_PER_KINGDOM and the three numbers; off and 0/0/0 when
+    # the keys are not there yet.
+    return @{
+        Enabled = (Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_PER_KINGDOM' -Default '0') -eq '1'
+        Shinsoo = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_SHINSOO' -Default '0')
+        Chunjo  = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_CHUNJO' -Default '0')
+        Jinno   = [int](Get-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_JINNO' -Default '0')
+    }
+}
+
+function Set-KingdomCounts {
+    # The operator's own number per kingdom (Greess): with it on, each kingdom
+    # starts its own count instead of a share of PLAYERBOT_AUTOSPAWN_COUNT, cut
+    # by the core to the identities the kingdom has. Read at the next start.
+    param([bool]$Enabled, [int]$Shinsoo = 0, [int]$Chunjo = 0, [int]$Jinno = 0)
+    $clamp = { param($n) if ($n -lt 0) { 0 } elseif ($n -gt 2500) { 2500 } else { $n } }
+    $Shinsoo = & $clamp $Shinsoo
+    $Chunjo = & $clamp $Chunjo
+    $Jinno = & $clamp $Jinno
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_PER_KINGDOM' -Value $(if ($Enabled) { '1' } else { '0' })
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_SHINSOO' -Value "$Shinsoo"
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_CHUNJO' -Value "$Chunjo"
+    Set-DotEnvValue -Key 'PLAYERBOT_AUTOSPAWN_JINNO' -Value "$Jinno"
+    return @{ Enabled = $Enabled; Shinsoo = $Shinsoo; Chunjo = $Chunjo; Jinno = $Jinno }
+}
+
+function Get-SecondChannelFromEnv {
+    $share = 40
+    [int]::TryParse((Get-DotEnvValue -Key 'PLAYERBOT_CH2_SHARE' -Default '40'), [ref]$share) | Out-Null
+    return @{ Enabled = (Get-DotEnvValue -Key 'M2_PLAYERBOT_CH2' -Default '0') -eq '1'; Share = $share }
+}
+
+function Set-SecondChannel {
+    # The second channel (M2_PLAYERBOT_CH2): the switch, the share of the bots
+    # that play on it, and the two port ranges compose publishes - 13000-13012
+    # while it is on (its cores listen on 13010-13012), the first channel's
+    # three otherwise. The host side keeps the first port a player may have
+    # moved. SetAt is when the choice was made: the game container compares it
+    # with the web panel's wish, and the newer of the two wins.
+    param([bool]$Enabled, [int]$Share = 40, [long]$SetAt = 0)
+    if ($Share -lt 10) { $Share = 10 }
+    if ($Share -gt 90) { $Share = 90 }
+    if ($SetAt -le 0) { $SetAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+    $first = 13000
+    $range = Get-DotEnvValue -Key 'M2_GAME_PORT_RANGE' -Default '13000-13002'
+    if ($range -match '^\s*(\d+)') { $first = [int]$Matches[1] }
+    $span = if ($Enabled) { 12 } else { 2 }
+    Set-DotEnvValue -Key 'M2_PLAYERBOT_CH2' -Value $(if ($Enabled) { '1' } else { '0' })
+    Set-DotEnvValue -Key 'PLAYERBOT_CH2_SHARE' -Value "$Share"
+    Set-DotEnvValue -Key 'M2_PLAYERBOT_CH2_SET_AT' -Value "$SetAt"
+    Set-DotEnvValue -Key 'M2_GAME_PORT_RANGE' -Value ('{0}-{1}' -f $first, ($first + $span))
+    Set-DotEnvValue -Key 'M2_GAME_CONTAINER_PORT_RANGE' -Value ('13000-{0}' -f (13000 + $span))
+    return @{ Enabled = $Enabled; Share = $Share }
+}
+
+function Sync-ChannelWishFromPanel {
+    # The web panel cannot write .env; it leaves its second-channel wish in the
+    # spool the game container reads (channels.wanted, with SET_AT). The
+    # container honours it for the bots at its next start whatever happens
+    # here, but only .env can publish the second channel's ports - so a wish
+    # newer than .env's own is copied into .env before the stack comes up.
+    # Only while the game container runs: its spool cannot be read otherwise.
+    $envPath = Get-PlayerbotEnvPath
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return }
+    $composeDir = Join-Path $serverRoot 'linux-port\docker'
+    $composeFile = Join-Path $composeDir 'docker-compose.yml'
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $text = @(docker compose --project-directory $composeDir -f $composeFile exec -T game cat /opt/m2spool/channels.wanted 2>$null)
+        $exit = $LASTEXITCODE
+    }
+    catch { return }
+    finally { $ErrorActionPreference = $previousPreference }
+    if ($exit -ne 0 -or $text.Count -eq 0) { return }
+    $wish = @{}
+    foreach ($line in $text) {
+        if ("$line" -match '^\s*([A-Z0-9_]+)=(\d+)\s*$') { $wish[$Matches[1]] = [long]$Matches[2] }
+    }
+    if (-not $wish.ContainsKey('CH2') -or -not $wish.ContainsKey('SET_AT')) { return }
+    $envAt = 0L
+    [long]::TryParse((Get-DotEnvValue -Key 'M2_PLAYERBOT_CH2_SET_AT' -Default '0'), [ref]$envAt) | Out-Null
+    if ($wish['SET_AT'] -le $envAt) { return }
+    $share = if ($wish.ContainsKey('SHARE')) { [int]$wish['SHARE'] } else { 40 }
+    $applied = Set-SecondChannel -Enabled ($wish['CH2'] -eq 1) -Share $share -SetAt $wish['SET_AT']
+    $what = if ($applied.Enabled) { "wlaczony, $($applied.Share)% botow na CH2" } else { 'wylaczony' }
+    Write-Host "Drugi kanal ustawiony w panelu WWW: $what." -ForegroundColor Green
+}
+
 function Set-BotCountAction {
     $current = Get-PlayerbotCount
     $plan = Get-SpawnPlanFromEnv
@@ -596,6 +741,29 @@ function Set-BotCountAction {
             $h = if ($LateHours -ge 0) { $LateHours } else { [int]$plan.Hours }
             $p = Set-SpawnPlan -Minutes $m -Late $l -Hours $h
             Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+        }
+        if ($PerKingdom -ge 0) {
+            $k = Get-KingdomCountsFromEnv
+            $s = if ($ShinsooBots -ge 0) { $ShinsooBots } else { $k.Shinsoo }
+            $c = if ($ChunjoBots -ge 0) { $ChunjoBots } else { $k.Chunjo }
+            $j = if ($JinnoBots -ge 0) { $JinnoBots } else { $k.Jinno }
+            $kk = Set-KingdomCounts -Enabled ($PerKingdom -eq 1) -Shinsoo $s -Chunjo $c -Jinno $j
+            if ($kk.Enabled) {
+                Write-Host "Zapisano: osobno dla królestw - Shinsoo $($kk.Shinsoo), Chunjo $($kk.Chunjo), Jinno $($kk.Jinno)." -ForegroundColor Green
+            }
+            else { Write-Host 'Zapisano: jedna liczba botów dzielona po równo na królestwa.' -ForegroundColor Green }
+        }
+        if ($Channel2 -ge 0) {
+            # Written only when it changes, so the moment of the choice stays the
+            # one it was made at and a wish from the web panel made after it is
+            # not overwritten by a dialog that only changed the bot count.
+            $cur = Get-SecondChannelFromEnv
+            $share = if ($Channel2Share -ge 0) { $Channel2Share } else { $cur.Share }
+            if (($Channel2 -eq 1) -ne $cur.Enabled -or (($Channel2 -eq 1) -and $share -ne $cur.Share)) {
+                $ch = Set-SecondChannel -Enabled ($Channel2 -eq 1) -Share $share
+                if ($ch.Enabled) { Write-Host "Zapisano: drugi kanał (CH2) włączony, $($ch.Share)% botów na CH2." -ForegroundColor Green }
+                else { Write-Host 'Zapisano: drugi kanał (CH2) wyłączony.' -ForegroundColor Green }
+            }
         }
         if ($Yes) {
             Start-Server
@@ -623,6 +791,34 @@ function Set-BotCountAction {
     else {
         $p = Set-SpawnPlan -Minutes ([int]$m) -Late ([int]$l) -Hours ([int]$h)
         Write-Host "Zapisano: wejście w $($p.Minutes) min, $($p.Late) dodatkowych botów w ciągu $($p.Hours) h." -ForegroundColor Green
+    }
+    $k = Get-KingdomCountsFromEnv
+    $kAnswer = Read-Host "Osobna liczba botów dla każdego królestwa? (t/n, Enter = $(if ($k.Enabled) { 't' } else { 'n' }))"
+    if ("$kAnswer".Trim() -match '^[tTyY]') {
+        $sAnswer = Read-Host "Shinsoo, czerwone (0-2500, Enter = $($k.Shinsoo))"
+        $cAnswer = Read-Host "Chunjo, żółte (0-2500, Enter = $($k.Chunjo))"
+        $jAnswer = Read-Host "Jinno, niebieskie (0-2500, Enter = $($k.Jinno))"
+        $s = if ("$sAnswer".Trim() -match '^\d+$') { [int]$sAnswer } else { $k.Shinsoo }
+        $c = if ("$cAnswer".Trim() -match '^\d+$') { [int]$cAnswer } else { $k.Chunjo }
+        $j = if ("$jAnswer".Trim() -match '^\d+$') { [int]$jAnswer } else { $k.Jinno }
+        $kk = Set-KingdomCounts -Enabled $true -Shinsoo $s -Chunjo $c -Jinno $j
+        Write-Host "Zapisano: Shinsoo $($kk.Shinsoo), Chunjo $($kk.Chunjo), Jinno $($kk.Jinno)." -ForegroundColor Green
+    }
+    elseif ("$kAnswer".Trim() -match '^[nN]') {
+        Set-KingdomCounts -Enabled $false -Shinsoo $k.Shinsoo -Chunjo $k.Chunjo -Jinno $k.Jinno | Out-Null
+        Write-Host 'Zapisano: jedna liczba botów dzielona po równo na królestwa.' -ForegroundColor Green
+    }
+    $ch2 = Get-SecondChannelFromEnv
+    $chAnswer = Read-Host "Drugi kanał (CH2) dla botów i graczy? Sklepy zostają na CH1 (t/n, Enter = $(if ($ch2.Enabled) { 't' } else { 'n' }))"
+    if ("$chAnswer".Trim() -match '^[tTyY]') {
+        $shAnswer = Read-Host "Ile procent botów na CH2 (10-90, Enter = $($ch2.Share))"
+        $share = if ("$shAnswer".Trim() -match '^\d+$') { [int]$shAnswer } else { $ch2.Share }
+        $applied2 = Set-SecondChannel -Enabled $true -Share $share
+        Write-Host "Zapisano: drugi kanał włączony, $($applied2.Share)% botów na CH2." -ForegroundColor Green
+    }
+    elseif ("$chAnswer".Trim() -match '^[nN]' -and $ch2.Enabled) {
+        Set-SecondChannel -Enabled $false -Share $ch2.Share | Out-Null
+        Write-Host 'Zapisano: drugi kanał wyłączony.' -ForegroundColor Green
     }
     if (Confirm-Operation 'Zrestartować serwer teraz, aby zastosować zmianę? Baza i postęp botów pozostają bez zmian') {
         Start-Server
@@ -924,6 +1120,91 @@ function Restore-DatabaseAction {
     Write-Host 'Kliknij GRAJ, aby uruchomić serwer z przywróconym światem.' -ForegroundColor Green
 }
 
+function Test-RatePercent {
+    param([int]$Value)
+    return ($Value -ge 1 -and $Value -le 10000)
+}
+
+function Set-FreshWorldSettings {
+    <#
+      .SYNOPSIS
+        The rates a world about to be made starts on, and whether its bots wait.
+
+      .DESCRIPTION
+        Both are read by the migrator before the cores come up, and only for a
+        world whose event flags do not exist yet - a world already set from the
+        panel is never touched by .env, so this is asked where a fresh world is
+        about to be made and nowhere else.
+
+        The panel used to promise 650% experience on a world the game ran at
+        100%, and the first press of its button - field untouched - was what
+        made the promise real. That is the window NerrVoVy asked us to close
+        (20 September): "zanim sie zmieni ustawienia to juz cos sie tam
+        podzieje".
+
+        Non-interactive when the numbers come in as parameters or -Yes is set,
+        which is how the GUI calls every action; the console path asks.
+    #>
+    param([string]$Reason = 'nowego świata')
+
+    $exp = $RateExp
+    $drop = $RateDrop
+    $yang = $RateYang
+    $hold = $HoldBots
+    $interactive = (-not $Yes) -and $exp -lt 0 -and $drop -lt 0 -and $yang -lt 0 -and $hold -lt 0
+    if ($interactive) {
+        Write-Host ''
+        Write-Host "Ustawienia $Reason - wchodzą w życie, zanim pojawi się pierwszy bot:" -ForegroundColor Cyan
+        Write-Host ' 1. Normalnie      - 100% doświadczenia, 100% dropu, 100% yang (tak, jak gra została stworzona)'
+        Write-Host ' 2. Spokojnie      - 300% / 200% / 200%'
+        Write-Host ' 3. Szybko         - 1000% / 500% / 500%'
+        Write-Host ' 4. Własne liczby'
+        Write-Host ' 5. Nie zmieniaj   - zostaw to, co jest w .env'
+        $answer = Read-Host 'Wybierz (1-5)'
+        switch ($answer) {
+            '1' { $exp = 100;  $drop = 100; $yang = 100 }
+            '2' { $exp = 300;  $drop = 200; $yang = 200 }
+            '3' { $exp = 1000; $drop = 500; $yang = 500 }
+            '4' {
+                $exp = [int](Read-Host 'Doświadczenie w procentach (100 = normalnie)')
+                $drop = [int](Read-Host 'Drop przedmiotów w procentach')
+                $yang = [int](Read-Host 'Yang w procentach')
+            }
+            default { $exp = -1; $drop = -1; $yang = -1 }
+        }
+        Write-Host ''
+        Write-Host 'Boty mogą poczekać przy drzwiach, żeby dało się spokojnie ustawić resztę:' -ForegroundColor Cyan
+        if (Confirm-Operation 'Wstrzymać boty po starcie (wpuścisz je przyciskiem w panelu)?') {
+            $hold = 1
+        }
+        else {
+            $hold = 0
+        }
+    }
+
+    $written = @()
+    foreach ($pair in @(
+            @{ Key = 'M2_RATE_EXP';  Value = $exp;  Label = 'doświadczenie' },
+            @{ Key = 'M2_RATE_DROP'; Value = $drop; Label = 'drop' },
+            @{ Key = 'M2_RATE_YANG'; Value = $yang; Label = 'yang' })) {
+        $v = [int]$pair.Value
+        if ($v -lt 0) { continue }
+        if (-not (Test-RatePercent -Value $v)) {
+            throw ("{0}: podaj całe procenty od 1 do 10000, nie '{1}'." -f $pair.Label, $v)
+        }
+        Set-DotEnvValue -Key $pair.Key -Value "$v"
+        $written += ('{0} {1}%' -f $pair.Label, $v)
+    }
+    if ($hold -ge 0) {
+        $heldValue = $(if ($hold -ge 1) { '1' } else { '0' })
+        Set-DotEnvValue -Key 'M2_PLAYERBOT_START_HELD' -Value $heldValue
+        $written += $(if ($heldValue -eq '1') { 'boty czekają na wpuszczenie' } else { 'boty wchodzą od razu' })
+    }
+    if ($written.Count -gt 0) {
+        Write-Host ('Zapisano: ' + ($written -join ', ') + '.') -ForegroundColor Green
+    }
+}
+
 function Reset-WorldAction {
     # "Zacznij od zera": the world a fresh install starts with, with the old one
     # kept as a zip. The volume is deleted, because that is the only thing that
@@ -953,6 +1234,7 @@ function Reset-WorldAction {
     if (-not (Confirm-Operation 'Zresetować świat do stanu świeżej instalacji?')) {
         Write-Host 'Anulowano.' -ForegroundColor Yellow; return
     }
+    Set-FreshWorldSettings -Reason 'nowego świata'
     Write-Host 'Zatrzymuję serwer i Dockera po stronie stosu...' -ForegroundColor Cyan
     Stop-Server
     Write-Host 'Zapisuję kopię i kasuję bazę...' -ForegroundColor Cyan
@@ -1153,6 +1435,389 @@ function Send-Logs {
     else { Write-Host 'Wysłano paczkę diagnostyczną.' -ForegroundColor Green }
 }
 
+# ---------------------------------------------------------------- co-op
+# Playing the host's world with friends over the Internet (experimental;
+# launcher\Metin2Launcher.Coop.psm1 does the work). The window's COOP dialog
+# runs CoopHost, CoopStop and CoopCheck through here and does the rest itself:
+# anything that prints a password is for the console only, because the
+# window's action output is a file under launcher-logs, which the support
+# bundle collects.
+
+function Assert-CoopModule {
+    if (-not (Get-Command Get-M2CoopNetworkReport -ErrorAction SilentlyContinue)) {
+        throw 'Brak modułu launcher\Metin2Launcher.Coop.psm1 - ta paczka nie ma trybu COOP.'
+    }
+}
+
+function Assert-CoopHostAccess {
+    # Hosting is for the Patreon testers while COOP is tried out. The text menu
+    # asks for their password here; an action started by the window runs with
+    # no console to answer from, and the window asks before it starts one.
+    # Ending hosting, renewing the lease and joining a friend never ask.
+    Assert-CoopModule
+    if (Test-M2CoopAccess -ServerRoot $serverRoot) { return }
+    if ($Action -ne 'Menu') {
+        throw 'Hostowanie w COOP testują na razie patroni: odblokuj je ich hasłem w oknie COOP launchera albo w menu tekstowym.'
+    }
+    Write-Host 'Hostowanie w COOP testują na razie patroni - hasło jest w poście dla patronów.' -ForegroundColor Yellow
+    $secure = Read-Host 'Hasło testów COOP' -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    if (-not (Grant-M2CoopAccess -ServerRoot $serverRoot -Password $plain)) { throw 'To nie jest hasło testów COOP.' }
+    Write-Host 'Hostowanie w COOP odblokowane na tej instalacji.' -ForegroundColor Green
+}
+
+function Write-CoopNetworkReport {
+    param($Report)
+    Write-Host ("Karta sieciowa: {0} ({1}), brama {2}" -f $Report.LanAddress, $Report.Interface, $Report.Gateway)
+    Write-Host ("Adres widziany z internetu: {0}" -f $(if ($Report.PublicAddress) { $Report.PublicAddress } else { 'nie odczytano' }))
+    if ($Report.Router) { Write-Host ("Router (UPnP): {0}, adres WAN {1}" -f $Report.Router, $Report.RouterWan) }
+    else { Write-Host 'Router: nie odpowiedział na UPnP' }
+    $color = $(if ($Report.Verdict -eq 'public') { 'Green' } elseif ($Report.Verdict -eq 'no-upnp' -or $Report.Verdict -eq 'mismatch') { 'Yellow' } else { 'Red' })
+    Write-Host ("Wynik: {0}" -f $Report.Text) -ForegroundColor $color
+    $vpns = @($Report.Vpns)
+    foreach ($vpn in $vpns) { Write-Host ("Sieć VPN: {0}, adres {1} (karta {2})" -f $vpn.Name, $vpn.Address, $vpn.Interface) }
+    if ($vpns.Count -eq 0) { Write-Host 'Sieć VPN: nie wykryto (Radmin VPN, Tailscale, ZeroTier, Hamachi).' }
+}
+
+function Get-CoopHostingField {
+    # One field of the hosting record, '' when the record or the field is not
+    # there (a state file written before a field existed). Under StrictMode a
+    # missing property is an error, not an empty value.
+    param($Hosting, [Parameter(Mandatory = $true)][string]$Name)
+    if (-not $Hosting) { return '' }
+    if (-not (@($Hosting.PSObject.Properties.Name) -contains $Name)) { return '' }
+    return [string]$Hosting.$Name
+}
+
+function Show-CoopCheckAction {
+    Assert-CoopModule
+    Write-Phase 'sprawdzanie sieci'
+    $report = Get-M2CoopNetworkReport
+    Write-CoopNetworkReport -Report $report
+    if (@('cgnat', 'double-nat') -contains $report.Verdict) {
+        $vpns = @($report.Vpns)
+        if ($vpns.Count -gt 0) { Write-Host ("Rozwiązanie: hostuj przez {0} - HOSTUJ ŚWIAT wybierze go sam." -f $vpns[0].Name) -ForegroundColor Yellow }
+        else {
+            Write-Host ('Rozwiązanie: zainstaluj Radmin VPN albo Tailscale, połącz się ze znajomymi w jednej sieci i hostuj ponownie - ' +
+                'launcher wykryje VPN i użyje go zamiast routera.') -ForegroundColor Yellow
+        }
+    }
+    $ports = Get-M2CoopGamePorts -ServerRoot $serverRoot
+    Write-Host ("Porty gry: {0}" -f ($ports -join ', '))
+    $bindings = Get-M2CoopGameBindings -ServerRoot $serverRoot
+    if (-not $bindings.Running) { Write-Host 'Serwer gry nie działa (brak opublikowanych portów).' -ForegroundColor Yellow }
+    elseif ($bindings.Public) { Write-Host 'Porty gry są otwarte na wszystkich kartach sieciowych - świat jest hostowany.' -ForegroundColor Green }
+    else { Write-Host 'Porty gry słuchają tylko lokalnie (127.0.0.1) - świat nie jest hostowany.' }
+    $hostingState = (Read-M2CoopState -ServerRoot $serverRoot).hosting
+    if ((Get-CoopHostingField $hostingState 'mode') -eq 'vpn') {
+        Write-Host ("Ostatnie hostowanie: przez {0}, adres dla znajomych {1}." -f (Get-CoopHostingField $hostingState 'vpnName'), (Get-CoopHostingField $hostingState 'friendAddress'))
+    }
+    if ($report.GatewayInfo) {
+        foreach ($port in $ports) {
+            $m = Get-M2CoopPortMapping -Gateway $report.GatewayInfo -Port $port
+            if ($m) { Write-Host ("  router: port {0} -> {1}:{2} ({3})" -f $port, $m.InternalClient, $m.InternalPort, $m.Description) }
+            else { Write-Host ("  router: port {0} bez przekierowania" -f $port) }
+        }
+    }
+    Write-Host ("Reguła zapory Windows dla portów gry: {0}" -f $(if (Test-M2CoopFirewallRule) { 'jest' } else { 'brak (doda ją Hostuj)' }))
+    foreach ($block in @(Get-M2CoopFirewallBlocks)) {
+        Write-Host ("  UWAGA: zapora blokuje program {0} (reguła '{1}', profil {2}) - taka reguła wygrywa z każdą regułą zezwalającą." -f $block.Program, $block.Name, $block.Profile) -ForegroundColor Yellow
+    }
+    try {
+        $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $serverRoot)
+        if ($defaults.Count -gt 0) { Write-Host ("Konta z hasłem z paczki: {0} - przed hostowaniem użyj 'Zabezpiecz konta'." -f ($defaults -join ', ')) -ForegroundColor Yellow }
+        else { Write-Host 'Konta admin i test nie mają haseł z paczki.' -ForegroundColor Green }
+    }
+    catch { Write-Host "Baza nie odpowiada: $($_.Exception.Message)" -ForegroundColor Yellow }
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    Write-Host ("Znajomi: {0}" -f @($state.friends).Count)
+    foreach ($f in @($state.friends)) {
+        Write-Host ("  {0}: login {1}{2}" -f $f.name, $f.login, $(if ($f.blocked) { ' (zablokowany)' } else { '' }))
+    }
+}
+
+function Protect-CoopAccountsAction {
+    Assert-CoopHostAccess
+    $changed = Protect-M2CoopAccounts -ServerRoot $serverRoot
+    $names = @($changed.PSObject.Properties | ForEach-Object { $_.Name })
+    if ($names.Count -eq 0) {
+        Write-Host 'Konta admin i test nie mają haseł z paczki - nic do zmiany.' -ForegroundColor Green
+        return
+    }
+    foreach ($name in $names) {
+        Write-Host ("Nowe hasło konta {0}: {1}" -f $name, $changed.$name) -ForegroundColor Yellow
+    }
+    Write-Host 'Zapisz je - od teraz logujesz się nimi (okno COOP w launcherze też je pokazuje).'
+}
+
+function Add-CoopFriendAction {
+    Assert-CoopHostAccess
+    $name = $FriendName
+    if (-not $name) { $name = Read-Host 'Imię albo nick znajomego' }
+    if (-not $name) { throw 'Nie podano imienia znajomego.' }
+    $friend = New-M2CoopFriend -ServerRoot $serverRoot -Name $name
+    Write-Host ("Konto dla {0}: login {1}, hasło {2}, kod usuwania postaci {3}" -f $friend.name, $friend.login, $friend.password, $friend.socialId) -ForegroundColor Green
+    $target = Get-M2CoopInviteTarget -ServerRoot $serverRoot
+    if ($target.Address) {
+        Write-Host 'Kod zaproszenia (skopiuj i wyślij znajomemu):'
+        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $friend -HostAddress $target.Address -Vpn $target.Vpn) -ForegroundColor Cyan
+        if ($target.Vpn) { Write-Host ("Znajomy musi być w Twojej sieci {0} - kod prowadzi na adres {1}." -f $target.VpnName, $target.Address) -ForegroundColor Yellow }
+    }
+}
+
+function Set-CoopFriendBlockedAction {
+    param([bool]$Blocked = $true)
+    Assert-CoopHostAccess
+    $login = $FriendLogin
+    if (-not $login) { $login = Read-Host 'Login znajomego' }
+    if (-not $login) { throw 'Nie podano loginu.' }
+    Set-M2CoopFriendBlocked -ServerRoot $serverRoot -Login $login -Blocked $Blocked
+    if ($Blocked) { Write-Host "Konto $login zablokowane: nie zaloguje się, dopóki go nie odblokujesz." -ForegroundColor Green }
+    else { Write-Host "Konto $login odblokowane." -ForegroundColor Green }
+}
+
+function Show-CoopInviteAction {
+    Assert-CoopHostAccess
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    $target = Get-M2CoopInviteTarget -ServerRoot $serverRoot
+    if (-not $target.Address) {
+        if ($target.Vpn) { throw ("Nie udało się odczytać adresu {0} - uruchom go i spróbuj jeszcze raz." -f $target.VpnName) }
+        throw 'Nie udało się odczytać adresu publicznego (brak internetu?).'
+    }
+    $shown = 0
+    foreach ($f in @($state.friends)) {
+        if ($FriendLogin -and [string]$f.login -ne $FriendLogin) { continue }
+        if ($f.blocked) { continue }
+        Write-Host ("{0} (login {1}, hasło {2}):" -f $f.name, $f.login, $f.password)
+        Write-Host (Get-M2CoopFriendInvite -ServerRoot $serverRoot -Friend $f -HostAddress $target.Address -Vpn $target.Vpn) -ForegroundColor Cyan
+        $shown++
+    }
+    if ($shown -eq 0) { Write-Host 'Brak znajomych - dodaj ich najpierw.' -ForegroundColor Yellow }
+    elseif ($target.Vpn) { Write-Host ("Kody prowadzą na adres {0} w sieci {1} - znajomi muszą być w tej sieci." -f $target.Address, $target.VpnName) -ForegroundColor Yellow }
+}
+
+function Invoke-CoopGameRecreate {
+    # Docker cannot move a running container's published ports, so the game
+    # container is recreated with the new address - every core restarts, about
+    # a minute. The panels stay on M2_PANEL_BIND_ADDRESS, written out as
+    # 127.0.0.1 first if it was empty, so they never follow the game outwards.
+    param([Parameter(Mandatory = $true)][string]$BindAddress)
+    if (-not (Get-DotEnvValue -Key 'M2_PANEL_BIND_ADDRESS')) { Set-DotEnvValue -Key 'M2_PANEL_BIND_ADDRESS' -Value '127.0.0.1' }
+    Set-DotEnvValue -Key 'M2_HOST_BIND_ADDRESS' -Value $BindAddress
+    $composeDir = Join-Path $serverRoot 'linux-port\docker'
+    $composeFile = Join-Path $composeDir 'docker-compose.yml'
+    # compose writes its progress to stderr, which 'Stop' would turn into a
+    # failure; the exit code decides (the same shape as Stop-Server).
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        docker compose --project-directory $composeDir -f $composeFile up -d --no-deps game
+        $exit = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousPreference }
+    if ($exit -ne 0) { throw "docker compose up game zakończył się kodem $exit." }
+}
+
+function Test-CoopCoreAnswers {
+    # A core is up when it sends its handshake. A connection alone proves
+    # nothing: Docker Desktop's port proxy accepts one before anything inside
+    # the container listens and then closes it, so "connected" came back
+    # eleven seconds into a boot the cores needed forty for.
+    param([int]$Port)
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $wait = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
+        if (-not ($wait.AsyncWaitHandle.WaitOne(2000) -and $client.Connected)) { return $false }
+        $client.EndConnect($wait)
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = 3000
+        $buffer = New-Object byte[] 16
+        return ($stream.Read($buffer, 0, $buffer.Length) -gt 0)
+    }
+    catch { return $false }
+    finally { $client.Close() }
+}
+
+function Wait-CoopGameReady {
+    # Every core the client may be sent to has to answer, not only the auth:
+    # a friend who logs in while game2 is still booting is dropped at the
+    # first map that core hosts.
+    param([int]$TimeoutSeconds = 240)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $pending = New-Object System.Collections.Generic.List[int]
+    foreach ($port in @(Get-M2CoopGamePorts -ServerRoot $serverRoot)) { $pending.Add([int]$port) }
+    while ((Get-Date) -lt $deadline) {
+        foreach ($port in @($pending)) { if (Test-CoopCoreAnswers -Port $port) { [void]$pending.Remove($port) } }
+        if ($pending.Count -eq 0) { return $true }
+        Start-Sleep -Seconds 3
+    }
+    Write-Host ("Nie odpowiadają jeszcze porty: {0}" -f ($pending -join ', ')) -ForegroundColor Yellow
+    return $false
+}
+
+function Start-CoopHostingAction {
+    Assert-CoopHostAccess
+    Write-Phase 'sprawdzanie sieci'
+    $report = Get-M2CoopNetworkReport
+    Write-CoopNetworkReport -Report $report
+    if (@('no-lan', 'offline') -contains $report.Verdict) {
+        throw 'Ten komputer nie ma połączenia z internetem - hostowanie przerwane, nic nie zmieniono.'
+    }
+    # The text menu asks when there is a real choice - a VPN here and an
+    # Internet that could work too; the window's button passes its own answer.
+    $requested = $CoopVia
+    $vpns = @($report.Vpns)
+    if ($Action -eq 'Menu' -and $requested -eq 'auto' -and $vpns.Count -gt 0 -and -not (@('cgnat', 'double-nat') -contains $report.Verdict)) {
+        if (Confirm-Action ("Wykryto {0} (adres {1}). Hostować przez VPN zamiast przez internet?" -f $vpns[0].Name, $vpns[0].Address)) { $requested = $vpns[0].Kind }
+        else { $requested = 'internet' }
+    }
+    $via = Resolve-M2CoopHostingVia -Report $report -Requested $requested
+    if ($via.Mode -eq 'blocked') {
+        throw ('Z tej sieci znajomi nie połączą się bezpośrednio (operator albo drugi router nie daje publicznego adresu) - hostowanie przerwane, nic nie zmieniono. ' +
+            'Zainstaluj Radmin VPN albo Tailscale, połącz się ze znajomymi w jednej sieci i hostuj ponownie: launcher wykryje VPN i użyje go zamiast routera.')
+    }
+    if ($via.Mode -eq 'vpn') { Write-Host ("Hostowanie przez {0}, adres {1}." -f $via.Vpn.Name, $via.Vpn.Address) -ForegroundColor Green }
+    $defaults = @(Get-M2CoopDefaultPasswordAccounts -ServerRoot $serverRoot)
+    if ($defaults.Count -gt 0) {
+        throw ("Konta {0} mają hasła z paczki - każdy w internecie mógłby się na nie zalogować. Najpierw 'Zabezpiecz konta'." -f ($defaults -join ', '))
+    }
+    $ports = Get-M2CoopGamePorts -ServerRoot $serverRoot
+    $bindings = Get-M2CoopGameBindings -ServerRoot $serverRoot
+    if ($bindings.Public) { Write-Host 'Porty gry są już otwarte na wszystkich kartach sieciowych.' -ForegroundColor Green }
+    else {
+        Write-Phase 'porty gry dla sieci (restart serwera gry, około minuty)'
+        Invoke-CoopGameRecreate -BindAddress '0.0.0.0'
+        if (Wait-CoopGameReady) { Write-Host 'Serwer gry wstał.' -ForegroundColor Green }
+        else { Write-Host 'Serwer gry jeszcze wstaje - znajomi zalogują się za chwilę.' -ForegroundColor Yellow }
+    }
+    Write-Host ("Opublikowane: {0}" -f ((Get-M2CoopGameBindings -ServerRoot $serverRoot).Lines -join '; '))
+    Write-Phase 'zapora Windows'
+    if (Test-M2CoopFirewallRule) { Write-Host 'Reguła zapory dla portów gry już jest.' }
+    else {
+        Write-Host 'Windows zapyta o zgodę administratora na regułę zapory dla portów gry - potwierdź.' -ForegroundColor Yellow
+        if (Add-M2CoopFirewallRule -Ports $ports) { Write-Host 'Reguła zapory dodana.' -ForegroundColor Green }
+        else { Write-Host 'Reguły zapory nie dodano (odmowa zgody?) - zapora może nie wpuścić znajomych.' -ForegroundColor Yellow }
+    }
+    foreach ($block in @(Get-M2CoopFirewallBlocks)) {
+        Write-Host ("UWAGA: zapora blokuje program {0} (reguła '{1}') - usuń tę regułę w Zaporze Windows, inaczej znajomi się nie połączą." -f $block.Program, $block.Name) -ForegroundColor Yellow
+    }
+    $mapped = @()
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    if ($via.Mode -eq 'vpn') {
+        # Nothing is opened in the router, and what hosting over the Internet
+        # opened before is closed: through a VPN the world is for the VPN's
+        # members and the LAN, not for everybody who scans the address.
+        $wasMapped = @()
+        if ($state.hosting -and (@($state.hosting.PSObject.Properties.Name) -contains 'mapped')) { $wasMapped = @($state.hosting.mapped) }
+        if ($report.GatewayInfo -and $wasMapped.Count -gt 0) {
+            Write-Phase 'router: zamykanie portów z hostowania przez internet'
+            foreach ($port in $wasMapped) {
+                if (Remove-M2CoopPortMapping -Gateway $report.GatewayInfo -Port ([int]$port) -LanAddress $report.LanAddress) { Write-Host "  port $port zamknięty" }
+            }
+        }
+        Write-Host ("W routerze nic nie otwieram - znajomi łączą się przez {0}." -f $via.Vpn.Name)
+    }
+    elseif ($report.GatewayInfo) {
+        Write-Phase 'przekierowania w routerze (UPnP)'
+        foreach ($port in $ports) {
+            $r = Add-M2CoopPortMapping -Gateway $report.GatewayInfo -Port $port -LanAddress $report.LanAddress
+            if ($r.Ok) {
+                $mapped += $port
+                $lease = $(if ($r.Lease -gt 0) { "na $([int]($r.Lease / 3600)) h" } else { 'bez terminu' })
+                Write-Host ("  port {0}: otwarty ({1})" -f $port, $lease) -ForegroundColor Green
+            }
+            else { Write-Host ("  port {0}: {1}" -f $port, $r.Reason) -ForegroundColor Red }
+        }
+    }
+    else {
+        Write-Host ("Router nie odpowiada na UPnP: przekieruj w nim ręcznie TCP {0} na {1}." -f ($ports -join ', '), $report.LanAddress) -ForegroundColor Yellow
+    }
+    $friendAddress = $(if ($via.Mode -eq 'vpn') { $via.Vpn.Address } else { $report.PublicAddress })
+    $state.hosting = [pscustomobject]@{
+        active = $true; since = (Get-Date).ToString('s'); lanAddress = $report.LanAddress
+        publicAddress = $report.PublicAddress; ports = @($ports); mapped = @($mapped)
+        mode = $via.Mode; vpn = $(if ($via.Vpn) { $via.Vpn.Kind } else { '' }); vpnName = $(if ($via.Vpn) { $via.Vpn.Name } else { '' })
+        friendAddress = $friendAddress
+    }
+    Save-M2CoopState -ServerRoot $serverRoot -State $state
+    Write-Host ''
+    if ($via.Mode -eq 'vpn') {
+        Write-Host ("Hostowanie włączone przez {0}. Adres dla znajomych: {1}" -f $via.Vpn.Name, $friendAddress) -ForegroundColor Green
+        Write-Host ("Znajomi muszą dołączyć do Twojej sieci {0}, zanim wkleją kod zaproszenia." -f $via.Vpn.Name) -ForegroundColor Yellow
+    }
+    else { Write-Host ("Hostowanie włączone. Adres dla znajomych: {0}" -f $friendAddress) -ForegroundColor Green }
+    Write-Host 'Ty grasz dalej na serwerze 1 (Metin2 SinglePlayer). Kody zaproszeń dla znajomych są w oknie COOP.'
+    if (@($state.friends).Count -eq 0) { Write-Host 'Nie masz jeszcze znajomych - dodaj ich w oknie COOP.' -ForegroundColor Yellow }
+    if ($mapped.Count -gt 0 -and $mapped.Count -lt $ports.Count) {
+        Write-Host 'Nie wszystkie porty udało się otworzyć - bez nich znajomy utknie przy zmianie mapy.' -ForegroundColor Yellow
+    }
+}
+
+function Stop-CoopHostingAction {
+    Assert-CoopModule
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    $ports = Get-M2CoopGamePorts -ServerRoot $serverRoot
+    $lan = Get-M2CoopLanAddress
+    if ($lan) {
+        $gateway = Find-M2CoopGateway -LanAddress $lan.Address
+        if ($gateway) {
+            Write-Phase 'router: zamykanie portów'
+            foreach ($port in $ports) {
+                if (Remove-M2CoopPortMapping -Gateway $gateway -Port $port -LanAddress $lan.Address) { Write-Host "  port $port zamknięty" }
+                else { Write-Host "  port $port ma cudze przekierowanie - nie ruszam go" -ForegroundColor Yellow }
+            }
+        }
+    }
+    $bindings = Get-M2CoopGameBindings -ServerRoot $serverRoot
+    $previous = Get-DotEnvValue -Key 'M2_HOST_BIND_ADDRESS'
+    if ($bindings.Public -or $previous -ne '127.0.0.1') {
+        Write-Phase 'porty gry tylko dla tego komputera (restart serwera gry, około minuty)'
+        Invoke-CoopGameRecreate -BindAddress '127.0.0.1'
+        [void](Wait-CoopGameReady)
+    }
+    Write-Host ("Opublikowane: {0}" -f ((Get-M2CoopGameBindings -ServerRoot $serverRoot).Lines -join '; '))
+    if ($state.hosting) { $state.hosting.active = $false }
+    Save-M2CoopState -ServerRoot $serverRoot -State $state
+    Write-Host 'Hostowanie wyłączone. Reguła zapory zostaje, ale porty słuchają już tylko na tym komputerze.' -ForegroundColor Green
+}
+
+function Update-CoopHostingLease {
+    # A mapping leased for four hours has to be renewed by somebody: GRAJ and
+    # the window's timer both come here. Only while hosting is on, and quietly.
+    if (-not (Get-Command Read-M2CoopState -ErrorAction SilentlyContinue)) { return }
+    $state = Read-M2CoopState -ServerRoot $serverRoot
+    if (-not ($state.hosting -and $state.hosting.active)) { return }
+    # Through a VPN nothing is leased in the router.
+    if ((Get-CoopHostingField $state.hosting 'mode') -eq 'vpn') { return }
+    $lan = Get-M2CoopLanAddress
+    if (-not $lan) { return }
+    $gateway = Find-M2CoopGateway -LanAddress $lan.Address
+    if (-not $gateway) { return }
+    $ok = 0
+    foreach ($port in @(Get-M2CoopGamePorts -ServerRoot $serverRoot)) {
+        if ((Add-M2CoopPortMapping -Gateway $gateway -Port $port -LanAddress $lan.Address).Ok) { $ok++ }
+    }
+    Write-Host ("COOP: przekierowania w routerze odnowione ({0})." -f $ok)
+}
+
+function Join-CoopAction {
+    Assert-CoopModule
+    $code = $Invite
+    if (-not $code) { $code = Read-Host 'Wklej kod zaproszenia od znajomego' }
+    $inv = Read-M2CoopInvite -Code $code
+    $client = Get-M2CoopClientFolder -ServerRoot $serverRoot
+    if (-not $client) { throw 'Nie znaleziono folderu klienta (wskaż go przyciskiem WYBIERZ KLIENTA).' }
+    $path = Write-M2CoopClientConfig -ClientFolder $client -Invite $inv
+    Write-Host ("Zapisano {0}" -f $path) -ForegroundColor Green
+    Write-Host ("W kliencie wybierz serwer 'Online: {0}' i zaloguj się: login {1}, hasło {2}" -f $inv.name, $inv.login, $inv.password) -ForegroundColor Cyan
+    $advice = Get-M2CoopJoinAdvice -Invite $inv
+    if ($advice) { Write-Host $advice -ForegroundColor Yellow }
+    if (Test-M2CoopHostAnswers -HostAddress ([string]$inv.host) -Port ([int]$inv.auth)) { Write-Host 'Serwer znajomego odpowiada z tego komputera.' -ForegroundColor Green }
+    else { Write-Host 'Serwer znajomego teraz nie odpowiada - sprawdź, czy ma uruchomiony serwer i włączone hostowanie.' -ForegroundColor Yellow }
+}
+
 function Invoke-Action {
     param([Parameter(Mandatory = $true)][string]$SelectedAction)
     $config = Get-Config
@@ -1179,6 +1844,10 @@ function Invoke-Action {
         'UpdateAll' {
             $remote = Get-M2UpdateManifest -Source (Get-ManifestSource $config)
             Show-UpdateStatus -RemoteManifest $remote
+            $clientComponent = Get-ManifestComponent -RemoteManifest $remote -Name 'client'
+            if ($clientComponent -and -not (Test-InstalledVersion -Installed ([string](Read-State).client) -Available ([string]$clientComponent.version))) {
+                Assert-ClientNotRunning -Config $config
+            }
             Update-Server -RemoteManifest $remote
             Update-Client -RemoteManifest $remote -Config $config
         }
@@ -1195,6 +1864,16 @@ function Invoke-Action {
         'RepairDb' { Repair-DatabaseAction }
         'DbAccess' { Show-DatabaseAccessAction }
         'PanelPassword' { Reset-PanelPasswordAction }
+        'CoopCheck' { Show-CoopCheckAction }
+        'CoopSecure' { Protect-CoopAccountsAction }
+        'CoopAddFriend' { Add-CoopFriendAction }
+        'CoopBlockFriend' { Set-CoopFriendBlockedAction -Blocked $true }
+        'CoopUnblockFriend' { Set-CoopFriendBlockedAction -Blocked $false }
+        'CoopInvite' { Show-CoopInviteAction }
+        'CoopHost' { Start-CoopHostingAction }
+        'CoopStop' { Stop-CoopHostingAction }
+        'CoopRenew' { Assert-CoopModule; Update-CoopHostingLease }
+        'CoopJoin' { Join-CoopAction }
         default { throw "Nieznana akcja: $SelectedAction" }
     }
 }
@@ -1224,6 +1903,18 @@ function Show-Menu {
         Write-Host ' 20. Hasło do panelu WWW (pokaż / zresetuj)'
         Write-Host ' 21. Zwolnij porty (gdy „port jest już zajęty” blokuje start lub aktualizację)'
         Write-Host ' 22. Poziom trudności (czekanie u Biologa i Stajennego: easy / medium / hard / własne godziny)'
+        if (Get-Command Get-M2CoopNetworkReport -ErrorAction SilentlyContinue) {
+            Write-Host ' 23. COOP: sprawdź sieć i stan hostowania (eksperymentalne)'
+            if (-not (Test-M2CoopAccess -ServerRoot $serverRoot)) {
+                Write-Host '     Hostowanie (24-27) testują na razie patroni - launcher zapyta o ich hasło.' -ForegroundColor DarkGray
+            }
+            Write-Host ' 24. COOP: zabezpiecz konta admin i test (nowe hasła)'
+            Write-Host ' 25. COOP: dodaj znajomego (konto i kod zaproszenia)'
+            Write-Host ' 26. COOP: pokaż kody zaproszeń'
+            Write-Host ' 27. COOP: hostuj świat dla znajomych'
+            Write-Host ' 28. COOP: zakończ hostowanie'
+            Write-Host ' 29. COOP: dołącz do świata znajomego (wklej kod)'
+        }
         Write-Host '  0. Wyjście'
         Write-Host ''
         $choice = Read-Host 'Wybierz opcję'
@@ -1241,6 +1932,13 @@ function Show-Menu {
             '20' { 'PanelPassword' }
             '21' { 'FreePorts' }
             '22' { 'SetDifficulty' }
+            '23' { 'CoopCheck' }
+            '24' { 'CoopSecure' }
+            '25' { 'CoopAddFriend' }
+            '26' { 'CoopInvite' }
+            '27' { 'CoopHost' }
+            '28' { 'CoopStop' }
+            '29' { 'CoopJoin' }
             '0' { return }
             default { '' }
         }

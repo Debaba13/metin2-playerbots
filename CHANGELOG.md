@@ -17,6 +17,1845 @@ every version here.
 
 ---
 
+## 2.0.88 — 2026-09-20
+
+Serwer 2.0.88, klient 2.0.21. Zawiera wszystko z 2.0.87.
+
+### Nazwy osobowości wracają nad głowy botów
+
+Serwer od 2.0.86 wysyła nad głową bota nazwę osobowości, która go teraz trzyma
+— Grinder, Zdobywca, Handlarz i tak dalej. Klient 2.0.20 tych nazw **nie znał**:
+poprawka leżała w repozytorium od 19 września, ale nie trafiła do paczki klienta,
+więc bot dostawał numer, którego klient nie umiał nazwać, i nie rysował nic. Kto
+zauważył, że osobowości zniknęły — miał rację. **Zaktualizuj też klienta.**
+
+### Auto Łowy: odpały idą po jednym
+
+Silnik przyjmuje jedno użycie przedmiotu naraz i odrzuca resztę, więc klatka
+wysyłająca cztery odpały kończyła się tym, że działał pierwszy. Teraz między dwoma
+użyciami jest sto milisekund, a reszta idzie w następnych przebiegach. Poprawka
+od **Colide**, autora tego okna.
+
+### Nowy cennik Iwakury
+
+Ceny w tym projekcie nie są wpisywane ręcznie — są renderowane z arkusza
+Iwakury. Ten jest z 20 września i ruszył się w nim prawie każdy numer, większość
+materiałów o jakieś siedemdziesiąt procent:
+
+| | było | jest |
+|---|---|---|
+| Ząb Orka | 136 730 | 232 441 |
+| Zwój Błogosławieństwa | 180 000 | 550 000 |
+| Kamień duchowy | 500 000 | 750 000 |
+
+Doszły też **receptury zielarskie** — czterdzieści pozycji, wszystkie po 450 000,
+których cennik wcześniej w ogóle nie wyceniał.
+
+Stragany, które już stoją, przecenia się same przy najbliższej wizycie
+właściciela — nie trzeba nic robić ani zaczynać od nowa.
+
+---
+
+## 2.0.87 — 2026-09-20
+
+Serwer 2.0.87. Zawiera wszystko z 2.0.86.
+
+### Nowy świat zaczyna się wtedy, kiedy chcesz
+
+Do tej pory po wyzerowaniu świata serwer ruszał natychmiast, a panel pokazywał
+650% doświadczenia, którego w grze nie było: mnożniki stawek na tej wersji
+silnika powstają dopiero przy pierwszym kliknięciu **Zastosuj** na stronie
+„Stawki”, więc świeży świat chodził na 100%, a panel obiecywał coś innego.
+Pierwsze kliknięcie — choćby bez ruszania pól — robiło z tej obietnicy prawdę.
+
+- **Launcher pyta o stawki, gdy zakładasz nowy świat.** Normalnie (100/100/100),
+  Spokojnie (300/200/200), Szybko (1000/500/500) albo własne liczby. To, co
+  wybierzesz, jest zapisywane zanim rdzenie wstaną, więc pierwszy bot gra już
+  na Twoich ustawieniach. Świat, który raz je dostał, zmienia się wyłącznie ze
+  strony „Stawki” w panelu — tak jak dotąd.
+- **Boty mogą poczekać przy drzwiach.** Przy zerowaniu świata możesz zaznaczyć,
+  że świat ma wstać pusty. Ustawiasz wtedy spokojnie stawki, respawny,
+  osobowości i cokolwiek jeszcze, a potem klikasz **Wpuść boty do świata** na
+  stronie AI w panelu. Boty wchodzą stopniowo, tak jak po zwykłym starcie.
+  Domyślnie wyłączone — kto nic nie zaznaczy, dostaje to, co dotąd.
+- Kto nie korzysta z launchera, ma w `.env` trzy nowe linie (`M2_RATE_EXP`,
+  `M2_RATE_DROP`, `M2_RATE_YANG`) i przełącznik `M2_PLAYERBOT_START_HELD`.
+
+### Iwakura Community Patch 1
+
+Pierwsza poprawka Iwakury do systemu osobowości:
+
+- **Grinder nie zatrzymuje się już całą wsią na jednym poziomie.** Blokada
+  pierwszej wioski jest losowana równo z przedziału 13–19, a blokada M3 z
+  19–25. Co czwarty bot w ogóle nie zatrzymuje się w pierwszej wiosce — od 13.
+  poziomu idzie prosto na M3 i dopiero tam staje.
+- **Od 35. poziomu Prawo Awansu jest ostrzejsze:** broń przynajmniej +8, a do
+  zbroi i tarczy dochodzi maska albo hełm na +6. Wcześniej hełmu nikt nie
+  wymaga — w pierwszych wioskach nie ma go gdzie kupić.
+- **Przed 45. poziomem bot bonuje najpierw naszyjnik, bransoletę i buty**, bez
+  względu na to, jak słabe są i na ile ulepszone, i celuje w linie z tabeli
+  Iwakury dla każdego z tych slotów. Młody bot sięga po to zwykły kamień
+  zmiany/dodania — zielone działają wyłącznie na broni i zbroi, więc inaczej
+  reguła nie miałaby jak zadziałać.
+- Ulepszanie idzie kolejnością: bronie, zbroje, tarcze, hełmy.
+- **Kamień Duszy +2** wolno włożyć w słaby sprzęt wczesnej gry; +0 i +1 już nie.
+
+### Walka botów
+
+- **Cios trafia to, co jest przed botem.** Bot bił do czterech potworów w
+  promieniu 300 jednostek, także tych za plecami. Gracz trafia wszystko przed
+  sobą, bo łuk broni zakreśla się z przodu — bot ma teraz ten sam łuk. Liczby
+  celów nie zmieniamy: gracz może trafić szesnaście, bot najwyżej cztery.
+- **Słaba broń bije jak słaba broń.** Gdy wyliczone obrażenia wychodziły małe,
+  bot podstawiał wymyśloną liczbę — około trzystu dla bota z siedemdziesiątki,
+  niezależnie od tego, co trzymał. Teraz cios jest wart tyle, ile liczy gra.
+
+### Panel
+
+- Z okna ekwipunku znika przycisk **odśwież**: wejście w postać i tak pobiera
+  dane od nowa, a teraz robi to z gwarancją, że przeglądarka nie poda starej
+  kopii.
+
+---
+
+## 2.0.86 — 2026-09-20
+
+Serwer 2.0.86, klient 2.0.20. Zawiera wszystko z 2.0.85.
+
+> **Zalecamy zaczac na nowym swiecie.** To wydanie zmienia zachowanie botow i
+> ich gospodarke mocniej niz jakiekolwiek wczesniej. Swiat, ktory gral na
+> starych zasadach, niesie ze soba plecaki, sklepy i magazyny ulozone pod nie.
+> Nowy swiat pokaze te systemy tak, jak maja dzialac. W launcherze:
+> **KOPIA / NOWY SWIAT**.
+
+### System osobowosci Iwakury
+
+Najwieksza zmiana w dzialaniu botow od poczatku projektu. Do tej pory bot
+dostawal osobowosc raz, przy wejsciu do gry, i trzymal sie jej do konca. Teraz
+o tym, kim jest w danej chwili, decyduje jego wlasna sytuacja — sprawdzana co
+dwie sekundy.
+
+**Nastroje (BMS).** Kazdy bot ma nastroj: SLABY, NORMALNY albo BARDZO DOBRY.
+Posucha bez niczego wartosciowego go obniza, dobry drop albo udane ulepszenie
+podnosi, spalenie przedmiotu na +8 czy +9 obniza o jeden, a piec smierci z reki
+gracza blokuje na SLABYM na trzy kwadranse. Tylko bot w slabym nastroju robi
+przerwy miedzy grupami potworow, odchodzi na chwile od klawiatury i odpoczywa w
+miescie. W towarzystwie — w druzynie, w lochu, na rajdzie, na wojnie, w
+pojedynku, na kontrakcie — kazdy gra jak NORMALNY, niezaleznie od tego, co
+czuje.
+
+**Kim bot jest teraz.** Kolejnosc jest taka: kontrakt najemnika, druzyna
+(Towarzysz), wedka, kilof, metin pod mlotkiem, sesja hazardzisty, kowadlo dla
+siebie (Perfekcjonista), plecak przy osiemdziesieciu procentach (Handlarz), a
+na koncu Grinder albo — gdy spelni Prawo Awansu — Zdobywca.
+
+**Towarzysz.** Suwak PT ustawia teraz udzial *czasu*, ktory bot spedza w
+druzynie, a nie sam ranking. Druzyna konczy sie tak, jak opisal Iwakura: przy
+pelnym plecaku, gdy poziomy sie rozjada, albo gdy reszta odejdzie — nie na
+minutnik. Bot zaprasza takze **graczy**: samotnego gracza zaprosi do druzyny, a
+do druzyny gracza z wolnym miejscem poprosi o przyjecie. Oba szanuja blokady z
+opcji gry i sa mocno racjonowane, zeby nikogo nie zasypac. Towarzysz-szaman
+trzyma buffy calej druzynie, graczom w pierwszej kolejnosci.
+
+**Najemnik.** Bot, ktory trzy razy w pol godziny zginal od potworow, jest w
+tarapatach. Silniejszy bot z jego krolestwa, na tej samej mapie, podchodzi i
+proponuje godzine opieki za 250 000 yang przeliczone przez stawki. Prowadzi
+druzyne, poluje tam, gdzie jest klient, klient dostaje polowe z kazdego zabicia.
+Pelny plecak najemnika wstrzymuje kontrakt — druzyna zostaje, zegar staje,
+najemnik wraca sam — a po godzinie klient placi dalej, jesli nadal potrzebuje.
+
+**Lista Przydatnych Przedmiotow.** Decyduje, co bot odklada u Dozorcy, zamiast
+sprzedawac: bizuteria i buty tieru 3-6, bronie z jego pasm poziomow, tarcze z
+61 i zbroje z 66, oraz kazdy przedmiot z linia tieru 5-6 wyrzucona co najmniej
+do polowy. Dwie sztuki broni albo zbroi i trzy drobne dla swojej klasy, jedna
+dla obcej. Co bot przerosnie — wraca na rynek.
+
+**Hazardzista** dokupuje bazy i materialy z lokalnych sklepow offline, w ramach
+budzetu sesji.
+
+Calosc chodzi na przelaczniku **OSOBOWOSCI** na stronie AI w panelu
+klasycznym — domyslnie wlaczonym. Wylaczenie wraca dokladnie do starego
+zachowania. Dawne osobowosci zostaly jako ukryty charakter, ktory tylko
+przechyla szanse; dropki Metinow, M2 i M3 zastapily progi Grindera, a kohorta
+dropkow medali operatora zostaje bez zmian.
+
+Nad glowa bota, w panelu i w pliku statusu widnieje ta sama odpowiedz;
+`PLAYERBOT_PERSONA: census` liczy je co dziesiec minut razem z nastrojami.
+
+### Okno ulepszania nie zamyka sie po kazdej probie
+
+- Ulepszasz dalej bez klikania od nowa w kowala i w przedmiot. System byl w
+  serwerze od 2.0.31, ale tylko dla kogos, kto wiedzial o komendzie
+  `/refine_keep_open 1` — teraz dziala u kazdego (podpowiedzial sizowski).
+- Kto woli po staremu, wpisuje `/refine_keep_open 0`. Wybor zostaje po
+  wylogowaniu, a kto juz wczesniej ustawil sobie wlaczone, niczego nie traci.
+- Bez zmian w Wiezy Demona — tamto ulepszanie zamyka sie jak dotad.
+
+### GRAJ moze uruchomic sam serwer
+
+- Pod przyciskiem GRAJ jest **„Uruchom takze klienta gry”**. Odznacz, jesli
+  trzymasz swiat wlaczony dla innych i nie chcesz, zeby za kazdym razem
+  otwieralo Ci sie okno gry.
+- Napis na przycisku mowi wtedy „GRAJ (SAM SERWER)”, wiec widac, co sie stanie.
+  Wybor pamieta sie na stale — odznaczasz raz.
+
+### Kazde ustawienie w `.env` opisane po polsku
+
+- Nad kazda linia w `linux-port\docker\.env` jest teraz komentarz `# PL:`
+  mowiacy, co ten parametr robi i co mozna w nim wpisac. Dotad plik byl
+  opisany wylacznie po angielsku i to stad bralo sie najwiecej pytan.
+- Opis musi byc w osobnej linii **nad** ustawieniem. Dopisanie komentarza w tej
+  samej linii (`KLUCZ=1 # opis`) psuje wartosc — Docker czyta wtedy „1 # opis”.
+
+### Zmiana ceny wielu przedmiotow w sklepie (klient 2.0.20)
+
+- Ctrl + prawy przycisk na przedmiocie w swoim sklepie zmienia cene wszystkich
+  takich samych. Dotad zmieniala sie cena jednego, a reszta wyrzucala blad
+  „poczekaj chwile” — serwer przyjmuje jedna operacje na 200 ms, a klient
+  wysylal wszystkie naraz (zglosili uxietoszef i Nagash). Teraz wychodza po
+  kolei; dwadziescia przedmiotow zajmuje okolo pieciu sekund.
+
+### Poprawki
+
+- **Swiat opisany osobno dla kazdego krolestwa** liczyl sie jako maly i trafial
+  na jeden rdzen. Trzy razy po 700 botow to 2100 botow, a nie „nic”: taki swiat
+  zostaje teraz na trzech rdzeniach, tak jak mial.
+- **Log serwera przestal straszyc** przy sortowaniu ekwipunku. Kontrola zajetosci
+  liczyla dolna polowe kazdego miecza i kazdej zbroi jako bled i pisala o tym do
+  `syserr` — 2188 wpisow o plecakach, z ktorymi nic nie bylo nie tak. Samo
+  sortowanie bylo i jest bezpieczne: w 2188 pomiarach nie zmienilo stanu ani
+  jednej komorki.
+- **Kamienie bonusu** (zmianki, dodania): sprawdzone do konca. Nie da sie ich
+  wystawic na straganie i nie jest to wina botow — sam silnik na to nie
+  pozwala (te przedmioty maja blokade sklepu, gracz tez ich nie wystawi).
+  Boty ich uzywaja normalnie do mixowania; zajmuja srednio 1,6 komorki, bo sie
+  stackuja.
+
+---
+
+## 2.0.85 — 2026-09-20
+
+Serwer 2.0.85. Klient bez zmian (2.0.19).
+
+### Wszystkie trzy krolestwa na jednym swiecie, domyslnie
+
+- `M2_PLAYERBOT_WORLD_LAYOUT` jest teraz ustawiony na `unified` — takze na
+  serwerach, ktore juz stoja (raz, przy najblizszym starcie). Wczesniej kazde
+  krolestwo dostawalo osobny rdzen, a bot nie potrafi przejsc miedzy rdzeniami:
+  caly front — Dolina Orkow, Pustynia, Sohan, Lochy Pajakow — hostuje rdzen
+  Chunjo, wiec boty Shinsoo i Jinno konczyly na okolicach 36 poziomu i nie mialy
+  gdzie polowac. Przelacznik istnial od 2.0.30 i prawie nikt o nim nie wiedzial:
+  gracze przesylali sobie zrzuty ekranu z linijka do wklejenia do `.env`.
+- Swiat, ktory prosi o wiecej niz 1500 botow, zostaje na `split` — przy takiej
+  liczbie jeden rdzen bylby za wolny. Wlasny wybor w `.env` jest respektowany;
+  zmiana jest jednorazowa i zapisuje `M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=1`.
+
+### Poprawki
+
+- **Sortowanie ekwipunku nie zostawia juz slotow, ktorych nie da sie uzyc**
+  (Dearminder). Po „Scal i uporzadkuj" miejsca zwolnione przez sortowanie
+  potrafily zostac dla klienta zajete — nie dalo sie tam nic przeniesc
+  z magazynu, a pomagalo dopiero przelogowanie. Serwer na koniec operacji
+  podaje klientowi jeszcze raz stan kazdej komorki, ktorej dotknal, i
+  sprawdza przy okazji wlasna siatke zajetosci.
+- **Boty nie chomikuja juz medali konnych** (Greess). Bot z koniem na
+  dziesiatym poziomie i powyzej 35 poziomu postaci nie mogl ani wydac medalu
+  (czeka na probe konia bojowego), ani go sprzedac — wiec zbieral je bez konca;
+  jeden z graczy pokazal ponad czterdziesci sztuk w plecaku. Teraz wszystko
+  ponad dwa medale trafia na sklep jak kazdy inny towar. Na swiecie testowym
+  bylo 37 627 medali w plecakach przeciwko 5 346 na ladach.
+- **Boty wystawiaja nadmiar kamieni bonusu** (Nagash). Kamien zmiany, kamien
+  dodania i Marmur Blogoslawienstwa nigdy nie moga trafic do handlarza — i
+  zadna lada ich tez nie przyjmowala, wiec to, czego bot nie zdazyl zuzyc,
+  zostawalo w plecaku na zawsze; jeden z graczy pokazal sto dziewiecdziesiat
+  sztuk u jednego bota. Na swiecie testowym bylo 20 387 kamieni w plecakach i
+  **zero** na ladach, 374 boty ponad dziesiec sztuk. Teraz bot trzyma dziesiec
+  na wlasne mixowanie, a reszte wystawia.
+- **Drugi kanal jest osiagalny takze na Linuksie** (GorącyDelfin). Kanal 2
+  nasluchuje na portach 13010-13012, ale otwieral je tylko launcher na
+  Windows — wiec na serwerze linuksowym (i po wlaczeniu kanalu w panelu) boty
+  na CH2 graly, a nikt z zewnatrz nie mogl sie tam zalogowac. Aktualizacja
+  ustawia zakres portow sama, zanim wystartuja kontenery.
+- **Panel zaawansowany pokazuje, ile botow jest na ktorym kanale** (hunmar).
+  Rozbicie pojawia sie obok lacznej liczby tylko wtedy, gdy drugi kanal
+  faktycznie dziala.
+
+## 2.0.84 — 2026-09-19
+
+Serwer 2.0.84 i klient 2.0.19. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe
+Auto Łowy są w kliencie.
+
+### Drugi kanał dostaje swoich botów (SIZOWSKI, Xewi, Mkls)
+
+- Z włączonym drugim kanałem CH2 dostaje tylu botów, ile ustawia suwak
+  (domyślnie 40%). Wcześniej każdy bot, który miał kiedyś sklep offline, był
+  na stałe przypisany do CH1. Na świecie, który już trochę pograł, sklep ma
+  prawie każdy bot, więc CH2 dostawał kilkadziesiąt botów zamiast kilkuset.
+- Sklepy dalej stoją tylko na CH1. Bot z CH2, który chce otworzyć albo
+  obsłużyć swój sklep albo coś kupić, przechodzi na CH1, a wolny bot z CH1
+  przechodzi na jego miejsce na CH2. Przejście to wylogowanie z jednego
+  kanału i zalogowanie na drugim. Bot nigdy nie jest na obu kanałach naraz.
+- Bot z CH2 obsługuje swój sklep co 45–75 minut, a nie co kwadrans:
+  przejście między kanałami kosztuje więcej niż zwykła zmiana mapy.
+- Ustawiony udział to najmniej tyle botów na CH2. Gdy nikt nie czeka na
+  przejście, CH2 może przejąć do 10 punktów więcej. Dropki medali zostają na
+  CH1.
+- Projekt przejść między kanałami przysłał SIZOWSKI. Dziękujemy!
+
+### Serwer wstaje po nagłym wyłączeniu komputera (Greess)
+
+- Gdy komputer wyłączy się nagle w trakcie aktualizacji, plik
+  linux-port\docker\.env potrafi zostać wypełniony zerami. Serwer nie
+  startował wtedy wcale (w logu: „unexpected character "\x00"”), a hasła do
+  bazy postaci były tylko w tym pliku.
+- Launcher sam naprawia taki plik przy następnym starcie albo aktualizacji:
+  przywraca kopię z ostatniego udanego startu, a gdy jej nie ma, odczytuje
+  ustawienia i hasła z kontenerów serwera. Uszkodzony plik zostaje obok jako
+  kopia. Postacie i baza zostają nietknięte.
+- Plik .env jest teraz zapisywany tak, żeby nagłe wyłączenie komputera go nie
+  zniszczyło, a przy każdym starcie launcher zostawia jego kopię
+  (.env.last-good).
+
+### Kamienie Duszy według tierów Iwakury
+
+- Boty wkładają Kamienie Duszy według nowej listy Iwakury: tylko +3 i +4, i
+  tylko te, które do expienia ocenił co najmniej na 3. Kamień +3 albo +4
+  trafia do przedmiotu od +6 w górę, a przedmiot +8 i +9 czeka na +4.
+  Kamienie klasowe (Wojownika, Sury, Ninja, Szamana) są tylko do PvP i boty
+  ich nie wkładają.
+- Kamienie +0, +1 i +2 bot wkłada tylko wtedy, gdy mu wypadną, i tylko do
+  słabego przedmiotu: do 21 poziomu i najwyżej +6. Rodzaj kamienia musi mieć
+  u Iwakury ocenę co najmniej 3. Takich kamieni boty nie kupują.
+- Na targu boty kupują tylko Kamienie Duszy +3 i +4.
+- Przy wyborze ekwipunku liczą się włożone kamienie, więc bot nie zamieni
+  przedmiotu z dobrymi kamieniami na goły.
+
+### Nowe nicki od Iwakury
+
+- Lista nicków urosła do 1800. Bot, który ma już nick, zostaje przy nim.
+  Nowe nicki dostają tylko boty, które jeszcze nie mają nicku.
+
+### Auto Łowy od Colide'a, wersja druga (klient 2.0.19)
+
+- 12 przedmiotów na czasie, w dwóch rzędach.
+- Podnoszenie ma własne, przesuwane okno „Auto Łowy – Łupy”, więc oba okna
+  mieszczą się na ekranie 800×600.
+- Ustawienia zapisane w poprzedniej wersji zostają.
+
+### Klient 2.0.19
+
+- Auto Łowy w drugiej wersji od Colide'a (opis wyżej).
+
+## 2.0.83 — 2026-09-19
+
+Serwer 2.0.83 i klient 2.0.18. W launcherze ZAINSTALUJ AKTUALIZACJE: nowe okno
+magazynu potrzebuje obu.
+
+### Magazyn: sortowanie, łączenie i rozdzielanie stosów (blasty)
+
+- W oknie magazynu, obok tytułu, jest przycisk „Scal i uporządkuj”, taki sam
+  jak w ekwipunku. Scala stosy tych samych przedmiotów i układa magazyn:
+  najpierw mikstury, potem ekwipunek, księgi, ulepszacze, skrzynki i reszta.
+- Przy otwartym magazynie ekwipunek działa normalnie: można w nim rozdzielać
+  i łączyć stosy, a także go porządkować. Wcześniej serwer po cichu odmawiał
+  każdego przesunięcia w torbie, dopóki magazyn był otwarty.
+- Przedmiot przeciągnięty na taki sam przedmiot łączy się z nim: z magazynu
+  do ekwipunku, z ekwipunku do magazynu i w samym magazynie. Gdy docelowy
+  stos jest pełny albo leży tam inny przedmiot, czat mówi, czemu nic się nie
+  stało.
+- Shift i kliknięcie stosu w magazynie otwiera okno wyboru ilości, jak w
+  ekwipunku. Wybraną część można upuścić w ekwipunku, na wolnym polu
+  magazynu albo na takim samym przedmiocie. Część stosu z ekwipunku (też
+  Shift i kliknięcie) trafia tak samo do magazynu.
+- Boty układają swoje magazyny przy każdej wizycie.
+
+### Wojny gildii: koniec z biciem się w kółko w miejscu (Hiob)
+
+- Bot, który zginął na wojnie, wstaje niewidzialny, odpoczywa do trzech
+  czwartych życia i dopiero wtedy wraca do walki. Wcześniej wstawał z jedną
+  piątą życia wprost pod miecze zabójców i ginął od nowa, a wrogowie machali
+  w niewidzialnego. Stąd boty, które „w nieskończoność biją się w miejscu”.
+  Wrogowie nie atakują już wstających.
+- Wyłączenie wojen w panelu kończy też wojnę, która trwa: boty od razu
+  schodzą z pola bitwy i wracają do wioski. Wcześniej wyłącznik blokował
+  tylko następną wojnę, a trwająca szła do końca swoich 30 minut.
+
+### Okrzyk o ulepszeniu podaje stopień raz (archonek)
+
+- Bot chwali się ulepszeniem tak: „Pajęcza Włócznia z +6 na +7, kowal dziś
+  łaskawy”. Wcześniej stopień padał dwa razy: „no i mam +7 na Pajęcza
+  Włócznia+7”.
+
+### Klient 2.0.18
+
+- Okno magazynu: przycisk „Scal i uporządkuj”, Shift i kliknięcie oraz
+  łączenie przez przeciąganie (opis wyżej). Potrzebuje serwera 2.0.83.
+- COOP w testach u patronów: Dolacz.bat mówi, którego VPN brakuje, gdy świat
+  jest hostowany przez VPN.
+
+## 2.0.82 — 2026-09-19
+
+Serwer 2.0.82, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### COOP w testach u patronów
+
+- Hostowanie w COOP działa też przez VPN (Radmin VPN, Tailscale, ZeroTier,
+  Hamachi) tam, gdzie operator internetu nie daje publicznego adresu.
+
+## 2.0.81 — 2026-09-19
+
+Serwer 2.0.81, klient bez zmian (2.0.17). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Tereny gildii z paczki są wolne (Mat, NerrVoVy)
+
+- Baza z paczki przyniosła 28 terenów gildii i 62 budynki z serwera, z którego
+  ją zrobiono, ale żadnej z gildii, do których należały. Te tereny uchodziły
+  więc za zajęte: nie stał przy nich zarządca terenu i nie dało się ich kupić,
+  a budynki stały na ziemi, której nikt nie miał. Gildia bota założona pod
+  jednym z tamtych numerów „dostawała” cudzy teren z budynkami.
+- Przy pierwszym starcie po aktualizacji te wpisy znikają: tereny z paczki są
+  do kupienia, zarządca terenu stoi na każdym, a budynki z paczki znikają.
+  Tereny kupione przez graczy i postawione na nich budynki zostają.
+
+### Dropki nie robią próby konia (Urtopy)
+
+- Dropki (Metinów, M2, M3, medali) to postacie do dropu: nie robią Biologa ani
+  próby konia bojowego. Status „Zdobywam konia bojowego na pustyni (0/100)”
+  u dropka stojącego w M3 był fałszywy i już się nie pokazuje, a dropek nie
+  jest też kierowany na pustynię.
+- Panel przy dropku pokazuje w Biologu „nie dotyczy — dropper nie robi
+  Biologa” zamiast 0/7.
+
+### Wieża Demonów: boty biją kilka potworów naraz (Nagash)
+
+- Paczka botów na piętrze nie ustawia się już w kolejce do jednego potwora.
+  Każdy bot bierze jednego z kilku potworów stojących najbliżej paczki
+  (mniej więcej dwa boty na potwora), więc piętra idą szybciej, a boty dalej
+  walczą w jednym miejscu. Metiny i bossów biją wszyscy razem.
+
+### Launcher po aktualizacji (Urtopy)
+
+- Po aktualizacji launcher uruchamia się ponownie sam. Na Windows 11 nowe
+  okno potrafiło paść z błędem „cmd.exe — Aplikacja nie została właściwie
+  uruchomiona (0xc0000142)”. Stare okno czeka teraz, aż nowe naprawdę
+  wystartuje, a gdy nowe padnie, launcher próbuje drugi raz inną drogą.
+  Zadziała od następnej aktualizacji, bo tę uruchamia jeszcze stary launcher.
+
+## 2.0.80 — 2026-09-19
+
+Serwer 2.0.80, klient 2.0.17. W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Nowe okno Auto Łowów (Colide)
+
+- Okno Auto Łowów (klawisz K) przebudował Colide, gracz, który zrobił je
+  dla siebie i przysłał: 12 umiejętności w dwóch rzędach, 6 miejsc na
+  mikstury, każde z własnym progiem w procentach, i 6 przedmiotów używanych
+  co podaną liczbę sekund (peleryny, rosy).
+- Mikstura na manę sama pilnuje PE, a każda inna HP. Nie trzeba już trzymać
+  czerwonej na pierwszym miejscu i niebieskiej na drugim.
+- Przełączniki: Atak, Umiejętności, Wskrzeszenie, Mikstury, Odpały, Metiny
+  i Wracaj. Umiejętności działają na swoich zegarach także przy wyłączonym
+  ataku (wtedy wyłącz też Wracaj, bo postać wraca w miejsce startu).
+- „HP po wskrz. %”: po odrodzeniu postać pije mikstury i nie rusza do walki,
+  dopóki nie ma tylu procent HP, także po ręcznym „Odródź tutaj”.
+- Ustawienia każdej postaci zapisują się w folderze autohunt obok klienta.
+  Dotychczasowe ustawienia przechodzą same: umiejętności zostają na swoich
+  miejscach, mikstury HP i PE trafiają na dwa pierwsze miejsca mikstur,
+  a przedmioty do rzędu Odpały.
+
+### Serwer nie budował się przy źle ustawionym zegarze Windows (Xewi)
+
+- Docker bierze czas od Windows. Gdy zegar Windows jest cofnięty (u Xewi
+  o 3 godziny), serwery pakietów odrzucają pobieranie („Release file ... is
+  not valid yet”) i każde GRAJ zatrzymywało się na budowie panelu. Panel
+  i serwer gry budują się teraz mimo takiego zegara.
+- Launcher przy starcie porównuje zegar Windows z czasem z internetu,
+  a zegar Dockera z zegarem Windows. Gdy któryś odbiega o ponad 5 minut,
+  mówi, co ustawić: Ustawienia → Czas i język → Data i godzina → „Ustaw
+  czas automatycznie” i „Synchronizuj teraz”, potem zamknij Docker Desktop
+  i kliknij GRAJ.
+
+### COOP w testach u patronów
+
+- COOP, czyli gra ze znajomymi przez internet, jest na razie w testach
+  u patronów: przycisk COOP w launcherze prosi o hasło, które dostają patroni.
+
+## 2.0.79 — 2026-09-19
+
+Serwer 2.0.79, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Klątwa małp usunięta (SIZOWSKI)
+
+- Quest z paczki mt2009 (`monkey_curse`) po 55 minutach w łatwym Lochu Małp
+  (35 w średnim, 25 w trudnym) zamieniał postać na 5 minut w małpę i wyrzucał
+  ją do wioski, chyba że działało zioło z małp. Boty tych ziół nie używają,
+  więc dropiarze medali wylatywali z lochów jako małpy. Klątwy nie ma już dla
+  nikogo, ani dla graczy, ani dla botów: obraz gry przy każdej budowie usuwa
+  pliki tego questa, więc następna aktualizacja jej nie przywróci.
+- Zioła z małp zostają w dropach, bo quest poboczny na poziomy 55–57 wymaga
+  zioła z trudnych małp. Samo użycie zioła niczego już nie robi.
+
+### Przedmioty na „stall” też mają limit linii na ladzie (Tieru)
+
+- Przedmiot ustawiony w panelu (Polityka przedmiotów) na „stall” dalej trafia
+  na ladę przed wszystkim innym i nigdy do handlarza, ale na jednej ladzie
+  stoją najwyżej 3 linie tego samego przedmiotu, a marmurów najwyżej 3, każdy
+  innego potwora. Reszta czeka w plecaku. Do tej pory taki wpis zapychał całe
+  lady jednym przedmiotem: na naszym serwerze testowym Kawałek Lodu ustawiony
+  na „stall” stał w 46 liniach na jednej ladzie.
+- Linie ponad limit wracają z lad same, po jednej przy każdej wizycie
+  sprzedawcy.
+
+## 2.0.78 — 2026-09-18
+
+Serwer 2.0.78, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Aktualizacja, która nie mogła zbudować serwera (archonek)
+
+- Jeśli w plikach serwera został `messenger_manager.cpp` z cudzej przeróbki
+  (systemu towarzysza z innego forka), budowa rdzenia gry kończyła się
+  błędem „'class CPlayerBotManager' has no member named 'GetCompanionOwner'”
+  i każda aktualizacja od 2.0.74 przerywała się w tym samym miejscu.
+  Aktualizacja podmieniała nasze pliki, a ten zostawiała.
+- Paczka aktualizacji zawiera teraz fabryczny `messenger_manager.cpp`, więc
+  po kliknięciu ZAINSTALUJ AKTUALIZACJE plik wraca do wersji z paczki
+  i serwer się buduje. Przeróbka tego pliku (lista znajomych z forka) znika.
+- Launcher przy takim błędzie budowy mówi teraz wprost, który plik silnika
+  pochodzi z cudzej przeróbki i jak przywrócić fabryczny, zamiast ogólnego
+  „Operacja nie powiodła się”.
+
+### Różnorodność na ladach (Tieru, Hiob)
+
+- Na jednej ladzie stoją najwyżej 3 linie tego samego przedmiotu. Do tej
+  pory zdarzały się lady z 46 liniami Kawałka Lodu albo z kilkunastoma
+  liniami jednej farby do włosów. Nadmiar wraca do torby sprzedawcy, po
+  jednej linii przy każdej wizycie przy sklepie, i robi miejsce innemu
+  towarowi. Księgi umiejętności, Zwoje Zapomnienia i Kamienie Duchowe mają
+  dalej własne limity.
+- Marmury Polimorfii: najwyżej 3 na ladzie, nigdy dwa tego samego potwora.
+  Przez dwa dni nie sprzedał się ani jeden z 6581 wystawionych, a zapychały
+  lady, na których brakowało miejsca na materiały.
+- Materiał, którego w danej wiosce nikt nie wystawia, trafia na ladę przed
+  zwykłym sprzętem. W drugich wioskach (Bokjung, Jayang, Bakra) sprzedawcy
+  mieli brakujące materiały w torbach, ale ich lady były pełne.
+
+### Broń na 30 poziom innej klasy (Tieru)
+
+- Połowa broni na 30 poziom, których bot nie może założyć, idzie najpierw do
+  kowala. Ulepsza je na zwykłym kowadle, bez zwojów, do sufitu z tabeli dla
+  jej średnich obrażeń: do +7 przy średnich do 21%, do +6 przy 22–29%, do +4
+  przy 30–36%. Gotowy przedmiot trafia na ladę droższy, a te, które spłoną,
+  przestają zapychać lady. Broń z co najmniej 37% średnich albo 15% obrażeń
+  umiejętności nie idzie na kowadło i trafia na ladę jak dotąd.
+- Dla porządku: przy szansach tej rodziny (90/85/75/65/55/45/35/25/20%)
+  +9 zostaje rzadkością. Od +5 do +9 pod Zwojem Błogosławieństwa to średnio
+  ok. 200 zwojów, a na zwykłym kowadle dochodzi 0,8% broni.
+
+### Farby do włosów i fryzury (Tieru)
+
+- Farby do włosów z łowienia boty wyrzucają, tak jak robi większość graczy.
+  Zostawiają jedną, jeśli same nie mają jeszcze koloru włosów, i bardzo
+  rzadko (3 na 100) jakąś na sprzedaż. Farby już wystawione wracają z lad.
+- Co trzeci sprzedawca, któremu Smocze Monety nie są potrzebne na nic
+  własnego, kupuje w ItemShopie fryzurę, której sam nie założy, i wystawia
+  ją na ladę z ceną wyjściową ok. 2 mln yang (więcej przy wyższych
+  stawkach yang).
+  Fryzury z ItemShopu w tej paczce nie mają bonusów, więc sprzedaje się
+  wygląd. Monety boty mają z kuponów z metinów i bossów, więc przy domyślnej
+  szansie na kupon takich fryzur będzie niewiele.
+
+### Wojny gildii: pole bitwy dalej od strefy bezpiecznej (gregory_955)
+
+- Pole bitwy na mapach gildyjnych Chunjo i Jinno stało przy samej granicy
+  strefy bezpiecznej (50–100 jednostek od niej), więc część walczących
+  zawsze stała w strefie, gdzie nie da się zadać ciosu. W wojnie Chunjo
+  z 18 września było to 11 z 67 botów. Pole bitwy trzyma się teraz co
+  najmniej 800 jednostek od strefy: na mapie Chunjo przesuwa się o ok. 1000
+  jednostek, na mapie Jinno o ok. 800.
+- Ostatnia para wojny zapisuje się w bazie, więc restart przy aktualizacji
+  nie oddaje pierwszej wojny tym samym dwóm gildiom.
+
+## 2.0.77 — 2026-09-18
+
+Serwer 2.0.77, klient bez zmian (2.0.16). W launcherze ZAINSTALUJ AKTUALIZACJE.
+
+### Aktualizacja i zbieranie logów (archonek, Urtopy, DUDU)
+
+- „ZBIERZ / WYŚLIJ LOGI” w 2.0.76 kończyło się błędem „You cannot call
+  a method on a null-valued expression” na każdym serwerze bez drugiego
+  kanału. Naprawione, działa od razu po zainstalowaniu tej aktualizacji.
+- Starszy Docker Compose próbował przy starcie pobrać z internetu obraz
+  panelu zaawansowanego (metin2/seban-panel), który serwer buduje sam,
+  i przerywał start albo aktualizację błędem „pull access denied”. Od
+  2.0.77 go nie pobiera.
+- Launcher pokazywał „Kanał aktualizacji nie został jeszcze opublikowany”,
+  gdy w logach nieudanej akcji trafiła się gdziekolwiek liczba 404, choć
+  manifest był na miejscu. Teraz ten komunikat oznacza tylko prawdziwy brak
+  manifestu, a błąd pobierania obrazu ma własną wskazówkę.
+- Aktualizacja klienta odmawia, gdy gra jest włączona. Zamknij grę (sprawdź
+  też Menedżer zadań, czy metin2client.exe nie został w tle) i kliknij
+  ZAINSTALUJ AKTUALIZACJE jeszcze raz.
+
+### Więcej materiałów na ladach (Hiob, Xewi)
+
+- Rynek botów liczył tylko to, czego brakuje botom, a zakupów gracza nie
+  widzi, więc większość materiałów uznawał za nadmiar. Boty trzymały
+  w torbach i magazynach ok. 1,3 mln sztuk materiałów, a na ladach było
+  ok. 105 tys. W prawie co trzeciej parze „materiał × wioska” nie było ani
+  sztuki (np. Czarny Uniform w Pyongmoo i Bakrze, Księga Klątw i Ząb Orka
+  nigdzie).
+- Teraz każda wioska ma na ladach co najmniej 50 sztuk każdego materiału do
+  ulepszania, który boty w niej mają ponad własny zapas na kowala. To, czego
+  bot potrzebuje do własnych ulepszeń, zostaje w torbie.
+- Sklepy botów uzupełniają się szybciej: budżet zmian w sklepach offline
+  jest dwa razy większy i nie gubi wolnych sekund.
+- Nowe linie przybywają stopniowo, bo sprzedawca dokłada jedną przy każdej
+  wizycie przy sklepie (co 10–15 minut), więc ladom trzeba dać godzinę
+  lub dwie.
+- Wyszukiwarka przedmiotów pokazuje sklepy tylko z mapy, na której stoisz.
+  Szukaj w wiosce, w której stoją sklepy.
+
+### Wojny gildii (gregory_955)
+
+- Boty nie gonią już przeciwników stojących w strefie bezpiecznej, gdzie
+  nikogo nie da się uderzyć. Bot, który sam stoi w strefie, najpierw
+  wychodzi na miejsce zbiórki.
+- Te same dwie gildie nie walczą już co dwie godziny. Para z ostatniej
+  wojny w królestwie czeka, a pierwszeństwo mają gildie, które dawno nie
+  walczyły.
+- Wynik trwającej wojny widać w panelu na stronie gildii
+  (⚔ z gildią … wynik:wynik).
+
+### Czerwony Las
+
+- Punkt wyjścia z Czerwonego Lasu stał na zablokowanym terenie: boty, które
+  chciały opuścić mapę, co 20 sekund planowały drogę donikąd. Wejście,
+  wyjście i po jednym hubie w obu Lasach przeniesione na sprawdzony teren.
+
+## 2.0.76 — 2026-09-18
+
+Serwer 2.0.76, klient 2.0.16. W launcherze ZAINSTALUJ AKTUALIZACJE — podnoszenie
+pod tyldą, drugi kanał i poprawione okno juków potrzebują nowego serwera
+i nowego klienta.
+
+### Cały drop pod tyldą ` (vanderro, SIZOWSKI)
+
+- **Z** działa jak dotąd — podnosi jeden przedmiot.
+- **`** (tylda, klawisz nad Tab) podnosi naraz wszystko, co leży w zasięgu
+  podnoszenia i należy do Ciebie albo do Twojej grupy, zaczynając od
+  najbliższego. Gdy plecak się zapełni, przestaje i nic nie ląduje na ziemi.
+  Przytrzymany klawisz ponawia co pół sekundy.
+
+### Liczba botów osobno dla każdego królestwa (Greess)
+
+- Launcher → **LICZBA BOTÓW** → **Indywidualne wartości dla królestw**.
+  Trzy pola: Shinsoo (czerwone), Chunjo (żółte), Jinno (niebieskie). Każde
+  królestwo uruchamia tyle botów, ile mu wpiszesz, ale nie więcej, niż ma
+  postaci. Nagłówek okna pokazuje ich sumę.
+- Bez zaznaczenia wszystko działa jak dotąd: jedna liczba dzielona po równo.
+- Menu tekstowe launchera też o to pyta. Zmiana działa po restarcie serwera.
+
+### Drugi kanał (CH2) — domyślnie wyłączony (pomysł i pomiary: SIZOWSKI)
+
+- Włączasz go w launcherze (**LICZBA BOTÓW** → **Drugi kanał (CH2) dla botów
+  i graczy**, z ustawieniem, ile procent botów gra na CH2; domyślnie 40)
+  albo w panelu WWW na stronie Stawki.
+- Serwer uruchamia wtedy trzy kolejne rdzenie gry, a boty dzielą się między
+  dwa kanały. Serwer rozkłada je więc na dwa rdzenie procesora i udźwignie
+  więcej botów naraz. Każdy bot gra zawsze na tym samym kanale.
+- Liczba botów z launchera dotyczy całego świata: najpierw dzieli się na
+  królestwa, potem każde królestwo między kanały. Tak samo liczby
+  indywidualne dla królestw.
+- **Wszystkie sklepy offline, botów i graczy, stoją tylko na CH1.** Na CH2
+  nie da się otworzyć sklepu. Bot, który kiedykolwiek miał sklep, gra na CH1
+  na stałe, żeby zawsze mógł obsłużyć swoją ladę.
+- Boty z CH2 nie handlują: nie wystawiają sklepów i nie kupują z lad, bo te
+  stoją na CH1, a bot nie przechodzi na inny kanał. Towar, którego nie
+  sprzeda, przy pełnym plecaku oddaje handlarzowi albo odkłada do magazynu.
+  Im większa część botów na CH2, tym mniej botów handluje.
+- Wojny gildii botów wypowiada CH1, a walczą w nich boty z obu kanałów.
+  Rajdy Wieży Demonów, zakładanie gildii i eventy czasowe prowadzi CH1.
+  Boty z CH2 oddają swojej gildii doświadczenie jak dotąd.
+- Po włączeniu z launchera otwierane są porty 13010–13012. Klient 2.0.16
+  pokazuje CH2 na liście kanałów tylko wtedy, gdy serwer go uruchomił.
+- Zmiana działa po restarcie serwera. Ustawienie z panelu WWW przenosi boty
+  na CH2 przy najbliższym restarcie. Gracze wejdą na CH2, gdy launcher
+  otworzy porty, czyli po następnym GRAJ.
+- CH2 zajmuje około 1 GB pamięci więcej.
+
+### Płynny ruch przy dużej liczbie botów (SIZOWSKI)
+
+- Budżet czasu z 2.0.74 zostawiał na chwilę bez ruchu boty, do których
+  przebieg AI jeszcze nie dotarł. Przy ponad ~1100 botach na jednym rdzeniu
+  „robiły dwa kroki i stawały”.
+- Teraz każdy bot w każdym takcie idzie dalej swoją trasą i bije cel,
+  a na swoją kolej czeka tylko planowanie. Linia `PLAYERBOT_LOAD` ma nowe
+  pole `light_ms`.
+
+### Wyrzucanie z serwera przy szkoleniu konia (Dearminder)
+
+- Rdzeń padał, gdy zadanie usuwało swój własny cel w chwili dojścia do punktu
+  (szkolenie konia na Ognistej Ziemi, trzeci punkt). Po ponownym zalogowaniu
+  obok punktu padał znowu.
+- Przyczyną był błąd w silniku zdarzeń: zdarzenie anulowane w trakcie
+  działania zapisywało do zwolnionej pamięci. Po aktualizacji misja idzie
+  dalej, także z miejsca, w którym utknęła.
+
+### Szybkość biegu z panelu działa (archonek)
+
+- „Szybkość biegu” na stronie postaci dawała na tej wersji serwera punkty many
+  zamiast prędkości. Teraz daje prędkość, na 30 dni albo do wybrania
+  „Normalna”.
+- Nie rusza serwerowego bonusu biegu ani premii od Biologa.
+- Przy pierwszym użyciu zdejmuje manę dodaną wcześniej przez pomyłkę.
+
+### Okno juków konnych liczy wszystkie strony ekwipunku (blasty)
+
+- Wymagania odblokowania juków i wymagania sklepów specjalnych liczyły
+  przedmioty tylko z dwóch pierwszych stron ekwipunku. Od czterech stron okno
+  pokazywało „0 na 60”, choć przedmioty leżały na stronie III, IV albo w jukach.
+- Serwer przez cały czas liczył poprawnie, poprawione jest samo okno
+  (klient 2.0.16).
+
+### Boty nie oddają handlarzowi cennych rzeczy
+
+- Czerwone Nasiono, Zwój Kamienia Duszy, Instr. Oswajania Konia,
+  Zaaw. Ks. Polimorfii i reszta przedmiotów, które cennik Iwakury wycenia
+  na ponad 5000 yang, idą na stragan zamiast do handlarza. Handlarz dostaje je tylko
+  przy pełnym plecaku, gdy nie da się otworzyć straganu.
+- Materiały z receptur ulepszeń wyższych poziomów boty zatrzymują na własne
+  ulepszanie.
+
+### Tłum botów na jednym wzgórzu w wiosce (Remigiusz)
+
+- Bot, który przerósł wszystkie tereny wioski, szedł zawsze na te same dwa
+  miejsca. Przykład: poziom 28–35 w Joan, gdzie najsilniejsze potwory mają
+  około 21 poziomu.
+- Teraz rozchodzi się po najwyższych terenach wioski, na co najmniej sześć
+  miejsc.
+
+### Panel zaawansowany
+
+- W Zarządzaniu wróciło **🎁 Masowe nadawanie przedmiotów**. Link zniknął przy
+  aktualizacji panelu Sebana 16 września, a sama strona działała cały czas
+  (archonek, DUDU).
+- „Plan wejścia botów” jest opisany prostym językiem. Na serwerze bez
+  integracji Sebana zamiast niedziałającego formularza jest wskazówka, gdzie
+  to ustawić: launcher, LICZBA BOTÓW (Remigiusz).
+- Oba panele pokazują też boty z CH2.
+
+### Na VPS: brak ikon przedmiotów w panelu WWW (DUDU, GorącyDelfin)
+
+Serwer aktualizowany z wersji starszej niż 2.0.74 skryptem `update.sh` nie
+kopiował ikon do panelu. Skrypt z 2.0.74 robi to już sam, ale pierwszą
+aktualizację po nim wykonuje jeszcze stara wersja. Jeśli ikon nadal nie ma,
+raz w folderze serwera:
+
+```
+sh linux-port/tools/update.sh stage
+cd linux-port/docker && docker compose up -d --build panel
+```
+
+## 2.0.75 — 2026-09-18
+
+Serwer 2.0.75, klient 2.0.15. W launcherze ZAINSTALUJ AKTUALIZACJE — przycisk
+porządkowania potrzebuje nowego serwera i nowego klienta.
+
+### „Scal i uporządkuj” — jedno kliknięcie, cały ekwipunek (Tieru; plan z audytu Codexa)
+
+Przycisk w oknie ekwipunku (dotąd „automatyczne łączenie”) wysyła teraz do
+serwera jedno polecenie. Serwer w ułamku sekundy:
+
+- łączy stosy tego samego przedmiotu, ale tylko identyczne — te same kamienie,
+  bonusy i wygląd — i tylko do limitu stosu danego przedmiotu; najpełniejszy
+  stos zostaje, a wyczerpane znikają tak jak przy ręcznym łączeniu;
+- układa wszystkie cztery strony od nowa według rodzaju: najpierw mikstury,
+  potem broń, zbroje i biżuteria, księgi, ulepszacze i kamienie, skrzynie
+  i klucze, inne przedmioty użytkowe, rybactwo i zbieractwo, przedmioty
+  z misji i cała reszta;
+- przepina skróty z paska na nowe miejsca przedmiotów.
+
+Nic nie jest tworzone od nowa: każdy przedmiot zachowuje swoje kamienie,
+bonusy i numer. Strona konia, pas, założony sprzęt, smocze kamienie i magazyn
+zostają nietknięte, a włączony Eliksir Słońca lub Księżyca zostaje na swoim
+polu. Przy prawie pełnym ekwipunku serwer próbuje kilku sposobów ułożenia
+i wybiera taki, który się mieści — nigdy nie wyrzuca niczego na ziemię.
+
+Porządkowanie nie działa podczas handlu, przy otwartym sklepie, magazynie,
+ulepszaniu i innych oknach (czat powie dlaczego), po śmierci, z przedmiotem
+trzymanym kursorem ani częściej niż co 2 sekundy. Wynik — ile przedmiotów
+przestawiono i ile stosów połączono — pojawia się na czacie dopiero wtedy,
+gdy serwer skończy. Drugie kliknięcie na uporządkowanym ekwipunku niczego nie
+rusza.
+
+Dotychczasowy przycisk wysyłał setki pojedynczych ruchów (wcześniej wyrzucał
+za to z gry) i potrafił tylko łączyć stosy.
+
+### Boty porządkują torby tak samo
+
+Boty na linii 2.x co mniej więcej pół godziny robią dokładnie to samo
+porządkowanie zamiast dotychczasowego przesuwania mikstur na początek, więc
+ich torby oglądane w panelu są ułożone jak po kliknięciu przycisku. Łączenie
+stosów co 5 minut zostaje bez zmian.
+
+### Liczba potworów w respie (Kiciamol)
+
+Na stronie **Stawki** panelu jest nowa karta **„Liczba potworów w respie”**:
+osobno dla Metinów i bossów, osobno dla zwykłych potworów, od ×1 do ×4
+(także ×1,5 i ×2,5). ×2 znaczy, że w każdym miejscu respu stoi dwa razy
+więcej potworów niż normalnie. Nie trzeba restartu, a ustawienie zostaje po
+restarcie. Dodatkowe potwory pojawiają się przy najbliższym odrodzeniu
+danego miejsca: zwykłe potwory w ciągu kilku minut, Metiny i bossowie po
+swoim czasie odradzania (zwykle 15–25 minut).
+
+Bez zmian zostają postacie niezależne (sklepikarze, portale, konie), żyły
+rud i krzaki ziół, lochy i jednorazowe respy z misji. Po zmniejszeniu
+mnożnika nadmiarowe potwory znikają dopiero wtedy, gdy ktoś je zabije.
+
+Uwaga: więcej potworów to więcej pracy dla serwera i botów.
+
+### „Czas odradzania” Metinów i bossów wreszcie działa
+
+Pole „Metiny i bossowie” w karcie „Czas odradzania” (od 2.0.64) nie
+działało: serwer sprawdzał, czy linia respu to boss albo Metin, zanim
+odczytał, co to za potwór, więc żadna linia nim nie była, a bossowie
+i Metiny odradzali się według pola zwykłych potworów. Teraz każde pole
+działa na swoją grupę. Linie zapisane jako „grupa grup” serwer sprawdza tak
+samo jak zwykłe grupy, więc Metin z takiej linii też liczy się jako Metin.
+Pole „Metiny i bossowie” obejmuje też żyły rud i krzaki ziół, które stoją
+w plikach Metinów.
+
+### Launcher: aktualizacja klienta przy włączonej grze (Ratorex)
+
+Gdy gra była uruchomiona (albo jej kopia wisiała w tle), aktualizacja
+klienta pobierała całą paczkę i dopiero przy podmianie pliku kończyła się
+komunikatem Windowsa „plik jest używany przez inny proces”. Launcher
+sprawdza to teraz przed pobieraniem — przy „aktualizuj wszystko” jeszcze
+przed aktualizacją serwera — i mówi wprost: zamknij grę, sprawdź Menedżer
+zadań, kliknij ponownie. Poprawka launchera działa od następnej
+aktualizacji po tej (aktualizację wykonuje zawsze poprzednia wersja).
+
+### Reset świata i kopia na dużym świecie (uxietoszef)
+
+NOWY ŚWIAT (reset) i KOPIA kończyły się błędem „Stream was too long”
+(„Strumień jest za długi”), gdy któryś zrzut bazy — zwykle historia w bazie
+`log` — przekraczał 2 GB. Reset zawsze najpierw robi kopię, więc na takim
+świecie nie dało się go zrobić (świat zostawał nietknięty). Kopia jest teraz
+pakowana w sposób, który nie ma tego limitu. Sprawdzone na pliku 2,4 GB,
+razem z przywróceniem kopii. Po aktualizacji wystarczy spróbować jeszcze
+raz — ta poprawka działa od razu, nie dopiero od następnej wersji.
+
+### Skrót z paska przy miksturach w pasie
+
+Gdy kończył się stos mikstur położony w pasie, skrót mógł przeskoczyć na
+zupełnie inny przedmiot w torbie (błąd z 2.0.74, gdy pas przesunął się razem
+z czterema stronami ekwipunku).
+
+### Sprawdzone przed wydaniem
+
+Na świecie testowym (1099 botów, cztery strony ekwipunku):
+
+- **Porządkowanie botów:** w pierwszych dziesięciu minutach 397 uporządkowanych
+  toreb (mediana 68 przedmiotów, 61 przestawionych), najdłuższe trwało poniżej
+  milisekundy. Serwer po każdym porządkowaniu przelicza przedmioty — ani razu
+  nie zgadzało się inaczej niż przed nim — a po restarcie baza nie miała ani
+  jednego podwójnie zajętego pola w 2505 torbach.
+- **Przycisk gracza:** sprawdzony testami modułu klienta (Python 2.7 i 3); w
+  samym kliencie jeszcze nie klikany.
+- **Liczba potworów w respie:** przy ×1 na mapach stało około 41 tys.
+  potworów, po ustawieniu ×2 w panelu 80 tys. po dwóch minutach. Przy
+  Metinach na ×2 i zwykłych potworach na ×1 Metinów przybywało w miarę
+  odradzania się kolejnych miejsc (113 → 231 w dwadzieścia minut), a żyły
+  rud i zioła wracały pojedynczo, tak jak powinny. Nadmiarowe zwykłe potwory
+  po powrocie z ×2 na ×1 schodziły same, przez zabijanie (81 tys. → 72 tys. w
+  dwadzieścia minut). Przy ×2 czas pracy botów na tym świecie wzrósł z około
+  13–14 do 16–18 sekund na minutę.
+- Wszystkie testy (C++ i Pythona na wersjach 2.7 i 3, testy launchera) przechodzą.
+
+## 2.0.74 — 2026-09-18
+
+Serwer 2.0.74, klient 2.0.14. **Serwer i klient muszą mieć tę samą wersję.**
+Stary klient nie zaloguje się do nowego serwera. Przycisk ZAINSTALUJ
+AKTUALIZACJE w launcherze aktualizuje oba naraz.
+
+### Cztery strony ekwipunku
+
+Ekwipunek ma cztery strony (I–IV, 180 pól) zamiast dwóch. Dotyczy to graczy i
+botów.
+
+- **Wyjątek od reguły „aktualizacja nie rusza bazy”.** Przy pierwszym starcie
+  serwer przenosi w bazie przedmioty, które leżały za drugą stroną: stronę
+  konia i pola pasa przesuwa na ich nowe miejsca, a pasek skrótów zapisuje w
+  nowym, szerszym formacie. Dzieje się to raz, zanim ktokolwiek się zaloguje.
+  W logu rdzenia bazy zostaje linia `INVENTORY_PAGES: four pages ...`.
+  **Tego nie da się cofnąć:** powrót do 2.0.73 lub starszej wersji wymaga
+  kopii świata sprzed aktualizacji. Jeśli chcesz mieć drogę powrotu, zrób ją
+  przed aktualizacją (launcher: KOPIA / NOWY SWIAT).
+- Starszy klient przy logowaniu dostaje komunikat „Wymagana aktualizacja
+  klienta gry przez Patcher.” Wystarczy zainstalować aktualizację w launcherze.
+- Boty też mają cztery strony, więc dłużej noszą łupy, zanim je sprzedadzą
+  albo odłożą do magazynu.
+- Oba panele pokazują w podglądzie postaci wszystkie cztery strony. Panel
+  klasyczny nie pokazywał wcześniej niczego ze stron III i IV, a panel Sebana
+  rysował te przedmioty na stronie II.
+
+### Klient 2.0.14
+
+- Klient jest skompilowany u nas z kodu źródłowego z paczki: to ten sam
+  klient co 2.0.13, z czterema stronami ekwipunku.
+- Discord Rich Presence pokazuje „Metin2 SinglePlayer”, a przycisk prowadzi
+  na kanał YouTube. Przycisków nie widać na własnym profilu — tak działa
+  Discord, a nie błąd.
+- Auto Łowy: z włączonymi Metinami kamień ma pierwszeństwo przed potworami.
+  Cel, do którego postać nie może dojść, jest pomijany przez minutę, zamiast
+  wracać do niej od razu (blasty).
+
+### Szkatułki Blasku Księżyca tylko w trakcie eventu (NerrVoVy)
+
+Szkatułki wypadały także poza eventem, z dwóch powodów:
+
+- rdzeń, na którym nie ma botów (w układzie `unified` rdzenie first i game2),
+  nigdy nie zamykał u siebie bramki skrzynek;
+- bez żadnego harmonogramu bramka stała otwarta wszędzie.
+
+Teraz każdy rdzeń ma własny zegar, a Szkatułki wypadają wyłącznie w trakcie
+eventu skrzynkowego ze strony Eventy (w harmonogramie albo po „Aktywuj
+teraz”). Bez eventu nie wypadają wcale.
+
+### Logowanie na dużym świecie (SIZOWSKI)
+
+Rdzeń gry obsługuje boty i graczy w jednym wątku. Długi przebieg botów (przy
+starcie ponad 0,7 s) wstrzymywał więc każde logowanie. Teraz przebieg botów
+ma budżet 120 ms, a to, co się nie zmieści, dokończy następny przebieg ćwierć
+sekundy później. Na serwerze testowym z budżetem 20 ms najdłuższy przebieg
+przy 1099 botach spadł z 343 do 34 ms. Budżet ustawia klucz `TICK_MS` w
+pliku wag (0 oznacza brak budżetu).
+
+### Boty
+
+- Boty poniżej 40 poziomu używają zielonych kamieni bonusów (dodawania i
+  zmiany) na broni i zbroi do 40 poziomu. Do tej pory kamienie leżały im w
+  torbach (Sammy).
+- Siano, marchewki i Księgi Misji nie trafiają już do handlarza: boty je
+  podnoszą i wystawiają w sklepach (Greess).
+
+### Panel na Linuksie / VPS (DUDU)
+
+Budowa panelu na Linuksie kończyła się błędem `/schema: not found`. Paczka nie
+wiozła schematu, a katalog panelu przygotowywał tylko launcher na Windowsie.
+Teraz przygotowuje go `update.sh` przed budową, a paczka zawiera schemat.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy z 1099 botami:
+
+- logowanie nowym klientem i przenoszenie przedmiotów między stronami I–IV
+  sprawdził Tieru;
+- migracja poszerzyła 1143 paski skrótów;
+- przez 17 minut po zmianie nie wypadła żadna Szkatułka, a godzinę wcześniej
+  w 6 minut było ich 39;
+- bot na 25 poziomie dodał bonusy zielonymi kamieniami do Gilotynowego
+  Ostrza+7 i Zbroi Płytowej Tygrysa+6;
+- boty podnosiły Księgi Misji około trzy razy częściej;
+- oba panele pokazują strony I–IV.
+
+## 2.0.73 — 2026-09-18
+
+Serwer 2.0.73, klient bez zmian (2.0.13).
+
+### Księgi i Kamienie Duchowe na ladach po jednej sztuce (przegląd Codexa)
+
+Bot kupuje z lady linię tylko wtedy, gdy cała mieści się w tym, czego mu brakuje.
+Tymczasem sklep offline wystawiał księgi i Kamienie Duchowe całymi stosami (do
+dziesięciu sztuk), więc bot, któremu brakowało trzech kamieni, nie mógł kupić
+dziesięciu. Teraz nadwyżka idzie na ladę po jednej sztuce, najwyżej trzy linie
+jednego rodzaju naraz (księgi liczone osobno dla każdej umiejętności). Linia
+kamieni dłuższa niż trzy wraca przy najbliższej wizycie do torby, żeby wyjść
+ponownie po sztuce.
+
+Poprawiona jest też rezerwa, którą bot zostawia sobie:
+
+- Kamienie Duchowe: liczone były tylko kamienie w komórkach torby *przed* danym
+  stosem, więc jeden stos dziesięciu kamieni przy rezerwie trzech nigdy nie
+  trafiał na ladę. Teraz rezerwa liczy się w sztukach w całej torbie, a na ladę
+  idzie wyłącznie nadwyżka.
+- Księgi własnej umiejętności: rezerwa („dwanaście ksiąg do czytania”) liczyła
+  stosy zamiast sztuk, więc przy stosach po dziesięć bot trzymał do stu
+  dwudziestu ksiąg jednej umiejętności. Teraz dwanaście znaczy dwanaście.
+- Bot nigdy nie wystawia tego, co za chwilę sam chciałby kupić: rezerwa
+  sprzedawcy to dokładnie ta liczba, której brakuje kupującemu.
+
+### Bot nie „czyta” już księgi, której silnik mu nie da
+
+Silnik czyta księgę tylko postaci, która ma przy sobie 20 000 doświadczenia
+(każde czytanie tyle kosztuje). Z mniejszą ilością odmawia, zostawia księgę —
+a bot próbował dalej co 8 sekund i w logu wyglądało to jak nieudane czytanie.
+Na serwerze testowym w 12 minut było 7 095 takich prób i tylko 23 prawdziwe
+odczyty. Najczęściej dotyczyło to dropperów z zablokowanym doświadczeniem i
+botów na 40 poziomie w drugich wioskach. Teraz bot czeka na doświadczenie, a
+log mówi to wprost (`book read waits for experience`).
+
+### Pomiary
+
+W logu serwera każda sprzedaż z lady offline ma teraz linię
+`PLAYERBOT_OFFLINE: sold` z czasem, przez jaki oferta stała na ladzie.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy z 1099 botami, 32 minuty nowej wersji wobec 37 minut 2.0.72:
+80 linii ksiąg poszło na lady po jednej sztuce i żadna nie naruszyła rezerwy
+właściciela, boty kupowały 93 księgi na godzinę wobec 69, na lady trafiały 872
+linie na godzinę wobec 736, a pustych prób czytania było 57 na godzinę zamiast
+33 383. Zero resetów strażnika bezczynności i żadnego padu rdzenia.
+
+## 2.0.72 — 2026-09-18
+
+Serwer 2.0.72, klient bez zmian (2.0.13).
+
+### Boty kupują to, czego brakuje im do rozwoju (Tieru; wdrożył Codex)
+
+Do tej pory bot kupował z lad materiały, sprzęt i kilka rzeczy strategicznych,
+a księgi umiejętności, Kamienie Duchowe i okazy dla Biologa zdobywał raczej
+przypadkiem. Teraz liczy, czego mu brakuje, i kupuje dokładnie tyle:
+
+- księgi umiejętności, która jest na poziomie M — do zapasu dwunastu;
+- Kamienie Duchowe, gdy ma umiejętność na G1–G10 — do trzech;
+- okazy do otwartej zbiórki Biologa (Ząb Orka, Księga Klątw, Pamiątka po
+  Demonie) — tyle, ile brakuje do oddania.
+
+Linia z lady jest kupowana tylko wtedy, gdy cała mieści się w tej potrzebie,
+więc bot nie wykupi stosu dwudziestu ksiąg, bo brakowało mu jednej. Na zakup
+rozwojowy przeznacza najwyżej 30% własnych wolnych pieniędzy i nie zapłaci
+więcej niż dwukrotność uczciwej ceny. Tuż przed zakupem jeszcze raz sprawdza
+cenę i to, czy wciąż czegoś potrzebuje — zmieniona cena albo rzecz już zdobyta
+odwołują zakup.
+
+Co jakiś czas bot wybiera się też na targ pierwszej wioski, kiedy na ladach są
+księgi, kamienie albo okazy, a jemu ich brakuje. Naraz robi to najwyżej 3% botów
+— bez tłumu przy bramach — a droppery, boty w drużynie gracza i boty w trakcie
+próby konia nie wybierają się wcale. Jeśli bot sam wystawił coś, czego teraz potrzebuje, zdejmuje to z własnej
+lady.
+
+Przeglądając duży sklep, bot nie zaczyna już za każdym razem od początku: dociera
+też do pozycji dalszych niż 64. na ladzie.
+
+### Księgi i trening arcymistrza
+
+- Gdy umiejętność główna czeka na kolejną księgę, bot czyta księgę innej swojej
+  umiejętności, zamiast nie czytać nic.
+- Przy włączonym przełączniku ksiąg w panelu bot nie zużywa już Zwoju Egzorcyzmu,
+  który i tak nic by mu nie dał.
+- Trening arcymistrza pomija umiejętność, na którą bota nie stać rangą, i trenuje
+  inną. Gdy żadnej, bot poluje, żeby rangę odrobić.
+
+### Sklepy offline botów
+
+- Przeceny i dokładanie towaru nie blokują się już nawzajem: bot przecenia dwie
+  linie, potem przychodzi kolej na nowy towar, i tak na zmianę. Wcześniej sklep,
+  któremu zawsze było co dołożyć, nie przeceniał niczego.
+- Przecena idzie co godzinę, a co 10 minut tylko wtedy, gdy w trakcie gry zmieniono
+  kurs yang w panelu. Restart serwera nie uruchamia już przeglądu wszystkich lad od
+  nowa: pierwsza wizyta bota przy sklepie po restarcie dokłada towar. Wszystkie
+  sklepy dzielą jedną operację na sekundę, a ten przegląd zabierał ją dokładaniu
+  towaru i zakupom botów przez pierwsze minuty po starcie.
+- Oferta, która stała na ladzie już przed restartem, jest przeceniana za zaleganie
+  od chwili, gdy bot pierwszy raz po restarcie ją przelicza.
+- Kamień Duchowy może trafić na ladę, jeśli bot ma go ponad własny zapas
+  (wcześniej nigdy).
+- W logu serwera co minutę jest linia `PLAYERBOT_OFFLINE: budget`: ile operacji na
+  sklepach offline boty dostały, a ile musiało poczekać.
+
+### Sprawdzone przed wydaniem
+
+Serwer testowy, 1099 botów, 15 minut po restarcie, w porównaniu z 2.0.71: towaru
+dokładanego na lady tyle samo (170 wobec 169 pozycji), wypraw na targ po rzeczy
+do rozwoju naraz najwyżej 32, zero resetów strażnika bezczynności i żadnego padu
+rdzenia. Boty
+kupiły mniej ksiąg (9 wobec 24), bo nie dokupują już ponad własny zapas —
+wcześniej liczyły tylko część ksiąg z własnej torby.
+
+## 2.0.71 — 2026-09-18
+
+Serwer 2.0.71, klient bez zmian (2.0.13).
+
+### Boty uczą się zielarstwa (Iwakura)
+
+Paczka od zawsze zawierała cały system zielarstwa u Baek-Go — misję startową,
+jego sklep z Nożykiem Zielarza i pustymi butelkami oraz 77 receptur w tabeli
+wytwarzania — i nikt go nigdy nie użył. Receptury wypadające z metinów boty
+sprzedawały handlarzowi jako nieznany przedmiot, a zioła szły na lady jako
+zwykły towar.
+
+Teraz bot przechodzi misję startową u Baek-Go na tych samych warunkach co
+gracz (dziesięć Kwiatów Brzoskwini), czyta zdobyte receptury z tą samą szansą
+i tym samym licznikiem wiedzy co człowiek, a przy warsztacie kupuje butelki po
+cenie z jego sklepu, zużywa zioła, płaci i rzuca na szansę — dokładnie w
+kolejności, jakiej używa okno wytwarzania, łącznie z tym, że **nieudana próba
+zużywa materiały**. Gotowe wzmocnienia bot pije przed bossem i metinem, a
+nadwyżkę wystawia na ladzie: do tej pory mikstur zielarskich nie dało się
+kupić w tym świecie nigdzie.
+
+Po drodze okazało się, że boty podnosiły z ziemi tylko dwa z szesnastu ziół —
+Korzeń Gango i Grzyb Tue, bo tych chcą misje Biologa. W bagażach leżało 86 496
+korzeni i 14 515 grzybów, a Kwiatu Brzoskwini, którego wymaga misja startowa,
+było w całym świecie **jedenaście sztuk**. Teraz boty zbierają wszystkie zioła
+zielarskie i zostawiają sobie zapas, zanim reszta trafi na ladę.
+
+Uwaga dla zbierających: zioła Biologa i zioła na mikstury to osobne przedmioty
+mimo identycznych nazw. Pierwsze wypadają tylko przy aktywnej misji i idą
+prosto do torby, drugie lecą na ziemię jak każdy inny łup — boty pracują
+wyłącznie na tych drugich.
+
+### Bot z małym HP nie ucieka już bez końca (Urtopy)
+
+Bot, który zaczął taktyczną ucieczkę, mógł z niej nigdy nie wyjść: warunkiem
+było, żeby potwór przestał go ścigać, a potwór, który nie może dojść — bo bot
+stoi za ścianą na skraju mapy — nie przestaje nigdy. Do tego ucieczka nie
+miała żadnego limitu czasu, a strażnik bezczynności jej nie łapał, bo bot cały
+czas biegał. Efekt: zdrowa postać dreptająca po tym samym skrawku pustyni
+godzinami.
+
+Ucieczka kończy się teraz po oddaleniu się na bezpieczny dystans albo po
+minucie, niezależnie od tego, co potwór o tym sądzi. Powód trafia do logu.
+
+### Broń 30 poziomu: kowal do progu, dalej zwoje (Tieru)
+
+Ile stopni bot wywalczy u kowala, zależy teraz od średnich obrażeń broni — im
+lepsza broń, tym wcześniej przestaje ryzykować:
+
+- do 14% — kowal do +7, a powyżej i tak czasem spróbuje;
+- 15–21% — kowal do +7;
+- 22–29% — kowal do +6;
+- 30–36% — kowal do +4;
+- od 37% — wyłącznie zwoje, od +0.
+
+Bez zwoju powyżej swojego progu bot czeka, zamiast spalić dobrą broń.
+(Sprawdzone w tabeli ulepszeń: dla broni 30 lv kowal nigdy nie daje stu
+procent — szanse spadają od 80% na +1 do 10% na +8.)
+
+Zmieniło się też, co bot z taką bronią robi: dwie trzecie sztuk zatrzymuje dla
+siebie i ulepsza, resztę wystawia. Wcześniej praktycznie wszystkie lądowały na
+ladach nieulepszone — w dniu wydania stało ich tam 2603 na +0, a nosiło je 28
+botów.
+
+### Biolog: kolejka wypraw posprzątana
+
+Trzy poprawki z audytu:
+
+- odczyt misji Biologa przydzielał i zwalniał miejsca na wyprawy przy każdym
+  wywołaniu — a robi to również panel, więc samo zaglądanie do bota zmieniało
+  grę. Teraz miejsca przydzielają tylko te przebiegi, które faktycznie
+  decydują o podróży;
+- bot, który niósł już okazy, mijał własną misję, gdy nie dostał miejsca w
+  kolejce. Oddawanie okazu nie jest wyprawą i nie wymaga już miejsca;
+- po wyczerpaniu czasu wyprawy bot wraca na koniec kolejki, zamiast zajmować
+  zwolnione miejsce od razu z powrotem.
+
+### Broń 30 poziomu przestała blokować szukanie lepszej
+
+Bot noszący taką broń na +7 odrzucał każdą ofertę z rynku niezależnie od tego,
+co miał na niej wyrolowane. Teraz decyduje porównanie potencjału: dobra broń
+dalej odrzuca oferty, słaba pozwala szukać lepszej.
+
+## 2.0.70 — 2026-09-17
+
+Serwer 2.0.70, klient 2.0.13.
+
+### Boty nadrabiają misje Biologa (Tieru)
+
+Bot z wysokiego poziomu, któremu zostały pierwsze wiersze Biologa (zioła z
+pierwszej wioski), czekał na nie godzinami: wyjazd po zioła ma limit, żeby nie
+powtórzyła się sytuacja z 2.0.60, gdy pół świata ruszyło naraz do M1. Teraz:
+
+- bot, który **i tak jest w pierwszej wiosce** (zapasy, targ, oddawanie okazów),
+  zbiera zioła z otwartego wiersza przy okazji, przez 10 minut od przyjścia i bez
+  zajmowania miejsca w limicie — to nie dokłada ani jednego przejścia między
+  mapami;
+- na osobny wyjazd po zioła jedzie naraz 7% botów zamiast 2,5%, a wyprawa trwa
+  do 2 godzin zamiast godziny;
+- wyprawa nie wygasa, póki bot niesie zebrane okazy — wcześniej zegar potrafił
+  skończyć wyprawę tuż przed oddaniem i cała podróż szła na marne.
+
+Reguła „żaden wiersz nie jest za niski” i pierwszeństwo próby konia zostają bez
+zmian.
+
+### Koniec krążenia materiałów do magazynu i z powrotem (Tieru)
+
+Bot wkładał do magazynu **cały stos** materiału razem z rezerwą, którą trzyma na
+własne ulepszanie, a sekundę później — już z pustą torbą — wyjmował go z
+powrotem, bo „brakuje mu na kowala”. I tak co kilka minut. Na naszym serwerze
+3574 z 4698 wyjęć z magazynu w godzinę to były rzeczy włożone w tej samej
+wizycie, a przy okazji sypało to do logu błędy `ITEM_ID_DUP` (650 dziennie u 26
+botów), bo baza nie nadążała zapisać, że przedmiot jest już w torbie. Teraz do
+magazynu idzie tylko nadwyżka ponad rezerwę kowala, a wyjmowanie nie rusza tego,
+co ta sama wizyta włożyła.
+
+### Sklep bota widoczny w panelu (Tieru)
+
+W oknie ekwipunku bota, obok magazynu, jest ikona sklepu: otwiera okno z nazwą
+lady, mapą i pozycją oraz listą wystawionych rzeczy z cenami. Wcześniej widać
+było tylko torbę i magazyn, a to, co bot sprzedaje, leży w jego sklepie
+offline. Obok jest też przycisk odświeżania.
+
+### Ekwipunek w panelu bez opóźnienia (Tieru)
+
+Panel czyta bazę, a rdzeń trzymał zmianę przedmiotu w pamięci nawet siedem
+minut — dlatego zaraz po założeniu tarczy slot potrafił świecić pustką. Teraz
+założony i zdjęty element zapisuje się od razu.
+
+### Klient 2.0.13: osobowość bota w osobnym wierszu (ĹŌŞƬĒĶ)
+
+Osobowość bota ma własny wiersz nad głową, między nickiem a nazwą gildii, więc
+ranga jest znowu zawsze widoczna i nic się nie bije o to samo miejsce.
+Przełącznik w opcjach gry („Osobowość / Wyłączone”) działa od razu, bez
+ponownego logowania. Cała zmiana po stronie klienta jest autorstwa ĹŌŞƬĒĶ.
+
+## 2.0.69 — 2026-09-17
+
+Serwer 2.0.69; klient bez zmian (2.0.12).
+
+### Karta Wędkarska od 30 poziomu (Hiob, Tieru)
+
+Wędkę na tym serwerze zakłada się od 30 poziomu i od 30 można łowić, ale sklep
+Rybaka sprzedawał Kartę Wędkarską dopiero od 50 — gracz między 30 a 49 poziomem
+miał wędkę i nie mógł łowić. Próg karty w sklepie Rybaka jest teraz 30, tak samo
+jak w opcji „Karta Wedkarska”. Cena i limit (25 000 yang, 5× Materiały
+Rzemieślnicze, raz na 22 godziny) bez zmian; do łowienia nadal trzeba ukończyć
+misję wprowadzającą Rybaka.
+
+## 2.0.68 — 2026-09-17
+
+Serwer 2.0.68; klient bez zmian (2.0.12).
+
+### Zioła na ladzie w dużych paczkach, ulepszacze w małych (Tieru, Hiob, uxietoszef)
+
+Sklep offline bota wystawiał przy każdej wizycie jedną linię — taki stos, jaki
+akurat leżał w komórce torby. Korzenie Gango i Grzyby Tue szły więc po 1–2
+sztuki (na naszym serwerze 3343 linie ziół, z tego 1171 pojedynczych, jeden
+sklep z 34 liniami ziół), a ulepszacz, który nie był „zapasem”, szedł całym
+stosem razem z rezerwą na własne ulepszanie (1084 linie ponad 10 sztuk, np.
+25 Kawałków Lodu za 19,7 mln w jednej linii). Teraz:
+
+- tanie towary (według cennika Iwakury do 5000 yang przed przelicznikiem stawek,
+  czyli zioła i rudy) idą paczkami po 50, nigdy poniżej 10 sztuk, najwyżej dwie
+  linie jednego rodzaju;
+- ulepszacz idzie paczkami po 5 (zapas ponad 50 sztuk — po 10), najwyżej trzy
+  linie jednego rodzaju, i nigdy z rezerwy, którą bot trzyma na swoje ulepszanie;
+- stojące już linie ziół poniżej 10 sztuk i linie ulepszaczy ponad 10 sztuk bot
+  zdejmuje przy kolejnych wizytach przy sklepie, żeby wystawić je od nowa.
+
+Po wdrożeniu u nas linii ziół było już 1955 (pojedynczych 545), a linii
+ulepszaczy ponad 10 sztuk 657 — i dalej ubywa, bo bot zdejmuje jedną linię na
+wizytę.
+
+### Biolog nie ściąga całego świata do Doliny Orków (SIZOWSKI)
+
+U SIZOWSKIEGO 997 z 1621 botów stało w Dolinie Orków, u nas 277 z 1098 — prawie
+wszystkie na Zębach Orka, a 129 w drużynach „Szukam celu dla grupy”. Przyczyny
+z plików tego świata: skrypt misji daje ząb tylko z „Orka” (601), który w Dolinie
+stoi w dwóch punktach przy bossach; zęby spadają naprawdę z Czarnych Orków
+(46 lvl), a silnik tnie taki drop do 1% przy 15+ poziomach różnicy — bot 70 lvl
+miał ząb raz na ok. 17 000 zabójstw. Bot polował tylko na potwora z nazwy misji,
+więc resztę orków odrzucał jako bezwartościowe. Teraz:
+
+- cel misji to cała rodzina potworów, z których przedmiot faktycznie spada
+  (Zęby: Ork i Czarne Orki; klucz: Elitarne Orki 631–637; Księgi Klątw: oba
+  Dręczyciele; klucz: 701–707 i 731–737; Pamiątka i jej klucz: demony wieży);
+- bot ponad poziomem potwora dostaje brakującą część szansy, którą zabrała
+  różnica poziomów — dokładnie tyle, ile dostałby gracz na poziomie potwora,
+  z uwzględnieniem stawek świata; tylko dopóki Biolog jeszcze czegoś potrzebuje;
+- bot z misją, który nie widzi takiego potwora, skanuje mapę i idzie do
+  najbliższego, a walka po drodze nie odsyła go już do obozu wybranego po
+  poziomie (wcześniej 51 z 86 botów w Dolinie stało w drużynach „Szukam celu
+  dla grupy”);
+- na przerośnięte misje zbierackie (Zęby, Księgi, Pamiątka) naraz jedzie
+  najwyżej 10% botów, każdy na 2 godziny; reszta gra normalnie na swoich mapach;
+- status mówi, co bot robi: „Zbieram dla Biologa: Zab Orka” w drodze do potworów,
+  a „Ide do Biologa” tylko wtedy, gdy niesie okazy do oddania.
+
+Po wdrożeniu u nas: w Dolinie 46 botów zamiast 277, „Szukam celu dla grupy”
+u 8 zamiast 129, a w kwadrans po restarcie 10 botów oddało komplet zębów
+i przeszło do drugiej części misji.
+
+### Mniej teleportów do sklepów offline (gregoszky)
+
+W 95 minut na naszym serwerze było 7951 przejść między mapami: 3405 to przeskoki
+botów do własnego sklepu, a większość reszty — powroty (250 razy tam i z
+powrotem w niecałe 30 sekund). To jest ten ruch przy teleporterach. Bot, który
+stoi na innej mapie niż jego sklep, obsługuje go teraz raz na 45 minut; na mapie
+sklepu nadal co 10–15 minut. Po pierwszej fali wizyt takich przeskoków było
+2–12 na minutę zamiast 36.
+
+### Karta Wędkarska do kupienia u Rybaka (Greess, SIZOWSKI)
+
+Paczka sprzedaje Kartę Wędkarską tylko w specjalnym sklepie Rybaka (25 000 yang
+i 5× Materiały Rzemieślnicze, od 50 lvl, raz na 22 godziny), ale żaden skrypt
+tego sklepu nie otwierał, więc gracz nie mógł łowić. Rybak ma teraz opcję
+„Karta Wedkarska”. Do łowienia nadal trzeba ukończyć jego misję wprowadzającą.
+Quest jest skompilowany i wgrany na nasz serwer, ale opcji nie klikaliśmy
+jeszcze w kliencie — jeśli sklep się nie otworzy, dajcie znać.
+
+## 2.0.67 — 2026-09-17
+
+Serwer 2.0.67; klient bez zmian (2.0.12).
+
+### Próba konia bojowego od pierwszego do setnego zabójstwa
+
+Po 2.0.66 boty z próbą docierały na pustynię i dwa ją ukończyły, ale reszta
+dalej wracała: reguła „blokuje podróż” liczy torbę bez wolnej kolumny trzech
+komórek (handlarz z 16 luźnymi wolnymi komórkami ma to na stałe — GumbASSx
+wracał pięć razy w 40 minut, pobyty 97–426 s), a zegar wizyty na froncie
+kończył próbę w dwóch trzecich („frontier_visit_complete” po 41 minutach).
+Na próbie bot wraca tylko, gdy nie może walczyć (brak broni, zbroi, mikstur,
+strzał), wizyta nie wygasa, a łucznik bierze u handlarza pełny kołczan (jak
+dropek), żeby strzał starczyło na sto zabójstw.
+
+### Pierścień Teleportacji: druga paczka i samonaprawa stanu
+
+Paczka NerrVoVy z 12:43 (2.0.65) pokazała 20 linii `QUEST_ITEM: use` — użycie
+dociera do silnika (flagi 0, żaden quest nie zawieszony, poziom 75, mapa 1), a
+handler questu nie rusza i nie ma błędu Lua. Quest jest zarejestrowany i ma
+jeden stan; jedyne, czego dopasowanie nie umie uruchomić, to gracz ze stanem
+`teleport_ring` innym niż start. 2.0.67 loguje przy każdym użyciu przedmiotu
+questowego, ile questów dopasowano i pominięto (`QUEST_ITEM: event`), a
+użycie pierścienia ze stanem innym niż start najpierw zeruje ten stan (quest
+nie ma innych stanów, więc nic nie ginie).
+
+## 2.0.66 — 2026-09-17
+
+Serwer 2.0.66; klient bez zmian (2.0.12).
+
+### Bot z próbą konia bojowego zostaje na pustyni
+
+Po 2.0.65 (zioła ustępują próbie) boty z otwartą próbą i tak niczego nie
+kończyły: na m2zip w godzinę 85 wjazdów na pustynię, 75 pobytów po średnio
+344 s (67 krótszych niż 10 minut), licznik zabójstw próby rósł o 25 co pół
+godziny, a 102 ze 120 botów z próbą stało w wioskach z „0/100”. Do wioski
+wysyłał je hand-in Biologa, który nieśli (29 wyjazdów na godzinę), i obsługa
+własnego sklepu co 10–15 minut (23 na godzinę). Oba czekają teraz, dopóki
+próba na pustyni trwa; potrzeba blokująca (brak broni, mikstur) nadal
+wygrywa. I druga połowa: bot z otwartą próbą w wiosce w ogóle rzadko na
+pustynię ruszał (126 takich botów, 3 wjazdy w 25 minut) — trzymała go
+„miękka” potrzeba sprawunków, torba zapełniona w 45 %, którą handlarz z
+towarem nosi zawsze: wizyta w mieście → rynek → drużyna → wizyta w mieście,
+przez cały dzień. Dla bota z próbą ta połowa nie liczy się; brak broni,
+zbroi, mikstur, strzał albo wolnej kolumny nadal wysyła do miasta. A „brak
+wolnej kolumny” był u handlarzy stanem trwałym: bot 40 lvl z 200 mln yang
+nosił 38 stosów materiałów „na ladę” (lada mieści kilka linii) przy 4
+przedmiotach w magazynie, bo materiał, którego ktoś na świecie szuka, nigdy
+nie szedł do Dozorcy. Przy pełnej torbie (80 %) idzie; wypłata z magazynu
+wraca po niego na ladę tylko, gdy torba ma miejsce.
+
+### Launcher ponawia pobieranie paczki (Hiob)
+
+Aktualizacja 2.0.61 → 2.0.65 padła dwa razy sekundę po odczycie manifestu:
+„połączenie nieoczekiwanie zakończone”, potem „(500) Wewnętrzny błąd
+serwera” — odpowiedź GitHuba, ten sam zip minutę później schodził
+normalnie. Launcher pobierał raz i przy pierwszym potknięciu kończył
+błędem; teraz próbuje trzy razy z pięciosekundową przerwą (blokada
+antywirusa nadal od razu). Nowy launcher przyjeżdża w paczce, więc działa
+od następnej aktualizacji.
+
+### Karta czasu odradzania z mnożnikami (kiciamol)
+
+Przy każdym z dwóch pól na stronie „Stawki” są przyciski ×1 … ×10 (wpisują
+odpowiedni procent) i podpis „≈ ×N szybciej niż w grze” liczony na żywo. Pod
+spodem zostaje procent, więc polecenie `REGEN` i flagi silnika bez zmian.
+
+## 2.0.65 — 2026-09-17
+
+Serwer 2.0.65; klient bez zmian (2.0.12). Dwie rzeczy z przedpołudnia po 2.0.64.
+
+### Pierścień Teleportacji: użycie zostawia ślad w logu (NerrVoVy)
+
+Po 2.0.64 pierścień (70058) u gracza dalej „nic nie robi”, a paczka
+diagnostyczna nie ma o tym ani jednej linii. Diagnoza z 2.0.62 była chybiona:
+flaga 8192 na pierścieniu to w tym silniku `ITEM_FLAG_LOG`, nie `APPLICABLE`
+(ta jest 1<<14), więc gałąź „przeciągnij na inny przedmiot” nigdy nie była
+przyczyną, a migrator czyścił nieszkodliwą flagę. Od 2.0.65 każde zwykłe użycie
+przedmiotu questowego zapisuje w syslogu linię `QUEST_ITEM: use` z flagami,
+mapą, poziomem i informacją, czy gracz ma **zawieszony quest** (otwarte okno
+zadania — wtedy silnik po cichu odrzuca każde nowe zdarzenie questowe; gracz
+dostaje teraz podpowiedź na czacie), a sam quest pierścienia loguje, że się
+uruchomił. Paczka diagnostyczna zbiera tag `QUEST_ITEM`. To pozwoli nazwać
+przyczynę z następnej paczki zamiast zgadywać.
+
+### Kopanie rud pieszo (Remigiusz)
+
+Bot kopał rudę siedząc na koniu (zrzut: TheBlady2 z kilofem na białym koniu
+przy Stercie Muszli) — silnik nie pyta o konia ani przy machnięciu, ani przy
+założeniu kilofa. Górnik schodzi teraz z konia przy żyle i odsyła go, jak
+wędkarz przy wodzie; wsiada z powrotem na drogę.
+
+### Zioła Biologa ustępują otwartej próbie konia bojowego
+
+Bot z otwartą próbą konia (70+, koń na 10) szedł do pierwszej wioski po zioła
+Biologa (wiersze 1–6) i przez cały ten czas nad głową miał „Zdobywam konia
+bojowego na pustyni (0/100)” — na m2zip 88 ze 124 takich botów miało za cel
+Biologa, a na pustyni stało ich 8. Losowanie frontu i wiersz z potworem
+ustępowały próbie od 2.0.61, wyprawa po zioła nie. Teraz zioła czekają na
+konia; hand-in już niesionych okazów nadal idzie. Przy okazji: miejsce na
+wyprawę po zioła jest przydzielane dopiero dla wybranego wiersza, nie przy
+każdym sprawdzeniu — bot niosący Zęby Orka brał miejsce i oddawał je w tej
+samej klatce (300 linii logu na minutę po restarcie).
+
+## 2.0.64 — 2026-09-17
+
+Serwer 2.0.64; klient bez zmian (2.0.12). Poranne zgłoszenia z Discorda po
+nocnych wydaniach 2.0.62/2.0.63 i panel Sebana 1.55.0.
+
+### Szkatułki Blasku Księżyca dropiły dwa razy częściej, niż mówił suwak
+
+W dostarczanym `item_manager.cpp` blok losowania szkatułki (i kuponu Smoczych
+Monet) siedział w `CreateDropItem` dwa razy — od co najmniej 2.0.50 każde
+zabójstwo i każdy Metin losowały szkatułkę dwukrotnie, więc 10‰ z panelu
+znaczyło w praktyce ~20‰. Przyczyna: skrypt portu rozpoznawał „już nałożone”
+po pełnym tekście bloku, a każda zmiana komentarza w tym bloku wstawiała go
+ponownie. Blok jest teraz jeden, a skrypt rozpoznaje go po stałym markerze.
+
+### Szkatułki tylko w oknie eventu — dwie dziury zamknięte (NerrVoVy)
+
+„Mam włączone blaski 10/100, harmonogram na 2 h dziennie, a dropią też poza
+konkursem”: po pierwsze, każdy zapis pliku wag z panelu wpisywał suwak wprost
+do silnika i bramka eventu zerowała go dopiero w następnej sekundzie; teraz
+wartość suwaka jest trzymana obok, a silnik dostaje ją tylko, gdy okno jest
+otwarte. Po drugie, własne tabele dropu paczki mają linie ze szkatułką (50011),
+których żadna bramka nie obejmowała: gdy oba suwaki są na zerze (okno
+zamknięte albo wyłącznik), szkatułki z tabel też nie wypadają. Trzeci powód to
+podwójne losowanie z sekcji wyżej.
+
+### Wędkarze: karta wchodzi na zajęte sloty, Rybak ma własny próg dojścia (seban latino)
+
+Dwie paczki diagnostyczne z 1013 i 1044 botami: na pierwszej nie łowił nikt —
+każda linia wędkowania to „karta w torbie, ale nie założona”. Karta Wędkarska
+jest unikatem, a bot z dwoma zajętymi slotami unikatów (np. Symbol Króla
+Przepowiedni + pierścień) nie mógł jej założyć i próbował znów za godzinę.
+Teraz zdejmuje jeden unikat (najpierw taki, który nic mu nie daje, pierścień na
+zegarze na końcu), a przy każdym zarzuceniu sprawdza, czy karta jest na sobie —
+730 odmów silnika „You need to have a fishing pass” w dwie minuty i 24 sesje
+zakończone bez rzutu to była karta, która zeszła w trakcie sesji. Osobno: bot
+zawieszony na „Idę do Rybaka po przynętę” (Przepotenszny, MrocznyNinjaxD… na
+Yongan i Pyongmoo) stał 119–177 jednostek od punktu podejścia, bo punkt leżał na
+zablokowanym gruncie, a próg dojścia był stanowiskiem wędkarskim (100) — Rybak
+to lada, dostała własny próg (400) i dopasowany snap celu. Do tego bot, który
+oznaczył swoje stanowisko jako suche (brak wody obok), dostawał je z powrotem,
+gdy wędkarzy było więcej niż stanowisk — stał na piasku do końca limitu
+bezczynności; teraz dzieli z kimś mokre stanowisko, a gdy cały brzeg jest
+suchy, kończy sesję od razu.
+
+### Wojna gildii botów pieszo i od razu na środku (NerrVoVy, Tieru)
+
+Boty odwołują konie na polu bitwy (dotąd bojowy koń zostawał w siodle) i obie
+strony zbierają się na tym samym otwartym gruncie na środku mapy gildyjnej,
+zamiast w dwóch kolumnach 700 jednostek od siebie.
+
+### Zbroja na plecach nie idzie na ryzykowny ulepszacz bez zastępstwa (THC)
+
+Reguła „broni w ręce” z 2.0.49 dostała bliźniaczkę dla zbroi: na kroku, który
+może spalić (od +4 na +5 wzwyż), noszona zbroja idzie pod zwój albo czeka, jeśli
+w torbie nie ma innej, którą bot mógłby założyć. Dotąd bot na 20. poziomie
+przepalał jedyny pancerz i szedł farmić bez zbroi.
+
+### Czas odradzania Metinów, bossów i potworów — suwak w panelu (Hiob)
+
+Silnik od dawna czyta flagi `fastBossSpawn<mapa>` / `fastMobSpawn<mapa>`
+(procent zwykłego czasu odradzania linii regenu); 2.0.64 dodaje ich wersje
+bez numeru mapy jako domyślne dla całego świata i formularz na stronie
+„Stawki” panelu klasycznego: osobno Metiny i bossowie, osobno zwykłe potwory,
+10–100 % zwykłego czasu. Działa od razu przez pomocnika w grze (polecenie
+`REGEN` questu web_admin) i zostaje po restarcie (flagi w `player.quest`).
+
+### update.sh dopisuje brakujące klucze .env (GorącyDelfin)
+
+Aktualizacja z paczki na Linuksie nigdy nie dopisywała nowych kluczy do `.env`
+(robił to tylko launcher na Windows), więc po 2.0.57 brakowało `M2_DIFFICULTY`
+i godzin oczekiwania. `update.sh` dopisuje teraz z `.env.example` tylko te
+klucze, których wartość przykładowa jest domyślną z compose (trudność, plan
+wejścia botów, dropki medali, szkatułki, układ świata) — nigdy hasła, portu ani
+adresu; klucz już obecny zostaje jak jest.
+
+### Panel Sebana 1.55.0
+
+Plan wejścia botów w /manage (okno kohorty, późno dołączający), rozbudowane
+gildie (królestwo z flagą po liderze), planer eventów, ItemShop w monitoringu
+gospodarki (Smocze Monety i Znaki botów, zakupy z `log.itemshop`), diagnostyka
+wędkarstwa, sprzedawca ze sprzedaży prowadzi do karty postaci, wyszukiwanie
+przedmiotów przechodzi wprost do wyników. Nasze zabezpieczenia zachowane; plan
+wejścia botów w panelu działa tylko z integracją Sebana (bez niej panel odsyła
+do launchera / `.env`).
+
+## 2.0.63 — 2026-09-17
+
+Serwer 2.0.63; klient bez zmian (2.0.12). Ostatnie poprawki nocy po
+pierwszych testach Wieży Demonów z 2.0.62.
+
+### Wieża Demonów: na 7. piętrze grupa toruje sobie drogę do Metina Morderstwa
+
+Na 7. piętrze grupa toruje sobie drogę do Metina Morderstwa: potwory są
+wybierane od kamienia, więc czyszczony jest teren wokół niego i kamień jest
+rozbijany, gdy nic przy nim nie stoi. Dotąd grupa szła za najbliższym
+demonem i kamień stał nietknięty, choć boty żyły i zabijały (na serwerze
+testowym: 9 minut, 63 zgony, cztery Metiny Śmierci rozbite w 49 s, Metin
+Morderstwa nietknięty). Ta poprawka została skompilowana i przeczytana, ale
+nie obejrzana na żywo — serwer testowy był już wyłączany; skrzynia i mapa z
+7. piętra, klucz z 8. i Rozpruwacz z 9. nie były jeszcze osiągnięte przez
+żadnego bota. Prosimy o zgłoszenia z pięter 7–9 na Discordzie.
+
+## 2.0.62 — 2026-09-16
+
+Serwer 2.0.62; klient bez zmian. Wydanie do testów Wieży Demonów — prosimy o
+zgłoszenia na Discordzie.
+
+### Gildie botów chodzą do Wieży Demonów (przełącznik „Gildie botów chodzą do Wieży Demonów”, domyślnie włączony)
+
+- **Wyprawa**: mniej więcej co półtorej godziny (pierwsza kilkanaście minut
+  po starcie serwera) jedna gildia botów rdzenia — z co najmniej czterema
+  członkami od 40. poziomu online, najchętniej taka, w której ktoś ma 75. —
+  zwołuje na czacie gildii zbiórkę na parterze Wieży (do 16 najsilniejszych
+  członków), a serwer ogłasza to wszystkim: „Gildia X (Chunjo) rusza na Wieżę
+  Demonów: zbiórka na parterze wiezy, start za 4 minuty. Kto stoi na parterze,
+  wchodzi razem z nimi.” Po czterech minutach (albo gdy wszyscy dotarli) boty
+  razem rozbijają Metin Twardości. Log: `PLAYERBOT_TOWER: raid called /
+  breaking the stone / raid inside / raid over`.
+- **Kto stoi na parterze, wchodzi** — bot na własnej misji (Pamiątka po
+  Demonie), gracz, który przyszedł popatrzeć: gra wciąga do nowej instancji
+  wszystkich z mapy zabójcy kamienia, a w środku każdy bot gra według zasad
+  piętra, wyprawa czy nie.
+- **Piętra** jak w grze: 2. — wybić wszystko; 3. — Król Demonów i reszta;
+  4. — Metin Diabła, potem siedem Metinów Upadku (fałszywe znikają przy 50 %,
+  prawdziwy trzeba rozbić); 5. — Kamienie Otwarcia z demonów niesione do
+  pięciu Starożytnych Pieczęci; 6. — Elit. Król Demonów, potem kowal Wieży;
+  7. — cztery Metiny Śmierci, potem Metin Morderstwa, Nieznana Stara
+  Skrzynia i Mapa Wieży Zin-Sa-Gui; 8. — Klucz Zin-Bong-In z Nieśm. Duchów
+  do Sa-Soe; 9. — Umarły Rozpruwacz. Klucze zbiera zwykły pas lootu, bot ich
+  używa albo oddaje, komu trzeba. Od 6. piętra potrzebny jest bot z 75.
+  poziomem (zasada gry: kowal puszcza dalej tylko takiego); bez niego wyprawa
+  kończy się na szóstym piętrze i boty wychodzą. Run bez postępu przez 20
+  minut, piętro powyżej 35 minut albo całość powyżej 2 godzin — boty wychodzą.
+  Polegli wstają na miejscu jak dotąd.
+- **Gildia gracza**: gdy mistrz gildii (gracz) stoi na parterze Wieży,
+  jego boty od 40. poziomu przychodzą i stoją przy nim; gdy gracz rozbije
+  kamień, wchodzą z nim i walczą piętro po piętrze. Bot w drużynie gracza
+  wchodzi jak dotąd z drużyną.
+- **Panel klasyczny**: przełącznik na stronie zachowania botów i przycisk
+  „Wyprawa do Wieży Demonów teraz” (rdzeń zwołuje wyprawę przy najbliższym
+  sprawdzeniu, jeśli żadna nie trwa); na stronie „Gildie” przy gildii w
+  Wieży stoi „w Wieży Demonów”. Status nad głową: „Wieza Demonow: pietro N”,
+  „Zbiorka gildii: Wieza Demonow”. Gildia w Wieży nie jest wybierana do wojny.
+
+- **Zmierzone na serwerze testowym** (16 września, jedna wyprawa 16 botów
+  gildii MINISTRANCI, bez wycieków z instancji): 2. piętro 208 s, 3. z Królem
+  Demonów 253 s, 4. Metiny 107 s, 5. pięć Kamieni Otwarcia do Pieczęci 177 s,
+  6. Elitarny Król Demonów 104 s i kowal Wieży przepuścił bota 75. poziomu.
+  Na 7. piętrze pierwsza wyprawa utknęła: 214 demonów, boty rozproszone po
+  piętrze, połowa w pętli śmierć/wskrzeszenie, 6 minut bez zabójstwa. Stąd
+  walka w grupie w tym wydaniu: cel wybierany od środka gildii (wszyscy biją
+  tego samego demona), kamienie piętra dopiero gdy zostanie najwyżej 25
+  potworów, maruder bez celu wraca do grupy. Wieża idzie jako nowość do
+  testów; piętra 7–9 prosimy zgłaszać na Discordzie.
+
+- **Po pierwszym teście na serwerze testowym boty walczą na piętrach w
+  grupie**: cel jest wybierany od środka grupy, więc szesnastka bije tego
+  samego demona, a maruder bez celu wraca do reszty — na 7. piętrze zgony
+  spadły z 253 na 43 na dziesięć minut, a zabójstwa z zera do piętnastu na
+  minutę. Kamień piętra (Metin Morderstwa, Metiny Śmierci) jest rozbijany,
+  gdy grupa oczyści teren wokół niego, bo regen 7. piętra dorzuca potwory
+  szybciej, niż da się je wybić do końca. Drugi przebieg z walką w grupie:
+  piętra 2–6 w 222/256/153/206/156 s, kowal przepuścił bota 76. poziomu;
+  7. piętro było w toku w chwili wydania.
+
+### Koniec pętli Joan↔Bokjung u botów z ziołowym wierszem Biologa
+
+Bot z otwartym ziołowym wierszem (potwór w pierwszej wiosce) wchodził z
+Bokjung do Joan po zioła, a w Joan reguła „wyrosłeś z tej mapy” od razu
+wysyłała go z powrotem — punkty wejścia obu bram stoją obok bramy
+powrotnej, więc okrążenie trwało 4 sekundy (Greess, log TAKAMURU1: „nie
+przechodzą przez teleporty”). Polowanie na zioła jest teraz powodem, by
+zostać w pierwszej wiosce, tak samo jak było powodem, by do niej przyjść.
+Przy okazji policzone: Teleporter działa w każdej pierwszej i drugiej
+wiosce trzech królestw (na serwerze testowym w 45 min: z 1/21/41 do Doliny
+361/377/252 razy, na pustynię 44/58/58; z 3/23/43 do Doliny 103/54/67), a
+bramy M1↔M2, do Lochów Małp i z M3 po wojnie tak samo.
+
+### Koniec pętli M2↔M3 u dropperów M3
+
+Dropper M3 (osobowość, która farmi mapę gildyjną pod bronie 30 lvl na
+sprzedaż) z taką bronią w torbie był wysyłany na M3 jako dropper, a gałąź
+M3 odsyłała go do M2 jako bota, który „znalazł broń” — punkt przybycia
+Teleportera na mapie gildyjnej stoi obok bramy powrotnej, więc okrążenie
+trwało 5 sekund (paczka seban latino: po dwa boty na Shinsoo i Jinno,
+62–65 okrążeń w 6 minut, „level30_weapon_to_m3” / „m3_weapon_found”). Dla
+droppera M3 broń w torbie to towar, nie powód do powrotu; obie reguły —
+wejścia i wyjścia — pytają teraz o to samo.
+
+### Próba konia bojowego tylko tam, gdzie jest jej mapa
+
+W układzie split pustynia (i Wieża Demonów dla konia wojskowego) stoi na
+jednym rdzeniu, a próba pytała tylko o poziom, konia i zabójstwa: 58 botów
+Shinsoo i 42 Jinno stało w drugich wioskach z napisem „Zdobywam konia
+bojowego na pustyni (0/100)” (paczka seban latino), losowanie frontieru
+odpowiadało pustynią i było filtrowane do niczego, a od 2.0.61 Biolog
+ustępował próbie — więc te boty nie miały ani frontieru, ani wiersza
+Biologa. Próba jest otwarta tylko na rdzeniu, który hostuje jej mapę; na
+pozostałych bot jest losowany po poziomie i robi Biologa jak każdy inny.
+
+### Naprawa paczki: 5. piętro Wieży Demonów było nie do przejścia
+
+Quest paczki liczył na 5. piętrze zabójstwa Brutalnego Demona Łucznika
+(1062), a regen tego piętra w tej paczce stawia Demonów Żołnierzy, Łuczników,
+Włóczników i Szamanów oraz ich Podłe odmiany (1002–1004, 1031–1034) — nigdy
+1062. Żaden Kamień Otwarcia nie mógł więc wypaść i nikt, gracz ani bot, nie
+przechodził dalej. Kopia questu w obrazie serwera liczy potwory, które na
+tym piętrze naprawdę stoją.
+
+### Bot przechodzi przez każdy warp gry
+
+Silnikowy `WarpSet` — skok lochu, wyjście z lochu (`d.exit_all`), `pc.warp`
+questu, `/warp` GM-a — zdejmował bota z mapy i czekał na klienta, którego
+bot nie ma (ratunek stawiał go na starcie jego mapy). Teraz bot na tym
+rdzeniu przechodzi po stronie serwera tam, gdzie gra go posłała, z
+członkostwem w lochu jak gracz po ponownym połączeniu; warp na mapę innego
+rdzenia jest odmawiany z wpisem w logu (`PLAYERBOT_WORLD: warpset refused`).
+
+## 2.0.61 — 2026-09-16
+
+Serwer 2.0.61 i klient 2.0.12. Wydanie z tabelą tierów Iwakury, cennikiem 1.2 i
+poprawkami z wieczoru 16 września.
+
+### Tiery ekwipunku i bonusów Iwakury (PvE)
+
+Iwakura ocenił każdą rodzinę bransolet, kolczyków, naszyjników, butów i broni
+oraz każdy bonus w skali 1 (bardzo zły) – 6 (wspaniały), osobno do PvE i do
+PvP, z dopiskami „+1 dla Wojownika” itp. (`data/iwakura_tiery.txt`; zbroje,
+hełmy i tarcze ocenia po poziomie i bonusach, więc nie są w tabeli). Boty
+używają kolumny PvE:
+
+- **Ocena sprzętu** przesuwa się o 8 % na stopień od neutralnej trójki
+  (tier 6 to +24 %, tier 1 to −16 %), a każda linia bonusu na przedmiocie liczy
+  się z wagą tieru (wspaniały ×1,3 … bardzo zły ×0,25). To dopisek do
+  dotychczasowej, mierzonej oceny, nie nowy ranking: bot nadal nie zamieni
+  Miedzianych Kolczyków +9 z bonusami na Ebonitowe +1 bez bonusów.
+- **Losowanie bonusów** (kamienie i marmury) używa tych samych wag, więc to,
+  co kowal losuje, i to, co bot zakłada, ocenia jedna tabela.
+- **Zapas lepszego tieru** w torbie (np. Ebonitowe Kolczyki u bota w
+  Miedzianych) jest traktowany jak zapas wyższego poziomu: nie idzie do
+  handlarza, kowal go ulepsza i bonuje, a założony zostaje dopiero wtedy, gdy
+  naprawdę wygrywa — zgodnie z instrukcją Iwakury „najpierw ulepszyć i
+  wybonować”.
+- Kolumna PvP jest w tabeli, ale jeszcze nieużywana — czeka na drugi zestaw
+  ekwipunku botów.
+- Narzędzie: `tools/generate_iwakura_tiers.py` renderuje
+  `playerbot_item_tiers.h` (161 rodzin, 45 bonusów) i przerywa, gdy jakiejś
+  nazwy nie da się związać z przedmiotem — jak generator cennika.
+
+### Cennik Iwakury 1.2
+
+Nowe pozycje (m.in. szkatułki i klucze, zwoje ulepszeń, księgi pasywne,
+przedmioty konia, przedmioty z łowienia, receptury) i dostrojone ceny;
+poprawione pisownie. Wszystkie lady przeceniają towar według nowej tabeli
+w ciągu kilku wizyt serwisowych.
+
+### Boty przyjmują zaproszenia do gildii od graczy
+
+Zaproszenie do gildii wysłane botowi trafiało do deskryptora bez klienta i po
+dziesięciu sekundach wygasało — zaproszenie bota nie robiło nic. Teraz bot bez
+gildii przyjmuje zaproszenie od gracza od razu (każdy bot, także dropki),
+zapraszający widzi na czacie „X przyjmuje zaproszenie do gildii Y”, a bot w
+gildii gracza co godzinę oddaje jej część zdobytego doświadczenia (10 %, jak
+w zwykłej gildii botów) i poza tym niczego w niej nie zmienia. Warunki silnika
+bez zmian: to samo królestwo, wolne miejsce, gildia nie w wojnie.
+
+### Wojny gildii botów rozłożone między królestwa, z zapowiedzią
+
+Wszystkie trzy królestwa zaczynały wojnę pół godziny po starcie serwera i
+kończyły razem, a potem przez dwie godziny nie było czego oglądać. Teraz
+pierwsza wojna Shinsoo jest po 30 minutach, Chunjo po 70, Jinno po 110, a
+kolejne 90 minut po zakończeniu poprzedniej (co 2 h w królestwie) — w
+świecie prawie zawsze gdzieś trwa wojna. Przy wypowiedzeniu, minutę–dwie
+przed pierwszymi ciosami, idzie ogłoszenie „Za chwile wojna gildii botow
+(Chunjo): A kontra B. Pole bitwy: mapa gildyjna.”, a strona **Gildie** w
+panelu klasycznym pokazuje „Następna wojna gildii botów: Shinsoo za ok. N
+min, …” (trwa teraz / niezaplanowana).
+
+### Pierścień Teleportacji działa u gracza
+
+Przedmiot 70058 ma w tej paczce flagę APPLICABLE, przez którą gra traktuje
+go jak „przeciągnij na inny przedmiot” i przy zwykłym użyciu w ogóle nie
+pyta questu — dlatego quest z 2.0.52 nigdy nie odpalał. Migrator zdejmuje
+flagę przy starcie; pierścień otwiera okno z listą miejsc jak Teleporter
+(za tę samą opłatę, od 11 poziomu).
+
+### Biolog: ziołowe wyprawy po trochu, koń bojowy przed nimi
+
+2.0.60 kazało botom robić wiersze Biologa po kolei bez względu na poziom
+— i każdy bot z nieskończonym ziołowym wierszem ruszył do pierwszej
+wioski naraz: na serwerze testowym przejścia M2→M1 skoczyły z ok. 300 na
+godzinę do 1 826 i 2 766, w pierwszych wioskach stało 580 z 1 099 botów,
+a gracze nagrali tłum botów na koniach wjeżdżających w bramy i „boty
+40–50+ expiące w M1” (uxietoszef, Bierzyn, 16 września). Wiersze nadal
+idą po kolei, ale bot, który przerósł ziołowy wiersz o więcej niż 10
+poziomów, jedzie po niego do wioski tylko wtedy, gdy ma wolne miejsce w
+puli 2,5 % żywych botów (miejsce trzymane najwyżej godzinę, oddawane po
+skończeniu ziół); bez miejsca robi następny wiersz w kolejności (Ząb Orka
+w Dolinie) — także bot, który już stoi w pierwszej wiosce, więc wioski
+opróżniają się z botów 40+ w kilkanaście minut po aktualizacji. Log:
+`PLAYERBOT_BIOLOGIST: herb errand`.
+
+#### Koń bojowy przed ziołami
+
+Po 2.0.60 bot 70+ z koniem na 10. poziomie miał iść na pustynię, ale ziołowy
+wiersz Biologa (Korzeń Gango w pierwszej wiosce) wysyłał go najpierw do M1 —
+w Jayang stało 35 takich botów z napisem „Zdobywam konia bojowego na
+pustyni (0/100)”, w innych wioskach podobnie. Dopóki bot ma otwartą próbę
+konia (bojowego albo wojskowego), potwór wiersza Biologa nie jest celem
+podróży; oddanie okazów nadal idzie normalnie. Na serwerze testowym pół
+godziny po restarcie: wyjazdy Teleporterem na pustynię i pierwsze zabójstwa
+próby u botów, które dotąd stały w wioskach.
+
+### Niesprzedany towar na ladach tanieje z czasem
+
+Linia na sklepie offline, której nikt nie kupił, tanieje o 10 % za każde
+2 godziny stania, najwyżej o 50 %, i nigdy poniżej tego, co zapłacono
+kowalowi za ulepszenie. Klasyczny stragan miał taką przecenę od dawna; sklep
+offline dostaje ją na wizycie serwisowej (log `PLAYERBOT_OFFLINE: marked
+down`).
+
+### Klient 2.0.12
+
+- Przełącznik „Tytuły botów” w opcjach gry wypisuje na czacie, że zmiana
+  będzie widoczna po ponownym zalogowaniu (klient rysuje tytuł do następnej
+  zmiany rangi bota).
+
+## 2.0.60 — 2026-09-16
+
+Serwer 2.0.60; klient bez zmian (2.0.11). Wydanie do testów systemu gildii i zakupów botów w ItemShopie —
+prosimy o zgłoszenia na Discordzie.
+
+### Gildie botów: klasy, rekrutacja według siły, exp dla gildii, umiejętności gildyjne
+
+Dotąd gildia bota była nazwą i listą: bot zakładał ją losowo, zapraszał
+kogo spotkał na placu, a gildia nigdy nie dostała punktu doświadczenia
+(na serwerze testowym 25 gildii, wszystkie na poziomie 1). Teraz:
+
+- **Siła bota** to jedna liczba: poziom, cios broni w ręce, poziomy
+  umiejętności buildu, koń i zbroja. Co 10 minut rdzeń spisuje siłę botów
+  każdego królestwa i dzieli je na percentyle (log
+  `PLAYERBOT_GUILD: strength census`); pierwszy spis 10 minut po starcie.
+- **Klasa gildii** wynika z percentyla założyciela: **Elitarna** (górne
+  3 % królestwa), **Silna** (górne 15 %), **Średnia** (górna połowa),
+  **Zwykła** (reszta). Elitarnych jest najwyżej 2 na królestwo, silnych 6;
+  gdy klasa jest pełna, założyciel schodzi o jedną niżej. Elitarna ma 24
+  miejsca, silna 40, pozostałe tyle, ile daje gra (48 + 4 na poziom).
+- **Rekrutacja**: mistrz zaprasza najsilniejszych botów bez gildii z całego
+  swojego królestwa (nie tylko z zasięgu wzroku), wyłącznie powyżej progu
+  swojej klasy, po trzech na przebieg. W gildii nadal tylko jedno
+  królestwo; dropki nadal poza gildiami.
+- **Awans**: członek, którego siła przerosła klasę jego gildii, odchodzi do
+  lepszej gildii z wolnym miejscem (raz na 6 godzin, najwyżej 3 na
+  królestwo na spis). Mistrz nie odchodzi.
+- **Exp dla gildii**: co godzinę członek oddaje gildii część doświadczenia
+  zdobytego od poprzedniej ofiary — 15 % w gildii elitarnej, 12 % w silnej,
+  10 % w pozostałych; co najmniej 10 000, nigdy więcej niż ma na bieżącym
+  poziomie, więc bot nie traci poziomu. Gildia dostaje setną część oddanego
+  expa, dokładnie jak u gracza (tabela poziomów gry: 15 000 na 2. poziom,
+  685 000 na 10.). Log: `PLAYERBOT_GUILD: offered exp`,
+  `PLAYERBOT_GUILD: guild X reached level N`.
+- **Umiejętności gildyjne**: punkt z każdego poziomu mistrz wydaje
+  schodkowo: Krew Smoczego Boga, Święta Zbroja, Gniew, Przyspieszenie,
+  Błogosławieństwo, Pomoc w Rzucaniu. Uwaga: w tej wersji gry umiejętność
+  gildyjną można użyć tylko na arenie wojennej, więc w wojnach polowych
+  botów nie działa — punkty służą graczom w gildii bota i arenom.
+- **Istniejące gildie botów** (założone przed 2.0.60) dostają klasę przy
+  pierwszym sprawdzeniu po spisie, według siły mistrza. Klasa i królestwo
+  gildii trzymane są w nowej tabeli `player.playerbot_guild` (tworzy ją
+  migrator przy starcie).
+
+### Wojny gildii botów (przełącznik „Wojny gildii botów”, domyślnie włączony)
+
+- Mniej więcej **co 2 godziny** w każdym królestwie dwie gildie botów
+  (co najmniej 8 botów online w każdej, najbliższe sobie klasy, rotacja)
+  toczą **wojnę polową silnika**: wypowiedzenie przez jednego mistrza,
+  przyjęcie przez drugiego, 30 minut, zabójstwa liczone przez grę,
+  rozliczenie i ranking (ladder ±7 %) przez rdzeń bazy. Pierwsza wojna
+  pół godziny po starcie serwera.
+- **Pole bitwy** to mapa gildyjna królestwa (Waryong i jej odpowiedniki):
+  komunikat na czacie „Wojna gildii: A kontra B! Pole bitwy: mapa gildyjna
+  (Chunjo), 30 minut.”, zbiórka na najbliższym otwartym terenie przy punkcie
+  wejścia mapy (na mapach Chunjo i Jinno sam punkt wejścia leży w strefie
+  bez PvP, gdzie gra nie liczy żadnego ciosu), strony 700 jednostek od
+  siebie. Boty schodzą z konia transportowego i biją
+  najbliższego wroga tak jak w pojedynku (bufy, dystans casterów, szarża
+  wojownika, skille, cios), polegli wracają z wioski na pole; po wojnie
+  wszyscy wracają do drugiej wioski. Status nad głową: „Wojna gildii z X”.
+  Bot w drużynie gracza na wojnę nie idzie.
+- Wojna wypowiedziana gildii bota przez gracza nie jest przyjmowana (to
+  osobna decyzja na później). Wyłączenie przełącznika wstrzymuje nowe
+  wypowiedzenia; trwająca wojna dobiega końca. Log: `PLAYERBOT_GUILD: war
+  declared / accepted / on / over`.
+
+### Boty korzystają z ItemShopu (przełącznik „Boty kupują w ItemShopie”, domyślnie włączony)
+
+Kupony SM (z metinów i bossów, stawki `M2_DRAGON_COIN_STONE_PERMILLE` i
+`M2_DRAGON_COIN_BOSS_PERMILLE` w `.env`) leżały dotąd w torbach botów bez
+użytku — na serwerze testowym 97 sztuk po trzech dniach. Teraz:
+
+- **Kupon** bot wymienia od razu na Smocze Monety swojego konta, tą samą
+  drogą co gracz (doładowanie przez rdzeń db, wpis w logu kuponów), tylko bez
+  okienka. Saldo trzyma w pamięci i odczytuje z konta raz na godzinę.
+- **Zakup** to zwykły zakup w sklepie gry (poziom, cena, log zakupów silnika,
+  towar do torby), najwyżej raz na godzinę, i tylko to, z czego bot naprawdę
+  korzysta: **Kamień Duchowy** (49 SM) dla bota z umiejętnością Wielkiego
+  Mistrza gotową do treningu; **Zaczarowanie Przedmiotu** (69 SM) dla bota,
+  którego noszona broń jest jeszcze warta losowania bonusów, a w torbie nie
+  ma kamienia; za Smocze Znaki (naliczane 1:1 za wydane monety) **Zwój
+  Błogosławieństwa** przy pracy pod zwój i **Atak Boga Smoków** x5; oraz
+  **fryzura** (39 SM) — raz, dla jednego bota na czterech, gdy nic innego nie
+  jest potrzebne.
+- Bot nie kupuje przedmiotów VIP ani Przepustki Triumfu: każdy bot ma
+  subskrypcję premium od zawsze (5 lat od spawnu), a sklep i tak odmawia
+  VIP-a subskrybentowi. Nie kupuje resetów, Wykrywacza Metinów ani Magicznego
+  Metalu.
+- Naprawa poza botami: silnik logował każdy zakup w sklepie do tabeli
+  `log.itemshop`, której paczka nigdy nie miała — migrator ją tworzy, więc
+  zakupy graczy przestaną kończyć się błędem SQL w syserr.
+- Log: `PLAYERBOT_ISHOP: voucher cashed / bought / census`, także w pakiecie
+  wsparcia. Przy domyślnych stawkach bot znajduje kupon raz na miesiąc, więc
+  zakupów jest ok. 30 dziennie na tysiąc botów; kto chce częściej, podnosi
+  stawki w `.env`. Na serwerze testowym (30 ‰ z metinów): 97 kuponów
+  wymienionych w minutę po starcie, 20 fryzur kupionych i założonych w 11
+  minut przez boty z 50 SM, wpisy w logu sklepu, zero błędów.
+
+### Biolog: żaden etap nie jest „za niski dla bota”
+
+Bot robił misje Biologa tylko w swoim paśmie poziomów, a wiersze, z których
+wyrósł, pomijał — stąd „Ząb Orka 4/10 • za niskie dla bota, pominięte: 4”
+nad botem 78 poziomu, który ani zębów nie dokończył, ani do ziół nie
+wrócił. Teraz wiersze idą po kolei niezależnie od poziomu: bot kończy ten,
+którego okazy nosi, potem pierwszy nieukończony. Po okaz jedzie tam, gdzie
+stoi potwór: po ziołowe wiersze do pierwszej wioski (i tam poluje w paśmie
+wiersza, nie swoim), po Ząb Orka i Księgę Klątw do Doliny Orków, po
+Pamiątkę po Demonie do Wieży Demonów. Okaz daje własny hak questa, więc
+różnica poziomów nie przeszkadza. Panel nie pokazuje już „pominięte”.
+
+### Koń bojowy: bot 70+ z koniem na 10. poziomie robi próbę na pustyni
+
+Na serwerze testowym 161 ze 178 botów 70+ z koniem na 10. poziomie nie
+miało ani jednego zabójstwa z próby konia bojowego: polityka walki
+odrzucała skorpiony i węże pustyni jako bezwartościowe dla tak wysokiego
+bota, więc bot na pustyni nic nie bił i wracał do miasta. Potwory próby
+(dwóch łuczników pustyni; dla konia wojskowego cztery demony Wieży) są
+teraz celem questowym — bite bez względu na poziom — a pustynia jest dla
+takiego bota mapą pogranicza, dopóki nie zbierze stu zabójstw; potem
+Stajenny za 500 000 yang wydaje konia bojowego jak dotąd.
+
+### Panel klasyczny: strona „Gildie”
+
+- Karta na pulpicie i przycisk na stronie zachowania botów: lista gildii
+  botów z królestwem, klasą, poziomem, liczbą członków i botów online,
+  mistrzem, średnią siłą, rankingiem, bilansem wojen (Z/R/P), expem
+  otrzymanym od startu rdzeni i toczoną wojną z wynikiem. Rdzenie zapisują
+  `playerbot_guild_status.tsv` co minutę; panel składa trzy pliki.
+
 ## 2.0.59 — 2026-09-16
 
 Serwer 2.0.59; klient bez zmian (2.0.11).

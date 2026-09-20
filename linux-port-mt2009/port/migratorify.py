@@ -29,6 +29,214 @@ HOSTED = ('1, 3, 4, 5, 6, 107, 81, 110, 111, 112, 113, 181, 182, 183, 200, 250, 
           '                               21, 23, 24, 25, 26, 61, 63, 64, 65, 69, 70, 71, 104, 108, 109, 79, 216, 217, 73,\n'
           '                               41, 43, 44, 45, 46, 62, 66, 67, 68, 72, 90, 208, 301, 303, 351')
 
+# What the package's player dump (initdb.d/dumps/player.sql) carries of the
+# server it was taken from: its guild lands as (land_id, guild_id) and the
+# buildings on them as (id, land_id, vnum) - and not one of those guilds.
+PACKAGE_GUILD_LANDS = (
+    (2, 408), (8, 78), (9, 108), (10, 69), (14, 3), (15, 395), (16, 2), (17, 52), (18, 18),
+    (108, 5), (109, 6), (115, 92), (116, 93), (117, 20), (118, 13),
+    (201, 212), (204, 712), (205, 57), (206, 9), (207, 58), (208, 25), (212, 19), (213, 14),
+    (214, 15), (215, 344), (216, 47), (217, 33), (218, 7))
+PACKAGE_GUILD_OBJECTS = (
+    (1, 14, 14100), (2, 214, 14120), (3, 214, 14014), (4, 14, 14013), (5, 215, 14120),
+    (6, 215, 14013), (7, 218, 14120), (8, 218, 14043), (9, 16, 14100), (10, 16, 14014),
+    (11, 16, 14043), (12, 108, 14100), (13, 108, 14014), (14, 214, 14050), (15, 14, 14051),
+    (16, 215, 14051), (17, 217, 14100), (18, 218, 14014), (19, 217, 14015), (20, 109, 14100),
+    (21, 109, 14051), (22, 17, 14100), (23, 17, 14015), (24, 207, 14110), (25, 207, 14014),
+    (26, 15, 14100), (27, 15, 14015), (28, 217, 14051), (29, 18, 14110), (30, 18, 14055),
+    (31, 115, 14120), (32, 115, 14014), (33, 108, 14043), (34, 18, 14015), (35, 116, 14120),
+    (36, 116, 14013), (37, 216, 14110), (38, 109, 14015), (39, 8, 14120), (40, 216, 14013),
+    (41, 212, 14100), (42, 117, 14110), (43, 216, 14055), (44, 117, 14055), (45, 117, 14014),
+    (46, 205, 14120), (47, 205, 14055), (48, 15, 14055), (49, 216, 14200), (50, 216, 14300),
+    (51, 216, 14300), (52, 205, 14015), (53, 212, 14015), (54, 206, 14100), (55, 206, 14015),
+    (56, 8, 14015), (57, 115, 14050), (58, 212, 14055), (59, 207, 14055), (60, 8, 14055),
+    (61, 208, 14110), (62, 201, 14100))
+
+# Three steps that were written into the rendered apply.sh by hand before this
+# renderer knew them - the fishing pass and the teleport ring's flag, the bot
+# guilds' tier table with the second channel's pins (6629944), and the world's
+# difficulty (43ca602) - so a render dropped all three without a word (found
+# rendering 2.0.81). They live here now, and a render reproduces the file.
+FISHING_PASS_AND_RING = (
+    '# And the pass the rod needs. Karta Wedkarska (27620), which CHARACTER::fishing()\n'
+    "# wants worn, is sold in one place, the Fisherman's special shop (9009, opened\n"
+    '# by fishing_pass_shop.quest), and the package asks level fifty for it - so a\n'
+    '# player of thirty to forty-nine could wear the rod the line above allows and\n'
+    '# never fish (Tieru, 17 September). The db core reads shop_special_proto at\n'
+    '# boot, so this is live on the next start; idempotent, and only a fifty moves.\n'
+    'db -e "UPDATE world.shop_special_proto SET limitvalue0 = 30 WHERE item_vnum = 27620 AND limittype0 = \'LEVEL\' AND limitvalue0 = 50; UPDATE world.shop_special_proto SET limitvalue1 = 30 WHERE item_vnum = 27620 AND limittype1 = \'LEVEL\' AND limitvalue1 = 50;"\n'
+    '# Pierscien Teleportacji (70058) carries ITEM_FLAG_APPLICABLE (8192) in this\n'
+    '# package, and under ENABLE_QUEST_DND_EVENT that flag makes UseItemEx treat an\n'
+    '# ITEM_QUEST as "drop it onto another item": a plain use finds no target cell\n'
+    '# and returns before the quest is asked, so teleport_ring.quest never ran for\n'
+    '# a player ("caly czas nie dziala pierscien teleportu", Tieru, 16 September).\n'
+    '# The ring is dragged onto nothing; the flag comes off. Idempotent.\n'
+    'db -e "UPDATE world.item_proto SET flag = flag & ~8192 WHERE vnum = 70058 AND (flag & 8192) <> 0;"\n'
+)
+
+GUILD_TIERS_AND_CHANNEL_PINS = (
+    "# The bot guilds' tiers (playerbot_guild.h): a guild outlives every core\n"
+    '# restart, so its tier and kingdom live here; the core reads the table once\n'
+    '# and writes a row when it founds or adopts a guild.\n'
+    'db -e "CREATE TABLE IF NOT EXISTS player.playerbot_guild (guild_id INT UNSIGNED NOT NULL PRIMARY KEY, tier TINYINT UNSIGNED NOT NULL DEFAULT 3, empire TINYINT UNSIGNED NOT NULL DEFAULT 0, founder_pid INT UNSIGNED NOT NULL DEFAULT 0, founded_at DATETIME NOT NULL) ENGINE=InnoDB;"\n'
+    '# And when each last went to war (playerbot_guild_war.h), in unix seconds, so\n'
+    "# the pick that keeps a kingdom's last pair out of its next war survives the\n"
+    '# restart every update makes.\n'
+    'db -e "ALTER TABLE player.playerbot_guild ADD COLUMN IF NOT EXISTS last_war_at INT UNSIGNED NOT NULL DEFAULT 0;" \\\n'
+    '    || echo "playerbot-migrate: could not add last_war_at to player.playerbot_guild" >&2\n'
+    "# The second channel's pins (playerbot_channel_rules.h): every bot that has\n"
+    '# ever kept an offline shop lives on the first channel for good, because the\n'
+    "# shops are the first channel's. The table only grows - each core adds the\n"
+    '# owners it sees before it reads it - and this adds them before any core has\n'
+    '# started, so the start that switches the second channel on finds every keeper\n'
+    '# of the last session already pinned. Written whatever the switch says.\n'
+    'db -e "CREATE TABLE IF NOT EXISTS player.playerbot_channel_pin (pid INT UNSIGNED NOT NULL PRIMARY KEY, pinned_at DATETIME NOT NULL) ENGINE=InnoDB;"\n'
+    'db -e "INSERT IGNORE INTO player.playerbot_channel_pin (pid, pinned_at) SELECT owner, NOW() FROM player.ikashop_offlineshop;" 2>/dev/null \\\n'
+    '    || echo "playerbot-migrate: could not pin the shop keepers to the first channel" >&2\n'
+)
+
+WORLD_RATES = r"""
+# The rates of a world that has never had any, before the cores start. On this
+# engine a rate is not a rewritten table but three event flags (player.quest,
+# dwPID 0) that CQuestManager::SetEventFlag maps onto CHARACTER_MANAGER's
+# multipliers, and until somebody presses "Zastosuj" in the panel those rows do
+# not exist - so a fresh world ran at 100% whatever the panel's own table said.
+# It said 650% experience, seeded into web_admin_rates by the panel's schema
+# for a test cycle long ago, and that number reached every player as a promise
+# the game never kept: the panel showed it, the bots levelled at 100%, and the
+# first press of the button - even without touching a field - was what made it
+# real (NerrVoVy and Tieru, 20 September).
+#
+# So the numbers the launcher asked for are written here, into both places at
+# once, and only while the flags are absent: a world that has been set from the
+# panel is never touched again, whatever this file says. That is also why the
+# panel's schema no longer seeds the table.
+rate_ok() {
+    # A newline, because awk reads no record from an empty input and
+    # the substitution would then be empty - not a number, so the SQL
+    # below would be a syntax error rather than a default.
+    printf '%s\n' "$1" | tr -d ' \r' | awk -v d="$2" '{ v = $1 + 0; if (v < 1 || v > 10000) v = d; printf "%d", v }'
+}
+r_exp=$(rate_ok "${M2_RATE_EXP:-100}" 100)
+r_drop=$(rate_ok "${M2_RATE_DROP:-100}" 100)
+r_yang=$(rate_ok "${M2_RATE_YANG:-100}" 100)
+db -e "CREATE TABLE IF NOT EXISTS player.web_admin_rates (
+        name VARCHAR(24) PRIMARY KEY, value INT NOT NULL DEFAULT 100);" >/dev/null 2>&1 \
+    || echo "[playerbot-migrate] WARNING: could not make player.web_admin_rates" >&2
+rates_set=$(db -e "SELECT COUNT(*) FROM player.quest WHERE dwPID = 0 AND szName = 'mob_exp';" 2>/dev/null || echo x)
+if [ "$rates_set" = "x" ]; then
+    echo "[playerbot-migrate] WARNING: could not read the rate flags; leaving them alone" >&2
+elif [ "$rates_set" = "0" ]; then
+    if db -e "REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES
+            (0, 'mob_exp', '', $r_exp),   (0, 'mob_exp_buyer', '', $r_exp),
+            (0, 'mob_item', '', $r_drop), (0, 'mob_item_buyer', '', $r_drop),
+            (0, 'mob_gold', '', $r_yang), (0, 'mob_gold_buyer', '', $r_yang);
+        REPLACE INTO player.web_admin_rates (name, value) VALUES
+            ('exp', $r_exp), ('drop', $r_drop), ('yang', $r_yang);"; then
+        echo "[playerbot-migrate] fresh world: experience ${r_exp}%, item drops ${r_drop}%, yang ${r_yang}%"
+    else
+        echo "[playerbot-migrate] WARNING: could not write the fresh world's rates" >&2
+    fi
+    # And whether that world's bots wait at the door. The core reads this file
+    # on the weights clock and, the first time it is asked, before its own
+    # first tick - the bootstrap spawns a cohort before any tick runs, so a
+    # file written afterwards would hold a door the crowd had already walked
+    # through. Written only for a fresh world, because on any other one it is
+    # the panel's button that owns it.
+    if [ -d /opt/m2spool ]; then
+        if [ "$(printf '%s' "${M2_PLAYERBOT_START_HELD:-0}" | tr -d ' \r')" = "1" ]; then
+            printf '1\n' > /opt/m2spool/playerbot_hold 2>/dev/null \
+                && echo "[playerbot-migrate] the bots will wait at the door until you let them in" \
+                || echo "[playerbot-migrate] WARNING: could not hold the bots (/opt/m2spool not writable)" >&2
+        else
+            printf '0\n' > /opt/m2spool/playerbot_hold 2>/dev/null || true
+        fi
+        chmod 0664 /opt/m2spool/playerbot_hold 2>/dev/null || true
+    fi
+fi
+"""
+
+WORLD_DIFFICULTY = (
+    '\n'
+    "# The world's difficulty, as event flags in seconds (player.quest, dwPID 0 -\n"
+    "# what the db core loads at boot and pushes to every game core, the package's\n"
+    '# own idiom for a world-wide switch). quest/m2_difficulty.lua reads them: the\n'
+    "# Biologist's wait between two hand-ins and the stable keeper's four waits\n"
+    '# (the pony, each Horse Book, the medal trainings of 1-10 and of 11-19). The\n'
+    "# presets scale the package's own numbers - hard is what it shipped with,\n"
+    '# medium a third of it, easy none (what 2.0.55 and 2.0.56 gave everybody) -\n'
+    "# and custom takes the two hour counts from .env, the horse's for every wait.\n"
+    '# Written before the seed, which may leave early on a foreign cohort.\n'
+    'difficulty=$(printf \'%s\' "${M2_DIFFICULTY:-easy}" | tr \'A-Z\' \'a-z\' | tr -d \' \\r\')\n'
+    'case "$difficulty" in\n'
+    '    medium) dlevel=1; bio=28800; hbuy=14400; hup=14400; htr=21600; htr2=25200 ;;\n'
+    '    hard)   dlevel=2; bio=86400; hbuy=43200; hup=43200; htr=64800; htr2=75600 ;;\n'
+    '    custom)\n'
+    '        dlevel=3\n'
+    '        bio=$(printf \'%s\\n\' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d \' \\r\' | awk \'{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }\')\n'
+    '        hbuy=$(printf \'%s\\n\' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d \' \\r\' | awk \'{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }\')\n'
+    '        hup=$hbuy; htr=$hbuy; htr2=$hbuy ;;\n'
+    '    *)      difficulty=easy; dlevel=0; bio=0; hbuy=0; hup=0; htr=0; htr2=0 ;;\n'
+    'esac\n'
+    'if db -e "REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES\n'
+    "        (0, 'm2_difficulty', '', $dlevel),\n"
+    "        (0, 'm2_biologist_wait', '', $bio),\n"
+    "        (0, 'm2_horse_buy_wait', '', $hbuy),\n"
+    "        (0, 'm2_horse_upgrade_wait', '', $hup),\n"
+    "        (0, 'm2_horse_train_wait', '', $htr),\n"
+    '        (0, \'m2_horse_train2_wait\', \'\', $htr2);"; then\n'
+    '    echo "[playerbot-migrate] difficulty: $difficulty (Biologist wait ${bio}s, horse: buy ${hbuy}s upgrade ${hup}s train ${htr}s/${htr2}s)"\n'
+    'else\n'
+    '    echo "[playerbot-migrate] WARNING: could not write the difficulty flags; the quests keep the last ones" >&2\n'
+    'fi\n'
+)
+
+
+def sql_rows(rows, per_line=8):
+    """A tuple of tuples as the SQL list of row constructors, a few to a line."""
+    parts = ['(' + ', '.join(str(v) for v in r) + ')' for r in rows]
+    lines = [', '.join(parts[i:i + per_line]) for i in range(0, len(parts), per_line)]
+    return (',\n' + ' ' * 12).join(lines)
+
+
+def guild_lands_block():
+    """The migrator's step that takes the package's guild lands off the world."""
+    return (
+        '# The package\'s player dump carries the guild lands and buildings of the\n'
+        '# server it was taken from - %d player.guild_land rows and %d player.object\n'
+        '# rows - and none of the guilds they belong to. The engine stands its land\n'
+        '# agent (NPC 20040) only on a land nobody owns (building::CManager, at boot),\n'
+        '# so those lands could never be bought and their buildings stood on ground\n'
+        '# nobody held, while a bot guild founded later under one of those numbers\n'
+        '# (2, 3, 5, ...) held a land and buildings it never paid for ("stoja juz\n'
+        '# budynki, pomimo ze teren nie jest zajety", Mat, 19 September; NerrVoVy\n'
+        '# cleared his by hand). Once, and the dump\'s own rows exactly: a land a\n'
+        '# player\'s guild has bought and the buildings it put up since (ids past the\n'
+        '# dump\'s last) are left alone. Before the game container starts, because the\n'
+        '# db core reads both at boot.\n'
+        'lands_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = \'package_guild_lands_2081\';" 2>/dev/null || echo x)\n'
+        'if [ "$lands_done" = "0" ]; then\n'
+        '    if lands_out=$(db -e "\n'
+        '        START TRANSACTION;\n'
+        '        DELETE FROM player.object WHERE (id, land_id, vnum) IN (\n'
+        '            %s);\n'
+        '        SELECT ROW_COUNT();\n'
+        '        DELETE FROM player.guild_land WHERE (land_id, guild_id) IN (\n'
+        '            %s);\n'
+        '        SELECT ROW_COUNT();\n'
+        '        INSERT IGNORE INTO player.playerbot_migrations (name, done_at) VALUES (\'package_guild_lands_2081\', NOW());\n'
+        '        COMMIT;\n'
+        '    "); then\n'
+        '        lands_objects=$(printf \'%%s\\n\' "$lands_out" | awk \'NR == 1\')\n'
+        '        lands_rows=$(printf \'%%s\\n\' "$lands_out" | awk \'NR == 2\')\n'
+        '        echo "[playerbot-migrate] the package\'s guild lands cleared: ${lands_rows:-0} land(s), ${lands_objects:-0} building(s)"\n'
+        '    else\n'
+        '        echo "[playerbot-migrate] WARNING: could not clear the package\'s guild lands" >&2\n'
+        '    fi\n'
+        'fi\n'
+    ) % (len(PACKAGE_GUILD_LANDS), len(PACKAGE_GUILD_OBJECTS),
+         sql_rows(PACKAGE_GUILD_OBJECTS), sql_rows(PACKAGE_GUILD_LANDS))
+
 
 def main():
     os.makedirs(DST, exist_ok=True)
@@ -175,6 +383,23 @@ def main():
                   '    fi\n'
                   'fi\n'
                   '\n' + anchor)
+    # The package's guild lands, after the pitch step has made sure
+    # player.playerbot_migrations exists.
+    anchor = '# fish_log came from r40250\'s dump and has that engine\'s eight columns,\n'
+    assert s.count(anchor) == 1
+    s = s.replace(anchor, guild_lands_block() + anchor)
+    # The three steps that used to live only in the rendered file.
+    for text, anchor in (
+            (FISHING_PASS_AND_RING, '# Maska Sabaha left the world with the Hwang curse (playerbotify\n'),
+            (GUILD_TIERS_AND_CHANNEL_PINS,
+             'pitch_done=$(db -e "SELECT COUNT(*) FROM player.playerbot_migrations WHERE name = '
+             '\'pitch_on_guard_2052\';" 2>/dev/null || echo x)\n'),
+            (WORLD_RATES,
+             '\necho "[playerbot-migrate] applying deterministic Playerbot seed (PID $first_pid..$last_pid)"\n'),
+            (WORLD_DIFFICULTY,
+             '\necho "[playerbot-migrate] applying deterministic Playerbot seed (PID $first_pid..$last_pid)"\n')):
+        assert s.count(anchor) == 1, anchor
+        s = s.replace(anchor, text + anchor)
     # The four game masters of the tester account (gm_characters.sql), before
     # the generic "grant the oldest character" step: on a world whose admin
     # account is still empty they are created with their gmlist rows, on a

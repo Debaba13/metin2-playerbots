@@ -263,6 +263,11 @@ namespace
 				// Each map owns its grid, component labels, HPA regions and per-tick
 				// search budget. A single mutable instance would rebuild millions of
 				// cells whenever updates alternated between M1, M2 and the dungeon.
+				// A dungeon instance walks its map's own ground: the grid is the
+				// base map's, keyed and built by its index (a private map carries
+				// the same attributes), so no instance builds one of its own.
+				if (mapIndex >= PLAYERBOT_INSTANCE_MAP_INDEX_MIN)
+					mapIndex /= 10000;
 				static std::map<long, CPlayerBotNavigation*> s_navigations;
 				std::map<long, CPlayerBotNavigation*>::iterator it =
 						s_navigations.find(mapIndex);
@@ -289,6 +294,8 @@ namespace
 
 			bool Init(long mapIndex)
 			{
+				if (mapIndex >= PLAYERBOT_INSTANCE_MAP_INDEX_MIN)
+					mapIndex /= 10000;
 				// Every kingdom's own four maps, not only Chunjo's: a Shinsoo bot
 				// standing on map 1 with no grid here cannot plan a step, and the
 				// whole of its local life is on 1, 3, 4 and 5. IsKingdomMap covers

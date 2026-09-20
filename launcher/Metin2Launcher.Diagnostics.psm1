@@ -60,6 +60,22 @@ function Get-M2LauncherErrorGuidance {
         $port = $Matches.port
     }
 
+    # An engine file a mod rewrote to call into the bot manager for something
+    # it never had: an update replaces our files and leaves that one, and the
+    # build dies on it at every click - archonek on 18 September, every update
+    # from 2.0.74 on, with messenger_manager.cpp and GetCompanionOwner from a
+    # fork's companion system, while this function answered with nothing that
+    # named the file. Asked first: the compiler's line is the whole answer.
+    if ($value -match '(?i)([A-Za-z0-9_]+\.(?:cpp|h)):\d+:\d+: error: [^\r\n]*CPlayerBotManager[^\r\n]*has no member named') {
+        $modFile = $Matches[1]
+        return [pscustomobject]@{
+            Code = 'ENGINE_FILE_FROM_MOD'
+            Title = "Plik silnika $modFile pochodzi z innej przeróbki"
+            Message = "Budowa rdzenia gry zatrzymała się na pliku ${modFile}: woła funkcję botów, której w tej wersji nie ma. Ten plik pochodzi z cudzej przeróbki (modu) i aktualizacja go nie podmieniła. Baza i postęp są w porządku."
+            Remedy = "Przywróć fabryczny plik ${modFile}: skopiuj go z pełnej paczki serwera do folderu serwera, do podfolderu linux-port\docker\game\src\server\game\src, i kliknij ZAINSTALUJ AKTUALIZACJE albo GRAJ. Jeśli nie masz pełnej paczki, wyślij logi na Discorda (ZBIERZ / WYŚLIJ LOGI)."
+        }
+    }
+
     # Not a busy port: Windows itself refused the bind. Hyper-V and WSL reserve
     # random port ranges after a restart ("excluded port ranges"), and when
     # 11000 or 13000 falls inside one, compose fails one second after the
@@ -140,7 +156,39 @@ function Get-M2LauncherErrorGuidance {
         }
     }
 
-    if ($value -match '(?i)\b404\b|not found.+update-manifest|update-manifest.+not found') {
+    # apt inside a build refuses a Release file dated after the machine's
+    # clock, and Docker Desktop's machine takes the Windows clock: Xewi's
+    # Windows ran three hours behind (19 September), so every start stopped at
+    # the panel's apt-get while the containers built earlier - "z dockera
+    # dziala" - still ran.
+    if ($value -match '(?i)is not valid yet \(invalid for another') {
+        return [pscustomobject]@{
+            Code = 'CLOCK_BEHIND'
+            Title = 'Zegar komputera jest przestawiony'
+            Message = 'Budowa serwera zatrzymała się, bo zegar Windows - a za nim Docker - jest opóźniony względem prawdziwego czasu i serwer pakietów odrzucił pobieranie (komunikat „Release file ... is not valid yet”). Pliki serwera i baza są w porządku.'
+            Remedy = 'W Windows otwórz Ustawienia → Czas i język → Data i godzina, włącz „Ustaw czas automatycznie”, sprawdź strefę czasową (dla Polski: Warszawa) i kliknij „Synchronizuj teraz”. Potem zamknij Docker Desktop (ikona w zasobniku → Quit) i kliknij GRAJ.'
+        }
+    }
+
+    # An image the build makes itself, looked for on Docker Hub by an older
+    # Compose: seban-collector and seban-item-grants run the image the
+    # seban-panel service builds, and the compose file says pull_policy: never
+    # for them only from 2.0.77 on.
+    if ($value -match '(?i)pull access denied for metin2/') {
+        return [pscustomobject]@{
+            Code = 'LOCAL_IMAGE_PULLED'
+            Title = 'Docker szukał w internecie obrazu, który serwer buduje sam'
+            Message = 'Starszy Docker Compose próbował pobrać z Docker Hub obraz panelu zaawansowanego (metin2/seban-panel), zanim go zbudował, i przerwał start. Pliki serwera i baza są w porządku.'
+            Remedy = 'Kliknij GRAJ jeszcze raz. Jeśli błąd wróci, otwórz PowerShell w folderze serwera, w podfolderze linux-port\docker, wykonaj: docker compose build seban-panel, a potem kliknij GRAJ. Logowanie do Docker Hub (docker login) niczego tu nie zmienia.'
+        }
+    }
+
+    # Only a 404 said of the manifest itself. This reads the whole output of
+    # the failed action, and a log carries "404" somewhere - the panel's answer
+    # to a missing icon, a pid, a coordinate - so the bare number sent
+    # archonek to wait for an update channel that was there all along
+    # (18 September: the manifest answered 200, the start had failed).
+    if ($value -match '(?i)update-manifest[^\r\n]*\b404\b|\b404\b[^\r\n]*update-manifest|not found[^\r\n]+update-manifest|update-manifest[^\r\n]+not found') {
         return [pscustomobject]@{
             Code = 'UPDATE_CHANNEL_UNPUBLISHED'
             Title = 'Kanał aktualizacji nie został jeszcze opublikowany'
@@ -450,6 +498,62 @@ function Get-DockerDesktopCandidates {
     return @($paths | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -Unique)
 }
 
+function Get-M2ClockSkewText {
+    param([int]$Seconds)
+    $s = [Math]::Abs($Seconds)
+    if ($s -ge 3600) { return ('{0} h {1:D2} min' -f [int][Math]::Floor($s / 3600), [int][Math]::Floor(($s % 3600) / 60)) }
+    if ($s -ge 60) { return ('{0} min' -f [int][Math]::Floor($s / 60)) }
+    return ('{0} s' -f $s)
+}
+
+function Get-M2InternetClockSkew {
+    # Seconds the Windows clock runs ahead (+) or behind (-) of the time an
+    # HTTPS server puts in its Date header; $null when none answered. Docker
+    # Desktop's machine takes the Windows clock, and apt inside a build refuses
+    # a Release file dated after it ("not valid yet"): Xewi's Windows ran three
+    # hours behind on 19 September and no build got past the panel's apt-get.
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+    $response = $null
+    $date = ''
+    $answeredAt = [DateTime]::UtcNow
+    try {
+        $request = [Net.HttpWebRequest]::Create('https://api.github.com/')
+        $request.Method = 'HEAD'
+        $request.Timeout = 4000
+        $request.UserAgent = 'metin2-playerbots-launcher'
+        try { $response = $request.GetResponse() }
+        catch {
+            # An HTTP error still carries the header. PowerShell hands the
+            # WebException over wrapped, so walk down to it.
+            $inner = $_.Exception
+            while ($inner -and -not ($inner -is [Net.WebException])) { $inner = $inner.InnerException }
+            if ($inner) { $response = $inner.Response }
+        }
+        $answeredAt = [DateTime]::UtcNow
+        if ($response) { $date = [string]$response.Headers['Date'] }
+    }
+    catch { return $null }
+    finally { if ($response) { $response.Close() } }
+    if (-not $date) { return $null }
+    $parsed = [DateTime]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal
+    if (-not [DateTime]::TryParse($date, [Globalization.CultureInfo]::InvariantCulture, $styles, [ref]$parsed)) { return $null }
+    return [int][Math]::Round(($answeredAt - $parsed).TotalSeconds)
+}
+
+function Get-M2DockerClockSkew {
+    # Seconds Docker's machine runs ahead (+) or behind (-) of Windows. It is
+    # set from Windows when it starts and can fall behind after the computer
+    # sleeps; a restart of Docker Desktop puts it right.
+    $probe = Invoke-M2DiagnosticProcess -FileName 'docker.exe' -Arguments 'info --format "{{.SystemTime}}"' -TimeoutMilliseconds 3500
+    if ($probe.ExitCode -ne 0 -or $probe.TimedOut) { return $null }
+    if ([string]$probe.Output -notmatch '(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)') { return $null }
+    $stamp = $Matches[1] + $(if ($Matches[2] -eq 'Z') { '+00:00' } else { $Matches[2] })
+    $parsed = [DateTimeOffset]::MinValue
+    if (-not [DateTimeOffset]::TryParseExact($stamp, "yyyy-MM-dd'T'HH:mm:sszzz", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { return $null }
+    return [int][Math]::Round(($parsed.UtcDateTime - [DateTime]::UtcNow).TotalSeconds)
+}
+
 function Get-M2DockerPreflight {
     param(
         [Parameter(Mandatory = $true)][string]$ServerRoot,
@@ -667,6 +771,30 @@ function Get-M2DockerPreflight {
         }
         else {
             [void]$checks.Add('OK: żaden port serwera nie leży w zakresie zarezerwowanym przez Windows.')
+        }
+    }
+
+    # The clock: a warning and never a stop. The build tolerates a clock that
+    # runs behind where it cheaply can (the panel, the game's runtime stage),
+    # and nothing in the running server needs the right hour - but a fresh
+    # build of the game's libraries still asks apt, and the player is the only
+    # one who can put the clock right.
+    $clockSkew = Get-M2InternetClockSkew
+    if ($null -ne $clockSkew) {
+        if ([Math]::Abs($clockSkew) -le 300) {
+            [void]$checks.Add('OK: zegar Windows zgadza się z internetem.')
+        }
+        else {
+            $which = $(if ($clockSkew -lt 0) { 'spóźnia się' } else { 'śpieszy się' })
+            [void]$checks.Add(('UWAGA: zegar Windows {0} o {1} względem internetu.' -f $which, (Get-M2ClockSkewText $clockSkew)))
+            [void]$warnings.Add('Zegar Windows jest przestawiony, a Docker bierze czas od Windows - budowa serwera może się zatrzymać na komunikacie „Release file ... is not valid yet”. Ustawienia → Czas i język → Data i godzina: włącz „Ustaw czas automatycznie”, sprawdź strefę czasową (dla Polski: Warszawa) i kliknij „Synchronizuj teraz”. Potem zamknij Docker Desktop (ikona w zasobniku → Quit) i kliknij GRAJ.')
+        }
+    }
+    if ($dockerEngineReady) {
+        $dockerSkew = Get-M2DockerClockSkew
+        if ($null -ne $dockerSkew -and [Math]::Abs($dockerSkew) -gt 300) {
+            [void]$checks.Add(('UWAGA: zegar Dockera odbiega od zegara Windows o {0}.' -f (Get-M2ClockSkewText $dockerSkew)))
+            [void]$warnings.Add('Zegar maszyny Dockera rozjechał się z zegarem Windows (zdarza się po uśpieniu komputera). Zamknij Docker Desktop (ikona w zasobniku → Quit), uruchom go ponownie i kliknij GRAJ.')
         }
     }
 

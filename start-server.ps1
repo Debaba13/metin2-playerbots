@@ -325,6 +325,197 @@ function New-DotEnvPassphrase {
     return $sb.ToString()
 }
 
+function Write-FileDurable {
+    # WriteAllText leaves the bytes in the cache until Windows gets round to
+    # them, and a machine that loses its power first comes back with the
+    # file's length and zeros where its bytes were. That is what Greess's .env
+    # was after a crash in the middle of an update (19 September): 21 395 zero
+    # bytes with the database's passwords among them, and the launcher's own
+    # log with the same hole at the same minute. Written to a file beside it,
+    # flushed to the disk and only then swapped in, the old file stays whole
+    # until the new one is.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content
+    )
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Content)
+    $temp = $Path + '.tmp'
+    $stream = [IO.FileStream]::new($temp, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    }
+    finally { $stream.Dispose() }
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        try { [IO.File]::Replace($temp, $Path, $null) }
+        catch {
+            [IO.File]::Copy($temp, $Path, $true)
+            Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+        }
+    }
+    else {
+        [IO.File]::Move($temp, $Path)
+    }
+}
+
+function Test-FileZeroFilled {
+    # A text file with a NUL byte in it is one whose length reached the disk
+    # and whose bytes did not; nothing this launcher writes ever holds one.
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][byte[]]$Bytes)
+    return ([Array]::IndexOf($Bytes, [byte]0) -ge 0)
+}
+
+function Get-DotEnvFromContainers {
+    # What Compose put into this installation's containers when it last
+    # started them: every key of the example that a container carries, the
+    # root password under the database image's own name, and the two bind
+    # addresses from where the ports were published. A start that cannot read
+    # .env recreates nothing, so after a crash these are the values the file
+    # held.
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string[]]$Keys
+    )
+    $values = @{}
+    $known = @{}
+    foreach ($key in $Keys) { $known[$key] = $true }
+    $listed = Invoke-DockerQuery @('ps', '-a', '--filter', "label=com.docker.compose.project=$Project", '--format', '{{.ID}}')
+    if ($listed.ExitCode -ne 0 -or -not $listed.Output) { return $values }
+    foreach ($id in @($listed.Output -split '\s+' | Where-Object { $_ })) {
+        $inspection = Invoke-DockerQuery @('inspect', $id)
+        if ($inspection.ExitCode -ne 0 -or -not $inspection.Output) { continue }
+        try { $container = @($inspection.Output | ConvertFrom-Json)[0] }
+        catch { continue }
+        foreach ($entry in @($container.Config.Env)) {
+            $text = [string]$entry
+            $at = $text.IndexOf('=')
+            if ($at -lt 1) { continue }
+            $name = $text.Substring(0, $at)
+            $value = $text.Substring($at + 1)
+            if (-not $value) { continue }
+            if ($name -eq 'MARIADB_ROOT_PASSWORD') { $name = 'M2_DB_ROOT_PASSWORD' }
+            elseif ($name -eq 'TZ') { $name = 'M2_TZ' }
+            if (-not $known.ContainsKey($name) -or $values.ContainsKey($name)) { continue }
+            $values[$name] = $value
+        }
+        $service = Get-ObjectPropertyValue $container.Config.Labels 'com.docker.compose.service'
+        $bindKey = ''
+        if ($service -eq 'game') { $bindKey = 'M2_HOST_BIND_ADDRESS' }
+        elseif ($service -eq 'panel') { $bindKey = 'M2_PANEL_BIND_ADDRESS' }
+        if (-not $bindKey -or $values.ContainsKey($bindKey) -or $null -eq $container.HostConfig.PortBindings) { continue }
+        foreach ($property in $container.HostConfig.PortBindings.PSObject.Properties) {
+            foreach ($binding in @($property.Value)) {
+                $ip = [string]$binding.HostIp
+                $parsed = $null
+                if ($ip -and [Net.IPAddress]::TryParse($ip, [ref]$parsed)) {
+                    $values[$bindKey] = $ip
+                    break
+                }
+            }
+            if ($values.ContainsKey($bindKey)) { break }
+        }
+    }
+    return $values
+}
+
+function Repair-DotEnvAfterCrash {
+    # Compose cannot read a line of a zero-filled .env, and the passwords of a
+    # database that already exists were in it and nowhere else, so a fresh file
+    # would lock the world out for good. The damaged file is kept beside it;
+    # the copy the last successful start left (.env.last-good) goes back if
+    # there is one; otherwise what survived the zeros is kept and the values
+    # the containers still carry go over it - they win, because the lines
+    # after the zeros are what an older launcher appended from the example to
+    # a file it could no longer read (a fresh panel password among them).
+    param(
+        [Parameter(Mandatory = $true)][string]$EnvPath,
+        [AllowEmptyString()][string]$Project
+    )
+    if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { return }
+    $bytes = [IO.File]::ReadAllBytes($EnvPath)
+    if (-not (Test-FileZeroFilled -Bytes $bytes)) { return }
+    $damaged = $EnvPath + '.damaged-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+    [IO.File]::Copy($EnvPath, $damaged, $true)
+    Write-Host "Plik .env jest uszkodzony: zamiast tresci ma zera, jak po naglym wylaczeniu komputera w trakcie zapisu. Kopia uszkodzonego pliku: $damaged" -ForegroundColor Yellow
+
+    $lastGood = $EnvPath + '.last-good'
+    if (Test-Path -LiteralPath $lastGood -PathType Leaf) {
+        $good = [IO.File]::ReadAllBytes($lastGood)
+        if ($good.Length -gt 0 -and -not (Test-FileZeroFilled -Bytes $good)) {
+            $text = [Text.UTF8Encoding]::new($false).GetString($good)
+            if ((Get-DotEnvValue -Content $text -Name 'M2_DB_ROOT_PASSWORD') -and
+                    (Get-DotEnvValue -Content $text -Name 'M2_DB_PASSWORD')) {
+                Write-FileDurable -Path $EnvPath -Content $text
+                Write-Host 'Przywrocono .env z kopii z ostatniego udanego startu (.env.last-good).' -ForegroundColor Green
+                return
+            }
+        }
+    }
+
+    $text = [Text.UTF8Encoding]::new($false).GetString($bytes).Replace([string][char]0, '')
+    # Ordinal, not StartsWith: a culture-sensitive comparison ignores U+FEFF,
+    # so every string "starts with" it and the first letter went instead.
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    if (-not $Project -and $text -match '(?m)^M2_COMPOSE_PROJECT_NAME=([a-z0-9][a-z0-9_-]+)\s*$') {
+        $Project = $Matches[1]
+    }
+    if (-not $Project) {
+        # Both halves of the identity gone: the containers still say which
+        # project was started from this folder.
+        # (No Go template with quotes in it: PowerShell 5.1 would end the
+        # argument at the first one.)
+        $composeDirectory = Split-Path -Parent $EnvPath
+        $owners = Invoke-DockerQuery @('ps', '-a', '--filter', "label=com.docker.compose.project.working_dir=$composeDirectory",
+            '--format', '{{.ID}}')
+        if ($owners.ExitCode -eq 0 -and $owners.Output) {
+            $first = @($owners.Output -split '\s+' | Where-Object { $_ })[0]
+            $inspection = Invoke-DockerQuery @('inspect', $first)
+            if ($inspection.ExitCode -eq 0 -and $inspection.Output) {
+                try {
+                    $Project = Get-ObjectPropertyValue (@($inspection.Output | ConvertFrom-Json)[0]).Config.Labels 'com.docker.compose.project'
+                }
+                catch { $Project = '' }
+            }
+        }
+    }
+    $keys = @()
+    $example = Join-Path (Split-Path -Parent $EnvPath) '.env.example'
+    if (Test-Path -LiteralPath $example -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($example)) {
+            $match = [Regex]::Match($line, '^\s*([A-Za-z0-9_]+)=')
+            if ($match.Success) { $keys += $match.Groups[1].Value }
+        }
+    }
+    $recovered = @()
+    if ($Project -and $keys.Count -gt 0) {
+        $values = Get-DotEnvFromContainers -Project $Project -Keys $keys
+        foreach ($name in @($values.Keys | Sort-Object)) {
+            $text = Set-DotEnvValue -Content $text -Name $name -Value ([string]$values[$name])
+            $recovered += $name
+        }
+    }
+    if ($recovered.Count -gt 0) {
+        Write-Host ('Odzyskano z kontenerow serwera: ' + ($recovered -join ', ')) -ForegroundColor Green
+    }
+    if (-not (Get-DotEnvValue -Content $text -Name 'M2_DB_ROOT_PASSWORD') -or
+            -not (Get-DotEnvValue -Content $text -Name 'M2_DB_PASSWORD')) {
+        # New passwords only where no database can be holding the old ones.
+        $volumeExists = $true
+        if ($Project) {
+            $volume = Invoke-DockerQuery @('volume', 'inspect', "${Project}_db-data")
+            $volumeExists = ($volume.ExitCode -eq 0)
+        }
+        if ($volumeExists) {
+            throw ("Plik .env jest uszkodzony, a hasel do bazy serwera nie udalo sie odzyskac z kontenerow. " +
+                "Przywroc .env z kopii (folder backups albo inny folder z serwerem). Uszkodzony plik: $damaged")
+        }
+        $text = Set-DotEnvValue -Content $text -Name 'M2_DB_ROOT_PASSWORD' -Value (New-DotEnvSecret)
+        $text = Set-DotEnvValue -Content $text -Name 'M2_DB_PASSWORD' -Value (New-DotEnvSecret)
+    }
+    Write-FileDurable -Path $EnvPath -Content $text
+    Write-Host 'Plik .env naprawiony.' -ForegroundColor Green
+}
+
 function Initialize-DotEnvFile {
     param([Parameter(Mandatory = $true)][string]$EnvPath)
     # The installer writes this file. A copy unpacked by hand from the
@@ -365,7 +556,7 @@ function Initialize-DotEnvFile {
     foreach ($name in @('M2_PUBLIC_ADDRESS', 'M2_CLIENT_ADDRESS', 'M2_HOST_BIND_ADDRESS', 'M2_PANEL_BIND_ADDRESS')) {
         $content = Set-DotEnvValue -Content $content -Name $name -Value '127.0.0.1'
     }
-    [IO.File]::WriteAllText($EnvPath, $content, [Text.UTF8Encoding]::new($false))
+    Write-FileDurable -Path $EnvPath -Content $content
     Write-Host "Nie bylo pliku .env (instalator nie byl uruchamiany) - utworzono go z nowymi haslami." -ForegroundColor Yellow
     Write-Host "Haslo do panelu administracyjnego: $panelPassword" -ForegroundColor Yellow
     Write-Host "Zapisz je. Jest tez w pliku linux-port\docker\.env (M2_PANEL_PASSWORD)." -ForegroundColor Yellow
@@ -427,6 +618,57 @@ function Assert-KingdomsDefault {
     }
     $Content = Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_KINGDOMS' -Value '1'
     return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_KINGDOMS_DEFAULTED' -Value '1')
+}
+
+function Assert-WorldLayoutDefault {
+    # Split is three kingdoms on three cores, and a bot has no client, so it
+    # cannot cross between them: every shared map - Orc Valley, the desert,
+    # Sohan, both Spider Dungeons - is Chunjo's core, and Shinsoo and Jinno
+    # wedge at about thirty-six. The answer has been an operator switch since
+    # 2.0.30 and hardly anybody knew of it: on 19 September players were
+    # passing each other screenshots of the line to paste into .env by hand,
+    # and Iwakura's word on it was "unified powinno byc domyslnie tbh".
+    #
+    # So it is, once, the way the three kingdoms were: unified unless this
+    # world is big enough to want the parallelism back. One core carrying
+    # everything was measured at 9.4 s of every 60 at 1500 bots, so a world
+    # asking for more than that keeps split and is left alone.
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content,
+        [Parameter(Mandatory = $true)][string]$EnvPath
+    )
+    $marker = Join-Path (Split-Path -Parent $EnvPath) 'ENGINE'
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return $Content }
+    if ((Get-Content -LiteralPath $marker -Raw).Trim() -eq 'r40250') { return $Content }
+    if ([Regex]::IsMatch($Content, '(?m)^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=')) { return $Content }
+    # How big this world is. Since 2.0.83 an operator may ask per kingdom
+    # instead of once, and then PLAYERBOT_AUTOSPAWN_COUNT says nothing about
+    # the size - three times seven hundred is the world one core would carry.
+    $bots = 0
+    $perKingdom = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_PER_KINGDOM=(.*)$')
+    if ($perKingdom.Success -and $perKingdom.Groups[1].Value.Trim() -eq '1') {
+        foreach ($key in @('PLAYERBOT_AUTOSPAWN_SHINSOO', 'PLAYERBOT_AUTOSPAWN_CHUNJO', 'PLAYERBOT_AUTOSPAWN_JINNO')) {
+            $one = 0
+            $match = [Regex]::Match($Content, ('(?m)^' + $key + '=(.*)$'))
+            if ($match.Success) { [int]::TryParse($match.Groups[1].Value.Trim(), [ref]$one) | Out-Null }
+            $bots += $one
+        }
+    } else {
+        $count = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_COUNT=(.*)$')
+        if ($count.Success) { [int]::TryParse($count.Groups[1].Value.Trim(), [ref]$bots) | Out-Null }
+    }
+    if ($bots -gt 1500) {
+        Write-Host "Uklad swiata: zostaje split - ten swiat prosi o $bots botow, a przy takiej liczbie jeden rdzen bylby za wolny." -ForegroundColor Gray
+        return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED' -Value '1')
+    }
+    $current = [Regex]::Match($Content, '(?m)^M2_PLAYERBOT_WORLD_LAYOUT=(.*)$')
+    if (-not $current.Success -or $current.Groups[1].Value.Trim() -ne 'unified') {
+        Write-Host 'Uklad swiata: M2_PLAYERBOT_WORLD_LAYOUT przelaczony na unified.' -ForegroundColor Cyan
+        Write-Host '  Wszystkie trzy krolestwa i caly front na jednym rdzeniu, wiec boty Shinsoo i Jinno' -ForegroundColor Gray
+        Write-Host '  przestaja konczyc na ~36 poziomie. Wroc na split w .env, jesli wolisz po staremu.' -ForegroundColor Gray
+    }
+    $Content = Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT' -Value 'unified'
+    return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED' -Value '1')
 }
 
 function Get-M2HostTimeZoneName {
@@ -537,6 +779,13 @@ function Initialize-InstallationIdentity {
     $migratedFrom = ''
     $databaseVolume = ''
 
+    if ((Test-Path -LiteralPath $statePath -PathType Leaf) -and
+            (Test-FileZeroFilled -Bytes ([IO.File]::ReadAllBytes($statePath)))) {
+        # The same crash as the .env's: the project is read back from .env or
+        # from the containers instead.
+        Move-Item -LiteralPath $statePath -Destination ($statePath + '.damaged-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) -Force
+        Write-Host 'Plik .m2install.json byl uszkodzony (zera zamiast tresci) - odtwarzam go.' -ForegroundColor Yellow
+    }
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         try {
             $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -549,6 +798,7 @@ function Initialize-InstallationIdentity {
         catch { throw "Invalid installation identity file: $statePath" }
     }
 
+    Repair-DotEnvAfterCrash -EnvPath $envPath -Project $project
     $content = [IO.File]::ReadAllText($envPath)
     if (-not $project -and $content -match '(?m)^M2_COMPOSE_PROJECT_NAME=([a-z0-9][a-z0-9_-]+)\s*$') {
         $project = $Matches[1]
@@ -584,15 +834,15 @@ function Initialize-InstallationIdentity {
     }
     if ($migratedFrom) { $stateObject.migratedFrom = $migratedFrom }
     if ($databaseVolume) { $stateObject.databaseVolume = $databaseVolume }
-    [IO.File]::WriteAllText(
-        $statePath,
-        ($stateObject | ConvertTo-Json),
-        [Text.UTF8Encoding]::new($false))
+    Write-FileDurable -Path $statePath -Content ($stateObject | ConvertTo-Json)
     $content = Set-DotEnvValue -Content $content -Name 'M2_COMPOSE_PROJECT_NAME' -Value $project
     $content = Set-DotEnvValue -Content $content -Name 'M2_CONTAINER_PREFIX' -Value $prefix
     # Before the example's keys are added, because the marker it sets is one
     # of them: an older .env is switched to all three kingdoms exactly once.
     $content = Assert-KingdomsDefault -Content $content -EnvPath $envPath
+    # And, the same shape again, the world those three kingdoms live on: one
+    # core unless this world is too big for one.
+    $content = Assert-WorldLayoutDefault -Content $content -EnvPath $envPath
     # The same shape for the clock's zone: the example's UTC becomes this
     # machine's own, once.
     $content = Assert-TimezoneDefault -Content $content
@@ -604,7 +854,13 @@ function Initialize-InstallationIdentity {
     # one empty.
     $panelGenerated = ''
     $content = Assert-PanelPassphrase -Content $content -Generated ([ref]$panelGenerated)
-    [IO.File]::WriteAllText($envPath, $content, [Text.UTF8Encoding]::new($false))
+    Write-FileDurable -Path $envPath -Content $content
+    # The copy Repair-DotEnvAfterCrash puts back first: the file as this
+    # start leaves it, once it holds the database's passwords.
+    if ((Get-DotEnvValue -Content $content -Name 'M2_DB_ROOT_PASSWORD') -and
+            (Get-DotEnvValue -Content $content -Name 'M2_DB_PASSWORD')) {
+        Write-FileDurable -Path ($envPath + '.last-good') -Content $content
+    }
     if ($panelGenerated) {
         Write-Host ''
         Write-Host '=============================================================' -ForegroundColor Yellow

@@ -72,7 +72,7 @@ class TitleTest(unittest.TestCase):
         self.calls = []
         self.now = [100.0]
         native = types.ModuleType('textTail')
-        native.AttachTitle = lambda vid, text, r, g, b: self.calls.append((vid, text))
+        native.AttachPersonality = lambda vid, text, r, g, b: self.calls.append((vid, text))
         clock = types.ModuleType('app')
         clock.GetTime = lambda: self.now[0]
         self.saved = dict((name, sys.modules.get(name)) for name in ('textTail', 'app'))
@@ -96,8 +96,13 @@ class TitleTest(unittest.TestCase):
             self.assertIsNone(status.decode_title(vid, personality), (vid, personality))
 
     def test_every_personality_has_a_title_and_a_colour(self):
-        self.assertEqual(sorted(status.PERSONALITY_TITLES), list(range(11)))
-        self.assertEqual(sorted(status.PERSONALITY_COLOURS), list(range(11)))
+        # The old eleven, and Iwakura's ten personalities at 100 + EPersona.
+        expected = list(range(11)) + list(range(100, 110))
+        self.assertEqual(sorted(status.PERSONALITY_TITLES), expected)
+        self.assertEqual(sorted(status.PERSONALITY_COLOURS), expected)
+        self.assertEqual(status.decode_title('42', '105'), (42, 105))
+        self.assertIsNone(status.decode_title('42', '110'))
+        self.assertIsNone(status.decode_title('42', '255'))
 
     def test_attached_and_kept_for_a_minute(self):
         self.assertTrue(status.show_title('42', '1'))
@@ -115,8 +120,10 @@ class TitleTest(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertFalse(keeper.CanUpdate())
 
-    def test_a_client_without_attach_title_draws_nothing(self):
-        del sys.modules['textTail'].AttachTitle
+    def test_a_client_without_attach_personality_draws_nothing(self):
+        # The personality has its own row since client 2.0.13 (l0st3k's
+        # AttachPersonality); an older exe has no such row to draw in.
+        del sys.modules['textTail'].AttachPersonality
         self.assertFalse(status.show_title('42', '1'))
         self.assertEqual(self.calls, [])
 
@@ -128,7 +135,7 @@ class TitleSwitchTest(unittest.TestCase):
         import tempfile
         self.calls = []
         native = types.ModuleType('textTail')
-        native.AttachTitle = lambda vid, text, r, g, b: self.calls.append((vid, text))
+        native.AttachPersonality = lambda vid, text, r, g, b: self.calls.append((vid, text))
         clock = types.ModuleType('app')
         clock.GetTime = lambda: 100.0
         self.saved = dict((name, sys.modules.get(name)) for name in ('textTail', 'app'))

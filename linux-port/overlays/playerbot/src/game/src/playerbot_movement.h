@@ -16,6 +16,10 @@
 // above it, and reopens the same anonymous namespace. Include it exactly once,
 // from playerbot_manager.cpp, after playerbot_navigation.h.
 
+// CDungeon is only forward-declared by the engine headers the manager
+// includes; the floor helpers below need the class.
+#include "dungeon.h"
+
 namespace
 {
 	struct TKnownPlayerBotMetin
@@ -560,6 +564,32 @@ namespace
 	// objective - "takie metiny sie zbija, by zaliczyc kolejne pietra" (Tieru,
 	// 16 September) - and no level band applies; for a bot on its own they stay
 	// what IsPlayerBotDungeonTriggerStone says, a warp sprung on strangers.
+	// The dungeon's floor counter: mt2009's CDungeon carries one (the quests'
+	// d.get_level and d.advance_level), r40250's does not.
+	int GetPlayerBotDungeonLevel(LPDUNGEON d)
+	{
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		return d ? d->GetLevel() : 0;
+#else
+		(void)d;
+		return 0;
+#endif
+	}
+
+	void AdvancePlayerBotDungeonLevel(LPDUNGEON d)
+	{
+#if defined(PLAYERBOT_ENGINE_MT2009)
+		if (d)
+			d->AdvanceLevel();
+#else
+		(void)d;
+#endif
+	}
+
+	// A raider of the Demon Tower, or any bot inside its instance
+	// (playerbot_demon_tower.h, which comes later in the include order).
+	bool IsPlayerBotTowerRaider(LPCHARACTER ch);
+
 	bool IsPlayerBotClimbingWithPlayer(LPCHARACTER ch)
 	{
 		if (!ch || !ch->GetParty() || !IsPlayerBotHumanLedParty(ch->GetParty()))
@@ -572,7 +602,7 @@ namespace
 	{
 		return ch && stone && stone->IsStone() && !stone->IsDead() &&
 				IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()) &&
-				IsPlayerBotClimbingWithPlayer(ch);
+				(IsPlayerBotClimbingWithPlayer(ch) || IsPlayerBotTowerRaider(ch));
 	}
 
 	void RememberPlayerBotMetin(LPCHARACTER stone, DWORD dwNow)
@@ -624,6 +654,10 @@ namespace
 		// Breaking one warps every PC on the killer's map into a new tower.
 		if (IsPlayerBotDungeonTriggerStone(stone->GetRaceNum()))
 			return false;
+		// Iwakura's stone hunter: ten levels either way, "aby zagwarantowac
+		// szanse na drop oraz upewnic sie, ze bot fizycznie da rade go zniszczyc".
+		if (IsPlayerBotPersonaEnabled())
+			return playerbot_persona::InPogromcaBand((int)ch->GetLevel(), (int)stone->GetLevel());
 		// Alone, a stone up to nine over the bot (a stronger one it cannot break
 		// by itself - it joins those, IsPlayerBotStoneJoinable), and one it has
 		// outgrown by PLAYERBOT_STONE_OUTGROWN_LEVELS is passed: the drop curve

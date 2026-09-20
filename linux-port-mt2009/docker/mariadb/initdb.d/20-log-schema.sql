@@ -253,6 +253,19 @@ CREATE TABLE IF NOT EXISTS `acce` (
   `success` tinyint(4) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS `itemshop` (
+  `pid` int(10) unsigned NOT NULL DEFAULT 0,
+  `aid` int(10) unsigned NOT NULL DEFAULT 0,
+  `item_index` int(11) NOT NULL DEFAULT 0,
+  `vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  `quantity` int(11) NOT NULL DEFAULT 0,
+  `price` bigint(20) NOT NULL DEFAULT 0,
+  `currency` tinyint(4) NOT NULL DEFAULT 0,
+  `item_id` int(10) unsigned DEFAULT NULL,
+  `time` datetime NOT NULL DEFAULT current_timestamp(),
+  `money_before` int(10) unsigned NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS `itemshop_dragon_scroll` (
   `pid` int(10) unsigned NOT NULL DEFAULT 0,
   `aid` int(10) unsigned NOT NULL DEFAULT 0,

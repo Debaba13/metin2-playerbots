@@ -19,6 +19,10 @@ files/static/*
 linux-port/docker/seban-panel/*
 linux-port/docker/itemshop/*
 linux-port/docker/panel/app/admin_panel.py
+# The panel's Dockerfile COPYs schema/ too, and nothing on a Linux install
+# stages it - a build from the package alone stopped at "/schema: not found"
+# (DUDU's VPS, 18 September). update.sh stages the rest (stage_panel_context).
+linux-port/docker/panel/schema/web_admin_schema.sql
 linux-port/docker/panel/bin/*
 linux-port/docker/panel/Dockerfile
 linux-port/docker/panel/.dockerignore
@@ -64,6 +68,7 @@ Metin2-Launcher-GUI.ps1
 Metin2-Launcher-GUI.bat
 launcher/Metin2Launcher.psm1
 launcher/Metin2Launcher.Diagnostics.psm1
+launcher/Metin2Launcher.Coop.psm1
 launcher/launcher.config.example.json
 launcher/update-manifest.example.json
 launcher/server-update-files.mt2009.txt
@@ -89,14 +94,10 @@ linux-port-mt2009/docker/game/src/server/game/src/char.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char.h
 linux-port-mt2009/docker/game/src/server/game/src/char_battle.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_item.cpp
+linux-port-mt2009/docker/game/src/server/game/src/char_quickslot.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_shop.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_skill.cpp
 linux-port-mt2009/docker/game/src/server/game/src/char_state.cpp
-# pvp.cpp carries the duel hook: a challenge to a bot is recorded for its own
-# tick to agree to, because a bot has no client to answer with a /pvp of its
-# own. Without this line the staged file never reaches a player's machine and
-# the whole feature exists only here.
-linux-port-mt2009/docker/game/src/server/game/src/pvp.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd_general.cpp
 linux-port-mt2009/docker/game/src/server/game/src/cmd_gm.cpp
@@ -108,6 +109,9 @@ linux-port-mt2009/docker/game/src/server/game/src/desc.h
 linux-port-mt2009/docker/game/src/server/game/src/desc_client.cpp
 linux-port-mt2009/docker/game/src/server/game/src/desc_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/desc_manager.h
+linux-port-mt2009/docker/game/src/server/game/src/event.cpp
+linux-port-mt2009/docker/game/src/server/game/src/exchange.cpp
+linux-port-mt2009/docker/game/src/server/game/src/guild.cpp
 linux-port-mt2009/docker/game/src/server/game/src/ikarus_shop_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/ikarus_shop_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/input.h
@@ -118,6 +122,13 @@ linux-port-mt2009/docker/game/src/server/game/src/item.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.cpp
 linux-port-mt2009/docker/game/src/server/game/src/item_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/main.cpp
+# Not ours to change, and shipped for that reason: a fork's companion system
+# rewrote it to call CPlayerBotManager::GetCompanionOwner, which this manager
+# never had, and an update replaces the manager and leaves this file - so
+# every update from 2.0.74 on failed to build for archonek (18 September).
+# The stock copy puts it back on the next click.
+linux-port-mt2009/docker/game/src/server/game/src/messenger_manager.cpp
+linux-port-mt2009/docker/game/src/server/game/src/mob_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/p2p.cpp
 linux-port-mt2009/docker/game/src/server/game/src/p2p.h
 # Every Playerbot source has a build-context copy here, discovered like the
@@ -125,15 +136,19 @@ linux-port-mt2009/docker/game/src/server/game/src/p2p.h
 # line 65) and this one enumerated thirty-six names, so the first new file
 # (playerbot_offline_policy.h, 2.0.26) failed the packager's pairing check.
 linux-port-mt2009/docker/game/src/server/game/src/playerbot_*
-linux-port-mt2009/docker/game/src/server/game/src/questlua_item.cpp
-# affect.remove_collect: this engine binds remove_all_collect and not the one
-# web_admin.quest calls, so "Szybkosc biegu" died on a nil function at line 128
-# and the row kept the quest's claim stamp for ever (Sammy Suricate, 2.0.35).
+linux-port-mt2009/docker/game/src/server/game/src/pvp.cpp
 linux-port-mt2009/docker/game/src/server/game/src/questlua_affect.cpp
+linux-port-mt2009/docker/game/src/server/game/src/questlua_item.cpp
 linux-port-mt2009/docker/game/src/server/game/src/questmanager.cpp
+linux-port-mt2009/docker/game/src/server/game/src/questnpc.cpp
 linux-port-mt2009/docker/game/src/server/game/src/refine.cpp
+linux-port-mt2009/docker/game/src/server/game/src/regen.cpp
 linux-port-mt2009/docker/game/src/server/game/src/shop.h
+linux-port-mt2009/docker/game/src/server/game/src/shop_manager.cpp
+linux-port-mt2009/docker/game/src/server/game/src/shop_manager.h
 linux-port-mt2009/docker/game/src/server/game/src/stdafx.h
+linux-port-mt2009/docker/game/src/server/game/src/utils.cpp
+linux-port-mt2009/docker/game/src/server/game/src/utils.h
 linux-port-mt2009/docker/game/src/server/libthecore/include/fdwatch.h
 linux-port-mt2009/docker/game/src/server/libthecore/include/signal.h
 linux-port-mt2009/docker/game/src/server/libthecore/include/stdafx.h

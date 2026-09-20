@@ -44,6 +44,7 @@ inline void NoteSold(uint32_t ownerid, uint32_t item, uint32_t vnum, uint32_t co
 struct ListedLine {
     uint32_t vnum = 0, skill = 0, when = 0;
     uint8_t refine = 0;
+    uint32_t observedSince = 0;
 };
 inline bool Due(uint32_t now, uint32_t at) {
     return at == 0 || int32_t(now - at) >= 0;
@@ -77,6 +78,8 @@ struct State {
     uint32_t nextReprice = 0, repriceItem = 0;
     uint32_t nextBrowse = 0, buyOwner = 0, buyItem = 0, buyUntil = 0;
     uint32_t observedShop = 0;
+    uint32_t browseOwner = 0, browseItem = 0;
+    uint32_t repriceSteps = 0;
     // Which compiled price table this shop was last priced against.
     uint32_t priceGeneration = 0;
     // The empty-hand probe of the counter, and the last line taken back to
@@ -86,9 +89,37 @@ struct State {
     // The line cut out of its stack before the shop board opened, for the
     // add of the same visit (BotOfflinePrepareVisitLine): item id and cell.
     uint32_t preparedItem = 0, preparedCell = 0;
+    // When the keeper last stood at its shop and served it: a shop on
+    // another map waits PLAYERBOT_OFFLINE_FAR_SERVICE_MIN_MS from here.
+    uint32_t lastServedAt = 0;
     std::map<uint32_t, ListedLine> listed;
     bool visiting = false;
+    bool restockTurn = false;
 };
+    template<class Shops, class Visitor>
+    unsigned BrowseLines(const Shops& shops, State& state, unsigned limit, Visitor visit) {
+        unsigned checked = 0;
+        size_t start = 0;
+        for (size_t i = 0; i < shops.size(); ++i)
+            if (shops[i].second->GetOwnerPID() == state.browseOwner) { start = i; break; }
+        for (size_t n = 0; n < shops.size() && checked < limit; ++n) {
+            auto shop = shops[(start+n) % shops.size()].second;
+            const auto& items = shop->GetItems();
+            auto it = n == 0 && shop->GetOwnerPID() == state.browseOwner
+                ? items.upper_bound(state.browseItem) : items.begin();
+            for (; it != items.end() && checked < limit; ++it) {
+                ++checked;
+                state.browseOwner = shop->GetOwnerPID();
+                state.browseItem = it->first;
+                visit(shop, it->first, it->second);
+            }
+            if (it == items.end()) {
+                state.browseOwner = shops[(start+n+1) % shops.size()].second->GetOwnerPID();
+                state.browseItem = 0;
+            }
+        }
+        return checked;
+    }
 inline bool Fits(int cell, int height, int width, int cells) {
     return width > 0 && height > 0 && cell >= 0 && cell < cells &&
         height <= cells / width && cell + (height - 1) * width < cells;

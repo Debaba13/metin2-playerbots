@@ -325,6 +325,33 @@ RUN set -eu; L=/opt/metin2/share/locale/poland/quest/libs/other/_otherModuleLoad
  && echo "share: difficulty hooked into the quest libraries"
 """
 
+# The monkey curse. The package's monkey_curse quest (map_entrance) sets a
+# timer at every login inside a Monkey Dungeon - 55 minutes on the three easy
+# ones, 35 on 108, 25 on 109 - and when it runs out turns the
+# character into a monkey (5003) for five minutes and warps it to its village,
+# unless the herb of that dungeon's monkeys (50057-50059) is running. A bot
+# has no herb and no answer to it: the medal droppers live in those dungeons
+# and were thrown out as monkeys ("klatwa malp, z ktora boty nie potrafia
+# sobie poradzic", SIZOWSKI, 12 September; "usuniemy to", Tieru, 18
+# September). The cores load a quest's event handlers from its compiled
+# object files, so those are deleted from the image; the state table stays,
+# so a character's saved monkey_curse flags still name a quest the engine
+# knows. The herbs stay in the world too: subquest_39 asks for the hard one.
+DOCKERFILE_CURSE_ANCHOR = ' && echo "share: difficulty hooked into the quest libraries"\n'
+DOCKERFILE_CURSE_MARKER = 'echo "share: monkey curse removed'
+DOCKERFILE_CURSE_STEP = r"""
+# The monkey curse (port/shareify.py renders this step): the package's
+# monkey_curse quest turned anybody 55 minutes into a Monkey Dungeon (35 on
+# 108, 25 on 109) into a monkey and warped them out, bots included. Its event
+# handlers go; its state table stays for the flags characters already carry.
+RUN set -eu; O=/opt/metin2/share/locale/poland/quest/object \
+ && n=$(find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -print | wc -l) \
+ && find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -exec rm -f {} + \
+ && rm -rf "$O/monkey_curse" \
+ && ! find "$O" -path "$O/state" -prune -o -name 'monkey_curse*' -print | grep -q . \
+ && echo "share: monkey curse removed ($n handlers)"
+"""
+
 
 def main():
     items = dump_vnums('item_proto')
@@ -383,6 +410,12 @@ def main():
         assert s.count(DOCKERFILE_BIOLOGIST_ANCHOR) == 1, s.count(DOCKERFILE_BIOLOGIST_ANCHOR)
         s = s.replace(DOCKERFILE_BIOLOGIST_ANCHOR, DOCKERFILE_BIOLOGIST_ANCHOR + DOCKERFILE_BIOLOGIST_STEP)
         print('shareify: difficulty step added')
+    if DOCKERFILE_CURSE_MARKER in s:
+        print('shareify: Dockerfile already removes the monkey curse')
+    else:
+        assert s.count(DOCKERFILE_CURSE_ANCHOR) == 1, s.count(DOCKERFILE_CURSE_ANCHOR)
+        s = s.replace(DOCKERFILE_CURSE_ANCHOR, DOCKERFILE_CURSE_ANCHOR + DOCKERFILE_CURSE_STEP)
+        print('shareify: monkey curse step added')
     io.open(dockerfile, 'w', encoding='utf-8', newline='').write(s)
 
 

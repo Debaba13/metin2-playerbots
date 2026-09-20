@@ -455,7 +455,7 @@ namespace
 	{
 		// Climbing with a player, the stone is the floor's objective and a
 		// splash that reaches it is welcome.
-		if (IsPlayerBotClimbingWithPlayer(ch))
+		if (IsPlayerBotClimbingWithPlayer(ch) || IsPlayerBotTowerRaider(ch))
 			return false;
 		if (!ch || !target || ch->GetMapIndex() != PLAYERBOT_MAP_DEMON_TOWER || !ch->GetSectree())
 			return false;

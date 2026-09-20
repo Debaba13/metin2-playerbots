@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Renderuje playerbot_price_tables.h z cennika Iwakury (data/iwakura_ceny.txt).
 
-Jeden plik, jego wersja 1.1 (15 wrzesnia; 1.0 z 14): skalowanie wedlug dropu yang,
+Jeden plik, jego wersja 1.2 (16 wrzesnia; 1.1 z 15, 1.0 z 14): skalowanie wedlug dropu yang,
 mnozniki kamieni duszy i bonusow, ulepszacze, ksiegi, opaski zapomnienia,
-kamienie duszy, marmury, inne, zielarstwo, gildia, rudy i ceny sprzetu - bronie,
+kamienie duszy, marmury, szkatulki, inne, ulepszanie, pasywne, kon, lowienie,
+zielarstwo, gildia, rudy i ceny sprzetu - bronie,
 zbroje, buty, bransolety, naszyjniki, kolczyki i tarcze. Wczesniej byly to dwa
 pliki i trzy tabele pisane recznie w types.h i bonus.h.
 
@@ -34,6 +35,8 @@ import sys
 # Nazwy, ktore Iwakura pisze w pelni, a gra skraca. Kazda sprawdzona recznie:
 # w item_proto jest dokladnie jeden kandydat na kazda z nich.
 GEAR_ALIASES = {
+    # Cennik 1.2 zgubil kropke skrotu; w item_proto jest "Sztylet Piesci Diab.".
+    'sztylet pięści diab': 'sztylet pięści diab.',
     'mnisia zbr. płytowa': 'mnisia zbr. płyt.',
     'żelazna zbr. płytowa': 'żelazna zbr. płyt.',
     'żałobna zbr. płytowa': 'żałobna zbr. płyt.',
@@ -56,6 +59,8 @@ GOODS_ALIASES = {
     'waleczna dusza zaprzys': 'waleczna dusza',
     # Cennik 1.1: item_proto skraca "Czerwona" do "Czerw." (70204); jedyny kandydat.
     'czerwona farba do włosów': 'czerw. farba do włosów',
+    # Cennik 1.2 pisze bez ogonka; 70049.
+    'pierścien lucy': 'pierścień lucy',
 }
 
 # Nazwa, pod ktora gra ma kilka przedmiotow, a jego cena dotyczy jednego z nich.
@@ -69,6 +74,17 @@ VNUM_OVERRIDES = {
     # Sekcja [RUDY]: przetopiony krysztal z kopalni. 30203 i 90003 to inne
     # przedmioty o tej samej nazwie.
     'kryształ': [50631],
+}
+
+# Wiersze, ktore generator pomija z rozmyslem, z powodem: kazdy inny brak
+# nazwy przerywa render. Cennik 1.2 (16 wrzesnia) ma dwa wiersze na jeden
+# przedmiot - ten, ktory zostaje, jest nizej na liscie, czyli nowszy.
+SKIPPED_ROWS = {
+    # 30356 to jedyna "Waleczna Dusza" w grze; 1.2 dodal jej wlasny wiersz
+    # (40000) obok starego "Zaprzys" (32500) z 1.1.
+    'waleczna dusza zaprzys': 'jeden przedmiot, wiersz "Waleczna dusza" go wycenia',
+    # Literowka obok wlasciwego wiersza "Wysuszone Oczy" (75000).
+    'wyuszone oczy': 'literowka wiersza "Wysuszone Oczy"',
 }
 
 # Potwory z listy wyjatkow do marmurow. Tak samo: gra skraca, on pisze w pelni.
@@ -138,6 +154,9 @@ BONUS_APPLIES = {
     'maks. stamina': 'APPLY_MAX_STAMINA',
     'regeneracja mistur pż': 'APPLY_HP_REGEN',
     'regeneracja mistur pe': 'APPLY_SP_REGEN',
+    # Cennik 1.2 poprawil pisownie; 1.1 zostaje rozumiany.
+    'regeneracja mikstur pż': 'APPLY_HP_REGEN',
+    'regeneracja mikstur pe': 'APPLY_SP_REGEN',
     'czas trwania umiejętności': 'APPLY_SKILL_DURATION',
     'x% obrażen dodanych do pe': 'APPLY_STEAL_SP',
     'x% obrażen dodanych do pż': 'APPLY_STEAL_HP',
@@ -153,6 +172,7 @@ BONUS_APPLIES = {
     'odporność na sztylety': 'APPLY_RESIST_DAGGER',
     'odporność na strzały': 'APPLY_RESIST_BOW',
     'odporność na wahlarze': 'APPLY_RESIST_FAN',
+    'odporność na wachlarze': 'APPLY_RESIST_FAN',
     'odporność na dzwony': 'APPLY_RESIST_BELL',
     'odporność na miecze': 'APPLY_RESIST_SWORD',
     'odrponość na broń dwuręczną': 'APPLY_RESIST_TWOHAND',
@@ -197,7 +217,8 @@ ATTR_COLUMNS = ['weapon', 'body', 'wrist', 'foots', 'neck', 'head', 'shield', 'e
 
 TOP_SECTIONS = ['INFORMACJE OGOLNE', 'MNOŻNIK KAMIENI DUSZY W ZBROJACH I BRONIACH',
                 'MNOŻNIK BONUSÓW DODATKOWYCH', 'ULEPSZACZE', 'KSIĘGI UMIEJĘTNOŚCI',
-                'Opaski zapomnienia', 'Kamienie duszy', 'Marmury Polimorfi', 'Inne',
+                'Opaski zapomnienia', 'Kamienie duszy', 'Marmury Polimorfi', 'Szkatułki',
+                'Inne', 'Ulepszanie', 'Pasywne', 'Koń', 'Łowienie',
                 'Zielarstwo', 'Gildia', 'RUDY', '[BRONIE]']
 
 BAND_RE = re.compile(r'^(?:od\s*)?\+(\d)\s*(?:do\s*\+(\d))?\s*[-–]\s*(.+?)\s*$', re.I)
@@ -262,6 +283,14 @@ class Resolver(object):
             self.items.setdefault(norm(name), vnum)
             item_type = int(rest[0]) if rest and rest[0].isdigit() else 0
             self.goods.setdefault(goods_key(name), []).append((vnum, item_type))
+        # Cennik 1.3 wycenia je jednym wierszem - "WSZYSTKIE RECEPTURY np.
+        # Zielony Wywar, Platynowy Wywar, Szary wywar itd." - bo w grze jest
+        # ich czterdziesci i wszystkie kosztuja tyle samo. Jego przyklady to
+        # nazwy po slowie "Receptura", wiec wiazemy po tym slowie, a nie po
+        # nazwie wywaru.
+        self.recipes = sorted(set(
+            vnum for vnum, name, rest in items
+            if norm(name).startswith('receptura') or norm(name).endswith(' receptura')))
         self.mobs = {}
         for vnum, name, rest in mobs:
             self.mobs.setdefault(norm(name), vnum)
@@ -276,6 +305,12 @@ class Resolver(object):
 
     def goods_vnums(self, name):
         key = goods_key(name)
+        if key in SKIPPED_ROWS:
+            return []
+        if key.startswith('wszystkie receptury'):
+            if not self.recipes:
+                self.missing.append('przedmiot: %s (zadnej receptury w item_proto)' % name)
+            return self.recipes
         key = GOODS_ALIASES.get(key, key)
         if key in VNUM_OVERRIDES:
             return VNUM_OVERRIDES[key]
@@ -699,7 +734,8 @@ def main(item_path, mob_path, attr_path, sheet_path, out_path):
     mults, count_mult = parse_socket_multipliers(sheet)
     bonus, tiers = parse_bonus_multipliers(sheet, item_attr, errors)
     materials = parse_goods(sheet, resolver, ['ULEPSZACZE'])
-    extras = parse_goods(sheet, resolver, ['Inne', 'Zielarstwo', 'Gildia', 'RUDY'])
+    extras = parse_goods(sheet, resolver, ['Szkatułki', 'Inne', 'Ulepszanie', 'Pasywne',
+                                           'Koń', 'Łowienie', 'Zielarstwo', 'Gildia', 'RUDY'])
     overlap = set(v for v, _, _ in materials) & set(v for v, _, _ in extras)
     if overlap:
         errors.append('vnumy w ulepszaczach i w innych naraz: %s' % sorted(overlap))

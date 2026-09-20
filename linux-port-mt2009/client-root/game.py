@@ -611,7 +611,7 @@ class GameWindow(ui.ScriptWindow):
 		onPressKeyDict[app.DIK_PGDN]		= lambda: app.MovieZoomCamera(app.CAMERA_TO_POSITIVE)
 		onPressKeyDict[app.DIK_NUMPAD8]		= lambda: app.MoviePitchCamera(app.CAMERA_TO_NEGATIVE)
 		onPressKeyDict[app.DIK_NUMPAD2]		= lambda: app.MoviePitchCamera(app.CAMERA_TO_POSITIVE)
-		onPressKeyDict[app.DIK_GRAVE]		= lambda : self.PickUpItem()
+		onPressKeyDict[app.DIK_GRAVE]		= lambda : self.PickUpNearbyItems()
 		onPressKeyDict[app.DIK_Z]			= lambda : self.PickUpItem()
 		onPressKeyDict[app.DIK_C]			= lambda state = "STATUS": self.interface.ToggleCharacterWindow(state)
 		onPressKeyDict[app.DIK_V]			= lambda state = "SKILL": self.interface.ToggleCharacterWindow(state)
@@ -1741,6 +1741,10 @@ class GameWindow(ui.ScriptWindow):
 	def PickUpItem(self):
 		player.PickCloseItem()
 
+	def PickUpNearbyItems(self):
+		import pickupnearby
+		pickupnearby.Request()
+
 	###############################################################################################
 	###############################################################################################
 	## Event Handler
@@ -2619,6 +2623,11 @@ class GameWindow(ui.ScriptWindow):
 			"FishingGameCooldown": self.FishingGameCooldown,
 			"FishingGameEvent": self.FishingGameEvent,
 
+			# "Scal i uporzadkuj" (inventoryarrange.py)
+			"InventoryArrangeResult"	: self.__InventoryArrangeResult,
+			"SafeboxArrangeResult"	: self.__SafeboxArrangeResult,
+			"SafeboxTransferResult"	: self.__SafeboxTransferResult,
+
 			# WEDDING
 			"lover_login"			: self.__LoginLover,
 			"lover_logout"			: self.__LogoutLover,
@@ -3390,6 +3399,18 @@ class GameWindow(ui.ScriptWindow):
 	def __OnTop1Badge(self, vid):
 		if self.interface.wndTop1Badge:
 			self.interface.wndTop1Badge.Refresh(vid)
+
+	def __SafeboxArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):
+		import safeboxtransfer
+		safeboxtransfer.OnArrangeResult(code, moved, merged, units)
+
+	def __SafeboxTransferResult(self, op="0", code="0", units="0", *rest):
+		import safeboxtransfer
+		safeboxtransfer.OnTransferResult(op, code, units)
+
+	def __InventoryArrangeResult(self, code="0", moved="0", merged="0", units="0", *rest):
+		import inventoryarrange
+		inventoryarrange.OnResult(code, moved, merged, units)
 
 	def __InGameShop_Show(self, url):
 		if constInfo.IN_GAME_SHOP_ENABLE:

@@ -50,13 +50,19 @@ CREATE TABLE IF NOT EXISTS web_admin_queue (
 
 -- ---- server-wide rates ------------------------------------------------
 -- What the panel's "Server rates" page wants; apply_rates.sh reads it back
--- and hands it to the server-files profile. The project deliberately starts
--- with 650% EXP so the bot population can progress beyond M2 in a reasonable
--- test cycle; drop and Yang retain their neutral fresh-install defaults.
+-- and hands it to the server-files profile.
+--
+-- The table is made here and filled nowhere: it used to be seeded with 650%
+-- experience "so the bot population can progress beyond M2 in a reasonable
+-- test cycle", and that number outlived the test cycle by years of releases.
+-- It was never true of the game - on the mt2009 line a rate is an event flag
+-- the panel writes when somebody presses the button, so a fresh world ran at
+-- 100% while this table promised 650 - and the promise was kept only by the
+-- first press, field untouched. What a fresh world starts on now comes from
+-- M2_RATE_EXP/DROP/YANG, which the launcher asks for and apply.sh writes into
+-- this table and into the flags at once, before the cores come up. A row that
+-- is missing reads as 100 in the panel.
 CREATE TABLE IF NOT EXISTS web_admin_rates (
   name  VARCHAR(24) PRIMARY KEY,
   value INT NOT NULL DEFAULT 100
 );
-
-INSERT IGNORE INTO web_admin_rates (name, value)
-  VALUES ('exp', 650), ('drop', 100), ('yang', 100);

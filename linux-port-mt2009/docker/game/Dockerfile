@@ -201,7 +201,9 @@ RUN set -eux; \
     # Functions the engine has and the package's list forgot, which qc would
     # otherwise refuse (gm_profile.quest: equipping, bonus lines, stack size,
     # the item's use path).
-    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use; do \
+    # pc.open_special_shop for fishing_pass_shop (2.0.68); affect.add_new and
+    # affect.remove_new for the panel's speed in web_admin (2.0.76).
+    for fn in mysql_direct_query pc.equip_slot pc.unequip_slot item.set_attr item.get_max_stack item.use pc.open_special_shop affect.add_new affect.remove_new; do \
       grep -qx "$fn" /tmp/qc-work/quest_functions || echo "$fn" >> /tmp/qc-work/quest_functions; \
     done; \
     # pony_levelup is the package's own stable-keeper quest with the 18-hour
@@ -219,7 +221,9 @@ RUN set -eux; \
     # package's stable-keeper quests with the wait for the horse taken out:
     # twelve hours for the pony and each upgrade, twenty-one between two
     # trainings (Tieru, 16 September, 2.0.56).
-    for q in web_admin speed_boost starter_chest pony_levelup gm_profile new_quest_lv19 teleport_ring pony_buy horse_upgrade horse_upgrade2 horse_levelup; do \
+    # fishing_pass_shop opens the Fisherman's special shop, the only seller
+    # of Karta Wedkarska, which no stock quest ever opened (2.0.68).
+    for q in web_admin speed_boost starter_chest pony_levelup gm_profile new_quest_lv19 teleport_ring pony_buy horse_upgrade horse_upgrade2 horse_levelup deviltower_zone fishing_pass_shop; do \
       [ -f "/quest-add/$q.quest" ] || continue; \
       sed 's/\r$//' "/quest-add/$q.quest" > "/tmp/qc-work/$q.quest"; \
       ( cd /tmp/qc-work && /src/Server/game/src/quest/qc "$q.quest" ); \
@@ -248,8 +252,12 @@ RUN if [ -n "${APT_MIRROR}" ]; then \
 # What `ldd` resolves on the two binaries: libstdc++, libgcc_s, libc, and -
 # because the package's Makefiles link them dynamically (-lz, -lmd) - zlib and
 # libmd. tzdata so the logs carry the operator's clock.
+# Check-Date off, as in the panel: a Windows clock running behind makes apt
+# refuse every Release file as "not valid yet" (Xewi, 19 September). Only this
+# stage and the panel carry it - the deps stage is cached on every install that
+# has built once, and a changed line there would rebuild every library.
 RUN dpkg --add-architecture i386 \
- && apt-get update \
+ && apt-get -o Acquire::Check-Date=false update \
  && apt-get install -y --no-install-recommends \
         libc6:i386 libstdc++6:i386 libgcc-s1:i386 zlib1g:i386 libmd0:i386 \
         tzdata ca-certificates \
@@ -333,6 +341,17 @@ RUN set -eu; L=/opt/metin2/share/locale/poland/quest/libs/other/_otherModuleLoad
  && LC_ALL=C grep -q 'other/m2_difficulty.lua' "$L" \
  && test -s /opt/metin2/share/locale/poland/quest/libs/other/m2_difficulty.lua \
  && echo "share: difficulty hooked into the quest libraries"
+
+# The monkey curse (port/shareify.py renders this step): the package's
+# monkey_curse quest turned anybody 55 minutes into a Monkey Dungeon (35 on
+# 108, 25 on 109) into a monkey and warped them out, bots included. Its event
+# handlers go; its state table stays for the flags characters already carry.
+RUN set -eu; O=/opt/metin2/share/locale/poland/quest/object \
+ && n=$(find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -print | wc -l) \
+ && find "$O" -path "$O/state" -prune -o -type f -name 'monkey_curse.*' -exec rm -f {} + \
+ && rm -rf "$O/monkey_curse" \
+ && ! find "$O" -path "$O/state" -prune -o -name 'monkey_curse*' -print | grep -q . \
+ && echo "share: monkey curse removed ($n handlers)"
 
 # The cores run unprivileged and read this tree by path; a directory only root
 # can enter costs every quest below it, silently. Repair, then assert.

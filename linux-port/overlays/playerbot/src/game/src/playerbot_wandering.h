@@ -199,6 +199,10 @@ namespace
 		std::set<DWORD> wanted;
 		CollectPlayerBotWantedMaterials(ch, wanted);
 
+		// Ground a capitulation gave up is not chosen for as long as it is
+		// given up (the Anti-PK protocol, playerbot_anti_pk.h).
+		TPlayerBotAIStateMap::const_iterator ownState = s_mapPlayerBotAIStates.find(ch->GetPlayerID());
+
 		int bestScore = INT_MIN;
 		size_t best = 0;
 		bool bFound = false;
@@ -208,6 +212,9 @@ namespace
 			if (i == excludeIndex || level < hub.bMinLevel || level > hub.bMaxLevel)
 				continue;
 			if (hub.bNeedsParty && !bLeadsParty)
+				continue;
+			if (ownState != s_mapPlayerBotAIStates.end() &&
+					IsPlayerBotAvoidedSpot(ownState->second, ch->GetMapIndex(), hub.x, hub.y, dwNow))
 				continue;
 			// A boss hub is worth going to while the boss stands, and nothing when
 			// he is down; the crowd already on him is not a reason to stay away.
@@ -346,6 +353,24 @@ namespace
 				out[count++] = h;
 		if (count > 0)
 			return count;
+		// Above every band - a bot the village has outgrown, here for an
+		// errand - the top bands together, whole bands until there are at
+		// least PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN hubs. The nearest band
+		// alone was Joan's two band-21 hubs for every bot of twenty-five and
+		// over in the village: thirty of them and their horses on one meadow
+		// (Remigiusz's screenshot, 18 September).
+		int top = 0;
+		for (int h = 0; h < hubTotal; ++h)
+			top = std::max(top, (int)hubs[h].mobLevel);
+		if (hubTotal > 0 && botLevel > top + 3)
+		{
+			for (int distance = 0; distance < 64 && count < cap &&
+					count < PLAYERBOT_M1_OUTGROWN_HUB_CHOICES_MIN; ++distance)
+				for (int h = 0; h < hubTotal && count < cap; ++h)
+					if (top - hubs[h].mobLevel == distance)
+						out[count++] = h;
+			return count;
+		}
 		int best = 1000;
 		for (int h = 0; h < hubTotal; ++h)
 			best = std::min(best, abs(hubs[h].mobLevel - botLevel));
@@ -476,7 +501,14 @@ namespace
 	{
 		if (!ch)
 			return;
-		SetPlayerBotAction(state, ch->GetParty() ? BOT_ACTION_PARTY_ASSEMBLE : BOT_ACTION_TRAVEL, dwNow);
+		// A kept walk to the collect row's monsters is the Biologist's errand for
+		// its whole length, the route continuation below included - stamped only
+		// where the walk is taken up, it read "Szukam celu dla grupy" or "Ide do
+		// Biologa" on most of the way.
+		SetPlayerBotAction(state, state.dwBiologistWalkUntil != 0 && dwNow < state.dwBiologistWalkUntil &&
+					state.lBiologistWalkMap == ch->GetMapIndex()
+				? BOT_ACTION_BIOLOGIST
+				: (ch->GetParty() ? BOT_ACTION_PARTY_ASSEMBLE : BOT_ACTION_TRAVEL), dwNow);
 
 		// Party following is an active movement intent, not a new wander decision.
 		// Refresh it on every AI update so followers do not stop for 8-12 seconds
@@ -607,8 +639,11 @@ namespace
 				if (partyCamps == NULL || campTotal <= 0)
 					return;
 				int campChoices[16];
-				const int campCount = CollectPlayerBotM1HubsForLevel(ch->GetLevel(),
+				int campCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
 						partyCamps, campTotal, campChoices, 16);
+				// Not the ground a capitulation gave up (playerbot_anti_pk.h).
+				campCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), partyCamps,
+						campChoices, campCount, dwNow);
 				if (campCount <= 0)
 					return;
 
@@ -657,8 +692,12 @@ namespace
 				if (hubs == NULL || hubTotal <= 0)
 					return;
 				int hubChoices[64];
-				const int hubCount = CollectPlayerBotM1HubsForLevel(ch->GetLevel(),
+				// The active herb row's level while its monster is wanted, the
+				// bot's own otherwise (GetPlayerBotVillageHuntLevel).
+				int hubCount = CollectPlayerBotM1HubsForLevel(GetPlayerBotVillageHuntLevel(ch),
 						hubs, hubTotal, hubChoices, 64);
+				hubCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), hubs,
+						hubChoices, hubCount, dwNow);
 				if (hubCount <= 0)
 					return;
 				int hubIdx = hubChoices[((pid / 2) + state.uMetinHotspotIndex) % hubCount];
@@ -746,8 +785,10 @@ namespace
 				// outgrown-prey rule in the combat policy is what lets them leave.
 				const TPlayerBotVillageHub* hubs = ground->hubs;
 				int hubChoices[32];
-				const int hubCount = CollectPlayerBotM2HubsForLevel(ch->GetLevel(),
+				int hubCount = CollectPlayerBotM2HubsForLevel(ch->GetLevel(),
 						hubs, (int)ground->hubCount, hubChoices, 32);
+				hubCount = FilterPlayerBotAvoidedHubs(state, ch->GetMapIndex(), hubs,
+						hubChoices, hubCount, dwNow);
 				if (hubCount <= 0)
 					return;
 				const size_t hubIndex =
@@ -806,7 +847,8 @@ namespace
 			// points and no stones at all.
 			const TPlayerBotHuntingHub forestHubs[] = {
 				{  316300,   16500, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
-				{  316500,   40300, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
+				// Moved 325 units off a blocked cell (2.0.77, server_attr).
+				{  316325,   40575, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  310300,   27200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  324400,   36200, PLAYERBOT_FOREST_MIN_LEVEL, 255, false, 0 },
 				{  284800,   29700, 64, 255, false, 0 },
@@ -818,9 +860,12 @@ namespace
 			// the two hardest of them (80 and 82) are what makes the upper hubs
 			// a party's ground rather than anybody's.
 			const TPlayerBotHuntingHub redForestHubs[] = {
-				{ 1110100,   72700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				// The first and third stood on blocked cells; both moved onto
+				// the nearest open ground (2.0.77, server_attr), the first to
+				// the new arrival point.
+				{ PLAYERBOT_RED_FOREST_ARRIVAL_X, PLAYERBOT_RED_FOREST_ARRIVAL_Y, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1070400,   67400, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
-				{ 1123000,   15200, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
+				{ 1122625,   15675, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1078200,   40800, 73, 255, false, 0 },
 				{ 1053300,   43700, PLAYERBOT_RED_FOREST_MIN_LEVEL, 255, false, 0 },
 				{ 1080600,   16200, 73, 255, false, 0 },
@@ -1025,6 +1070,36 @@ namespace
 							state.bStuckCounter >= 3)
 					{
 						s_mapKnownPlayerBotMetins.erase(knownMetin->GetVID());
+						ClearPlayerBotRoute(state, true);
+					}
+					return;
+				}
+			}
+			// The collect row's monsters the last scan found come before any hub
+			// too (StartPlayerBotMaterialHunt). A fight on the way parked the
+			// route and the hub choice after it walked the bot off by level: on
+			// m2zip 43 of 91 bots in Orc Valley stood in parties reading "Szukam
+			// celu dla grupy" with a collect place each, a walk to the Black Orcs
+			// and a band hub by turns (17 September).
+			if (state.dwBiologistWalkUntil != 0)
+			{
+				const DWORD huntMob = GetPlayerBotBiologistHuntMob(ch);
+				const bool arrived = DISTANCE_APPROX(ch->GetX() - state.lBiologistWalkX,
+						ch->GetY() - state.lBiologistWalkY) <= PLAYERBOT_BIOLOGIST_WALK_ARRIVED;
+				if (dwNow >= state.dwBiologistWalkUntil || arrived || huntMob < 500 ||
+						state.lBiologistWalkMap != ch->GetMapIndex())
+					state.dwBiologistWalkUntil = 0;
+				else
+				{
+					// The top of this function stamped PARTY_ASSEMBLE on a party
+					// bot: 56 of 90 bots in the valley read "Szukam celu dla grupy"
+					// while walking here.
+					SetPlayerBotAction(state, BOT_ACTION_BIOLOGIST, dwNow);
+					state.dwNextWanderTime = dwNow + 1200;
+					if (!MovePlayerBot(ch, state.lBiologistWalkX, state.lBiologistWalkY, dwNow, 24, true, true) &&
+							state.bStuckCounter >= 3)
+					{
+						state.dwBiologistWalkUntil = 0;
 						ClearPlayerBotRoute(state, true);
 					}
 					return;

@@ -1,15 +1,23 @@
 // The world's timed events, run by the core: a window in which the Moonlight
-// chests drop (and outside which, once any window is written, they do not),
-// and windows of more experience, drop or yang over the world's own rates -
-// on a weekly clock, or switched on from the panel for a number of minutes
-// ("Aktywuj teraz"). The panel writes /opt/m2spool/playerbot_events.tsv; this
-// re-reads it the way the weights are read, once every five seconds, judges
-// every kind once a second with playerbot_events::Evaluate, and:
+// chests drop (and outside which they do not drop at all), and windows of
+// more experience, drop or yang over the world's own rates - on a weekly
+// clock, or switched on from the panel for a number of minutes ("Aktywuj
+// teraz"). The panel writes /opt/m2spool/playerbot_events.tsv; this re-reads
+// it the way the weights are read, once every five seconds, judges every kind
+// once a second with playerbot_events::Evaluate, and:
 //
 //  - gates the chest odds: g_iMoonlightChestPermille and the stone figure are
 //    what playerbot_config.h read from the weights file (the sliders), kept
-//    here as the wanted values and put to zero while a chest window is not
-//    open. Every core gates its own, because CreateDropItem rolls locally.
+//    here as the wanted values and put to zero while no chest window is open.
+//    Until 2.0.74 the gate shut only once a chest window was written, so a
+//    world with no schedule dropped chests all the time, and the operator's
+//    word was "usune domyslny drop, a wprowadze tylko jako event" (Tieru,
+//    18 September): the event is the only way a chest drops now. Every core
+//    gates its own, because CreateDropItem rolls locally - including a core
+//    that hosts no bot, which the world clock (CPlayerBotManager::
+//    StartWorldClock) runs this for; before it, such a core never gated and
+//    dropped at the sliders' rate whatever the schedule said ("mimo
+//    harmonogramu blaskow dropia one takze poza nim", NerrVoVy).
 //  - moves the rate flags (mob_exp, mob_item, mob_gold and their _buyer
 //    twins) through the DB core on ONE core only - the one hosting Joan, map
 //    21, which is game1 under both layouts. Three cores each adding fifty
@@ -63,6 +71,11 @@ namespace {
 	int GetPlayerBotChestWantedPermille(bool stone)
 	{
 		return stone ? s_iPlayerBotChestStoneWantedPermille : s_iPlayerBotChestWantedPermille;
+	}
+
+	bool IsPlayerBotChestGateClosed()
+	{
+		return s_bPlayerBotChestGateClosed;
 	}
 
 	const char* GetPlayerBotEventsPath()
@@ -122,7 +135,10 @@ namespace {
 
 	bool IsPlayerBotEventLeader()
 	{
-		return SECTREE_MANAGER::instance().GetMap(PLAYERBOT_EVENTS_LEADER_MAP) != NULL;
+		// Joan's core on the first channel: with a second channel on, its
+		// game1 hosts map 21 too, and two leaders would say every notice twice.
+		return g_bChannel == 1 &&
+				SECTREE_MANAGER::instance().GetMap(PLAYERBOT_EVENTS_LEADER_MAP) != NULL;
 	}
 
 	const char* PlayerBotEventRateFlag(int kind, bool premium)
@@ -252,14 +268,17 @@ namespace {
 		if (generation != s_dwPlayerBotEventsWeightsGeneration)
 		{
 			s_dwPlayerBotEventsWeightsGeneration = generation;
-			s_iPlayerBotChestWantedPermille = g_iMoonlightChestPermille;
-			s_iPlayerBotChestStoneWantedPermille = g_iMoonlightChestStonePermille;
+			// The sliders' figure as parsed (playerbot_config.h), never the
+			// engine's variable: the parse no longer writes that while this
+			// gate is shut, so reading it back here would capture the zero.
+			s_iPlayerBotChestWantedPermille = GetPlayerBotChestConfigPermille(false);
+			s_iPlayerBotChestStoneWantedPermille = GetPlayerBotChestConfigPermille(true);
 		}
 		if (closed != s_bPlayerBotChestGateClosed)
 		{
 			s_bPlayerBotChestGateClosed = closed;
 			sys_log(0, "PLAYERBOT_EVENT: moonlight chests %s (kill %d, stone %d permille)",
-					closed ? "wait for their window" : "drop",
+					closed ? "wait for a chest event" : "drop",
 					s_iPlayerBotChestWantedPermille, s_iPlayerBotChestStoneWantedPermille);
 		}
 		g_iMoonlightChestPermille = closed ? 0 : s_iPlayerBotChestWantedPermille;
@@ -353,8 +372,9 @@ namespace {
 				}
 			}
 		}
+		// Shut whenever no chest event runs, schedule or no schedule.
 		const playerbot_events::Status& chest = s_aPlayerBotEventStatus[playerbot_events::KIND_CHEST];
-		ApplyPlayerBotChestGate(chest.scheduled && !chest.active);
+		ApplyPlayerBotChestGate(!chest.active);
 		if (s_bPlayerBotEventsStatusDirty || dwNow >= s_dwPlayerBotEventsNextStatus)
 		{
 			s_bPlayerBotEventsStatusDirty = false;

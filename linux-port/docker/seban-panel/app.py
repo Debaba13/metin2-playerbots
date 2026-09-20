@@ -73,8 +73,10 @@ MAP_RESPAWN_OPTIONS = (
 # Monkey Dungeons and Spider Dungeon V1 ship no stone.txt, so only their mob
 # respawns can be configured. The explicit allowlist also protects the helper.
 MAP_STONE_RESPAWN_IDS = frozenset(index for index, _name in MAP_RESPAWN_OPTIONS if index not in {5, 25, 45, 104, 71, 108, 109})
-STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_status.tsv"),)
-BOT_SYSLOG_GLOB = os.environ.get("PLAYERBOTS_SYSLOG_GLOB", "/opt/metin2/var/channel1/*/syslog")
+STATUS_GLOBS = (os.environ.get("PLAYERBOTS_STATUS_GLOB", "/opt/metin2/var/channel*/*/playerbot_status.tsv"),)
+GUILD_STATUS_GLOBS = (os.environ.get("PLAYERBOTS_GUILD_STATUS_GLOB", "/opt/metin2/var/channel1/*/playerbot_guild_status.tsv"),)
+GUILD_TIERS = {0: "Elit", 1: "Güçlü", 2: "Orta", 3: "Sıradan"}
+BOT_SYSLOG_GLOB = os.environ.get("PLAYERBOTS_SYSLOG_GLOB", "/opt/metin2/var/channel*/*/syslog")
 RATES_SPOOL = Path("/opt/m2spool")
 UPDATE_SPOOL = Path("/opt/m2update")
 UPDATE_WATCHER_MAX_AGE_SECONDS = 90
@@ -99,7 +101,7 @@ AI_WEIGHT_KEYS = (
 AI_WEIGHT_MIN, AI_WEIGHT_MAX, AI_WEIGHT_NEUTRAL = 25, 250, 100
 # These values share the live weight file with goal weights, but the core treats
 # them as switches or direct settings rather than 25–250% goal weights.
-AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "NIGHT": 1, "SCRAP": 0, "REST": 100, "CHEST": None, "CHEST_STONE": None}
+AI_LIVE_DEFAULTS = {"CHAT": 1, "BOOKS": 1, "NIGHT": 1, "LIFE": 0, "WARS": 1, "ISHOP": 1, "SCRAP": 0, "REST": 100, "CHEST": None, "CHEST_STONE": None}
 AI_SPECIAL_WEIGHT_KEYS = frozenset(AI_LIVE_DEFAULTS)
 BIOLOGIST_COMPLETE_STATE = 557528158
 # Tieru 1.29.10 adds the Orc Tooth task after the six classic Biologist
@@ -155,6 +157,11 @@ except (OSError, ValueError):
 # as a wanderer, and the five personalities appended since then read as
 # nothing at all.
 BOT_PERSONALITIES = {0: "Kararlı Maceracı", 1: "Metin Kırıcı", 2: "Takım Arkadaşı", 3: "Ekipman Ustası", 4: "Dikkatli Toplayıcı", 5: "Tüccar", 6: "Gezgin", 7: "Metin Dropper'ı", 8: "M3 Dropper'ı", 9: "M2 Dropper'ı", 10: "Madalya Dropper'ı"}
+# Iwakura's personalities ("SYSTEM OSOBOWOSCI v2.0", playerbot_persona_rules.h,
+# EPersona - the order is the interface) and the Bot Mood System's moods.
+BOT_PERSONAS = {0: "Emekçi", 1: "Fatih", 2: "Tüccar", 3: "Kumarbaz", 4: "Mükemmeliyetçi", 5: "Metin Avcısı", 6: "Madenci", 7: "Balıkçı", 8: "Paralı Asker", 9: "Yoldaş"}
+BOT_MOODS = {0: "Zayıf", 1: "Normal", 2: "Çok İyi"}
+BOT_MOOD_LOCKS = {1: "yükseliş sonrası coşku", 2: "teslimiyet (Anti-PK)"}
 BOT_AMBITIONS = {0: "Seviye", 1: "Ekipman", 2: "Metinler", 3: "At", 4: "Biyolog", 5: "Yetenekler", 6: "Ticaret"}
 BOT_GOALS = {0: "Seviye Kazanma", 1: "Hayatta Kalma", 2: "Meslek Seçme", 3: "Ekipman Edinme", 4: "Stok Tamamlama", 5: "Ekipman Geliştirme", 6: "Yetenek Geliştirme", 7: "Metin Avlama", 8: "Grup Hedefleri", 9: "Biyolog Görevi", 10: "Avlanma Görevi", 11: "At Geliştirme"}
 BOT_ACTIONS = {0: "Sonraki Hamleyi Planlıyor", 1: "Yolculukta", 2: "Savaşıyor", 3: "Ganimet Topluyor", 4: "İyileşiyor", 5: "Meslek Seçiyor", 6: "Ticaret Yapıyor", 7: "Ekipman Geliştiriyor", 8: "Yetenek Kitabı Okuyor", 9: "Ruh Taşı Takıyor", 10: "Grup Topluyor", 11: "Biyolog Görevi Yapıyor", 12: "Seyis'i Ziyaret Ediyor", 13: "Tezgah İşletiyor", 14: "Balık Tutuyor", 15: "Tezgahlara Bakıyor", 16: "Canavar Çekiyor", 17: "Şehirde Dinleniyor", 18: "Maden Kazıyor"}
@@ -192,6 +199,12 @@ APPLY_LABELS = {
 # account.account has no empire column and player.player no bank_value.
 PANEL_ENGINE = os.environ.get("PLAYERBOTS_ENGINE", "r40250").strip().lower()
 ENGINE_MT2009 = PANEL_ENGINE == "mt2009"
+# The bag's pages as the client draws them: forty-five cells a page, two
+# pages on r40250 and four on the mt2009 line since 2.0.74 (cells 90-179,
+# with the horse's page moved to 180). What lies past them - the horse's
+# page, the belt's cells - is no bag page, and pos % 45 drew it over page II.
+INVENTORY_PAGE_SIZE = 45
+INVENTORY_PAGES = 4 if ENGINE_MT2009 else 2
 # Four /manage controls (target bot count, per-map respawn, student chest
 # toggle, +9 refine announcements) read/write quest and wiring files this
 # panel's own patch_*.py scripts (or, for +9 announcements, a hand-added
@@ -468,6 +481,52 @@ def honor_rank(value):
     return {"points": points, "title": "Acımasız", "css": "cruel"}
 
 
+# playerbot_status.tsv, read by its header: Iwakura's personalities (2.0.85)
+# put four columns (persona, mood, mood_lock, lock_level) before the status
+# text, which stays last because it may hold spaces. A core of before that
+# writes the old fourteen columns under a header too; with no header at all
+# the old fourteen are assumed.
+STATUS_LEGACY_COLUMNS = ("pid", "personality", "ambition", "role", "in_party", "goal", "action",
+                         "updated_ms", "map", "x", "y", "hp", "max_hp", "status")
+PERSONA_NONE = 255
+
+
+def parse_status_rows(text):
+    header = None
+    for line in text.splitlines():
+        if line.startswith("pid\t"):
+            header = line.split("\t")
+            continue
+        columns = header or STATUS_LEGACY_COLUMNS
+        values = line.split("\t", len(columns) - 1)
+        if len(values) != len(columns) or columns[-1] != "status":
+            continue
+        try:
+            numbers = {name: int(value) for name, value in zip(columns[:-1], values[:-1])}
+        except ValueError:
+            continue
+        if "pid" in numbers:
+            yield numbers, values[-1]
+
+
+def personality_label(state):
+    """The personality that claims the bot now, or the old one with the
+    PERSONA switch off."""
+    persona = state.get("persona")
+    if persona is not None:
+        return BOT_PERSONAS.get(int(persona), f"#{persona}")
+    return live_label("personality", state.get("personality"))
+
+
+def mood_label(state):
+    mood = state.get("mood")
+    if mood is None:
+        return ""
+    text = BOT_MOODS.get(int(mood), "Normalny")
+    lock = BOT_MOOD_LOCKS.get(int(state.get("mood_lock") or 0))
+    return f"{text} ({lock})" if lock else text
+
+
 def live_label(field, value):
     labels = {"personality": BOT_PERSONALITIES, "ambition": BOT_AMBITIONS, "goal": BOT_GOALS, "action": BOT_ACTIONS}.get(field, {})
     value = int(value or 0)
@@ -673,13 +732,90 @@ def live_statuses():
             try:
                 if datetime.now().timestamp() - path.stat().st_mtime > 25:
                     continue
-                for line in path.read_text(encoding="cp1250", errors="replace").splitlines()[1:]:
-                    values = line.split("\t", 13)
-                    if len(values) == 14:
-                        result[int(values[0])] = {"personality": int(values[1]), "ambition": int(values[2]), "role": int(values[3]), "in_party": bool(int(values[4])), "goal": int(values[5]), "action": int(values[6]), "updated_ms": int(values[7]), "map_index": int(values[8]), "x": int(values[9]), "y": int(values[10]), "hp": int(values[11]), "max_hp": int(values[12]), "status": values[13]}
+                # Kanal z nazwy katalogu (var/channelN/<rdzen>/): jeden plik to
+                # jeden rdzen jednego kanalu, a bot jest naraz tylko na jednym.
+                channel = 1
+                for part in path.parts:
+                    if part.startswith("channel") and part[7:].isdigit():
+                        channel = int(part[7:])
+                for n, status in parse_status_rows(path.read_text(encoding="cp1250", errors="replace")):
+                    persona = n.get("persona", PERSONA_NONE)
+                    mood = n.get("mood", PERSONA_NONE)
+                    result[n["pid"]] = {"personality": n.get("personality", 0), "ambition": n.get("ambition", 0), "role": n.get("role", 0), "in_party": bool(n.get("in_party", 0)), "goal": n.get("goal", 0), "action": n.get("action", 0), "updated_ms": n.get("updated_ms", 0), "map_index": n.get("map", 0), "x": n.get("x", 0), "y": n.get("y", 0), "hp": n.get("hp", 0), "max_hp": n.get("max_hp", 0),
+                                        "persona": None if persona == PERSONA_NONE else persona, "mood": None if mood == PERSONA_NONE else mood,
+                                        "mood_lock": n.get("mood_lock", 0), "lock_level": n.get("lock_level", 0), "status": status, "channel": channel}
             except (OSError, ValueError):
                 continue
     return result
+
+
+def guild_statuses():
+    """Scal raporty rdzeni Playerbots (odświeżane co minutę).
+    Pola wspólne gildii bierzemy raz; botów online i exp sumujemy ze wszystkich
+    rdzeni, bo każdy rdzeń widzi tylko własną część świata."""
+    gathered, newest = {}, 0.0
+    for pattern in GUILD_STATUS_GLOBS:
+        for path in Path("/").glob(pattern.lstrip("/")):
+            try:
+                mtime = path.stat().st_mtime
+                lines = path.read_text(encoding="cp1250", errors="replace").splitlines()
+            except OSError:
+                continue
+            if not lines:
+                continue
+            newest = max(newest, mtime)
+            columns = lines[0].rstrip("\r").split("\t")
+            for line in lines[1:]:
+                values = line.rstrip("\r").split("\t")
+                if len(values) < len(columns):
+                    continue
+                row = dict(zip(columns, values))
+                try:
+                    gid, online = int(row.get("guild_id", 0)), int(row.get("online", 0))
+                    strength, offered = int(row.get("avg_strength", 0)), int(row.get("exp_offered_here", 0))
+                except ValueError:
+                    continue
+                if gid <= 0:
+                    continue
+                guild = gathered.get(gid)
+                if guild is None:
+                    guild = {"id": gid, "name": row.get("name", ""), "online": 0,
+                             "strength_sum": 0, "exp_offered": 0, "master": row.get("master", ""),
+                             "war_with": row.get("war_with", ""), "next_war_in_s": None}
+                    for key in ("empire", "tier", "level", "members", "master_pid", "ladder", "wins", "draws", "losses", "war_score", "war_enemy_score"):
+                        try: guild[key] = int(row.get(key, 0))
+                        except ValueError: guild[key] = 0
+                    gathered[gid] = guild
+                guild["online"] += online
+                guild["strength_sum"] += strength * online
+                guild["exp_offered"] += offered
+                if not guild["master"] and row.get("master"):
+                    guild["master"] = row["master"]
+                if not guild["war_with"] and row.get("war_with"):
+                    guild["war_with"] = row["war_with"]
+                try: next_war = int(row.get("next_war_in_s", -1))
+                except ValueError: next_war = -1
+                previous = guild["next_war_in_s"]
+                if next_war >= 0 and (previous is None or previous < 0 or next_war < previous):
+                    guild["next_war_in_s"] = next_war
+    if not gathered or time.time() - newest > 300:
+        return [], None
+    result = []
+    for guild in gathered.values():
+        guild["avg_strength"] = guild["strength_sum"] // guild["online"] if guild["online"] else 0
+        guild["tier_label"] = GUILD_TIERS.get(guild["tier"], "Sıradan")
+        result.append(guild)
+    result.sort(key=lambda g: (g["tier"], -g["level"], -g["members"], g["name"].casefold()))
+    return result, newest
+
+
+def guild_war_text(seconds):
+    if seconds is None or seconds < 0:
+        return "planlanmadı"
+    if seconds == 0:
+        return "şu anda sürüyor"
+    minutes = max(1, (seconds + 59) // 60)
+    return f"yaklaşık {minutes} dk sonra"
 
 
 def live_map_counts():
@@ -720,7 +856,8 @@ def live_bots():
             # The free-text status is diagnostic and can be stale; action is the authoritative core state.
             result.append({
                 **bot, **state,
-                "personality_label": live_label("personality", state["personality"]),
+                "personality_label": personality_label(state),
+                "mood_label": mood_label(state),
                 "ambition_label": live_label("ambition", state["ambition"]),
                 "goal_label": live_label("goal", state["goal"]),
                 "action_label": live_label("action", state["action"]),
@@ -729,6 +866,30 @@ def live_bots():
             })
     return result
 
+
+
+def fishing_diagnostics():
+    bots = live_bots()
+    anglers = [bot for bot in bots if int(bot.get("action") or 0) == 14]
+    matches = []
+    for path in Path("/opt/metin2/var").glob("channel*/*/syslog"):
+        try:
+            with path.open("rb") as handle:
+                handle.seek(max(0, path.stat().st_size - 262144))
+                text = handle.read().decode("latin-1", "ignore")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if re.search(r"fish|fishing|w[ęe]dk|rod", line, re.I):
+                matches.append({"core": path.parent.name, "line": line[-300:]})
+    database_events = 0
+    try:
+        found = one("SELECT COUNT(*) AS total FROM log.log WHERE how LIKE %s OR hint LIKE %s", ("%FISH%", "%FISH%"))
+        database_events = int(found.get("total") or 0) if found else 0
+    except pymysql.MySQLError:
+        pass
+    return {"weights": read_ai_weights(), "online": len(bots), "anglers": anglers,
+            "log_matches": matches[-80:], "database_events": database_events}
 
 def read_rates():
     values = {name: 100 for name in RATE_NAMES}
@@ -858,9 +1019,16 @@ def playerbots_release_status():
     installed_key, latest_key = version_key(installed), version_key(latest)
     if installed_key and latest_key:
         behind = installed_key < latest_key
+        if not behind:
+            tone = "current"
+        else:
+            installed_parts = (installed_key + (0, 0, 0))[:3]
+            latest_parts = (latest_key + (0, 0, 0))[:3]
+            same_release_line = installed_parts[:2] == latest_parts[:2]
+            patch_gap = latest_parts[2] - installed_parts[2]
+            tone = "warning" if same_release_line and 1 <= patch_gap <= 3 else "outdated"
         return {"installed": installed, "latest": latest, "behind": behind,
-                "tone": "outdated" if behind else "current",
-                "label": f"{latest} Mevcut" if behind else "Güncel"}
+                "tone": tone, "label": f"{latest} Mevcut" if behind else "Güncel"}
     return {"installed": installed, "latest": latest, "behind": False, "tone": "unknown",
             "label": "GitHub kontrol edilmedi" if latest_info.get("error") else "Yerel sürüm yok"}
 
@@ -900,6 +1068,116 @@ def queue_tieru_update(update_seban_panel=False):
         temporary.unlink(missing_ok=True)
 
 
+
+EVENTS_FILE = RATES_SPOOL / "playerbot_events.tsv"
+EVENT_KINDS = ("chest", "exp", "drop", "yang")
+EVENT_LABELS = {
+    "chest": "Szkatułki Blasku Księżyca",
+    "exp": "Doświadczenie",
+    "drop": "Drop przedmiotów",
+    "yang": "Yang",
+}
+EVENT_DAY_NAMES = ("Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd")
+EVENT_NOW_MINUTES = (15, 30, 60, 120, 180, 360)
+EVENT_HHMM = re.compile(r"^([01]?\d|2[0-4]):([0-5]\d)$")
+
+
+def event_hhmm(text):
+    match = EVENT_HHMM.match((text or "").strip())
+    if not match:
+        return None
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour == 24 and minute != 0:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def read_events():
+    rows, nows = [], {}
+    try:
+        lines = EVENTS_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return rows, nows
+    for line in lines:
+        line = line.rstrip("\r")
+        if not line.strip():
+            continue
+        enabled = True
+        if line.startswith("#off\t"):
+            enabled, line = False, line[5:]
+        elif line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) >= 4 and fields[0] == "now" and fields[1] in EVENT_KINDS:
+            try:
+                nows[fields[1]] = {"until": int(fields[2]), "value": int(fields[3])}
+            except ValueError:
+                pass
+            continue
+        if len(fields) < 5 or fields[0] not in EVENT_KINDS:
+            continue
+        start, end = event_hhmm(fields[2]), event_hhmm(fields[3])
+        if not start or not end:
+            continue
+        try:
+            value = int(fields[4])
+        except ValueError:
+            value = 0
+        days = list(range(1, 8)) if fields[1] == "*" else [day for day in range(1, 8) if str(day) in fields[1].split(",")]
+        rows.append({"kind": fields[0], "days": days, "start": start, "end": end,
+                     "value": value, "on": enabled})
+    return rows, nows
+
+
+def write_events(rows, nows):
+    RATES_SPOOL.mkdir(parents=True, exist_ok=True)
+    body = [
+        "# Metin2 Playerbots -- timed events, written by Seban Panel.",
+        "# kind<TAB>days<TAB>from<TAB>to<TAB>value | now<TAB>kind<TAB>until_epoch<TAB>value",
+        "# days: * or 1..7 (1 = Monday); #off keeps a disabled plan row.",
+        "",
+    ]
+    for row in rows:
+        days = "*" if len(row["days"]) == 7 else (",".join(str(day) for day in row["days"]) or "-")
+        line = "%s\t%s\t%s\t%s\t%d" % (row["kind"], days, row["start"], row["end"], int(row["value"]))
+        body.append(line if row.get("on", True) else "#off\t" + line)
+    for kind in EVENT_KINDS:
+        now_event = nows.get(kind)
+        if now_event and int(now_event.get("until", 0)) > time.time():
+            body.append("now\t%s\t%d\t%d" % (kind, int(now_event["until"]), int(now_event.get("value", 0))))
+    temporary = EVENTS_FILE.with_suffix(".tsv.new")
+    temporary.write_text("\n".join(body) + "\n", encoding="utf-8")
+    os.replace(temporary, EVENTS_FILE)
+
+
+def read_events_status():
+    newest, newest_written = {}, 0
+    for path in Path("/opt/metin2/var/channel1").glob("*/playerbot_events_status.tsv"):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        current, written = {}, 0
+        for line in lines[1:]:
+            fields = line.rstrip("\r").split("\t")
+            if len(fields) < 8 or fields[0] not in EVENT_KINDS:
+                continue
+            try:
+                current[fields[0]] = {"scheduled": fields[1] == "1", "active": fields[2] == "1", "value": int(fields[3]), "until": int(fields[4]), "next_start": int(fields[5]), "next_value": int(fields[6])}
+                written = int(fields[7])
+            except ValueError:
+                continue
+        if current and written > newest_written:
+            newest, newest_written = current, written
+    if not newest or time.time() - newest_written > 300:
+        return {}
+    for item in newest.values():
+        for key in ("until", "next_start"):
+            stamp = item.get(key, 0)
+            if stamp:
+                item[key + "_text"] = time.strftime("%H:%M" if time.localtime(stamp).tm_yday == time.localtime().tm_yday else "%d.%m %H:%M", time.localtime(stamp))
+    return newest
+
 def read_ai_weights():
     """Read Tieru's live Playerbots goal weights; absent entries are neutral."""
     values = {key: AI_WEIGHT_NEUTRAL for key, _, _ in AI_WEIGHT_KEYS}
@@ -910,7 +1188,7 @@ def read_ai_weights():
             if len(fields) >= 2 and fields[0].upper() in values:
                 try:
                     key, raw_value = fields[0].upper(), fields[1]
-                    if key in ("CHAT", "BOOKS", "NIGHT"):
+                    if key in ("CHAT", "BOOKS", "NIGHT", "LIFE", "WARS", "ISHOP"):
                         values[key] = 0 if raw_value.lower() in ("0", "off", "no") else 1
                     elif key in ("SCRAP", "REST"):
                         values[key] = max(0, min(100, int(raw_value)))
@@ -954,6 +1232,9 @@ def write_ai_weights(values):
     content.append(f"CHAT\t{1 if values.get('CHAT', 1) else 0}")
     content.append(f"BOOKS\t{1 if values.get('BOOKS', 1) else 0}")
     content.append(f"NIGHT\t{1 if values.get('NIGHT', 1) else 0}")
+    content.append(f"LIFE\t{1 if values.get('LIFE', 0) else 0}")
+    content.append(f"WARS\t{1 if values.get('WARS', 1) else 0}")
+    content.append(f"ISHOP\t{1 if values.get('ISHOP', 1) else 0}")
     content.append(f"SCRAP\t{max(0, min(100, int(values.get('SCRAP', 0))))}")
     content.append(f"REST\t{max(0, min(100, int(values.get('REST', 100))))}")
     for key in ("CHEST", "CHEST_STONE"):
@@ -1031,6 +1312,26 @@ def persist_rates_mt2009(values):
         except pymysql.MySQLError:
             pass
         connection.commit()
+
+
+def read_spawn_plan():
+    values = read_spool_values(UPDATE_SPOOL / "spawn-plan.status")
+    def number(key, default):
+        try:
+            return int(values.get(key, default))
+        except (TypeError, ValueError):
+            return default
+    return {"window": max(1, min(180, number("window", 1))), "late_joiners": max(0, min(2500, number("late_joiners", 0))), "late_hours": max(1, min(168, number("late_hours", 24))), "state": values.get("state", "gotowy"), "message": values.get("message", "")}
+
+
+def queue_spawn_plan(window, late_joiners, late_hours):
+    stamp = int(time.time() * 1000)
+    UPDATE_SPOOL.mkdir(parents=True, exist_ok=True)
+    body = f"id=seban-spawn-{stamp}\nwindow={window}\nlate_joiners={late_joiners}\nlate_hours={late_hours}\ntime={int(time.time())}\n"
+    temporary = UPDATE_SPOOL / "spawn-plan.request.new"
+    temporary.write_text(body, encoding="utf-8")
+    os.replace(temporary, UPDATE_SPOOL / "spawn-plan.request")
+    (UPDATE_SPOOL / "spawn-plan.status").write_text(f"state=oczekuje\ntime={int(time.time())}\nwindow={window}\nlate_joiners={late_joiners}\nlate_hours={late_hours}\nmessage=Plan wejścia zapisany; oczekiwanie na restart gry.\n", encoding="utf-8")
 
 
 def read_bot_count():
@@ -1704,20 +2005,24 @@ def players():
 @login_required
 def guilds():
     query = request.args.get("q", "").strip()
-    filters, args = "", []
+    roster, written_at = guild_statuses()
     if query:
-        filters = "WHERE g.name LIKE %s OR leader.name LIKE %s"
-        args = [f"%{query}%", f"%{query}%"]
-    roster = rows(f"""SELECT g.id,g.name,g.level,g.exp,g.sp,g.win,g.draw,g.loss,g.ladder_point,g.gold,
-                     leader.id AS leader_id,leader.name AS leader_name,leader.level AS leader_level,
-                     COUNT(gm.pid) AS member_count
-                     FROM player.guild g
-                     LEFT JOIN player.player leader ON leader.id=g.master
-                     LEFT JOIN player.guild_member gm ON gm.guild_id=g.id
-                     {filters}
-                     GROUP BY g.id,g.name,g.level,g.exp,g.sp,g.win,g.draw,g.loss,g.ladder_point,g.gold,leader.id,leader.name,leader.level
-                     ORDER BY g.level DESC,member_count DESC,g.name ASC LIMIT 250""", args)
-    return render_template("guilds.html", guilds=roster, query=query)
+        needle = query.casefold()
+        roster = [g for g in roster if needle in g["name"].casefold() or needle in g["master"].casefold()]
+    next_wars = {}
+    for guild in roster:
+        empire, seconds = guild.get("empire", 0), guild.get("next_war_in_s")
+        if empire not in EMPIRES or seconds is None:
+            continue
+        old = next_wars.get(empire)
+        if old is None or (seconds >= 0 and (old < 0 or seconds < old)):
+            next_wars[empire] = seconds
+    summary = {"guilds": len(roster), "online": sum(g["online"] for g in roster),
+               "wars": sum(1 for g in roster if g["war_with"]),
+               "exp": sum(g["exp_offered"] for g in roster)}
+    return render_template("guilds.html", guilds=roster, query=query, summary=summary,
+                           next_wars=[{"empire": empire, "text": guild_war_text(seconds)} for empire, seconds in sorted(next_wars.items())],
+                           status_written_at=datetime.fromtimestamp(written_at).strftime("%H:%M") if written_at else None)
 
 
 @app.route("/guild/<int:guild_id>")
@@ -1972,7 +2277,10 @@ def player(pid):
     live = live_statuses().get(pid)
     if live:
         character.update(live)
-        character["personality"] = live_label("personality", live.get("personality"))
+        character["personality"] = personality_label(live)
+        character["charakter"] = live_label("personality", live.get("personality")) if live.get("persona") is not None else ""
+        character["mood"] = mood_label(live)
+        character["hold"] = f"blokada expa na {live['lock_level']} lvl" if live.get("persona") is not None and live.get("lock_level") else ""
         character["ambition"] = live_label("ambition", live.get("ambition"))
         character["goal"] = live_label("goal", live.get("goal"))
         character["action"] = live.get("status") or live_label("action", live.get("action"))
@@ -2049,7 +2357,7 @@ def player(pid):
         item["bonuses"] += [apply_text(item.get(f"attrtype{i}"), item.get(f"attrvalue{i}")) for i in range(7) if item.get(f"attrtype{i}") and item.get(f"attrvalue{i}")]
         if item["window"] == "EQUIPMENT" and item["pos"] in equipment_slots:
             equipment[equipment_slots[item["pos"]]] = item
-        elif item["window"] == "INVENTORY":
+        elif item["window"] == "INVENTORY" and int(item["pos"] or 0) < INVENTORY_PAGE_SIZE * INVENTORY_PAGES:
             inventory.append(item)
     socket_vnums = sorted({int(item.get(f"socket{i}") or 0) for item in [*items, *safebox] for i in range(3) if int(item.get(f"socket{i}") or 0) > 0})
     stone_defs = {}
@@ -2068,8 +2376,8 @@ def player(pid):
     gear_history = bot_gear_history(pid)
     offline_shop = bot_offline_shop(pid)
     character_stats = character_stat_summary(pid)
-    # Client uiinventory.py: page I begins at slot 0 and page II at slot 45.
-    return render_template("player.html", character=character, equipment=equipment, inventory=inventory, safebox=safebox, has_inventory_page_two=any(int(item["pos"] or 0) >= 45 for item in inventory), has_safebox=bool(safebox), gear_history=gear_history, offline_shop=offline_shop, character_stats=character_stats)
+    # Client uiinventory.py: a page every 45 cells, page I at slot 0.
+    return render_template("player.html", character=character, equipment=equipment, inventory=inventory, safebox=safebox, inventory_pages=INVENTORY_PAGES, has_safebox=bool(safebox), gear_history=gear_history, offline_shop=offline_shop, character_stats=character_stats)
 
 
 # VIP and "Dragon Coins" both turned out to be real, already-working engine
@@ -2425,6 +2733,7 @@ def recent_shop_sales(limit=10):
             "icon_url": item_icon_url(r["vnum"]),
             "qty": qty, "price": price,
             "seller": (seller or {}).get("name") or f"pid {r['who']}",
+            "seller_id": int(r["who"]),
             "empire": int((seller or {}).get("empire") or 0),
             "map_name": map_name(map_index) if map_index is not None else "—",
         })
@@ -2828,14 +3137,118 @@ def season():
     return render_template("season.html", weekly=weekly, records=records)
 
 
+
+
+
+@app.route("/economy/itemshop")
+@login_required
+def economy_itemshop():
+    totals = one("""SELECT COALESCE(SUM(cash),0) cash,COALESCE(SUM(cash_mark),0) mileage,
+                       SUM(cash>0) cash_accounts,SUM(cash_mark>0) mileage_accounts
+                    FROM account.account WHERE status IN ('OK','BLOCK')""") or {}
+    top_cash = rows("""SELECT id,login,cash,cash_mark AS mileage FROM account.account
+                       WHERE status IN ('OK','BLOCK') AND cash>0 ORDER BY cash DESC,id ASC LIMIT 15""")
+    top_mileage = rows("""SELECT id,login,cash,cash_mark AS mileage FROM account.account
+                          WHERE status IN ('OK','BLOCK') AND cash_mark>0 ORDER BY cash_mark DESC,id ASC LIMIT 10""")
+    purchases = rows("""SELECT COALESCE(p.name,CONCAT('PID ',l.pid)) buyer_name,
+                        COALESCE(ip.locale_name,CONCAT('VNUM ',l.vnum)) item_name,
+                        l.time date_of_buy,l.vnum vnum_icon
+                        FROM log.itemshop l
+                        LEFT JOIN player.player p ON p.id=l.pid
+                        LEFT JOIN player.item_proto ip ON ip.vnum=l.vnum
+                        ORDER BY l.time DESC LIMIT 80""")
+    popular = rows("""SELECT l.vnum,COALESCE(ip.locale_name,CONCAT('VNUM ',l.vnum)) item_name,
+                      COUNT(*) total FROM log.itemshop l
+                      LEFT JOIN player.item_proto ip ON ip.vnum=l.vnum
+                      GROUP BY l.vnum,ip.locale_name ORDER BY total DESC,item_name LIMIT 10""")
+    daily = rows("""SELECT DATE_FORMAT(time,'%%d.%%m') label,COUNT(*) total
+                    FROM log.itemshop WHERE time>=NOW()-INTERVAL 14 DAY
+                    GROUP BY DATE(time) ORDER BY DATE(time)""")
+    for row in purchases + popular:
+        row["item_name"] = game_text(row.get("item_name"))
+    return render_template("economy_itemshop.html", totals=totals, top_cash=top_cash,
+                           top_mileage=top_mileage, purchases=purchases, popular=popular,
+                           daily=daily)
+
+@app.route("/diagnostics")
+@login_required
+def diagnostics():
+    return render_template("diagnostics.html", diagnostic=fishing_diagnostics())
+
+@app.route("/events", methods=["GET", "POST"])
+@login_required
+def events():
+    rows, nows = read_events()
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "save":
+            new_rows = []
+            for index in range(16):
+                kind = request.form.get(f"r{index}_kind")
+                if kind is None:
+                    break
+                if kind not in EVENT_KINDS or request.form.get(f"r{index}_delete"):
+                    continue
+                start = event_hhmm(request.form.get(f"r{index}_start"))
+                end = event_hhmm(request.form.get(f"r{index}_end"))
+                try:
+                    value = max(0, min(1000, int(request.form.get(f"r{index}_value") or 0)))
+                except ValueError:
+                    value = -1
+                if not start or not end or start == "24:00" or value < 0:
+                    flash(f"Wiersz {index + 1}: podaj poprawne godziny i wartość 0–1000%.", "error")
+                    return redirect(url_for("events"))
+                days = [day for day in range(1, 8) if request.form.get(f"r{index}_d{day}")]
+                new_rows.append({"kind": kind, "days": days, "start": start, "end": end,
+                                 "value": 0 if kind == "chest" else value,
+                                 "on": bool(request.form.get(f"r{index}_on"))})
+            try:
+                write_events(new_rows, nows)
+            except OSError:
+                flash("Nie udało się zapisać harmonogramu eventów.", "error")
+            else:
+                flash("Harmonogram zapisany. Rdzeń zastosuje go w ciągu pięciu sekund.", "success")
+            return redirect(url_for("events"))
+        kind = request.form.get("kind", "")
+        if kind not in EVENT_KINDS:
+            return redirect(url_for("events"))
+        if action == "now":
+            try:
+                minutes = max(5, min(1440, int(request.form.get("minutes") or 60)))
+                value = max(1, min(1000, int(request.form.get("value") or 50)))
+            except ValueError:
+                minutes, value = 60, 50
+            nows[kind] = {"until": int(time.time()) + minutes * 60, "value": 0 if kind == "chest" else value}
+            write_events(rows, nows)
+            flash(f"Event aktywowany na {minutes} min. Rdzeń odczyta go w ciągu pięciu sekund.", "success")
+        elif action == "stop":
+            nows.pop(kind, None)
+            write_events(rows, nows)
+            flash("Natychmiastowy event został zatrzymany.", "success")
+        return redirect(url_for("events"))
+    shown = list(rows) + [{"kind": "", "days": list(range(1, 8)), "start": "20:00", "end": "21:00", "value": 50, "on": True} for _ in range(max(0, 4 - len(rows)))]
+    return render_template("events.html", rows=shown, nows=nows, status=read_events_status(),
+                           event_kinds=EVENT_KINDS, event_labels=EVENT_LABELS,
+                           day_names=EVENT_DAY_NAMES, now_minutes=EVENT_NOW_MINUTES,
+                           now_epoch=int(time.time()))
+
 @app.route("/manage")
 @login_required
 def manage():
     map_counts = live_map_counts()
     current_settings = settings()
+    # Ile botow na ktorym kanale - z drugim kanalem wlaczonym sama suma nie
+    # mowi, czy podzial wyszedl ("warto by dodac statystyke ile jest botow na
+    # CH1 a ile na CH2", hunmar, 19 wrzesnia). Bez drugiego kanalu wszystko
+    # jest na pierwszym i rozbicie sie nie pokazuje.
+    bots = live_bots()
+    per_channel = {}
+    for bot in bots:
+        per_channel[int(bot.get("channel") or 1)] = per_channel.get(int(bot.get("channel") or 1), 0) + 1
+    bot_channels = sorted(per_channel.items()) if len(per_channel) > 1 else []
     updater = update_status()
     updater["protected"] = current_settings.get("auth_enabled") == "1" and bool(session.get("seban_admin"))
-    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=current_settings, map_counts=map_counts, bot_count=len(live_bots()), map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status(), server_settings=server_settings_status(), updater=updater, playerbots_release=playerbots_release_status(), update_csrf=update_csrf_token(), bot_count_wanted=read_bot_count() if CUSTOM_PATCHES_ENABLED else 0, student_chest_disabled=read_student_chest_disabled() if CUSTOM_PATCHES_ENABLED else False, custom_patches_enabled=CUSTOM_PATCHES_ENABLED, include_real_players=include_real_players_in_rankings(), announce_plus9=read_announce_plus9_refines())
+    return render_template("manage.html", rates=read_rates(), ai_weights=read_ai_weights(), ai_weight_keys=AI_WEIGHT_KEYS, restart=restart_progress(), settings=current_settings, map_counts=map_counts, bot_count=len(bots), bot_channels=bot_channels, map_respawn_options=MAP_RESPAWN_OPTIONS, map_stone_respawn_ids=MAP_STONE_RESPAWN_IDS, map_respawn_status=read_map_regen_status(), server_settings=server_settings_status(), updater=updater, playerbots_release=playerbots_release_status(), update_csrf=update_csrf_token(), bot_count_wanted=read_bot_count() if CUSTOM_PATCHES_ENABLED else 0, spawn_plan=read_spawn_plan(), student_chest_disabled=read_student_chest_disabled() if CUSTOM_PATCHES_ENABLED else False, custom_patches_enabled=CUSTOM_PATCHES_ENABLED, include_real_players=include_real_players_in_rankings(), announce_plus9=read_announce_plus9_refines())
 
 
 @app.post("/manage/update")
@@ -2948,6 +3361,32 @@ def manage_restart_config():
     return redirect(url_for("manage"))
 
 
+@app.post("/manage/spawn-plan")
+@login_required
+def manage_spawn_plan():
+    # The request file this writes is read by Seban's own updater watcher,
+    # which this image does not ship - the same gate as the bot count.
+    if not CUSTOM_PATCHES_ENABLED:
+        flash("Plan wejścia botów wymaga skryptów gry z integracji Sebana, których ten serwer nie ma; ustaw go w launcherze (LICZBA BOTÓW) albo w .env.", "error")
+        return redirect(url_for("manage"))
+    try:
+        window = int(request.form.get("spawn_window_minutes", ""))
+        late_joiners = int(request.form.get("late_joiners", ""))
+        late_hours = int(request.form.get("late_join_hours", ""))
+        if not 1 <= window <= 180:
+            raise ValueError("Okno wejścia musi mieścić się w zakresie 1–180 minut.")
+        if not 0 <= late_joiners <= 2500:
+            raise ValueError("Liczba dodatkowych botów musi mieścić się w zakresie 0–2500.")
+        if not 1 <= late_hours <= 168:
+            raise ValueError("Okres późnego wejścia musi mieścić się w zakresie 1–168 godzin.")
+        queue_spawn_plan(window, late_joiners, late_hours)
+    except (TypeError, ValueError, OSError) as exc:
+        flash(str(exc) or "Nie udało się zapisać planu wejścia.", "error")
+    else:
+        flash("Plan wejścia zapisany. Kontener gry zostanie odtworzony z nowymi ustawieniami.")
+    return redirect(url_for("manage"))
+
+
 @app.post("/manage/student-chest")
 @login_required
 def manage_student_chest():
@@ -3047,6 +3486,8 @@ def manage_behavior():
     values["CHAT"] = 1 if "1" in request.form.getlist("CHAT") else 0
     # Preserve the existing switch for a form opened before this field existed.
     values["BOOKS"] = 1 if "BOOKS" not in request.form else (1 if "1" in request.form.getlist("BOOKS") else 0)
+    for key, default in (("LIFE", 0), ("WARS", 1), ("ISHOP", 1)):
+        values[key] = default if key not in request.form else (1 if "1" in request.form.getlist(key) else 0)
     try:
         values["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", values.get("SCRAP", 0)))))
     except (TypeError, ValueError):

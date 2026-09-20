@@ -107,6 +107,9 @@ namespace
 	// author's town; zero is the operator who wants every bot hunting, asked
 	// for by name. The level floor beside it is PLAYERBOT_TOWN_REST_MIN_LEVEL.
 	int s_iPlayerBotRestPercent = 100;
+	// The manager tick's time budget per pass, in milliseconds (TICK_MS; see
+	// PLAYERBOT_TICK_BUDGET_MS_DEFAULT). Zero is no budget.
+	int s_iPlayerBotTickBudgetMs = PLAYERBOT_TICK_BUDGET_MS_DEFAULT;
 	// Percent of the bots that will pick a fight with a bot of another kingdom.
 	// Zero is off, and the default, and that is deliberate: this changes how the
 	// world behaves towards itself rather than how one bot spends its time, so
@@ -136,6 +139,22 @@ namespace
 	// CPlayerBotManager::ManageLifeSchedule. Off until the panel says so.
 	bool s_bPlayerBotLifeSchedule = false;
 	bool s_bPlayerBotLifeScheduleReported = false;
+	// Guild wars between the bots' guilds (the WARS key), playerbot_guild_war.h.
+	bool s_bPlayerBotGuildWars = true;
+	bool s_bPlayerBotGuildWarsReported = true;
+	// The bot guilds' Demon Tower raids (the TOWER key), playerbot_demon_tower.h.
+	bool s_bPlayerBotTowerRaids = true;
+	bool s_bPlayerBotTowerRaidsReported = true;
+	// The bots' ItemShop purchases (the ISHOP key), playerbot_itemshop.h.
+	bool s_bPlayerBotItemShop = true;
+	bool s_bPlayerBotItemShopReported = true;
+	// Iwakura's personality system (the PERSONA key): moods, the personalities
+	// that follow a bot's situation, the Grinder's experience locks and the
+	// Law of Advancement (playerbot_persona.h). On by default - the operator
+	// asked for it (19 September) - and the switch is the way back to the
+	// world as it was, whole, while a world is running.
+	bool s_bPlayerBotPersona = true;
+	bool s_bPlayerBotPersonaReported = true;
 	// What the clock last asked the DB core for, so a request is not repeated
 	// every minute while the round trip is still in flight, and so switching
 	// the clock off in the middle of a night lowers the flag it raised.
@@ -163,6 +182,17 @@ namespace
 		return PLAYERBOT_WEIGHT_DEFAULT_PATH;
 	}
 
+	// playerbot_events.h: whether the chest gate is holding the engine's chest
+	// figures at zero right now - it is whenever no chest event runs.
+	bool IsPlayerBotChestGateClosed();
+	// The sliders' figure (CONFIG's until a weights file names one), which is
+	// what the gate opens the drop to - never the engine's variable, which
+	// the gate itself may be holding at zero.
+	int GetPlayerBotChestConfigPermille(bool stone)
+	{
+		return stone ? s_iPlayerBotChestStoneConfigPermille : s_iPlayerBotChestConfigPermille;
+	}
+
 	void ResetPlayerBotWeights()
 	{
 		++s_dwPlayerBotWeightsGeneration;
@@ -171,18 +201,30 @@ namespace
 		s_bPlayerBotOverheadChat = true;
 		s_iPlayerBotScrapPercent = 0;
 		s_iPlayerBotRestPercent = 100;
+		s_iPlayerBotTickBudgetMs = PLAYERBOT_TICK_BUDGET_MS_DEFAULT;
 		s_iPlayerBotKingdomPvpPercent = 0;
 		s_iPlayerBotScrollFromPlus = 1;
 		s_bPlayerBotFastBooks = true;
 		s_bPlayerBotNight = true;
 		s_bPlayerBotLifeSchedule = false;
+		s_bPlayerBotGuildWars = true;
+		s_bPlayerBotTowerRaids = true;
+		s_bPlayerBotItemShop = true;
+		s_bPlayerBotPersona = true;
 		if (s_iPlayerBotChestConfigPermille < 0)
 		{
 			s_iPlayerBotChestConfigPermille = g_iMoonlightChestPermille;
 			s_iPlayerBotChestStoneConfigPermille = g_iMoonlightChestStonePermille;
 		}
-		g_iMoonlightChestPermille = s_iPlayerBotChestConfigPermille;
-		g_iMoonlightChestStonePermille = s_iPlayerBotChestStoneConfigPermille;
+		// While a chest window holds the engine's figures shut
+		// (playerbot_events.h) the sliders' figure is kept here and the gate
+		// puts it back when the window opens; writing it now opened the drop
+		// for up to a second on every save of the weights file.
+		if (!IsPlayerBotChestGateClosed())
+		{
+			g_iMoonlightChestPermille = s_iPlayerBotChestConfigPermille;
+			g_iMoonlightChestStonePermille = s_iPlayerBotChestStoneConfigPermille;
+		}
 		s_bPlayerBotChestFromFile = false;
 		s_bPlayerBotWeightsInitialised = true;
 	}
@@ -261,15 +303,64 @@ namespace
 			s_bPlayerBotLifeSchedule = enabled;
 			return;
 		}
+		if (PlayerBotWeightNameEquals(szKey, "WARS"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotGuildWarsReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: guild wars %s", enabled ? "on" : "off");
+				s_bPlayerBotGuildWarsReported = enabled;
+			}
+			s_bPlayerBotGuildWars = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "TOWER"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotTowerRaidsReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: tower raids %s", enabled ? "on" : "off");
+				s_bPlayerBotTowerRaidsReported = enabled;
+			}
+			s_bPlayerBotTowerRaids = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "ISHOP"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotItemShopReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: itemshop %s", enabled ? "on" : "off");
+				s_bPlayerBotItemShopReported = enabled;
+			}
+			s_bPlayerBotItemShop = enabled;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "PERSONA"))
+		{
+			const bool enabled = value != 0;
+			if (enabled != s_bPlayerBotPersonaReported)
+			{
+				sys_log(0, "PLAYERBOT_CONFIG: personalities (Iwakura v2) %s", enabled ? "on" : "off");
+				s_bPlayerBotPersonaReported = enabled;
+			}
+			s_bPlayerBotPersona = enabled;
+			return;
+		}
 		if (PlayerBotWeightNameEquals(szKey, "CHEST") || PlayerBotWeightNameEquals(szKey, "CHEST_STONE"))
 		{
 			const int permille = value < 0 ? 0 : (value > 1000 ? 1000 : (int)value);
-			int& target = PlayerBotWeightNameEquals(szKey, "CHEST")
-					? g_iMoonlightChestPermille : g_iMoonlightChestStonePermille;
-			if (target != permille)
-				sys_log(0, "PLAYERBOT_CONFIG: moonlight chest %s %d -> %d permille",
-						PlayerBotWeightNameEquals(szKey, "CHEST") ? "kill" : "stone", target, permille);
-			target = permille;
+			const bool stone = !PlayerBotWeightNameEquals(szKey, "CHEST");
+			int& wanted = stone ? s_iPlayerBotChestStoneConfigPermille : s_iPlayerBotChestConfigPermille;
+			if (wanted != permille)
+				sys_log(0, "PLAYERBOT_CONFIG: moonlight chest %s %d -> %d permille%s",
+						stone ? "stone" : "kill", wanted, permille,
+						IsPlayerBotChestGateClosed() ? " (held shut until the chest window)" : "");
+			wanted = permille;
+			// The engine's variable only while no chest window holds it shut:
+			// the gate (playerbot_events.h) reads the figure kept above.
+			if (!IsPlayerBotChestGateClosed())
+				(stone ? g_iMoonlightChestStonePermille : g_iMoonlightChestPermille) = permille;
 			s_bPlayerBotChestFromFile = true;
 			return;
 		}
@@ -287,6 +378,14 @@ namespace
 			if (percent != s_iPlayerBotRestPercent)
 				sys_log(0, "PLAYERBOT_CONFIG: town rest %d%%", percent);
 			s_iPlayerBotRestPercent = percent;
+			return;
+		}
+		if (PlayerBotWeightNameEquals(szKey, "TICK_MS"))
+		{
+			const int budget = value < 0 ? 0 : (value > 1000 ? 1000 : (int)value);
+			if (budget != s_iPlayerBotTickBudgetMs)
+				sys_log(0, "PLAYERBOT_CONFIG: tick budget %d ms%s", budget, budget ? "" : " (none)");
+			s_iPlayerBotTickBudgetMs = budget;
 			return;
 		}
 		if (PlayerBotWeightNameEquals(szKey, "KINGDOMPVP"))
@@ -407,6 +506,14 @@ namespace
 			return s_bPlayerBotNight ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "LIFE"))
 			return s_bPlayerBotLifeSchedule ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "WARS"))
+			return s_bPlayerBotGuildWars ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "TOWER"))
+			return s_bPlayerBotTowerRaids ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "ISHOP"))
+			return s_bPlayerBotItemShop ? 1 : 0;
+		if (PlayerBotWeightNameEquals(szKey, "PERSONA"))
+			return s_bPlayerBotPersona ? 1 : 0;
 		if (PlayerBotWeightNameEquals(szKey, "SCRAP"))
 			return s_iPlayerBotScrapPercent;
 		if (PlayerBotWeightNameEquals(szKey, "REST"))
@@ -453,7 +560,11 @@ namespace
 		if (PlayerBotWeightNameEquals(szKey, "CHAT") ||
 				PlayerBotWeightNameEquals(szKey, "BOOKS") ||
 				PlayerBotWeightNameEquals(szKey, "NIGHT") ||
-				PlayerBotWeightNameEquals(szKey, "LIFE"))
+				PlayerBotWeightNameEquals(szKey, "LIFE") ||
+				PlayerBotWeightNameEquals(szKey, "WARS") ||
+				PlayerBotWeightNameEquals(szKey, "TOWER") ||
+				PlayerBotWeightNameEquals(szKey, "ISHOP") ||
+				PlayerBotWeightNameEquals(szKey, "PERSONA"))
 		{
 			value = value ? 1 : 0;
 			return true;
@@ -570,6 +681,80 @@ namespace
 		return true;
 	}
 
+	// ---------------------------------------------------------------------
+	//  The bots held at the door
+	// ---------------------------------------------------------------------
+	// A world that has just been made is a world whose rates, respawns and
+	// personalities nobody has set yet, and the moment the first bot walks in
+	// it is too late to set them without something having happened already
+	// (NerrVoVy, 20 September). So the migrator writes this file for a fresh
+	// world when the launcher was told to hold them, and the panel's "Wpusc
+	// boty do swiata" writes a zero into it.
+	//
+	// A file rather than a key of the weights, because the two are written by
+	// different hands at different moments and sharing one file would be a
+	// race for no reason; a file rather than an environment variable, because
+	// letting the bots in must outlive a restart of the cores, and .env cannot
+	// be edited from the panel. "1" holds, anything else - including no file
+	// at all - does not, so an install that never heard of this behaves as it
+	// always did.
+	const char* const PLAYERBOT_HOLD_PATH = "/opt/m2spool/playerbot_hold";
+	bool s_bPlayerBotSpawnHeld = false;
+	bool s_bPlayerBotSpawnHeldRead = false;
+	bool s_bPlayerBotSpawnHeldReported = false;
+	DWORD s_dwPlayerBotHoldNextCheck = 0;
+
+	void ReadPlayerBotHoldFile()
+	{
+		s_bPlayerBotSpawnHeldRead = true;
+		bool held = false;
+		FILE* fp = fopen(PLAYERBOT_HOLD_PATH, "r");
+		if (fp)
+		{
+			char line[32] = { 0 };
+			if (fgets(line, sizeof(line), fp))
+			{
+				for (size_t i = 0; i < sizeof(line) && line[i]; ++i)
+				{
+					if (line[i] == '1')
+					{
+						held = true;
+						break;
+					}
+					if (line[i] != ' ' && line[i] != '\t')
+						break;
+				}
+			}
+			fclose(fp);
+		}
+		if (held != s_bPlayerBotSpawnHeld || !s_bPlayerBotSpawnHeldReported)
+		{
+			s_bPlayerBotSpawnHeldReported = true;
+			sys_log(0, "PLAYERBOT_CONFIG: the bots are %s (%s)",
+					held ? "held at the door" : "free to come in", PLAYERBOT_HOLD_PATH);
+		}
+		s_bPlayerBotSpawnHeld = held;
+	}
+
+	// Asked by every path that would put a bot into the world. The first
+	// question reads the file itself: the bootstrap's own spawn runs before
+	// the first tick, so waiting for the clock would let a cohort in through
+	// the door this is supposed to hold shut.
+	bool IsPlayerBotSpawnHeld()
+	{
+		if (!s_bPlayerBotSpawnHeldRead)
+			ReadPlayerBotHoldFile();
+		return s_bPlayerBotSpawnHeld;
+	}
+
+	void RefreshPlayerBotHold(DWORD dwNow)
+	{
+		if (s_bPlayerBotSpawnHeldRead && dwNow < s_dwPlayerBotHoldNextCheck)
+			return;
+		s_dwPlayerBotHoldNextCheck = dwNow + PLAYERBOT_WEIGHT_RELOAD_INTERVAL;
+		ReadPlayerBotHoldFile();
+	}
+
 	// Called once per tick. Does nothing at all between checks, and nothing but
 	// a stat(2) when the file has not changed since the last one.
 	void RefreshPlayerBotWeights(DWORD dwNow)
@@ -579,6 +764,7 @@ namespace
 		if (dwNow < s_dwPlayerBotWeightNextCheck)
 			return;
 		s_dwPlayerBotWeightNextCheck = dwNow + PLAYERBOT_WEIGHT_RELOAD_INTERVAL;
+		RefreshPlayerBotHold(dwNow);
 
 		const char* szPath = GetPlayerBotWeightPath();
 		struct stat st;
@@ -772,9 +958,19 @@ namespace
 		return s_iPlayerBotRestPercent;
 	}
 
+	int GetPlayerBotTickBudgetMs()
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		return s_iPlayerBotTickBudgetMs;
+	}
+
 	// The market ledger's count of open counters on a map (playerbot_market.h,
 	// which comes long after this fragment).
 	int GetPlayerBotStallsOnMap(long lMapIndex);
+	// Whether the bot's mood lets it rest at all (playerbot_mood.h): under the
+	// PERSONA switch only a SLABY bot does.
+	bool PlayerBotMoodAllowsTownRest(LPCHARACTER ch);
 
 	// Whether this bot may stand about in town at all: in a first village, old
 	// enough, the REST key above zero, and counters on the map to stand among.
@@ -785,13 +981,17 @@ namespace
 	// to zero ends the rests already running rather than waiting them out.
 	// A dropper does not: its time is its table's, and ten medal droppers were
 	// found resting on Yongan's square between two dungeon trips.
+	// Under Iwakura's personalities a rest is SLABY's alone: NORMALNY and
+	// BARDZO DOBRY stop only for what the game makes them do, and the REST
+	// slider now says what share of the SLABY bots rest (19 September).
 	bool MayPlayerBotRestInTown(LPCHARACTER ch)
 	{
 		return ch && IsPlayerBotM1Map(ch->GetMapIndex()) &&
 				!IsPlayerBotDropper(GetPlayerBotPersonalityByPID(ch->GetPlayerID())) &&
 				ch->GetLevel() >= PLAYERBOT_TOWN_REST_MIN_LEVEL &&
 				GetPlayerBotRestPercent() > 0 &&
-				GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0;
+				GetPlayerBotStallsOnMap(ch->GetMapIndex()) > 0 &&
+				PlayerBotMoodAllowsTownRest(ch);
 	}
 
 	bool RollPlayerBotTownRest(LPCHARACTER ch)
@@ -811,6 +1011,34 @@ namespace
 	bool IsPlayerBotLifeScheduleEnabled()
 	{
 		return s_bPlayerBotLifeSchedule;
+	}
+
+	// The PERSONA switch: Iwakura's personalities and moods
+	// (playerbot_mood.h, playerbot_persona.h). Every rule that behaves
+	// differently under them asks this, so off is today's world, whole.
+	bool IsPlayerBotPersonaEnabled()
+	{
+		if (!s_bPlayerBotWeightsInitialised)
+			ResetPlayerBotWeights();
+		return s_bPlayerBotPersona;
+	}
+
+	// The WARS switch, asked by ManagePlayerBotGuildWars.
+	bool IsPlayerBotGuildWarsEnabled()
+	{
+		return s_bPlayerBotGuildWars;
+	}
+
+	// The TOWER switch, asked by ManagePlayerBotTowerRaids.
+	bool IsPlayerBotTowerRaidsEnabled()
+	{
+		return s_bPlayerBotTowerRaids;
+	}
+
+	// The ISHOP switch, asked by ManagePlayerBotItemShop.
+	bool IsPlayerBotItemShopEnabled()
+	{
+		return s_bPlayerBotItemShop;
 	}
 
 	bool IsPlayerBotFastBooksEnabled()

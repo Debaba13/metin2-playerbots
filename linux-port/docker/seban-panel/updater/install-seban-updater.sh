@@ -17,9 +17,10 @@ VOLUME=${SEBAN_UPDATE_VOLUME:-${PROJECT}_update-spool}
 SPOOL=$(docker volume inspect "$VOLUME" --format '{{.Mountpoint}}')
 test -d "$SPOOL"
 install -d -m 0755 "$TARGET"
-for file in apply-seban-overrides.sh update-mt2009.py update-with-backup.sh seban-updater-watch.sh starter_chest.original.quest; do
+for file in apply-seban-overrides.sh update-mt2009.py update-with-backup.sh seban-updater-watch.sh create-log-itemshop-table.sh starter_chest.original.quest; do
   install -m 0755 "$SOURCE_DIR/$file" "$TARGET/$file"
 done
+"$TARGET/create-log-itemshop-table.sh" "$PROJECT"
 cat > /etc/seban-updater.env <<EOF
 SEBAN_M2_ROOT=$SERVER_ROOT
 SEBAN_OVERRIDE_DIR=$TARGET

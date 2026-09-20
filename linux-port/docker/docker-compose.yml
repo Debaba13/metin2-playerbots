@@ -719,7 +719,7 @@ services:
       PLAYERBOTS_GAME_HOST: game
       PLAYERBOTS_LOGIN_PORT: "11000"
       PLAYERBOTS_WORLD_PORT: "13000"
-      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel1/*/playerbot_status.tsv"
+      PLAYERBOTS_STATUS_GLOB: "/opt/metin2/var/channel*/*/playerbot_status.tsv"
       # Opened by the visitor's browser, so the address the classic panel is
       # reachable at from outside - not a container name.
       TIERU_PANEL_URL: "${M2_SEBAN_TIERU_PANEL_URL:-http://127.0.0.1:${M2_PANEL_PUBLIC_PORT:-7788}}"
@@ -775,8 +775,15 @@ services:
       - "${M2_PANEL_BIND_ADDRESS:-${M2_HOST_BIND_ADDRESS:-0.0.0.0}}:${M2_ITEMSHOP_PUBLIC_PORT:-7791}:80/tcp"
     networks: [backend]
 
+  # The panel's two helpers run the image the seban-panel service builds.
+  # An older Compose does not know that and tries to pull it from Docker
+  # Hub first - "pull access denied for metin2/seban-panel" - which ended
+  # a start with no such image yet in code 1 (DUDU on a VPS, archonek
+  # updating on Windows, 18 September; Compose 5.5 here never pulls it).
+  # Never pulled: the build in the same `up` makes it before they start.
   seban-collector:
     image: metin2/seban-panel:latest
+    pull_policy: never
     container_name: "${M2_CONTAINER_PREFIX:-metin2}-seban-collector"
     restart: unless-stopped
     command: ["python", "collector.py"]
@@ -792,6 +799,7 @@ services:
 
   seban-item-grants:
     image: metin2/seban-panel:latest
+    pull_policy: never
     container_name: "${M2_CONTAINER_PREFIX:-metin2}-seban-item-grants"
     restart: unless-stopped
     command: ["python", "item_grants.py"]

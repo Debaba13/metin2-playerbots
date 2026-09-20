@@ -266,12 +266,15 @@ namespace
 						m_owner->GetY() - item->GetY());
 				if (distance > m_maxDistance)
 					return true;
-				if (m_medalDropper && !IsPlayerBotMedalDropperLoot(m_owner, item))
+				// A key of the Demon Tower is the floor's, whoever the bot is
+				// (playerbot_demon_tower.h uses or hands it in).
+				const bool towerKey = IsPlayerBotDemonTowerKey(item->GetVnum());
+				if (!towerKey && m_medalDropper && !IsPlayerBotMedalDropperLoot(m_owner, item))
 					return true;
 				// A cape or a symbol nobody wears (IsPlayerBotLeftOnGroundItem).
 				if (IsPlayerBotLeftOnGroundItem(item->GetVnum()))
 					return true;
-				if (m_choosy && IsPlayerBotLootBeneathBot(m_owner, item))
+				if (!towerKey && m_choosy && IsPlayerBotLootBeneathBot(m_owner, item))
 				{
 					++m_skippedCheap;
 					return true;
@@ -402,9 +405,13 @@ namespace
 		const DWORD itemVID = pickup->GetVID();
 		const DWORD itemVnum = pickup->GetVnum();
 		const bool material = pickup->GetType() == ITEM_MATERIAL;
+		// Read before the pickup: a stack that merges is gone after it.
+		const long itemSocket0 = pickup->GetSocket(0);
+		const BYTE itemType = pickup->GetType();
 		state.dwNextLootPickupTime = dwNow + GetPlayerBotLootPickupInterval(pickup);
 		if (ch->PickupItem(itemVID))
 		{
+			NotePlayerBotMoodValuable(ch, itemVnum, itemSocket0, itemType, "pickup");
 			state.mapLootSeenSince.erase(itemVID);
 			if (material)
 				RememberPlayerBotSpotDrop(ch->GetMapIndex(), ch->GetX(), ch->GetY(), itemVnum);
@@ -553,9 +560,12 @@ namespace
 
 			const DWORD itemVnum = nearest->GetVnum();
 			const bool material = nearest->GetType() == ITEM_MATERIAL;
+			const long itemSocket0 = nearest->GetSocket(0);
+			const BYTE itemType = nearest->GetType();
 			state.dwNextLootPickupTime = dwNow + GetPlayerBotLootPickupInterval(nearest);
 			if (ch->PickupItem(nearestVID))
 			{
+				NotePlayerBotMoodValuable(ch, itemVnum, itemSocket0, itemType, "pickup");
 				state.mapLootSeenSince.erase(nearestVID);
 				if (material)
 					RememberPlayerBotSpotDrop(ch->GetMapIndex(), ch->GetX(), ch->GetY(), itemVnum);

@@ -18,6 +18,7 @@ import uiInventory
 import special_flags
 import player
 import ikashop
+import shoppricepump
 import mouseModule
 import offlineShopSearch
 import flamewindPath
@@ -565,8 +566,7 @@ class OfflineShopManage(ui.ScriptWindow):
 						if shop_total_value > player.GOLD_MAX:
 							chat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.TOO_HIGH_SHOP_VALUE)
 							return
-				for i in item_list:
-					self.__SendEditItemPricePacket(i, inputPrice)
+				shoppricepump.Queue([(i, inputPrice) for i in item_list])
 			else:
 				self.__SendEditItemPricePacket(itemData, inputPrice)
 

@@ -335,6 +335,10 @@ PLAYERBOT_STATUS_PATHS = (
     "/opt/metin2/var/channel1/first/playerbot_status.tsv",
     "/opt/metin2/var/channel1/game1/playerbot_status.tsv",
     "/opt/metin2/var/channel1/game2/playerbot_status.tsv",
+    # The second channel's cores, when the server runs one (M2_PLAYERBOT_CH2).
+    "/opt/metin2/var/channel2/first/playerbot_status.tsv",
+    "/opt/metin2/var/channel2/game1/playerbot_status.tsv",
+    "/opt/metin2/var/channel2/game2/playerbot_status.tsv",
 )
 _PLAYERBOT_STATUS_LOCK = threading.Lock()
 _PLAYERBOT_STATUS_CACHE_KEY = None
@@ -366,6 +370,44 @@ BOT_PERSONALITY_LABELS = {
         9: "M2 Bestial dropper'ı", 10: "Madalya dropper'ı",
     },
 }
+# The status file's columns before Iwakura's personalities (2.0.85): a core of
+# that age writes these fourteen and no header row the parser can read by.
+PLAYERBOT_STATUS_LEGACY_COLUMNS = (
+    "pid", "personality", "ambition", "role", "in_party", "goal", "action",
+    "updated_ms", "map", "x", "y", "hp", "max_hp", "status",
+)
+# playerbot_persona::PERSONA_NONE: what the persona and mood columns carry
+# while the PERSONA switch is off.
+PLAYERBOT_PERSONA_NONE = 255
+# Iwakura's personalities, "SYSTEM OSOBOWOSCI v2.0" (playerbot_persona_rules.h,
+# EPersona - the order is the interface). Under the switch the bot's old
+# personality is its character, shown beside these.
+BOT_PERSONA_LABELS = {
+    "pl": {
+        0: "Grinder", 1: "Zdobywca", 2: "Handlarz", 3: "Hazardzista",
+        4: "Perfekcjonista", 5: "Pogromca metinów", 6: "Górnik", 7: "Rybak",
+        8: "Najemnik", 9: "Towarzysz",
+    },
+    "en": {
+        0: "Grinder", 1: "Conqueror", 2: "Trader", 3: "Gambler",
+        4: "Perfectionist", 5: "Metin slayer", 6: "Miner", 7: "Fisherman",
+        8: "Mercenary", 9: "Companion",
+    },
+}
+BOT_MOOD_LABELS = {
+    "pl": {0: "Słaby", 1: "Normalny", 2: "Bardzo dobry"},
+    "en": {0: "Poor", 1: "Normal", 2: "Very good"},
+}
+BOT_MOOD_LOCK_LABELS = {
+    "pl": {1: "euforia po ulepszeniu", 2: "kapitulacja (Anty-PK)"},
+    "en": {1: "refine euphoria", 2: "capitulation (anti-PK)"},
+}
+# The droppers (IsPlayerBotDropper in playerbot_types.h). A dropper farms one
+# thing for the market and takes neither the Biologist nor a horse trial -
+# the operator's rule of 15 September - so its Biologist card reads "does not
+# apply" instead of a 0/7 that looks like a bot stuck for good (GG1249125 and
+# OptimusPrime001 on Urtopy's world, 18 September).
+BOT_DROPPER_PERSONALITIES = frozenset((7, 8, 9, 10))
 BOT_AMBITION_LABELS = {
     "pl": {
         0: "Poziom", 1: "Ekwipunek", 2: "Metiny", 3: "Koń",
@@ -456,11 +498,18 @@ def read_playerbot_live_status():
             try:
                 # The r40250 core and Polish locale tables use Windows-1250.
                 with open(path, "r", encoding="cp1250", errors="replace") as stream:
+                    header = None
                     for line in stream:
+                        # By the header, since Iwakura's personalities added
+                        # columns (persona, mood, mood_lock, lock_level); a
+                        # core from before them writes the old fourteen, and
+                        # the status text is the last column in both.
                         if line.startswith("pid\t"):
+                            header = line.rstrip("\r\n").split("\t")
                             continue
-                        parts = line.rstrip("\r\n").split("\t", 13)
-                        if len(parts) != 14:
+                        columns = header or PLAYERBOT_STATUS_LEGACY_COLUMNS
+                        parts = line.rstrip("\r\n").split("\t", len(columns) - 1)
+                        if len(parts) != len(columns) or columns[-1] != "status":
                             skipped += 1
                             continue
                         # One bad row costs one row.
@@ -473,19 +522,28 @@ def read_playerbot_live_status():
                         # the other panel, which is what a truncated parse looks
                         # like from the outside.
                         try:
-                            values = [int(value) for value in parts[:13]]
+                            row = {name: int(value) for name, value in zip(columns[:-1], parts[:-1])}
                         except ValueError:
                             skipped += 1
                             continue
-                        pid = values[0]
+                        if "pid" not in row:
+                            skipped += 1
+                            continue
+                        pid = row["pid"]
+                        persona = row.get("persona", PLAYERBOT_PERSONA_NONE)
+                        mood = row.get("mood", PLAYERBOT_PERSONA_NONE)
                         result[pid] = {
-                            "pid": pid, "personality_id": values[1],
-                            "ambition_id": values[2], "role": values[3],
-                            "in_pt": bool(values[4]), "goal_id": values[5],
-                            "action_id": values[6], "updated_ms": values[7],
-                            "map_index": values[8], "x": values[9], "y": values[10],
-                            "hp": values[11], "max_hp": values[12],
-                            "status": parts[13],
+                            "pid": pid, "personality_id": row.get("personality", 0),
+                            "ambition_id": row.get("ambition", 0), "role": row.get("role", 0),
+                            "in_pt": bool(row.get("in_party", 0)), "goal_id": row.get("goal", 0),
+                            "action_id": row.get("action", 0), "updated_ms": row.get("updated_ms", 0),
+                            "map_index": row.get("map", 0), "x": row.get("x", 0), "y": row.get("y", 0),
+                            "hp": row.get("hp", 0), "max_hp": row.get("max_hp", 0),
+                            "persona_id": None if persona == PLAYERBOT_PERSONA_NONE else persona,
+                            "mood_id": None if mood == PLAYERBOT_PERSONA_NONE else mood,
+                            "mood_lock": row.get("mood_lock", 0),
+                            "lock_level": row.get("lock_level", 0),
+                            "status": parts[-1],
                         }
             except OSError:
                 continue
@@ -547,18 +605,43 @@ def localize_playerbot_status(entry, language):
         entry.get("action_id"), BOT_ACTION_LABELS["en"][0])
 
 
+def playerbot_mood_label(entry, language):
+    """ "Słaby", or "Bardzo dobry (euforia po ulepszeniu)" while a lock holds;
+    "" while the PERSONA switch is off."""
+    mood = entry.get("mood_id") if entry else None
+    if mood is None:
+        return ""
+    text = BOT_MOOD_LABELS[language].get(mood, BOT_MOOD_LABELS[language][1])
+    lock = BOT_MOOD_LOCK_LABELS[language].get(entry.get("mood_lock") or 0)
+    return "%s (%s)" % (text, lock) if lock else text
+
+
 def playerbot_live_labels(entry, language):
     language = language if language in ("pl", "en", "tr") else "en"
     if not entry:
         return {
             "personality": BOT_PERSONALITY_LABELS[language][0],
+            "charakter": "",
+            "mood": "",
+            "hold": "",
             "ambition": BOT_AMBITION_LABELS[language][0],
             "goal": BOT_GOAL_LABELS[language][0],
             "action": BOT_ACTION_LABELS[language][0],
         }
+    old = BOT_PERSONALITY_LABELS[language].get(
+        entry.get("personality_id"), BOT_PERSONALITY_LABELS[language][0])
+    persona = entry.get("persona_id")
+    # Under Iwakura's personalities the one that claims the bot now is its
+    # personality, and the draw it has had since login is its character.
+    personality = BOT_PERSONA_LABELS[language].get(persona, old) if persona is not None else old
+    hold = ""
+    if persona is not None and entry.get("lock_level"):
+        hold = ("blokada expa na %d lvl" if language == "pl" else "exp held at level %d") % entry["lock_level"]
     return {
-        "personality": BOT_PERSONALITY_LABELS[language].get(
-            entry.get("personality_id"), BOT_PERSONALITY_LABELS[language][0]),
+        "personality": personality,
+        "charakter": old if persona is not None else "",
+        "mood": playerbot_mood_label(entry, language),
+        "hold": hold,
         "ambition": BOT_AMBITION_LABELS[language].get(
             entry.get("ambition_id"), BOT_AMBITION_LABELS[language][0]),
         "goal": BOT_GOAL_LABELS[language].get(
@@ -1181,6 +1264,14 @@ def read_ai_weights():
     vals["NIGHT"] = 1
     # "Boty graja jak zywi ludzie": sessions and rests. Experimental, off.
     vals["LIFE"] = 0
+    # Guild wars between the bots' guilds (playerbot_guild_war.h). On.
+    vals["WARS"] = 1
+    vals["TOWER"] = 1
+    # The bots' ItemShop purchases (playerbot_itemshop.h). On.
+    vals["ISHOP"] = 1
+    # Iwakura's personalities and moods (playerbot_persona.h). On: the operator
+    # asked for them (19 September); off is the world as it was before.
+    vals["PERSONA"] = 1
     vals["SCRAP"] = 0
     # Percent of bots that rest on the market ring after a town errand; 100 is
     # the author's town, 0 is "every bot hunting".
@@ -1215,6 +1306,17 @@ def read_ai_weights():
                     continue
                 if name == "LIFE":
                     vals["LIFE"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                    continue
+                if name == "WARS":
+                    vals["WARS"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                if name == "TOWER":
+                    vals["TOWER"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                    continue
+                if name == "ISHOP":
+                    vals["ISHOP"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
+                    continue
+                if name == "PERSONA":
+                    vals["PERSONA"] = 0 if parts[1].strip() in ("0", "off", "no") else 1
                     continue
                 if name == "SCRAP":
                     try:
@@ -1281,6 +1383,13 @@ def write_ai_weights(vals):
     # Not a weight: whether bots play in sessions and log out to rest in
     # between (experimental, off by default).
     body.append("LIFE\t%d" % (1 if vals.get("LIFE", 0) else 0))
+    # Not a weight: whether the bots' guilds fight field wars.
+    body.append("WARS\t%d" % (1 if vals.get("WARS", 1) else 0))
+    body.append("TOWER\t%d" % (1 if vals.get("TOWER", 1) else 0))
+    # Not a weight: whether the bots cash their vouchers and buy in the ItemShop.
+    body.append("ISHOP\t%d" % (1 if vals.get("ISHOP", 1) else 0))
+    # Not a weight: Iwakura's personalities, moods and the Grinder's locks.
+    body.append("PERSONA\t%d" % (1 if vals.get("PERSONA", 1) else 0))
     # Percent of stall keepers that sell scrap gear; 0 is off.
     body.append("SCRAP\t%d" % max(0, min(100, int(vals.get("SCRAP", 0)))))
     # Percent of bots that rest in town after an errand; 0 means nobody does.
@@ -1322,6 +1431,16 @@ EVENTS_STATUS_FILES = [
     "/opt/metin2/var/channel1/first/playerbot_events_status.tsv",
     "/opt/metin2/var/channel1/game2/playerbot_events_status.tsv",
 ]
+# The bot guilds, one file per core (playerbot_guild.h writes it once a
+# minute): every core knows every guild, but counts only the bots of it
+# standing in its own world, so the page adds the three up.
+GUILD_STATUS_FILES = [
+    "/opt/metin2/var/channel1/game1/playerbot_guild_status.tsv",
+    "/opt/metin2/var/channel1/first/playerbot_guild_status.tsv",
+    "/opt/metin2/var/channel1/game2/playerbot_guild_status.tsv",
+]
+GUILD_TIER_KEYS = ("gl_tier_elite", "gl_tier_strong", "gl_tier_medium", "gl_tier_ordinary")
+GUILD_EMPIRE_KEYS = {1: "gl_empire_shinsoo", 2: "gl_empire_chunjo", 3: "gl_empire_jinno"}
 EVENT_NOW_MINUTES = (15, 30, 60, 120, 180, 360)
 _EVENT_HHMM = re.compile(r"^([01]?\d|2[0-4]):([0-5]\d)$")
 
@@ -1436,6 +1555,81 @@ def read_events_status():
 
 
 
+def read_guild_status():
+    """The bot guilds as the cores last reported them: a list of dicts sorted
+    by tier, then level, then members; [] when no core has written for five
+    minutes. Online bots and the experience offered are summed over the cores,
+    everything else is the guild's own (the same on every core)."""
+    guilds, newest = {}, 0
+    for path in GUILD_STATUS_FILES:
+        try:
+            mtime = os.path.getmtime(path)
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            continue
+        if not lines:
+            continue
+        newest = max(newest, mtime)
+        head = lines[0].rstrip("\r").split("\t")
+        for line in lines[1:]:
+            f = line.rstrip("\r").split("\t")
+            if len(f) < len(head):
+                continue
+            row = dict(zip(head, f))
+            try:
+                gid = int(row.get("guild_id", 0))
+                online = int(row.get("online", 0))
+                avg = int(row.get("avg_strength", 0))
+                offered = int(row.get("exp_offered_here", 0))
+            except ValueError:
+                continue
+            if gid <= 0:
+                continue
+            g = guilds.get(gid)
+            if g is None:
+                g = {"guild_id": gid, "name": row.get("name", ""), "online": 0, "strength_sum": 0,
+                     "exp_offered": 0, "master": row.get("master", "")}
+                for key in ("empire", "tier", "level", "members", "master_pid", "ladder",
+                            "wins", "draws", "losses", "war_score", "war_enemy_score"):
+                    try:
+                        g[key] = int(row.get(key, 0))
+                    except ValueError:
+                        g[key] = 0
+                g["war_with"] = row.get("war_with", "")
+                g["next_war_in_s"] = None
+                g["tower_raid"] = 0
+                guilds[gid] = g
+            # The kingdom's next war, as the core that hosts its guild map
+            # counts it (0 = under way, -1 = none scheduled); a core that
+            # does not host it writes -1, so the best answer wins.
+            try:
+                nw = int(row.get("next_war_in_s", -1))
+            except ValueError:
+                nw = -1
+            if nw >= 0 and (g["next_war_in_s"] is None or g["next_war_in_s"] < 0 or nw < g["next_war_in_s"]):
+                g["next_war_in_s"] = nw
+            if not g["master"] and row.get("master"):
+                g["master"] = row["master"]
+            if not g["war_with"] and row.get("war_with"):
+                g["war_with"] = row["war_with"]
+            if row.get("tower_raid", "0").strip() == "1":
+                g["tower_raid"] = 1
+            g["online"] += online
+            g["strength_sum"] += avg * online
+            g["exp_offered"] += offered
+    if not guilds or time.time() - newest > 300:
+        return []
+    out = []
+    for g in guilds.values():
+        g["avg_strength"] = g["strength_sum"] // g["online"] if g["online"] else 0
+        g["tier_key"] = GUILD_TIER_KEYS[min(max(g["tier"], 0), 3)]
+        g["empire_key"] = GUILD_EMPIRE_KEYS.get(g["empire"], "gl_empire_unknown")
+        out.append(g)
+    out.sort(key=lambda g: (g["tier"], -g["level"], -g["members"], g["name"]))
+    return out
+
+
 def read_chest_switch():
     """(off, saved_kill, saved_stone); the saved values are None until set."""
     off, kill, stone = False, None, None
@@ -1470,6 +1664,30 @@ def write_chest_switch(off, kill, stone):
     with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(body) + "\n")
     os.replace(tmp, CHEST_SWITCH)
+
+
+# Whether the bots are still waiting at the door. The migrator writes this
+# file for a world it has just made, when the launcher was told to hold them,
+# and this page is where they are let in. "1" holds; anything else, including
+# no file at all, does not - so an install that never heard of it behaves as
+# it always did. The core reads it on the weights clock, five seconds.
+BOT_HOLD_FILE = os.path.join(AI_SPOOL, "playerbot_hold")
+
+
+def read_bot_hold():
+    """True while the bots are held. A file nobody can read is not a hold."""
+    try:
+        with open(BOT_HOLD_FILE, encoding="utf-8", errors="replace") as fh:
+            return fh.read(32).strip().startswith("1")
+    except OSError:
+        return False
+
+
+def write_bot_hold(held):
+    tmp = BOT_HOLD_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("1\n" if held else "0\n")
+    os.replace(tmp, BOT_HOLD_FILE)
 
 
 LANG_SPOOL   = _env_path("M2PANEL_LANG_SPOOL", "/opt/m2spool")
@@ -3010,6 +3228,52 @@ T = {
                   "de":"🚀 Schnell — Erfahrung 1000%, Gegenstände 500%, Yang 500%",
                   "tr":"🚀 Hızlı — tecrübe 1000%, eşya 500%, yang 500%"},
  "rates_save":   {"pl":"💾 Zapisz i zrestartuj serwer","en":"💾 Save and restart the server","de":"💾 Speichern und Server neu starten","tr":"💾 Kaydet ve sunucuyu yeniden başlat"},
+ "regen_title": {"pl":"Czas odradzania Metinów, bossów i potworów",
+                 "en":"Respawn time of Metin stones, bosses and monsters"},
+ "regen_help":  {"pl":"Procent zwykłego czasu odradzania: 100 = jak w grze, 50 = dwa razy szybciej, 10 = dziesięć razy szybciej. Działa od razu (przez pomocnika w grze), a po restarcie zostaje. Osobno dla Metinów i bossów, osobno dla zwykłych potworów.",
+                 "en":"Percent of the normal respawn time: 100 = as in the game, 50 = twice as fast, 10 = ten times as fast. Live at once (through the in-game helper) and kept across a restart. Stones and bosses apart from ordinary monsters."},
+ "regen_boss":  {"pl":"Metiny i bossowie (% czasu)", "en":"Metin stones and bosses (% of time)"},
+ "regen_mob":   {"pl":"Zwykłe potwory (% czasu)", "en":"Ordinary monsters (% of time)"},
+ "regen_faster": {"pl":"Szybciej:", "en":"Faster:"},
+ "regen_mult":  {"pl":"≈ ×{n} szybciej niż w grze", "en":"≈ ×{n} faster than the game"},
+ "regen_save":  {"pl":"Zapisz czasy odradzania", "en":"Save the respawn times"},
+ "regen_range": {"pl":"Obie wartości muszą być liczbą całkowitą od 10 do 100. Nic nie zmieniono.",
+                 "en":"Both have to be whole numbers between 10 and 100. Nothing was changed."},
+ "regen_saved_live": {"pl":"✅ Zapisano! Nowe czasy odradzania działają już w grze, bez restartu.",
+                      "en":"✅ Saved! The new respawn times are live in game, no restart needed."},
+ "regen_saved_restart": {"pl":"Zapisano. Nikt nie jest zalogowany, więc pomocnik w grze nie odpowiedział — nowe czasy zadziałają po restarcie serwera (albo zapisz jeszcze raz, gdy ktoś będzie w grze).",
+                         "en":"Saved. Nobody is logged in, so the in-game helper did not answer — the new times apply after a server restart (or save again while somebody is in game)."},
+ "count_title": {"pl":"Liczba potworów w respie", "en":"Monsters per respawn"},
+ "count_help":  {"pl":"Ile potworów stoi w każdym miejscu respu: ×1 = jak w grze, ×2 = dwa razy więcej, aż do ×4. Nie trzeba restartu, a po restarcie ustawienie zostaje; dodatkowe potwory dochodzą przy najbliższym respie danego miejsca (Metiny i bossowie po swoim czasie odradzania, zwykle 15–25 minut). Osobno dla Metinów i bossów, osobno dla zwykłych potworów. Postacie niezależne (także żyły rud i krzaki ziół), portale, lochy i jednorazowe respy z misji zostają bez zmian.",
+                 "en":"How many monsters stand at each spawn point: ×1 = as in the game, ×2 = twice as many, up to ×4. No restart needed and kept across one; the extra monsters come at each spot's next respawn (stones and bosses after their own respawn time, usually 15-25 minutes). Stones and bosses apart from ordinary monsters. NPCs (ore veins and herb bushes too), portals, dungeons and a quest's one-off spawns are left alone."},
+ "count_warn":  {"pl":"Uwaga: ×2 to dwa razy więcej potworów na każdej mapie — serwer i boty mają przez to więcej pracy. Po zmniejszeniu mnożnika nadmiarowe potwory znikają dopiero, gdy ktoś je zabije.",
+                 "en":"Mind: ×2 is twice as many monsters on every map, and the server and the bots work that much harder. After lowering it, the extra monsters go only as they are killed."},
+ "count_boss":  {"pl":"Metiny i bossowie", "en":"Metin stones and bosses"},
+ "count_mob":   {"pl":"Zwykłe potwory", "en":"Ordinary monsters"},
+ "count_save":  {"pl":"Zapisz liczbę potworów", "en":"Save the monster counts"},
+ "count_range": {"pl":"Wybierz mnożnik od ×1 do ×4. Nic nie zmieniono.",
+                 "en":"Pick a multiplier from ×1 to ×4. Nothing was changed."},
+ "count_saved_live": {"pl":"✅ Zapisano! Nowa liczba potworów działa już w grze — dosypie się przy najbliższym respie.",
+                      "en":"✅ Saved! The new counts are live in game and fill in at the next respawn."},
+ "count_saved_restart": {"pl":"Zapisano. Nikt nie jest zalogowany, więc pomocnik w grze nie odpowiedział — nowa liczba potworów zadziała po restarcie serwera (albo zapisz jeszcze raz, gdy ktoś będzie w grze).",
+                         "en":"Saved. Nobody is logged in, so the in-game helper did not answer — the new counts apply after a server restart (or save again while somebody is in game)."},
+ "ch2_title":   {"pl":"Drugi kanał (CH2)", "en":"Second channel (CH2)"},
+ "ch2_help":    {"pl":"Drugi kanał gry. Część botów gra na CH2, więc serwer rozkłada je na dwa rdzenie procesora i udźwignie więcej botów naraz. Wszystkie sklepy (botów i graczy) stoją tylko na CH1: bot z CH2, który chce otworzyć albo obsłużyć swój sklep albo coś kupić, przechodzi na CH1, a wolny bot z CH1 przechodzi na jego miejsce na CH2. Ustawiony udział to najmniej tyle botów na CH2; gdy nikt nie czeka na przejście, CH2 może przejąć do 10 punktów więcej. Domyślnie wyłączony.",
+                 "en":"A second game channel. Some of the bots play on CH2, so the server spreads them over two CPU cores and carries more bots at once. Every shop, bots' and players', stands on CH1: a bot on CH2 that wants to open or serve its shop or to buy something moves to CH1, and a free bot of CH1 moves to CH2 in its place. The share set here is the least CH2 carries; with nobody waiting to move, CH2 may take up to ten points more. Off by default."},
+ "ch2_enable":  {"pl":"Włącz drugi kanał (CH2)", "en":"Switch the second channel on (CH2)"},
+ "ch2_share":   {"pl":"Botów na CH2", "en":"Bots on CH2"},
+ "ch2_save":    {"pl":"Zapisz (zadziała po restarcie serwera)", "en":"Save (applies after a server restart)"},
+ "ch2_now_off": {"pl":"Teraz: CH2 wyłączony - wszystkie boty grają na CH1.", "en":"Now: CH2 is off - every bot plays on CH1."},
+ "ch2_now_on":  {"pl":"Teraz: CH2 włączony, na CH2 gra {share}% botów.", "en":"Now: CH2 is on, {share}% of the bots play on it."},
+ "ch2_ports":   {"pl":"Gracze wejdą na CH2 po najbliższym uruchomieniu serwera z launchera (GRAJ) - launcher otworzy wtedy porty 13010-13012. Boty grają na CH2 już teraz.",
+                 "en":"Players reach CH2 after the next start from the launcher (GRAJ), which opens ports 13010-13012 then. The bots play on CH2 already."},
+ "ch2_pending": {"pl":"Zapisano w panelu: {what}. Zadziała po restarcie serwera.", "en":"Saved in the panel: {what}. Applies after a server restart."},
+ "ch2_on_word": {"pl":"CH2 włączony, {share}% botów", "en":"CH2 on, {share}% of the bots"},
+ "ch2_off_word": {"pl":"CH2 wyłączony", "en":"CH2 off"},
+ "ch2_saved":   {"pl":"✅ Zapisano. Zmiana kanałów zadziała po restarcie serwera (GRAJ w launcherze albo restart kontenera gry).",
+                 "en":"✅ Saved. The channel change applies after a server restart (GRAJ in the launcher or a restart of the game container)."},
+ "ch2_bad":     {"pl":"Udział botów na CH2 musi być liczbą od 10 do 90. Nic nie zmieniono.", "en":"The share of bots on CH2 has to be between 10 and 90. Nothing was changed."},
+ "ch2_failed":  {"pl":"Nie udało się zapisać ustawienia kanałów w katalogu wymiany z serwerem.", "en":"Could not write the channel setting into the spool shared with the server."},
  "rates_range":  {"pl":"Każda z trzech wartości musi być liczbą całkowitą od 1 do 10000. Nic nie zmieniono. 🙂","en":"Each of the three has to be a whole number between 1 and 10000. Nothing was changed. 🙂",
                   "de":"Alle drei müssen ganze Zahlen zwischen 1 und 10000 sein. Es wurde nichts geändert. 🙂",
                   "tr":"Üçü de 1 ile 10000 arasında tam sayı olmalı. Hiçbir şey değiştirilmedi. 🙂"},
@@ -3415,6 +3679,45 @@ T.update({
                   "de":"Experimentell. Jeder Bot spielt eine Sitzung von 3-6 Stunden (die erste nach einem Start ab einer halben Stunde), loggt sich aus, ruht 3-9 Stunden und kommt zurück - etwa zwei von fünf Bots sind jeweils online. Aus: alle Bots bleiben wie bisher in der Welt. Greift innerhalb einer Minute; Ausschalten holt die ruhenden Bots in wenigen Minuten zurück. Ein Bot in der Gruppe eines Spielers wartet mit dem Ausloggen.",
                   "tr":"Deneysel. Her bot 3-6 saatlik bir oturum oynar (başlangıçtan sonraki ilki yarım saatten itibaren), çıkış yapar, 3-9 saat dinlenir ve geri gelir - her an botların yaklaşık beşte ikisi çevrimiçidir. Kapalıyken tüm botlar eskisi gibi dünyada kalır. Bir dakika içinde uygulanır; kapatmak dinlenen botları birkaç dakika içinde geri getirir. Bir oyuncunun grubundaki bot çıkış yapmadan bekler."},
  "ai_life_on":   {"en":"Enabled (experimental)","pl":"Włączone (eksperymentalne)","de":"Eingeschaltet (experimentell)","tr":"Açık (deneysel)"},
+ "ai_wars":      {"en":"Guild wars between the bots","pl":"Wojny gildii botów","de":"Gildenkriege der Bots","tr":"Botların lonca savaşları"},
+ "ai_wars_help": {"en":"Every two hours or so two bot guilds of one kingdom fight a field war on that kingdom's guild map: thirty minutes, the game's own declaration and scoring, a notice on the chat when it starts. A guild needs eight bots online to be picked. Off: no new war is declared; one under way is fought to its end.",
+                  "pl":"Mniej więcej co dwie godziny dwie gildie botów z jednego królestwa toczą wojnę polową na mapie gildyjnej tego królestwa: trzydzieści minut, wypowiedzenie i punktacja gry, komunikat na czacie przy starcie. Gildia musi mieć osiem botów online, żeby ją wylosowano. Wyłączone: nowa wojna nie jest wypowiadana; trwająca dobiega końca.",
+                  "de":"Etwa alle zwei Stunden führen zwei Bot-Gilden eines Königreichs einen Feldkrieg auf der Gildenkarte dieses Königreichs: dreißig Minuten, Kriegserklärung und Wertung des Spiels selbst, eine Meldung im Chat beim Start. Eine Gilde braucht acht Bots online, um gewählt zu werden. Aus: kein neuer Krieg wird erklärt; ein laufender wird zu Ende gekämpft.",
+                  "tr":"Yaklaşık iki saatte bir, aynı krallıktan iki bot loncası o krallığın lonca haritasında bir saha savaşı yapar: otuz dakika, oyunun kendi ilanı ve puanlaması, başlangıçta sohbette bir duyuru. Bir loncanın seçilmesi için sekiz botu çevrimiçi olmalı. Kapalı: yeni savaş ilan edilmez; süren savaş sonuna kadar oynanır."},
+ "ai_wars_on":   {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_tower":     {"en":"Bot guilds climb the Demon Tower","pl":"Gildie botów chodzą do Wieży Demonów","de":"Bot-Gilden steigen in den Dämonenturm","tr":"Bot loncaları Şeytan Kulesi'ne çıkar"},
+ "ai_tower_help": {"en":"About every hour and a half one bot guild of this core calls its members of level 40 and up to the tower's ground floor (the game says it on the chat), they break the Metin of Toughness together after four minutes and climb the floors: monsters, stones, keys and seals as in the game; from the sixth floor on a bot of 75 is needed, as for players. Whoever stands on the ground floor when the stone breaks - a bot on its errand, a player who came to watch - goes in with them. 'Now' calls a raid on the core's next check when none is under way.",
+                  "pl":"Mniej więcej co półtorej godziny jedna gildia botów tego rdzenia zwołuje członków od 40. poziomu na parter Wieży (ogłoszenie na czacie), po czterech minutach razem rozbijają Metin Twardości i przechodzą piętra: potwory, kamienie, klucze i pieczęcie jak w grze; od 6. piętra potrzebny jest bot z 75. poziomem, tak jak u graczy. Kto stoi na parterze, gdy pęka kamień — bot na własnej misji albo gracz, który przyszedł popatrzeć — wchodzi razem z nimi. „Teraz” zwołuje wyprawę przy najbliższym sprawdzeniu rdzenia, jeśli żadna nie trwa.",
+                  "de":"Etwa alle anderthalb Stunden ruft eine Bot-Gilde dieses Kerns ihre Mitglieder ab Stufe 40 ins Erdgeschoss des Turms (Ansage im Chat), nach vier Minuten zerschlagen sie gemeinsam den Metin der Härte und steigen die Etagen hinauf: Monster, Steine, Schlüssel und Siegel wie im Spiel; ab der sechsten Etage wird ein Bot mit Stufe 75 gebraucht, wie bei Spielern. Wer beim Zerbrechen des Steins im Erdgeschoss steht - ein Bot auf seinem Botengang, ein zuschauender Spieler - geht mit hinein. 'Jetzt' ruft beim nächsten Check des Kerns eine Expedition, wenn keine läuft.",
+                  "tr":"Yaklaşık her bir buçuk saatte bu çekirdeğin bir bot loncası 40 ve üzeri üyelerini kulenin zemin katına çağırır (sohbette duyurulur), dört dakika sonra Sertlik Metini'ni birlikte kırar ve katları çıkarlar: canavarlar, taşlar, anahtarlar ve mühürler oyundaki gibi; 6. kattan itibaren oyuncularda olduğu gibi 75 seviye bir bot gerekir. Taş kırıldığında zemin katta duran herkes - görevindeki bir bot, izlemeye gelen bir oyuncu - onlarla girer. 'Şimdi', hiçbiri sürmüyorsa çekirdeğin bir sonraki kontrolünde bir sefer çağırır."},
+ "ai_tower_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_bots_held_title": {"pl":"Boty czekają przy drzwiach","en":"The bots are waiting at the door",
+  "de":"Die Bots warten an der Tür","tr":"Botlar kapıda bekliyor"},
+ "ai_bots_held_help": {"pl":"Ten świat powstał przed chwilą i nie ma w nim jeszcze ani jednego bota - tak, jak poprosiłeś przy zakładaniu. Ustaw teraz spokojnie stawki, respawny i zachowanie botów, a potem wpuść je. Wejdą stopniowo, tak jak po zwykłym starcie.",
+  "en":"This world was made a moment ago and has not one bot in it yet - as you asked when you made it. Set the rates, the respawns and the bots' behaviour in peace, then let them in. They walk in gradually, as after any start.",
+  "de":"Diese Welt wurde gerade erstellt und hat noch keinen einzigen Bot - so wie gewünscht. Stelle in Ruhe Raten, Respawns und Bot-Verhalten ein und lasse sie dann herein.",
+  "tr":"Bu dünya az önce kuruldu ve içinde henüz tek bir bot yok. Oranları, respawn sürelerini ve bot davranışını rahatça ayarla, sonra onları içeri al."},
+ "ai_bots_release": {"pl":"Wpuść boty do świata","en":"Let the bots in",
+  "de":"Bots hereinlassen","tr":"Botları içeri al"},
+ "ai_bots_released": {"pl":"✅ Boty wchodzą do świata - pojawią się w ciągu kilku minut, tak jak po zwykłym starcie.",
+  "en":"✅ The bots are coming in - they will appear over the next few minutes, as after any start.",
+  "de":"✅ Die Bots kommen herein - sie erscheinen in den nächsten Minuten.",
+  "tr":"✅ Botlar geliyor - birkaç dakika içinde belirecekler."},
+ "ai_tower_now": {"en":"Call a Demon Tower raid now","pl":"Wyprawa do Wieży Demonów teraz","de":"Jetzt eine Turm-Expedition rufen","tr":"Şimdi bir Kule seferi çağır"},
+ "ai_tower_now_done": {"en":"Requested: the core calls a raid on its next check (within a minute) if none is under way.","pl":"Zlecone: rdzeń zwoła wyprawę przy najbliższym sprawdzeniu (do minuty), jeśli żadna nie trwa.","de":"Angefordert: der Kern ruft beim nächsten Check (binnen einer Minute) eine Expedition, wenn keine läuft.","tr":"İstendi: hiçbiri sürmüyorsa çekirdek bir sonraki kontrolde (bir dakika içinde) bir sefer çağırır."},
+ "gl_tower":     {"en":"in the Demon Tower","pl":"w Wieży Demonów","de":"im Dämonenturm","tr":"Şeytan Kulesi'nde"},
+ "ai_ishop":     {"en":"Bots buy in the ItemShop","pl":"Boty kupują w ItemShopie","de":"Bots kaufen im ItemShop","tr":"Botlar ItemShop'tan alır"},
+ "ai_ishop_help":{"en":"A bot cashes the Kupon SM vouchers it finds (Metin stones and bosses drop them, M2_DRAGON_COIN_*_PERMILLE) into its account's Dragon Coins and buys, at most once an hour, only what its own rules would use: a Kamień Duchowy for a Grand Master skill, a change stone for a worn weapon still worth rerolling, with Dragon Marks a Blessing Scroll or the Dragon God's attack potions, and one bot in four a hairstyle, once. No VIP items and no pass: every bot already holds the premium subscription. Off: the vouchers stay in the bags.",
+                  "pl":"Bot wymienia znalezione Kupony SM (dropią z metinów i bossów, M2_DRAGON_COIN_*_PERMILLE) na Smocze Monety swojego konta i kupuje, najwyżej raz na godzinę, tylko to, z czego jego własne reguły korzystają: Kamień Duchowy do umiejętności Wielkiego Mistrza, kamień zmiany bonusów do noszonej broni wartej jeszcze losowania, za Smocze Znaki Zwój Błogosławieństwa albo mikstury ataku Boga Smoków, a jeden bot na czterech fryzurę, raz. Bez przedmiotów VIP i bez przepustki: każdy bot ma już subskrypcję premium. Wyłączone: kupony zostają w torbach.",
+                  "de":"Ein Bot löst die gefundenen Kupon-SM-Gutscheine (Metinsteine und Bosse lassen sie fallen, M2_DRAGON_COIN_*_PERMILLE) in Drachenmünzen seines Kontos ein und kauft höchstens einmal pro Stunde nur, was seine eigenen Regeln nutzen: einen Kamień Duchowy für eine Großmeister-Fertigkeit, einen Bonus-Wechselstein für die getragene Waffe, wenn sie noch neu gewürfelt würde, mit Drachenmarken eine Segensrolle oder die Angriffstränke des Drachengottes, und jeder vierte Bot einmal eine Frisur. Keine VIP-Gegenstände und kein Pass: jeder Bot hat das Premium-Abo bereits. Aus: die Gutscheine bleiben im Inventar.",
+                  "tr":"Bot bulduğu Kupon SM kuponlarını (Metin taşları ve boss'lar düşürür, M2_DRAGON_COIN_*_PERMILLE) hesabının Ejderha Parasına çevirir ve saatte en fazla bir kez, yalnızca kendi kurallarının kullanacağı şeyi alır: Büyük Usta becerisi için Kamień Duchowy, hâlâ yeniden atılmaya değer takılı silah için bonus değiştirme taşı, Ejderha İşaretleriyle Kutsama Parşömeni ya da Ejderha Tanrısı saldırı iksirleri ve dört bottan biri bir kez bir saç modeli. VIP eşya ve geçiş kartı yok: her bot zaten premium aboneliğe sahip. Kapalı: kuponlar çantada kalır."},
+ "ai_ishop_on":  {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
+ "ai_persona":   {"en":"Bot personalities (Iwakura v2)","pl":"Osobowości botów (Iwakura v2)","de":"Bot-Persönlichkeiten (Iwakura v2)","tr":"Bot kişilikleri (Iwakura v2)"},
+ "ai_persona_help": {"en":"Iwakura's personality system. A bot's personality follows its situation (Grinder, Conqueror, Trader, Gambler, Perfectionist, Metin slayer, Miner, Fisherman, Mercenary, Companion) and it has a mood (poor, normal, very good) shown on its card. A Grinder holds its level at its tier (15, 23, 30-35, 40-48, 55-62) until it wears a weapon +7, an armour +6 and a shield +6 for its level, and only then may level on as a Conqueror. A bot in a poor mood pauses between packs and goes AFK now and then; only such bots rest in town. Off: the bots play as they did before, with their old personalities.",
+                  "pl":"System osobowości Iwakury. Osobowość bota wynika z jego sytuacji (Grinder, Zdobywca, Handlarz, Hazardzista, Perfekcjonista, Pogromca metinów, Górnik, Rybak, Najemnik, Towarzysz), a bot ma nastrój (słaby, normalny, bardzo dobry) widoczny na jego karcie. Grinder trzyma poziom swojego tieru (15, 23, 30-35, 40-48, 55-62), dopóki nie założy broni +7, zbroi +6 i tarczy +6 na swój poziom - dopiero wtedy może dalej expić jako Zdobywca. Bot w słabym nastroju robi przerwy między grupami mobów i co jakiś czas odchodzi od komputera; tylko takie boty odpoczywają w mieście. Wyłączone: boty grają jak wcześniej, ze starymi osobowościami.",
+                  "de":"Iwakuras Persönlichkeitssystem. Die Persönlichkeit eines Bots folgt seiner Lage (Grinder, Eroberer, Händler, Spieler, Perfektionist, Metinjäger, Bergmann, Fischer, Söldner, Gefährte), und er hat eine Stimmung (schlecht, normal, sehr gut), die auf seiner Karte steht. Ein Grinder hält die Stufe seines Tiers (15, 23, 30-35, 40-48, 55-62), bis er eine Waffe +7, eine Rüstung +6 und einen Schild +6 für seine Stufe trägt, und erst dann darf er als Eroberer weiterleveln. Ein Bot in schlechter Stimmung macht Pausen zwischen den Gruppen und ist ab und zu AFK; nur solche Bots ruhen in der Stadt. Aus: die Bots spielen wie früher, mit ihren alten Persönlichkeiten.",
+                  "tr":"Iwakura'nın kişilik sistemi. Bir botun kişiliği durumuna göre değişir (Grinder, Fatih, Tüccar, Kumarbaz, Mükemmeliyetçi, Metin avcısı, Madenci, Balıkçı, Paralı asker, Yoldaş) ve kartında görünen bir ruh hali vardır (kötü, normal, çok iyi). Bir Grinder, seviyesine uygun +7 silah, +6 zırh ve +6 kalkan giyene kadar kademesinin seviyesinde (15, 23, 30-35, 40-48, 55-62) kalır, ancak ondan sonra Fatih olarak seviye atlayabilir. Kötü ruh halindeki bot gruplar arasında durur ve ara sıra AFK olur; yalnızca bu botlar şehirde dinlenir. Kapalı: botlar eski kişilikleriyle önceki gibi oynar."},
+ "ai_persona_on": {"en":"Enabled","pl":"Włączone","de":"Eingeschaltet","tr":"Açık"},
  "ai_experimental": {"en":"experimental","pl":"eksperymentalne","de":"experimentell","tr":"deneysel"},
  "ai_scrap":     {"en":"Scrap keepers","pl":"Boty złomiarze","de":"Schrotthändler-Bots","tr":"Hurdacı botlar"},
  "ai_scrap_help":{"en":"The share of stall keepers that put their low refines (+0 to +3) on the counter, cheaply, instead of vendoring them - fodder for burning at the blacksmith, the way the hard servers play. Off by default.",
@@ -3424,10 +3727,10 @@ T.update({
  "ai_scrap_off": {"en":"off","pl":"wyłączone","de":"aus","tr":"kapalı"},
  "ai_scrap_all": {"en":"every keeper","pl":"każdy straganiarz","de":"jeder Händler","tr":"her tezgâhçı"},
  "ai_rest":      {"en":"Resting in town","pl":"Odpoczynek w mieście","de":"Ausruhen in der Stadt","tr":"Şehirde dinlenme"},
- "ai_rest_help": {"en":"The share of bots that stay on the market ring for about three minutes after finishing their business in the first village, strolling between the stalls. 0 - nobody rests: the bots hunt all the time and only come to town on errands. Whatever the slider says, a bot under level 18 never rests, and with no stall open nobody browses stalls.",
-                  "pl":"Udział botów, które po załatwieniu spraw w pierwszej wiosce zostają na rynku około trzech minut i spacerują między straganami. 0 - nikt nie odpoczywa: boty cały czas expią, a do miasta przychodzą tylko w sprawach. Niezależnie od suwaka bot poniżej 18 poziomu nie odpoczywa nigdy, a bez wystawionego straganu nikt nie ogląda straganów.",
-                  "de":"Anteil der Bots, die nach erledigten Besorgungen im ersten Dorf rund drei Minuten auf dem Marktring bleiben und zwischen den Ständen bummeln. 0 - niemand ruht sich aus: die Bots jagen die ganze Zeit und kommen nur für Besorgungen in die Stadt. Unabhängig vom Regler ruht ein Bot unter Stufe 18 nie, und ohne offenen Stand schaut niemand Stände an.",
-                  "tr":"İlk köydeki işlerini bitirdikten sonra yaklaşık üç dakika pazar halkasında kalıp tezgâhlar arasında dolaşan botların payı. 0 - kimse dinlenmez: botlar sürekli avlanır, şehre yalnızca iş için gelir. Kaydırıcı ne derse desin 18. seviyenin altındaki bot asla dinlenmez, açık tezgâh yokken kimse tezgâhlara bakmaz."},
+ "ai_rest_help": {"en":"The share of bots that stay on the market ring for about three minutes after finishing their business in the first village, strolling between the stalls. 0 - nobody rests: the bots hunt all the time and only come to town on errands. Whatever the slider says, a bot under level 18 never rests, and with no stall open nobody browses stalls. With the bot personalities on, only bots in a poor mood rest, and the slider is the share of them.",
+                  "pl":"Udział botów, które po załatwieniu spraw w pierwszej wiosce zostają na rynku około trzech minut i spacerują między straganami. 0 - nikt nie odpoczywa: boty cały czas expią, a do miasta przychodzą tylko w sprawach. Niezależnie od suwaka bot poniżej 18 poziomu nie odpoczywa nigdy, a bez wystawionego straganu nikt nie ogląda straganów. Przy włączonych osobowościach botów odpoczywają tylko boty w słabym nastroju, a suwak to ich udział.",
+                  "de":"Anteil der Bots, die nach erledigten Besorgungen im ersten Dorf rund drei Minuten auf dem Marktring bleiben und zwischen den Ständen bummeln. 0 - niemand ruht sich aus: die Bots jagen die ganze Zeit und kommen nur für Besorgungen in die Stadt. Unabhängig vom Regler ruht ein Bot unter Stufe 18 nie, und ohne offenen Stand schaut niemand Stände an. Mit eingeschalteten Bot-Persönlichkeiten ruhen nur Bots in schlechter Stimmung, und der Regler ist ihr Anteil.",
+                  "tr":"İlk köydeki işlerini bitirdikten sonra yaklaşık üç dakika pazar halkasında kalıp tezgâhlar arasında dolaşan botların payı. 0 - kimse dinlenmez: botlar sürekli avlanır, şehre yalnızca iş için gelir. Kaydırıcı ne derse desin 18. seviyenin altındaki bot asla dinlenmez, açık tezgâh yokken kimse tezgâhlara bakmaz. Bot kişilikleri açıkken yalnızca kötü ruh halindeki botlar dinlenir ve kaydırıcı onların payıdır."},
  "ai_rest_off":  {"en":"nobody rests","pl":"nikt nie odpoczywa","de":"niemand ruht","tr":"kimse dinlenmez"},
  "ai_rest_all":  {"en":"every bot","pl":"każdy bot","de":"jeder Bot","tr":"her bot"},
  "ai_kpvp":      {"en":"Hostility between kingdoms","pl":"Wrogość między królestwami","de":"Feindschaft zwischen Königreichen","tr":"Krallıklar arası düşmanlık"},
@@ -3444,12 +3747,47 @@ T.update({
  "ai_scroll_off":{"en":"no restriction","pl":"bez ograniczenia","de":"keine Einschränkung","tr":"kısıtlama yok"},
  "ai_scroll_top":{"en":"only the upgrade to +9","pl":"tylko ulepszenie na +9","de":"nur die Verbesserung auf +9","tr":"yalnızca +9 yükseltmesi"},
  "ai_chest":     {"en":"Moonlight Treasure Chests","pl":"Szkatułki Księżycowe","de":"Mondschein-Schatztruhen","tr":"Ay Işığı Sandıkları"},
- "ai_chest_help":{"en":"How often a chest drops, in thousandths: per monster kill, and per broken Metin stone. The game default is 10‰ (1%) and 300‰ (30%); more chests mean more bonus scrolls, speed potions and Blessing Scrolls for the bots. Applies within five seconds, to bots and players alike.",
-                  "pl":"Jak często wypada szkatułka, w promilach: z zabitego potwora i z rozbitego Metina. Domyślnie w grze 10‰ (1%) i 300‰ (30%); więcej szkatułek to więcej zwojów bonusów, mikstur szybkości i Zwojów Błogosławieństwa u botów. Działa w pięć sekund, dla botów i graczy tak samo.",
-                  "de":"Wie oft eine Truhe fällt, in Promille: pro getötetem Monster und pro zerstörtem Metin. Spielstandard 10‰ (1%) und 300‰ (30%); mehr Truhen heißt mehr Bonusrollen, Tempotränke und Segensrollen bei den Bots. Gilt binnen fünf Sekunden, für Bots wie Spieler.",
-                  "tr":"Sandığın ne sıklıkla düştüğü, binde olarak: öldürülen canavar başına ve kırılan Metin başına. Oyun varsayılanı 10‰ (%1) ve 300‰ (%30); daha çok sandık, botlarda daha çok bonus parşömeni, hız iksiri ve Kutsama Parşömeni demek. Beş saniye içinde, bot ve oyuncu için aynı şekilde uygulanır."},
+ "ai_chest_help":{"en":"How often a chest drops while a chest event runs (the Events page), in thousandths: per monster kill, and per broken Metin stone. Outside an event no chest drops. The game default is 10‰ (1%) and 300‰ (30%); more chests mean more bonus scrolls, speed potions and Blessing Scrolls for the bots. Applies within five seconds, to bots and players alike.",
+                  "pl":"Jak często wypada szkatułka, gdy trwa event szkatułek (strona Eventy), w promilach: z zabitego potwora i z rozbitego Metina. Poza eventem szkatułki nie wypadają. Domyślnie w grze 10‰ (1%) i 300‰ (30%); więcej szkatułek to więcej zwojów bonusów, mikstur szybkości i Zwojów Błogosławieństwa u botów. Działa w pięć sekund, dla botów i graczy tak samo.",
+                  "de":"Wie oft eine Truhe fällt, solange ein Truhen-Event läuft (Seite Events), in Promille: pro getötetem Monster und pro zerstörtem Metin. Außerhalb eines Events fällt keine Truhe. Spielstandard 10‰ (1%) und 300‰ (30%); mehr Truhen heißt mehr Bonusrollen, Tempotränke und Segensrollen bei den Bots. Gilt binnen fünf Sekunden, für Bots wie Spieler.",
+                  "tr":"Bir sandık etkinliği sürerken (Etkinlikler sayfası) sandığın ne sıklıkla düştüğü, binde olarak: öldürülen canavar başına ve kırılan Metin başına. Etkinlik dışında sandık düşmez. Oyun varsayılanı 10‰ (%1) ve 300‰ (%30); daha çok sandık, botlarda daha çok bonus parşömeni, hız iksiri ve Kutsama Parşömeni demek. Beş saniye içinde, bot ve oyuncu için aynı şekilde uygulanır."},
  "ev_nav":       {"en":"\U0001F389 Events","pl":"\U0001F389 Eventy","de":"\U0001F389 Events","tr":"\U0001F389 Etkinlikler"},
  "ev_open":      {"en":"\U0001F389 Open events","pl":"\U0001F389 Otw\u00f3rz eventy","de":"\U0001F389 Events \u00f6ffnen","tr":"\U0001F389 Etkinlikleri a\u00e7"},
+ "gl_nav":       {"en":"\U0001F6E1 Guilds","pl":"\U0001F6E1 Gildie","de":"\U0001F6E1 Gilden","tr":"\U0001F6E1 Loncalar"},
+ "gl_open":      {"en":"\U0001F6E1 Open guilds","pl":"\U0001F6E1 Otwórz gildie","de":"\U0001F6E1 Gilden öffnen","tr":"\U0001F6E1 Loncaları aç"},
+ "gl_dash_hint": {"en":"The bot guilds by tier: elite, strong, medium and ordinary, with their level, members, ladder and the war they are in.","pl":"Gildie botów wg klasy: elitarne, silne, średnie i zwykłe, z poziomem, członkami, rankingiem i toczoną wojną.","de":"Die Bot-Gilden nach Stufe: Elite, stark, mittel und gewöhnlich, mit Level, Mitgliedern, Rangliste und laufendem Krieg.","tr":"Bot loncaları kademeye göre: elit, güçlü, orta ve sıradan; seviye, üyeler, sıralama ve süren savaşla."},
+ "gl_intro":     {"en":"A bot guild has a tier. Every bot's strength is one number (level, weapon, skills, horse, armour); every ten minutes each kingdom's bots are cut into percentiles, and a guild is founded at the tier its founder's percentile puts it in: the top 3% found an elite guild, the top 15% a strong one, the top half a medium one, the rest an ordinary one. A master recruits only above its tier's floor, strongest first; a member that outgrows its guild leaves for a better one. Members offer the guild a share of their experience every hour, so a guild levels and its master spends the skill points.",
+                  "pl":"Gildia botów ma klasę. Siła każdego bota to jedna liczba (poziom, broń, umiejętności, koń, zbroja); co dziesięć minut boty każdego królestwa dzielone są na percentyle, a gildia powstaje w klasie, do której trafia percentyl założyciela: górne 3% zakłada gildię elitarną, górne 15% silną, górna połowa średnią, reszta zwykłą. Mistrz rekrutuje tylko powyżej progu swojej klasy, od najsilniejszych; członek, który przerósł gildię, odchodzi do lepszej. Członkowie co godzinę oddają gildii część zdobytego expa, więc gildia wbija poziomy, a mistrz wydaje punkty umiejętności.",
+                  "de":"Eine Bot-Gilde hat eine Stufe. Die Stärke jedes Bots ist eine Zahl (Level, Waffe, Fertigkeiten, Pferd, Rüstung); alle zehn Minuten werden die Bots jedes Königreichs in Perzentile geteilt, und eine Gilde wird in der Stufe gegründet, in die das Perzentil ihres Gründers fällt: die oberen 3% gründen eine Elite-Gilde, die oberen 15% eine starke, die obere Hälfte eine mittlere, der Rest eine gewöhnliche. Ein Meister rekrutiert nur über der Schwelle seiner Stufe, die Stärksten zuerst; ein Mitglied, das seiner Gilde entwachsen ist, wechselt in eine bessere. Mitglieder geben der Gilde stündlich einen Teil ihrer Erfahrung, so steigt die Gilde auf und der Meister verteilt die Fertigkeitspunkte.",
+                  "tr":"Bir bot loncasının kademesi vardır. Her botun gücü tek bir sayıdır (seviye, silah, beceriler, at, zırh); her on dakikada bir her krallığın botları yüzdelik dilimlere ayrılır ve lonca, kurucusunun dilimine denk gelen kademede kurulur: en üst %3 elit, en üst %15 güçlü, üst yarı orta, geri kalanı sıradan bir lonca kurar. Usta yalnızca kademesinin eşiğinin üzerinden, en güçlülerden başlayarak üye alır; loncasını aşan üye daha iyisine geçer. Üyeler her saat tecrübelerinin bir kısmını loncaya verir, böylece lonca seviye atlar ve usta beceri puanlarını harcar."},
+ "gl_stale":     {"en":"No game core has written a guild status yet (it does so within a minute of starting with this version).","pl":"Żaden rdzeń gry nie zapisał jeszcze statusu gildii (robi to w ciągu minuty od startu z tą wersją).","de":"Noch kein Spielkern hat einen Gildenstatus geschrieben (er tut es binnen einer Minute nach dem Start mit dieser Version).","tr":"Henüz hiçbir oyun çekirdeği lonca durumu yazmadı (bu sürümle başladıktan bir dakika içinde yazar)."},
+ "gl_summary":   {"en":"Bot guilds","pl":"Gildie botów","de":"Bot-Gilden","tr":"Bot loncaları"},
+ "gl_tier_elite":    {"en":"Elite","pl":"Elitarna","de":"Elite","tr":"Elit"},
+ "gl_tier_strong":   {"en":"Strong","pl":"Silna","de":"Stark","tr":"Güçlü"},
+ "gl_tier_medium":   {"en":"Medium","pl":"Średnia","de":"Mittel","tr":"Orta"},
+ "gl_tier_ordinary": {"en":"Ordinary","pl":"Zwykła","de":"Gewöhnlich","tr":"Sıradan"},
+ "gl_empire_shinsoo":{"en":"Shinsoo","pl":"Shinsoo","de":"Shinsoo","tr":"Shinsoo"},
+ "gl_empire_chunjo": {"en":"Chunjo","pl":"Chunjo","de":"Chunjo","tr":"Chunjo"},
+ "gl_empire_jinno":  {"en":"Jinno","pl":"Jinno","de":"Jinno","tr":"Jinno"},
+ "gl_empire_unknown":{"en":"?","pl":"?","de":"?","tr":"?"},
+ "gl_col_name":  {"en":"Guild","pl":"Gildia","de":"Gilde","tr":"Lonca"},
+ "gl_col_kingdom":{"en":"Kingdom","pl":"Królestwo","de":"Königreich","tr":"Krallık"},
+ "gl_col_tier":  {"en":"Tier","pl":"Klasa","de":"Stufe","tr":"Kademe"},
+ "gl_col_level": {"en":"Level","pl":"Poziom","de":"Level","tr":"Seviye"},
+ "gl_col_members":{"en":"Members","pl":"Członkowie","de":"Mitglieder","tr":"Üyeler"},
+ "gl_col_online":{"en":"Online","pl":"Online","de":"Online","tr":"Çevrimiçi"},
+ "gl_col_master":{"en":"Master","pl":"Mistrz","de":"Meister","tr":"Usta"},
+ "gl_col_strength":{"en":"Avg. strength","pl":"Śr. siła","de":"Ø Stärke","tr":"Ort. güç"},
+ "gl_col_ladder":{"en":"Ladder","pl":"Ranking","de":"Rangliste","tr":"Sıralama"},
+ "gl_col_record":{"en":"W/D/L","pl":"Z/R/P","de":"S/U/N","tr":"G/B/M"},
+ "gl_col_exp":   {"en":"Exp received","pl":"Otrzymany exp","de":"Erhaltene Erfahrung","tr":"Alınan tecrübe"},
+ "gl_col_war":   {"en":"War","pl":"Wojna","de":"Krieg","tr":"Savaş"},
+ "gl_war_with":  {"en":"vs","pl":"z","de":"gegen","tr":"vs"},
+ "gl_next_war":  {"en":"Next bot guild war","pl":"Następna wojna gildii botów","de":"Nächster Bot-Gildenkrieg","tr":"Sonraki bot lonca savaşı"},
+ "gl_next_war_now": {"en":"under way now (guild map)","pl":"trwa teraz (mapa gildyjna)","de":"läuft jetzt (Gildenkarte)","tr":"şu anda sürüyor (lonca haritası)"},
+ "gl_next_war_off": {"en":"not scheduled","pl":"niezaplanowana","de":"nicht geplant","tr":"planlanmadı"},
+ "gl_next_war_in": {"en":"in about","pl":"za ok.","de":"in etwa","tr":"yaklaşık"},
+ "gl_exp_note":  {"en":"Exp received counts what the bots have offered since the cores started; the guild's own exp column in the game is the same number, kept by the DB.","pl":"„Otrzymany exp” liczy, co boty oddały od startu rdzeni; kolumna expa gildii w grze to ta sama liczba, trzymana przez bazę.","de":"„Erhaltene Erfahrung“ zählt, was die Bots seit dem Start der Kerne gegeben haben; die Erfahrungsspalte der Gilde im Spiel ist dieselbe Zahl, von der Datenbank geführt.","tr":"„Alınan tecrübe“ çekirdekler başladığından beri botların verdiğini sayar; oyundaki lonca tecrübe sütunu veritabanının tuttuğu aynı sayıdır."},
  "ev_dash_hint": {"en":"Timed windows: Moonlight chests drop only while their event runs; more experience, drop or yang at chosen hours. \u201cActivate now\u201d switches an event on for a number of minutes.","pl":"Okna czasowe: Szkatu\u0142ki Blasku Ksi\u0119\u017cyca dropi\u0105 tylko wtedy, gdy trwa ich event; wi\u0119cej expa, dropu albo yang o wybranych porach. \u201eAktywuj teraz\u201d w\u0142\u0105cza event na podan\u0105 liczb\u0119 minut.","de":"Zeitfenster: Mondschein-Truhen fallen nur w\u00e4hrend ihres Events; mehr Erfahrung, Drop oder Yang zu gew\u00e4hlten Stunden. \u201eJetzt aktivieren\u201c schaltet ein Event f\u00fcr einige Minuten ein.","tr":"Zaman pencereleri: Ay I\u015f\u0131\u011f\u0131 Sand\u0131klar\u0131 yaln\u0131zca etkinlik s\u00fcrerken d\u00fc\u015fer; se\u00e7ilen saatlerde daha fazla tecr\u00fcbe, drop veya yang. \u201c\u015eimdi etkinle\u015ftir\u201d bir etkinli\u011fi belirli dakika a\u00e7ar."},
  "ev_intro":     {"en":"A row is a weekly window: which days, from what hour to what hour, and for a rate how many percent over the server's own rates (50 = +50%). The game core reads this within five seconds; nothing restarts. A window past midnight (22:00-02:00) runs into the next day.","pl":"Wiersz to okno tygodniowe: w jakie dni, od kt\u00f3rej do kt\u00f3rej, a dla rat o ile procent ponad ustawione raty serwera (50 = +50%). Rdze\u0144 gry odczytuje to w pi\u0119\u0107 sekund; nic si\u0119 nie restartuje. Okno przez p\u00f3\u0142noc (22:00-02:00) trwa do nast\u0119pnego dnia.","de":"Eine Zeile ist ein w\u00f6chentliches Fenster: welche Tage, von wann bis wann, und bei einer Rate wie viel Prozent \u00fcber den Serverraten (50 = +50%). Der Spielkern liest das binnen f\u00fcnf Sekunden; nichts startet neu. Ein Fenster \u00fcber Mitternacht (22:00-02:00) l\u00e4uft in den n\u00e4chsten Tag.","tr":"Bir sat\u0131r haftal\u0131k bir penceredir: hangi g\u00fcnler, saat ka\u00e7tan ka\u00e7a ve oran i\u00e7in sunucu oranlar\u0131n\u0131n y\u00fczde ka\u00e7 \u00fcst\u00fc (50 = +%50). Oyun \u00e7ekirde\u011fi bunu be\u015f saniyede okur; hi\u00e7bir \u015fey yeniden ba\u015flamaz. Gece yar\u0131s\u0131n\u0131 ge\u00e7en pencere (22:00-02:00) ertesi g\u00fcne sarkar."},
  "ev_chest_note":{"en":"Once a single chest window is in the schedule, the chests drop only inside the windows; the two sliders on the bot behaviour page say how often they drop then.","pl":"Gdy w harmonogramie jest cho\u0107 jedno okno szkatu\u0142ek, poza oknami szkatu\u0142ki nie dropi\u0105 wcale; dwa suwaki na stronie zachowania bot\u00f3w m\u00f3wi\u0105, jak cz\u0119sto dropi\u0105 w oknie.","de":"Sobald ein Truhenfenster im Plan steht, fallen die Truhen nur innerhalb der Fenster; die zwei Regler auf der Seite Bot-Verhalten sagen, wie oft sie dann fallen.","tr":"Planda tek bir sand\u0131k penceresi bile varsa sand\u0131klar yaln\u0131zca pencereler i\u00e7inde d\u00fc\u015fer; bot davran\u0131\u015f\u0131 sayfas\u0131ndaki iki kayd\u0131r\u0131c\u0131 o s\u0131rada ne s\u0131kl\u0131kta d\u00fc\u015ft\u00fc\u011f\u00fcn\u00fc s\u00f6yler."},
@@ -3485,8 +3823,8 @@ T.update({
  "ev_stop":      {"en":"End now","pl":"Zako\u0144cz","de":"Jetzt beenden","tr":"\u015eimdi bitir"},
  "ev_stopped":   {"en":"The event switched on by hand is over.","pl":"Event w\u0142\u0105czony r\u0119cznie zako\u0144czony.","de":"Das von Hand eingeschaltete Event ist beendet.","tr":"Elle a\u00e7\u0131lan etkinlik bitti."},
  "ai_chest_off":  {"en":"Turn the Moonlight chest drop off","pl":"Wyłącz drop Szkatułek Blasku Księżyca","de":"Mondschein-Truhen nicht fallen lassen","tr":"Ay Işığı Sandığı düşmesini kapat"},
- "ai_chest_off_help":{"en":"Ticked and saved, no chest drops from monsters or Metin stones (both figures go to 0‰); the sliders keep what you set and come back when you untick. Applies within five seconds.",
-                  "pl":"Zaznaczone i zapisane: żadna szkatułka nie wypada z potworów ani z Metinów (obie wartości idą na 0‰); suwaki pamiętają Twoje ustawienie i wracają po odznaczeniu. Działa w pięć sekund.",
+ "ai_chest_off_help":{"en":"Ticked and saved, no chest drops from monsters or Metin stones (both figures go to 0‰); the sliders keep what you set and come back when you untick. Unticking is not the same as chests falling: outside a chest event none drops whatever these say, so what brings them back is a window on the Events page. Applies within five seconds.",
+                  "pl":"Zaznaczone i zapisane: żadna szkatułka nie wypada z potworów ani z Metinów (obie wartości idą na 0‰); suwaki pamiętają Twoje ustawienie i wracają po odznaczeniu. Odznaczenie to jeszcze nie szkatułki: poza eventem szkatułek nie wypada żadna, cokolwiek mówią te suwaki — żeby leciały, potrzebne jest okno na stronie Eventy. Działa w pięć sekund.",
                   "de":"Angehakt und gespeichert fällt keine Truhe mehr von Monstern oder Metins (beide Werte auf 0‰); die Regler behalten deine Werte und kommen nach dem Abhaken zurück. Gilt binnen fünf Sekunden.",
                   "tr":"İşaretleyip kaydedince canavarlardan ve Metinlerden sandık düşmez (iki değer de 0‰ olur); kaydırıcılar ayarını hatırlar ve işareti kaldırınca geri gelir. Beş saniye içinde uygulanır."},
  "ai_chest_kill": {"en":"per monster kill","pl":"z zabitego potwora","de":"pro getötetem Monster","tr":"öldürülen canavar başına"},
@@ -3506,9 +3844,9 @@ T.update({
  "ai_save":      {"en":"Save","pl":"Zapisz","de":"Speichern","tr":"Kaydet"},
  "ai_items_open": {"en":"📦 What the bots may sell","pl":"📦 Co boty mogą sprzedawać","tr":"📦 Botların satabileceği eşyalar"},
  "ai_items_nav":  {"en":"📦 Item policy: merchant or stall","pl":"📦 Polityka przedmiotów: handlarz czy stragan","tr":"📦 Eşya politikası: satıcı mı tezgah mı"},
- "ai_items_intro":{"en":"One line per item: the item number (vnum) or a whole type (type:19), a space or tab, and one word. keep - never leaves the bag; stall - counter goods, ahead of everything else; merchant - sold to the NPC merchant on the next town visit; drop - thrown away at the merchant visit without a sale. Anything not listed here follows the bots' own rules. Saved, it reaches every bot within five seconds.",
-                  "pl":"Jedna linia na przedmiot: numer przedmiotu (vnum) albo cały typ (type:19), spacja lub tabulator i jedno słowo. keep (zostaw) - nigdy nie opuszcza plecaka; stall (stragan) - towar na ladę, przed wszystkim innym; merchant (handlarz) - sprzedany handlarzowi NPC przy najbliższej wizycie w mieście; drop (wyrzuc) - wyrzucony przy wizycie u handlarza, bez sprzedaży. Czego tu nie ma, podlega własnym regułom botów. Po zapisie dociera do każdego bota w ciągu pięciu sekund.",
-                  "tr":"Eşya başına bir satır: eşya numarası (vnum) veya bir tür tamamı (type:19), bir boşluk veya sekme ve tek kelime. keep (sakla) - asla çantadan çıkmaz; stall (tezgah) - her şeyden önce tezgah malı; merchant (satici) - bir sonraki şehir ziyaretinde NPC satıcıya satılır; drop (birak) - satıcı ziyaretinde satılmadan atılır. Burada listelenmeyen her şey botların kendi kurallarını izler. Kaydedildiğinde beş saniye içinde her bota ulaşır."},
+ "ai_items_intro":{"en":"One line per item: the item number (vnum) or a whole type (type:19), a space or tab, and one word. keep - never leaves the bag; stall - counter goods, ahead of everything else, but at most three lines of one item on a counter (marbles: three, each of another monster) while the rest waits in the bag; merchant - sold to the NPC merchant on the next town visit; drop - thrown away at the merchant visit without a sale. Anything not listed here follows the bots' own rules. Saved, it reaches every bot within five seconds.",
+                  "pl":"Jedna linia na przedmiot: numer przedmiotu (vnum) albo cały typ (type:19), spacja lub tabulator i jedno słowo. keep (zostaw) - nigdy nie opuszcza plecaka; stall (stragan) - towar na ladę, przed wszystkim innym, ale najwyżej 3 linie jednego przedmiotu na ladzie (marmury: 3, każdy innego potwora), a reszta czeka w plecaku; merchant (handlarz) - sprzedany handlarzowi NPC przy najbliższej wizycie w mieście; drop (wyrzuc) - wyrzucony przy wizycie u handlarza, bez sprzedaży. Czego tu nie ma, podlega własnym regułom botów. Po zapisie dociera do każdego bota w ciągu pięciu sekund.",
+                  "tr":"Eşya başına bir satır: eşya numarası (vnum) veya bir tür tamamı (type:19), bir boşluk veya sekme ve tek kelime. keep (sakla) - asla çantadan çıkmaz; stall (tezgah) - her şeyden önce tezgah malı, ancak bir tezgahta aynı eşyadan en fazla 3 satır (mermerler: 3, her biri farklı bir canavardan), geri kalanı çantada bekler; merchant (satici) - bir sonraki şehir ziyaretinde NPC satıcıya satılır; drop (birak) - satıcı ziyaretinde satılmadan atılır. Burada listelenmeyen her şey botların kendi kurallarını izler. Kaydedildiğinde beş saniye içinde her bota ulaşır."},
  "ai_items_format":{"en":"Item numbers: the item search on the give-item page shows them; item types: 5 materials, 18 quest items, 19 polymorph marbles, 17 skill books, 3 usable items (scrolls, stones). A # starts a comment.",
                   "pl":"Numery przedmiotów pokazuje wyszukiwarka na stronie nadawania przedmiotów; typy: 5 materiały, 18 przedmioty questowe, 19 marmury polimorfii, 17 księgi, 3 przedmioty użytkowe (zwoje, kamienie). Znak # zaczyna komentarz.",
                   "tr":"Eşya numaraları: eşya verme sayfasındaki eşya aramasında görünür; eşya türleri: 5 malzemeler, 18 görev eşyaları, 19 polimorf mermerleri, 17 yetenek kitapları, 3 kullanılabilir eşyalar (tomarlar, taşlar). # işareti yorum başlatır."},
@@ -3978,6 +4316,57 @@ MT2009_RATE_FLAGS = {
     "drop": ("mob_item", "mob_item_buyer"),
     "yang": ("mob_gold", "mob_gold_buyer"),
 }
+# Respawn time, as a percent of the regen line's own delay: the engine's
+# regen_event scales the next spawn by the event flags fastBossSpawn and
+# fastMobSpawn (0 = untouched, 1..100 = that share of the delay; playerbotify
+# adds the map-less names as the fallback to Seban's per-map ones). The page
+# shows 100 for "normal", the flag carries 0 for it.
+MT2009_REGEN_FLAGS = {"regen_boss": "fastBossSpawn", "regen_mob": "fastMobSpawn"}
+REGEN_MIN_PERCENT = 10
+# How many a respawn line keeps standing: regen_spawn tops each line up to
+# its own count times m2_boss_count / m2_mob_count percent (playerbotify's
+# regen_target_count; 100 = as written, 400 at most). Kiciamol, 18 September:
+# his own edit of regen.cpp was undone by every update.
+MT2009_REGEN_COUNT_FLAGS = {"count_boss": "m2_boss_count", "count_mob": "m2_mob_count"}
+REGEN_COUNT_CHOICES = (100, 150, 200, 250, 300, 400)
+
+def read_regen_mt2009():
+    """The two flags as the page shows them (100 = normal), from player.quest."""
+    out = {name: 100 for name in MT2009_REGEN_FLAGS}
+    with db() as c, c.cursor() as cur:
+        for name, flag in MT2009_REGEN_FLAGS.items():
+            cur.execute("SELECT lValue FROM player.quest WHERE dwPID=0 AND szName=%s LIMIT 1", (flag,))
+            row = cur.fetchone()
+            if row:
+                value = int(row["lValue"] if isinstance(row, dict) else row[0])
+                if REGEN_MIN_PERCENT <= value < 100:
+                    out[name] = value
+    return out
+
+def read_regen_count_mt2009():
+    """The two multipliers as percents (100 = as the game has it), from player.quest."""
+    out = {name: 100 for name in MT2009_REGEN_COUNT_FLAGS}
+    with db() as c, c.cursor() as cur:
+        for name, flag in MT2009_REGEN_COUNT_FLAGS.items():
+            cur.execute("SELECT lValue FROM player.quest WHERE dwPID=0 AND szName=%s LIMIT 1", (flag,))
+            row = cur.fetchone()
+            if row:
+                value = int(row["lValue"] if isinstance(row, dict) else row[0])
+                if 100 < value <= max(REGEN_COUNT_CHOICES):
+                    out[name] = value
+    return out
+
+def persist_regen_count_mt2009(cur, vals):
+    for name, flag in MT2009_REGEN_COUNT_FLAGS.items():
+        value = int(vals[name])
+        cur.execute("REPLACE INTO player.quest (dwPID, szName, szState, lValue) "
+                    "VALUES (0, %s, '', %s)", (flag, 0 if value <= 100 else value))
+
+def persist_regen_mt2009(cur, vals):
+    for name, flag in MT2009_REGEN_FLAGS.items():
+        value = int(vals[name])
+        cur.execute("REPLACE INTO player.quest (dwPID, szName, szState, lValue) "
+                    "VALUES (0, %s, '', %s)", (flag, 0 if value >= 100 else value))
 RATES_LIVE_WAIT = 12.0     # the helper's server timer ticks every 5 s
 GM_RELOAD_WAIT = 8.0       # a player timer ticks every 3 s
 
@@ -4928,6 +5317,11 @@ TPL_DASH = BASE.replace("__BODY__", """
 <a class="btn" href="{{url_for('events_page')}}">{{t('ev_open')}}</a>
 </div>
 <div class="card">
+<h3 class="help">{{t('gl_nav')}}</h3>
+<p class="muted">{{t('gl_dash_hint')}}</p>
+<a class="btn" href="{{url_for('guilds_page')}}">{{t('gl_open')}}</a>
+</div>
+<div class="card">
 <h3 class="help" title="{{t('tip_reset')}}">🔗 {{t('reset_title')}}</h3>
 <p class="muted">{{t('reset_hint')}}</p>
 <form method="post" action="{{url_for('admin_resetlink')}}">
@@ -5189,7 +5583,63 @@ function m2rates(e,d,y){
   document.getElementById('r_drop').value=d;
   document.getElementById('r_yang').value=y;
 }
-</script>""")
+</script>
+{% if regen %}
+<div class="card">
+<form method="post" action="{{url_for('rates_regen')}}">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<h3>⏱️ {{t('regen_title')}}</h3>
+<p class="muted">{{t('regen_help')}}</p>
+{% for key, icon in (("regen_boss", "🪨"), ("regen_mob", "👾")) %}
+<h3 style="margin-top:{{ 12 if loop.first else 18 }}px">{{icon}} {{t(key)}}</h3>
+<input id="{{key}}" name="{{key}}" type="number" min="10" max="100" step="1" value="{{regen[key]}}" required oninput="regenLabel('{{key}}')">
+<div class="muted" style="margin-top:6px">{{t('regen_faster')}}
+{% for m in (1, 2, 3, 4, 5, 10) %}<button type="button" class="small" style="margin:2px" onclick="regenSet('{{key}}', {{ (100 / m) | round(0) | int }})">×{{m}}</button>{% endfor %}
+<span id="{{key}}_mult" style="margin-left:8px"></span></div>
+{% endfor %}
+<script>
+function regenLabel(k){var v=parseInt(document.getElementById(k).value||"100",10);if(!(v>0))v=100;
+  var m=Math.round(100/v*10)/10;var s=(m%1===0)?String(m):m.toFixed(1);
+  document.getElementById(k+"_mult").textContent={{ t('regen_mult') | tojson }}.replace("{n}", s);}
+function regenSet(k,v){document.getElementById(k).value=v;regenLabel(k);}
+regenLabel("regen_boss");regenLabel("regen_mob");
+</script>
+<button class="big" style="margin-top:18px">{{t('regen_save')}}</button>
+</form></div>
+{% endif %}
+{% if regen_count %}
+<div class="card">
+<form method="post" action="{{url_for('rates_regen_count')}}">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<h3>👥 {{t('count_title')}}</h3>
+<p class="muted">{{t('count_help')}}</p>
+<p class="muted">⚠️ {{t('count_warn')}}</p>
+{% for key, icon in (("count_boss", "🪨"), ("count_mob", "👾")) %}
+<h3 style="margin-top:{{ 12 if loop.first else 18 }}px">{{icon}} {{t(key)}}</h3>
+<select id="{{key}}" name="{{key}}">
+{% for p in count_choices %}<option value="{{p}}"{% if regen_count[key] == p %} selected{% endif %}>×{{ (p / 100) | round(1) | replace(".0", "") | replace(".", ",") }}</option>{% endfor %}
+</select>
+{% endfor %}
+<button class="big" style="margin-top:18px">{{t('count_save')}}</button>
+</form></div>
+{% endif %}
+{% if channels %}
+<div class="card">
+<form method="post" action="{{url_for('rates_channels')}}">
+<input type="hidden" name="_csrf" value="{{csrf_token}}">
+<h3>🔀 {{t('ch2_title')}}</h3>
+<p class="muted">{{t('ch2_help')}}</p>
+<p>{% if channels.on %}{{ t('ch2_now_on').replace('{share}', channels.share|string) }}{% else %}{{t('ch2_now_off')}}{% endif %}</p>
+{% if channels.on and not channels.ports_open %}<p class="muted">⚠️ {{t('ch2_ports')}}</p>{% endif %}
+{% if channels.pending %}<p class="muted">🕓 {{ t('ch2_pending').replace('{what}', channels.pending) }}</p>{% endif %}
+<label><input type="checkbox" name="ch2" value="1"{% if channels.want_on %} checked{% endif %}> {{t('ch2_enable')}}</label>
+<h3 style="margin-top:12px">{{t('ch2_share')}}</h3>
+<select name="share">
+{% for p in channels.choices %}<option value="{{p}}"{% if channels.want_share == p %} selected{% endif %}>{{p}}%</option>{% endfor %}
+</select>
+<button class="big" style="margin-top:18px">{{t('ch2_save')}}</button>
+</form></div>
+{% endif %}""")
 
 # every state apply_rates.sh can leave behind has a sentence of its own
 RATE_STATES = ("running", "ok", "unsupported", "failed", "no_restart")
@@ -5328,13 +5778,66 @@ TPL_EVENTS = BASE.replace("__BODY__", """
 </div>
 """)
 
+TPL_GUILDS = BASE.replace("__BODY__", """
+<p><a href="{{url_for('dash')}}">{{t('back_players')}}</a></p>
+<div class="card">
+<h3>{{t('gl_nav')}}</h3>
+<p class="muted">{{t('gl_intro')}}</p>
+<p class="muted">{{t('gl_exp_note')}}</p>
+</div>
+
+<div class="card">
+<h3>{{t('gl_summary')}}{% if guilds %}: {{guilds|length}}
+  {% for key in tier_keys %}{% set n = guilds|selectattr('tier_key', 'equalto', key)|list|length %}{% if n %}<span class="badge">{{t(key)}}: {{n}}</span> {% endif %}{% endfor %}{% endif %}</h3>
+{% if not guilds %}<p class="muted">{{t('gl_stale')}}</p>{% else %}
+{% if next_wars %}<p>\u2694 {{t('gl_next_war')}}: {% for key, s in next_wars %}<b>{{t(key)}}</b>: {% if s == 0 %}{{t('gl_next_war_now')}}{% elif s < 0 %}{{t('gl_next_war_off')}}{% else %}{{t('gl_next_war_in')}} {{(s // 60) + 1}} min{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+<div style="overflow-x:auto">
+<table>
+<tr><th>{{t('gl_col_name')}}</th><th>{{t('gl_col_kingdom')}}</th><th>{{t('gl_col_tier')}}</th>
+    <th>{{t('gl_col_level')}}</th><th>{{t('gl_col_members')}}</th><th>{{t('gl_col_online')}}</th>
+    <th>{{t('gl_col_master')}}</th><th>{{t('gl_col_strength')}}</th><th>{{t('gl_col_ladder')}}</th>
+    <th>{{t('gl_col_record')}}</th><th>{{t('gl_col_exp')}}</th><th>{{t('gl_col_war')}}</th></tr>
+{% for g in guilds %}
+<tr>
+  <td><b>{{g.name}}</b></td>
+  <td>{{t(g.empire_key)}}</td>
+  <td>{{t(g.tier_key)}}</td>
+  <td>{{g.level}}</td>
+  <td>{{g.members}}</td>
+  <td>{{g.online}}</td>
+  <td>{{g.master}}</td>
+  <td>{{g.avg_strength}}</td>
+  <td>{{g.ladder}}</td>
+  <td>{{g.wins}}/{{g.draws}}/{{g.losses}}</td>
+  <td>{{g.exp_offered}}</td>
+  <td>{% if g.war_with %}\u2694 {{t('gl_war_with')}} <b>{{g.war_with}}</b> {{g.war_score}}:{{g.war_enemy_score}}{% endif %}{% if g.tower_raid %} \u26e9 {{t('gl_tower')}}{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% endif %}
+</div>
+""")
+
 TPL_AI = BASE.replace("__BODY__", """
+{% if bots_held %}
+<div class="card" style="border-color:#f59e0b">
+  <h2 style="color:#fbbf24">{{ t('ai_bots_held_title') }}</h2>
+  <p>{{ t('ai_bots_held_help') }}</p>
+  <form method="post" action="{{ url_for('ai_release_bots') }}">
+    <input type="hidden" name="_csrf" value="{{csrf_token}}">
+    <button type="submit" class="primary">{{ t('ai_bots_release') }}</button>
+  </form>
+</div>
+{% endif %}
+
 <p><a href="{{url_for('dash')}}">{{t('back_players')}}</a></p>
 <div class="card">
 <h3>{{t('ai_nav')}}</h3>
 <p class="muted">{{t('ai_intro')}}</p>
 <p><a class="btn" href="{{url_for('ai_item_policy')}}">{{t('ai_items_open')}}</a>
-   <a class="btn" href="{{url_for('events_page')}}">{{t('ev_open')}}</a></p>
+   <a class="btn" href="{{url_for('events_page')}}">{{t('ev_open')}}</a>
+   <a class="btn" href="{{url_for('guilds_page')}}">{{t('gl_open')}}</a></p>
 </div>
 
 <div class="card">
@@ -5344,6 +5847,11 @@ TPL_AI = BASE.replace("__BODY__", """
   <h3 style="margin:0 0 2px">💬 {{t('ai_chat')}}</h3>
   <p class="muted" style="margin:0 0 6px">{{t('ai_chat_help')}}</p>
   <label><input type="checkbox" name="CHAT" value="1" {% if cur.get('CHAT', 1) %}checked{% endif %}> {{t('ai_chat_on')}}</label>
+</div>
+<div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">🎭 {{t('ai_persona')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_persona_help')}}</p>
+  <label><input type="checkbox" name="PERSONA" value="1" {% if cur.get('PERSONA', 1) %}checked{% endif %}> {{t('ai_persona_on')}}</label>
 </div>
 <div style="margin-bottom:18px">
   <h3 style="margin:0 0 2px">📚 {{t('ai_books')}}</h3>
@@ -5359,6 +5867,22 @@ TPL_AI = BASE.replace("__BODY__", """
   <h3 style="margin:0 0 2px">🧑‍💻 {{t('ai_life')}} <span class="badge">{{t('ai_experimental')}}</span></h3>
   <p class="muted" style="margin:0 0 6px">{{t('ai_life_help')}}</p>
   <label><input type="checkbox" name="LIFE" value="1" {% if cur.get('LIFE', 0) %}checked{% endif %}> {{t('ai_life_on')}}</label>
+</div>
+<div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">🛡 {{t('ai_wars')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_wars_help')}}</p>
+  <label><input type="checkbox" name="WARS" value="1" {% if cur.get('WARS', 1) %}checked{% endif %}> {{t('ai_wars_on')}}</label>
+</div>
+<div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">⛩ {{t('ai_tower')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_tower_help')}}</p>
+  <label><input type="checkbox" name="TOWER" value="1" {% if cur.get('TOWER', 1) %}checked{% endif %}> {{t('ai_tower_on')}}</label>
+  <div style="margin-top:6px"><button type="submit" formaction="{{url_for('ai_tower_now')}}" formmethod="post">{{t('ai_tower_now')}}</button></div>
+</div>
+<div style="margin-bottom:18px">
+  <h3 style="margin:0 0 2px">🛒 {{t('ai_ishop')}}</h3>
+  <p class="muted" style="margin:0 0 6px">{{t('ai_ishop_help')}}</p>
+  <label><input type="checkbox" name="ISHOP" value="1" {% if cur.get('ISHOP', 1) %}checked{% endif %}> {{t('ai_ishop_on')}}</label>
 </div>
 <div style="margin-bottom:18px">
   <h3 style="margin:0 0 2px">♻️ {{t('ai_scrap')}}
@@ -5471,10 +5995,10 @@ MAP_I18N = {
   "solo_bot":"Bot solo","party_bot":"W grupie (PT)","metin_fight":"Walka z Metinem","loading":"Ładowanie...","world_stats":"Statystyki świata","active_bots":"Aktywne boty",
   "in_parties":"W grupach (PT)","avg_level":"Średni poziom","max_level":"Maks. poziom","rankings":"Rankingi botów","rank_level":"Poziom","rank_weapon":"Broń","rank_armor":"Zbroja",
   "rank_weapon30":"Bronie 30 Lv","rank_items":"Przedmioty","rank_horse":"Koń","rank_biologist":"Biolog","rank_hunting":"Polowanie","rank_shops":"Otwarte sklepy","rank_skills":"Umiejętności","rank_plus9":"Przedmiot +9","rank_stall_open":"Stragan otwarty","rank_empty":"Brak danych rankingu.","rank_show":"Pokaż","rank_search":"Szukaj w rankingu...","none":"Brak","items_short":"przedm.",
-  "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","ambition":"Ambicja","current_goal":"Aktualny cel",
+  "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","mood":"Nastrój","charakter":"Charakter","ambition":"Ambicja","current_goal":"Aktualny cel",
   "coordinates":"Koordynaty","open_inventory":"Kliknij, aby otworzyć ekwipunek i EQ","loading_character":"Ładowanie ekwipunku i statystyk postaci","error":"Błąd","not_found":"Nie znaleziono danych",
   "teleport_me":"Teleportuj moją postać w grze (1 klik)","position":"Pozycja","horse":"Koń","biologist":"Biolog","bio_stage":"Etap Biologa","hunting":"Polowanie","no_data":"Brak danych",
-  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.",
+  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.","shop":"Sklep","shop_none":"Ten bot nie ma otwartego sklepu.","shop_empty":"Lada jest pusta.","shop_price":"Cena","shop_premium":"premium",
   "unspent_skills":"Nierozdane: {n} pkt umiejętności","equipped":"Założony ekwipunek (EQ)","weapon":"Broń","armor":"Zbroja","helmet":"Hełm","shield":"Tarcza","bracelet":"Bransoleta",
   "boots":"Buty","necklace":"Naszyjnik","earrings":"Kolczyki","empty":"Puste","inventory":"Zawartość ekwipunku","items_count":"przedmiotów","inventory_empty":"Ekwipunek jest pusty.","quantity":"Ilość",
   "gear_history":"Historia ekwipunku","gear_history_hint":"Ulepszenia, spalenia, założenia, prezenty, sprzedaż, magazyn — z log.log","gear_history_loading":"Ładowanie historii...","gear_history_empty":"Brak wpisów o ekwipunku tej postaci.","gear_history_more":"Pokaż starsze",
@@ -5482,7 +6006,7 @@ MAP_I18N = {
   "log_error":"Błąd odczytu logów","network_error":"Błąd sieci","teleporting":"Teleportowanie Twojej postaci w grze...","teleported":"Przeteleportowano {name} do bota w grze!","you":"Cię","failure":"Niepowodzenie",
   "copied":"Skopiowano","paste":"wklej w grze [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo — zdobywanie doświadczenia","party_exp":"[PT] Zdobywanie doświadczenia w grupie","metin_hunt":"Polowanie na Metiny",
   "character_missing":"Postać nie znaleziona","bio_next":"Następna misja od Lv {level}: {name}","bio_key":"{name}{sep}{have}/{need}, czeka na: {key}",
-  "bio_all":"Wszystkie podstawowe misje ukończone","bio_complete":"komplet","bio_done":"ukończone","bio_skipped":"za niskie dla bota, pominięte: {n}",
+  "bio_all":"Wszystkie podstawowe misje ukończone","bio_complete":"komplet","bio_done":"ukończone","bio_skipped":"za niskie dla bota, pominięte: {n}","bio_dropper":"nie dotyczy — dropper nie robi Biologa",
   "bio_rank_now":"{done}/{total} ukończone • teraz: {stage}","bio_rank_next":"{done}/{total} ukończone • {stage}"
  },
  "en": {
@@ -5492,10 +6016,10 @@ MAP_I18N = {
   "solo_bot":"Solo bot","party_bot":"In party (PT)","metin_fight":"Fighting a Metin","loading":"Loading...","world_stats":"World statistics","active_bots":"Active bots",
   "in_parties":"In parties (PT)","avg_level":"Average level","max_level":"Max level","rankings":"Bot rankings","rank_level":"Level","rank_weapon":"Weapon","rank_armor":"Armour",
   "rank_weapon30":"Lv 30 Weapons","rank_items":"Items","rank_horse":"Horse","rank_biologist":"Biologist","rank_hunting":"Hunting","rank_shops":"Open shops","rank_skills":"Skills","rank_plus9":"Item +9","rank_stall_open":"Stall open","rank_empty":"No ranking data.","rank_show":"Show","rank_search":"Search ranking...","none":"None","items_short":"items",
-  "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","ambition":"Ambition","current_goal":"Current goal",
+  "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","mood":"Mood","charakter":"Character","ambition":"Ambition","current_goal":"Current goal",
   "coordinates":"Coordinates","open_inventory":"Click to open inventory and equipment","loading_character":"Loading character equipment and statistics","error":"Error","not_found":"No data found",
   "teleport_me":"Teleport my in-game character (one click)","position":"Position","horse":"Horse","biologist":"Biologist","bio_stage":"Biologist stage","hunting":"Hunting","no_data":"No data",
-  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.",
+  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.","shop":"Shop","shop_none":"This bot has no stall open.","shop_empty":"The counter is empty.","shop_price":"Price","shop_premium":"premium",
   "unspent_skills":"Unspent: {n} skill points","equipped":"Equipped items","weapon":"Weapon","armor":"Armour","helmet":"Helmet","shield":"Shield","bracelet":"Bracelet",
   "boots":"Boots","necklace":"Necklace","earrings":"Earrings","empty":"Empty","inventory":"Inventory contents","items_count":"items","inventory_empty":"The inventory is empty.","quantity":"Quantity",
   "gear_history":"Equipment history","gear_history_hint":"Refines, burns, equips, gifts, sales, safebox — from log.log","gear_history_loading":"Loading history...","gear_history_empty":"No equipment entries for this character.","gear_history_more":"Show older",
@@ -5503,7 +6027,7 @@ MAP_I18N = {
   "log_error":"Log read error","network_error":"Network error","teleporting":"Teleporting your in-game character...","teleported":"Teleported {name} to the bot in game!","you":"you","failure":"Failure",
   "copied":"Copied","paste":"paste in game [Enter] → Ctrl+V → [Enter]","solo_exp":"Solo levelling","party_exp":"[PT] Party levelling","metin_hunt":"Hunting Metins",
   "character_missing":"Character not found","bio_next":"Next mission at Lv {level}: {name}","bio_key":"{name}{sep}{have}/{need}, waiting for: {key}",
-  "bio_all":"All basic missions completed","bio_complete":"complete","bio_done":"done","bio_skipped":"outgrown, skipped: {n}",
+  "bio_all":"All basic missions completed","bio_complete":"complete","bio_done":"done","bio_skipped":"outgrown, skipped: {n}","bio_dropper":"does not apply — a dropper does not do the Biologist",
   "bio_rank_now":"{done}/{total} done • now: {stage}","bio_rank_next":"{done}/{total} done • {stage}"
  },
  "tr": {
@@ -5607,10 +6131,10 @@ def biologist_progress(level, quest_flags, held, map_index, language=None):
         if previous and quest_flags.get((previous, "__status")) != BIOLOGIST_COMPLETE_STATE:
             continue
         last = index
-        outgrown = level > required_level + BIOLOGIST_OUTGROWN_LEVELS
-        if outgrown:
-            outgrown_rows.append(index)
-        elif first is None:
+        # 2.0.60: no row is "too low" - the core does them in order at any
+        # level, so nothing is skipped and nothing is reported as skipped.
+        outgrown = False
+        if first is None:
             first = index
         key_phase = quest_name in BIOLOGIST_KEY_VNUMS and status == BIOLOGIST_KEY_ITEM_STATE
         wanted = BIOLOGIST_KEY_VNUMS[quest_name] if key_phase else BIOLOGIST_ITEM_VNUMS.get(quest_name, 0)
@@ -6072,6 +6596,28 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
   text-align: center;
   padding: 10px 0;
 }
+/* The stall window is the depot window one size up: the counter's lines carry
+   a price, so they are a list rather than a grid. Same chrome, same drag. */
+.m2-shop-window { width: 272px; }
+.m2-shop-where {
+  color: #8a7b5c;
+  font-size: 10px;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.m2-shop-list { max-height: 320px; overflow-y: auto; }
+.m2-shop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  border-bottom: 1px solid #2a2114;
+}
+.m2-shop-row:last-child { border-bottom: none; }
+.m2-shop-row img { width: 24px; height: 24px; image-rendering: pixelated; }
+.m2-shop-name { flex: 1; color: #d8c9a3; font-size: 11px; line-height: 1.2; }
+.m2-shop-count { color: #8a7b5c; font-size: 10px; }
+.m2-shop-price { color: var(--gold); font-size: 11px; white-space: nowrap; }
 .m2-grid-frame {
   position: relative;
   width: 170px;
@@ -6256,6 +6802,17 @@ TPL_LIVE_MAP = BASE.replace("__BODY__", """
     <div id="m2SafeboxItemOverlay" class="m2-item-overlay"></div>
   </div>
   <div id="m2SafeboxEmpty" class="m2-safebox-empty" style="display:none">{{m.depot_empty}}</div>
+</div>
+
+<!-- The bot's own offline stall (IkarusShop), floating like the depot above. -->
+<div id="m2ShopWindow" class="m2-safebox-window m2-shop-window">
+  <div class="m2-safebox-header" id="m2ShopHeader">
+    <span>🏪 <span id="m2ShopTitle">{{m.shop}}</span></span>
+    <button type="button" class="m2-safebox-close" onclick="closeShopWindow()">&times;</button>
+  </div>
+  <div id="m2ShopWhere" class="m2-shop-where"></div>
+  <div id="m2ShopList" class="m2-shop-list"></div>
+  <div id="m2ShopEmpty" class="m2-safebox-empty" style="display:none">{{m.shop_none}}</div>
 </div>
 
 <div id="botModal" class="modal-overlay" onclick="if(event.target===this)closeBotModal()">
@@ -6593,7 +7150,10 @@ function showTooltip(pid, ev) {
   tt.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
                  '<b style="font-size:14px;color:var(--gold2)">' + escapeHtml(bot.name) + '</b> ' + statusBadge + '</div>' +
                  '<div style="color:#ddd;margin-bottom:4px"><b>' + I18N.class + ':</b> ' + escapeHtml(bot.job) + ' &nbsp;|&nbsp; <b>' + I18N.level + ':</b> ' + bot.level + '</div>' +
-                 '<div style="color:#c084fc;margin-bottom:4px"><b>' + I18N.personality + ':</b> ' + escapeHtml(bot.personality) + '</div>' +
+                 '<div style="color:#c084fc;margin-bottom:4px"><b>' + I18N.personality + ':</b> ' + escapeHtml(bot.personality) +
+                   (bot.charakter ? ' <span style="color:#9ca3af">(' + I18N.charakter + ': ' + escapeHtml(bot.charakter) + ')</span>' : '') + '</div>' +
+                 (bot.mood ? '<div style="color:#fbbf24;margin-bottom:4px"><b>' + I18N.mood + ':</b> ' + escapeHtml(bot.mood) +
+                   (bot.hold ? ' &nbsp;|&nbsp; ' + escapeHtml(bot.hold) : '') + '</div>' : '') +
                  '<div style="color:#86efac;margin-bottom:4px"><b>' + I18N.ambition + ':</b> ' + escapeHtml(bot.ambition) + ' &nbsp;|&nbsp; <b>' + I18N.current_goal + ':</b> ' + escapeHtml(bot.goal) + '</div>' +
                  '<div style="color:#ffd700;margin-bottom:4px"><b>' + I18N.action + ':</b> ' + actionStr + '</div>' +
                  '<div style="color:#ddd;margin-bottom:4px"><b>' + I18N.status + ':</b> ' + ptStr + '</div>' +
@@ -6875,6 +7435,127 @@ function toggleBotSafeboxFromEl(el) {
   toggleBotSafebox(pid, el.getAttribute('data-botname'));
 }
 
+// The stall. What a bot sells stands in its own offline shop, not in its bag,
+// so the depot and the equipment windows never showed it: player.item with
+// window IKASHOP_OFFLINESHOP is the counter and each line's price is in that
+// item's ikashop_data (see /api/bot_shop).
+var g_currentShopPid = null;
+
+function toggleBotShopFromEl(el) {
+  var pid = parseInt(el.getAttribute('data-botpid'), 10);
+  toggleBotShop(pid, el.getAttribute('data-botname'));
+}
+
+function closeShopWindow() {
+  var win = document.getElementById('m2ShopWindow');
+  if (win) win.style.display = 'none';
+  g_currentShopPid = null;
+}
+
+function renderShopWindow(shop) {
+  var list = document.getElementById('m2ShopList');
+  var where = document.getElementById('m2ShopWhere');
+  var empty = document.getElementById('m2ShopEmpty');
+  if (!list || !where || !empty) return;
+  if (!shop) {
+    list.innerHTML = '';
+    where.textContent = '';
+    empty.textContent = I18N.shop_none || 'Ten bot nie ma otwartego sklepu.';
+    empty.style.display = 'block';
+    return;
+  }
+  var offers = shop.offers || [];
+  where.textContent = (shop.name || '') +
+      ' · ' + (I18N.map || 'Mapa') + ' ' + shop.map_index +
+      ' (' + shop.x + ', ' + shop.y + ')' +
+      (shop.is_premium ? ' · ' + (I18N.shop_premium || 'premium') : '');
+  if (!offers.length) {
+    list.innerHTML = '';
+    empty.textContent = I18N.shop_empty || 'Lada jest pusta.';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  var html = '';
+  offers.forEach(function(offer) {
+    html += '<div class="m2-shop-row">' +
+            '<img src="' + getItemIconUrl(offer.vnum) + '" onerror="' + ICON_ONERROR + '" draggable="false">' +
+            '<span class="m2-shop-name">' + escapeHtml(offer.name) +
+            (offer.count > 1 ? ' <span class="m2-shop-count">x' + offer.count + '</span>' : '') +
+            '</span>' +
+            '<span class="m2-shop-price">' + (offer.price || 0).toLocaleString() + '</span>' +
+            '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function toggleBotShop(pid, name) {
+  var win = document.getElementById('m2ShopWindow');
+  if (!win) return;
+
+  if (win.style.display !== 'none' && win.style.display !== '' && g_currentShopPid === pid) {
+    closeShopWindow();
+    return;
+  }
+
+  win.style.display = 'block';
+  g_currentShopPid = pid;
+  var titleEl = document.getElementById('m2ShopTitle');
+  if (titleEl) titleEl.textContent = (I18N.shop || 'Sklep') + (name ? ' — ' + name : '');
+  renderShopWindow(null);
+
+  fetch('/api/bot_shop/' + pid, {cache:'no-store'})
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      // Another bot may have been clicked while this was in flight.
+      if (g_currentShopPid !== pid) return;
+      if (!data || !data.ok) return;
+      renderShopWindow(data.shop);
+    })
+    .catch(function() {});
+}
+
+// The depot window's drag, asked for by id so the stall can have it too.
+function initFloatingWindowDrag(winId, headerId) {
+  var header = document.getElementById(headerId);
+  if (!header) return;
+  var win = null, dragging = false, offsetX = 0, offsetY = 0;
+
+  function onPointerDown(ev) {
+    win = document.getElementById(winId);
+    if (!win) return;
+    dragging = true;
+    var rect = win.getBoundingClientRect();
+    var point = ev.touches ? ev.touches[0] : ev;
+    offsetX = point.clientX - rect.left;
+    offsetY = point.clientY - rect.top;
+    win.style.left = rect.left + 'px';
+    win.style.top = rect.top + 'px';
+    win.style.right = 'auto';
+    ev.preventDefault();
+  }
+
+  function onPointerMove(ev) {
+    if (!dragging || !win) return;
+    var point = ev.touches ? ev.touches[0] : ev;
+    var maxLeft = window.innerWidth - win.offsetWidth;
+    var maxTop = window.innerHeight - win.offsetHeight;
+    win.style.left = Math.min(Math.max(0, point.clientX - offsetX), Math.max(0, maxLeft)) + 'px';
+    win.style.top = Math.min(Math.max(0, point.clientY - offsetY), Math.max(0, maxTop)) + 'px';
+  }
+
+  function onPointerUp() { dragging = false; }
+
+  header.addEventListener('mousedown', onPointerDown);
+  header.addEventListener('touchstart', onPointerDown, {passive: false});
+  document.addEventListener('mousemove', onPointerMove);
+  document.addEventListener('touchmove', onPointerMove, {passive: false});
+  document.addEventListener('mouseup', onPointerUp);
+  document.addEventListener('touchend', onPointerUp);
+}
+
+initFloatingWindowDrag('m2ShopWindow', 'm2ShopHeader');
+
 function closeSafeboxWindow() {
   var win = document.getElementById('m2SafeboxWindow');
   if (win) win.style.display = 'none';
@@ -6897,7 +7578,7 @@ function toggleBotSafebox(pid, name) {
   if (titleEl) titleEl.textContent = (I18N.depot || 'Magazyn') + (name ? ' — ' + name : '');
 
   renderSafeboxGrid([]);
-  fetch('/api/bot_safebox/' + pid)
+  fetch('/api/bot_safebox/' + pid, {cache:'no-store'})
     .then(function(res) { return res.json(); })
     .then(function(data) {
       // The window may have been pointed at a different bot while this was in
@@ -7189,7 +7870,7 @@ function openBotModal(pid) {
   modal.style.display = 'flex';
   content.innerHTML = '<p class="muted" style="text-align:center;padding:20px">' + I18N.loading_character + ' #' + pid + '...</p>';
 
-  fetch('/api/bot_inventory/' + pid)
+  fetch('/api/bot_inventory/' + pid, {cache:'no-store'})
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (!data || !data.ok) {
@@ -7198,6 +7879,9 @@ function openBotModal(pid) {
       }
 
       g_currentInvData = data;
+      // Every bot opens on page I, whichever page the last one was left on:
+      // the tab strip below is built with I active.
+      g_currentInvTab = 0;
       var p = data.player;
       var eq = data.equipment || {};
       var inv = data.inventory || [];
@@ -7239,8 +7923,13 @@ function openBotModal(pid) {
               '<div><b>HP:</b> <span style="color:#ef4444">' + (p.hp || 0) + '</span> / <b>MP:</b> <span style="color:#38bdf8">' + (p.mp || 0) + '</span></div>' +
               '<div><b>Yang:</b> <span style="color:#eab308;font-weight:700">' + (p.gold || 0).toLocaleString() + '</span></div>' +
               '<div><b>' + I18N.position + ':</b> (' + p.x + ', ' + p.y + ')</div>' +
-              '<div><b>' + I18N.personality + ':</b> <span style="color:#c084fc;font-weight:700">' + escapeHtml(p.personality) + '</span></div>' +
+              '<div><b>' + I18N.personality + ':</b> <span style="color:#c084fc;font-weight:700">' + escapeHtml(p.personality) + '</span>' +
+                (p.charakter ? ' <span style="color:#9ca3af">(' + I18N.charakter + ': ' + escapeHtml(p.charakter) + ')</span>' : '') + '</div>' +
               '<div><b>' + I18N.ambition + ':</b> <span style="color:#86efac;font-weight:700">' + escapeHtml(p.ambition) + '</span></div>' +
+              // Iwakura's Bot Mood System: "Aktualny nastroj powinien byc zawsze
+              // widoczny w panelu danego bota". Empty while the switch is off.
+              (p.mood ? '<div style="grid-column:1 / -1"><b>' + I18N.mood + ':</b> <span style="color:#fbbf24;font-weight:700">' + escapeHtml(p.mood) + '</span>' +
+                (p.hold ? ' &nbsp;|&nbsp; <span style="color:#9ca3af">' + escapeHtml(p.hold) + '</span>' : '') + '</div>' : '') +
               '<div style="grid-column:1 / -1"><b>' + I18N.current_goal + ':</b> <span style="color:#60a5fa;font-weight:700">' + escapeHtml(p.goal) + '</span></div>' +
               '<div style="grid-column:1 / -1"><b>' + I18N.action + ':</b> <span style="color:#ffd700">' + escapeHtml(p.action) + '</span></div>' +
               '<div><b>' + I18N.horse + ':</b> <span style="color:#c084fc;font-weight:700">Lv ' + (p.horse_level || 0) + '</span></div>' +
@@ -7363,13 +8052,35 @@ function openBotModal(pid) {
               ' data-botpid="' + p.id + '" data-botname="' + p.name + '"' +
               ' onclick="toggleBotSafeboxFromEl(this)">\U0001F4E6</div>';
 
+      // And the stall beside it: what the bot sells lives in its offline shop,
+      // which is neither the bag nor the depot (Tieru, 17 September).
+      html += '<div class="m2-equip-slot" title="' + (I18N.shop || 'Sklep') +
+              '" style="left:150px;top:46px;width:34px;height:34px;cursor:pointer;' +
+              'display:flex;align-items:center;justify-content:center;font-size:19px"' +
+              ' data-botpid="' + p.id + '" data-botname="' + p.name + '"' +
+              ' onclick="toggleBotShopFromEl(this)">\U0001F3EA</div>';
+
+      // No refresh button: opening a character is the refresh. openBotModal
+      // reads /api/bot_inventory every time it runs, and the three fetches of
+      // this window ask the browser for no cached copy, so what the card shows
+      // is what the database held the moment it was opened (Tieru, 20
+      // September - "jak wchodzi sie w jakas postac niech sie odswieza").
+      // What is left of the old caveat is the core's own delay, not ours: a
+      // bot's items are written on the cache cycle, an equip at once since
+      // 2.0.70, so a swap made seconds ago can still be missing whatever this
+      // window does.
+
       html += '</div>'; // End Equipment Section
 
-      // Inventory Tabs (Tab I & Tab II)
+      // Inventory tabs: two pages on r40250, four on the mt2009 line since
+      // 2.0.74 (cells 90-179). What lies past the bag - the horse's page, the
+      // belt's cells - is on no tab.
       html += '<div class="m2-inv-tabs">' +
               '<button type="button" class="m2-tab-btn active" onclick="switchInvTab(0)">I</button>' +
               '<button type="button" class="m2-tab-btn" onclick="switchInvTab(1)">II</button>' +
-              '</div>';
+{% if engine_mt2009 %}              '<button type="button" class="m2-tab-btn" onclick="switchInvTab(2)">III</button>' +
+              '<button type="button" class="m2-tab-btn" onclick="switchInvTab(3)">IV</button>' +
+{% endif %}              '</div>';
 
       // 5x9 Inventory Grid Frame
       html += '<div class="m2-grid-frame">' +
@@ -7948,7 +8659,10 @@ def api_bot_logs(bot_name):
         log_files = [
             "/opt/metin2/var/channel1/game1/syslog",
             "/opt/metin2/var/channel1/first/syslog",
-            "/opt/metin2/var/channel1/game2/syslog"
+            "/opt/metin2/var/channel1/game2/syslog",
+            "/opt/metin2/var/channel2/game1/syslog",
+            "/opt/metin2/var/channel2/first/syslog",
+            "/opt/metin2/var/channel2/game2/syslog",
         ]
         matched_lines = []
         # The whole name and not a prefix of one: "botgrom" used to match
@@ -11798,6 +12512,9 @@ def api_bot_positions():
                     "is_bot": is_bot,
                     "action": live_labels["action"],
                     "personality": live_labels["personality"],
+                    "charakter": live_labels["charakter"],
+                    "mood": live_labels["mood"],
+                    "hold": live_labels["hold"],
                     "ambition": live_labels["ambition"],
                     "goal": live_labels["goal"],
                     "live": bool(live),
@@ -11835,6 +12552,9 @@ def api_bot_inventory(pid):
                 player["hp"] = live.get("hp", player.get("hp"))
             player["action"] = live_labels["action"]
             player["personality"] = live_labels["personality"]
+            player["charakter"] = live_labels["charakter"]
+            player["mood"] = live_labels["mood"]
+            player["hold"] = live_labels["hold"]
             player["ambition"] = live_labels["ambition"]
             player["goal"] = live_labels["goal"]
             player["live"] = bool(live)
@@ -11880,6 +12600,8 @@ def api_bot_inventory(pid):
             biologist_label = biologist_stage_text(stage, messages, ": ")
             if skipped:
                 biologist_label += " • " + messages["bio_skipped"].format(n=skipped)
+            if live and live.get("personality_id") in BOT_DROPPER_PERSONALITIES:
+                biologist_label = messages["bio_dropper"]
             player["biologist_completed"] = completed
             # How many rows there are, so the card does not carry the number in
             # its own markup. It said "/7" outright, and a chain that grew a row
@@ -12016,6 +12738,62 @@ def api_bot_safebox(pid):
                     "attrs": attrs,
                 })
             return jsonify({"ok": True, "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/bot_shop/<int:pid>")
+def api_bot_shop(pid):
+    # What a bot sells is in neither the bag nor the depot: on the 2.x line its
+    # stall is a real IkarusShop offline shop. player.ikashop_offlineshop is the
+    # stand itself (map, position, banner) and player.item with window
+    # IKASHOP_OFFLINESHOP is what stands on the counter, each line's asking
+    # price in that item's own ikashop_data JSON - the same three places seban's
+    # panel reads for its shop feed. The stall belongs to the character, so the
+    # owner here is the pid, unlike the depot, which belongs to the account.
+    language = lang()
+    try:
+        with db() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT `map`, x, y, is_premium, CAST(`name` AS BINARY) AS name
+                  FROM player.ikashop_offlineshop
+                 WHERE owner = %s
+                """,
+                (pid,),
+            )
+            shop = cur.fetchone()
+            if not shop:
+                return jsonify({"ok": True, "shop": None})
+            cur.execute(
+                """
+                SELECT id, pos, `count`, vnum, socket0,
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(ikashop_data, '$.yang')) AS UNSIGNED) AS price
+                  FROM player.item
+                 WHERE owner_id = %s AND `window` = 'IKASHOP_OFFLINESHOP'
+                 ORDER BY pos ASC
+                """,
+                (pid,),
+            )
+            offers = []
+            for it in cur.fetchall():
+                vnum = it.get("vnum") or 0
+                offers.append({
+                    "id": it.get("id"),
+                    "vnum": vnum,
+                    "name": item_full_name(vnum, it.get("socket0"), language),
+                    "count": it.get("count") or 1,
+                    "pos": it.get("pos") or 0,
+                    "price": int(it.get("price") or 0),
+                })
+            return jsonify({"ok": True, "shop": {
+                # The banner is cp1250 like every other name column here.
+                "name": log_text(shop.get("name")),
+                "map_index": int(shop.get("map") or 0),
+                "x": int(shop.get("x") or 0),
+                "y": int(shop.get("y") or 0),
+                "is_premium": bool(shop.get("is_premium")),
+                "offers": offers,
+            }})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -12313,7 +13091,10 @@ def api_bot_rankings():
                     bio_completed, stage, _ = biologist_progress(
                         r.get("level"), bio_flags.get(int(r["id"]), {}),
                         bio_bags.get(int(r["id"]), {}), entry.get("map_index"), language)
-                    if stage is None:
+                    if entry.get("personality_id") in BOT_DROPPER_PERSONALITIES:
+                        bio_label = "%d/%d • %s" % (
+                            bio_completed, len(BIOLOGIST_REACHABLE), messages["bio_dropper"])
+                    elif stage is None:
                         bio_label = "%d/%d • %s" % (
                             bio_completed, len(BIOLOGIST_REACHABLE), messages["bio_complete"])
                     else:
@@ -12453,10 +13234,198 @@ def rates():
     if not have_script:
         flash(t("rates_no_script"), "error")
     st = rates_status().get("state", "")
-    return render_template_string(TPL_RATES, cur=cur_rates, presets=RATE_PRESETS,
+    regen = None
+    regen_count = None
+    if ENGINE_MT2009:
+        try:
+            regen = read_regen_mt2009()
+        except Exception:
+            regen = {name: 100 for name in MT2009_REGEN_FLAGS}
+        try:
+            regen_count = read_regen_count_mt2009()
+        except Exception:
+            regen_count = {name: 100 for name in MT2009_REGEN_COUNT_FLAGS}
+    channels = None
+    if ENGINE_MT2009:
+        try:
+            channels = read_channels_state()
+        except Exception:
+            channels = None
+    return render_template_string(TPL_RATES, cur=cur_rates, presets=RATE_PRESETS, regen=regen,
+                                  regen_count=regen_count, count_choices=REGEN_COUNT_CHOICES,
+                                  channels=channels,
                                   intro_key="rates_intro_mt2009" if ENGINE_MT2009 else "rates_intro",
                                   state_msg=t("rates_st_" + st) if st in RATE_STATES else "")
 
+
+@app.post("/rates/regen")
+@login_required
+def rates_regen():
+    """Stones and bosses, and ordinary monsters, respawning in a share of their
+    normal time. mt2009 only: the engine's regen_event reads the flags."""
+    if not ENGINE_MT2009:
+        return redirect(url_for("rates"))
+    vals = {}
+    for name in MT2009_REGEN_FLAGS:
+        raw = (request.form.get(name, "") or "").strip()
+        if not raw.isdigit() or not REGEN_MIN_PERCENT <= int(raw) <= 100:
+            flash(t("regen_range"), "error")
+            return redirect(url_for("rates"))
+        vals[name] = int(raw)
+    try:
+        with db() as c, c.cursor() as cur:
+            persist_regen_mt2009(cur, vals)
+    except Exception:
+        flash(t("db_down"), "error")
+        return redirect(url_for("rates"))
+    try:
+        status, qid = queue_and_wait("", "REGEN", "%d,%d" % (0 if vals["regen_boss"] >= 100 else vals["regen_boss"],
+                                                            0 if vals["regen_mob"] >= 100 else vals["regen_mob"]), "",
+                                     wait=RATES_LIVE_WAIT)
+    except Exception:
+        status, qid = "failed", 0
+    if status == "done":
+        flash(t("regen_saved_live"))
+    else:
+        if status == "timeout":
+            try:
+                with db() as c, c.cursor() as cur:
+                    cur.execute("UPDATE player.web_admin_queue SET status='cancelled' "
+                                "WHERE id=%s AND status='pending'", (qid,))
+            except Exception:
+                pass
+        flash(t("regen_saved_restart"))
+    return redirect(url_for("rates"))
+
+
+
+@app.post("/rates/regen_count")
+@login_required
+def rates_regen_count():
+    """How many monsters each respawn line keeps standing, stones and bosses
+    apart from the rest. mt2009 only: the engine's regen_spawn reads the flags."""
+    if not ENGINE_MT2009:
+        return redirect(url_for("rates"))
+    vals = {}
+    for name in MT2009_REGEN_COUNT_FLAGS:
+        raw = (request.form.get(name, "") or "").strip()
+        if not raw.isdigit() or int(raw) not in REGEN_COUNT_CHOICES:
+            flash(t("count_range"), "error")
+            return redirect(url_for("rates"))
+        vals[name] = int(raw)
+    try:
+        with db() as c, c.cursor() as cur:
+            persist_regen_count_mt2009(cur, vals)
+    except Exception:
+        flash(t("db_down"), "error")
+        return redirect(url_for("rates"))
+    try:
+        status, qid = queue_and_wait("", "REGEN_COUNT", "%d,%d" % (vals["count_boss"], vals["count_mob"]), "",
+                                     wait=RATES_LIVE_WAIT)
+    except Exception:
+        status, qid = "failed", 0
+    if status == "done":
+        flash(t("count_saved_live"))
+    else:
+        if status == "timeout":
+            try:
+                with db() as c, c.cursor() as cur:
+                    cur.execute("UPDATE player.web_admin_queue SET status='cancelled' "
+                                "WHERE id=%s AND status='pending'", (qid,))
+            except Exception:
+                pass
+        flash(t("count_saved_restart"))
+    return redirect(url_for("rates"))
+
+
+# The second channel (M2_PLAYERBOT_CH2). The game container decides it at every
+# start from .env (the launcher's) or from this panel's wish in the spool,
+# whichever was made later, and writes what it runs with beside the status
+# files. The panel cannot restart the container, so a change here applies at
+# the next start; the launcher reads the wish then and opens CH2's ports.
+CHANNELS_WISH = os.path.join(AI_SPOOL, "channels.wanted")
+CHANNELS_EFFECTIVE = "/opt/metin2/var/channels.effective"
+CH2_SHARE_CHOICES = (20, 30, 40, 50, 60, 70)
+
+
+def _read_kv(path):
+    out = {}
+    try:
+        with open(path, "r", encoding="ascii", errors="replace") as fh:
+            for line in fh:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def read_channels_state():
+    eff = _read_kv(CHANNELS_EFFECTIVE)
+    wish = _read_kv(CHANNELS_WISH)
+    on = eff.get("CH2") == "1"
+    share = int(eff.get("SHARE", "40")) if eff.get("SHARE", "").isdigit() else 40
+    ports = eff.get("PORTS", "13000-13002")
+    state = {"on": on, "share": share, "ports_open": ports.endswith("13012"),
+             "want_on": on, "want_share": share, "pending": "", "choices": CH2_SHARE_CHOICES}
+    if wish.get("CH2") in ("0", "1"):
+        w_on = wish.get("CH2") == "1"
+        w_share = int(wish.get("SHARE", "40")) if wish.get("SHARE", "").isdigit() else 40
+        state["want_on"], state["want_share"] = w_on, w_share
+        # A wish the running server does not match yet.
+        if w_on != on or (w_on and w_share != share):
+            state["pending"] = (t("ch2_on_word").replace("{share}", str(w_share)) if w_on
+                                else t("ch2_off_word"))
+    if state["want_share"] not in CH2_SHARE_CHOICES:
+        state["want_share"] = 40
+    return state
+
+
+@app.post("/rates/channels")
+@login_required
+def rates_channels():
+    """The second channel's switch and share, written for the next start."""
+    if not ENGINE_MT2009:
+        return redirect(url_for("rates"))
+    on = request.form.get("ch2", "") == "1"
+    raw = (request.form.get("share", "") or "").strip()
+    if not raw.isdigit() or int(raw) not in CH2_SHARE_CHOICES:
+        flash(t("ch2_bad"), "error")
+        return redirect(url_for("rates"))
+    body = "CH2=%d\nSHARE=%d\nSET_AT=%d\n" % (1 if on else 0, int(raw), int(time.time()))
+    tmp = CHANNELS_WISH + ".tmp"
+    try:
+        with open(tmp, "w", encoding="ascii") as fh:
+            fh.write(body)
+        os.replace(tmp, CHANNELS_WISH)
+    except OSError:
+        flash(t("ch2_failed"), "error")
+        return redirect(url_for("rates"))
+    app.logger.info("channels: CH2=%s share=%s written for the next start", int(on), raw)
+    flash(t("ch2_saved"))
+    return redirect(url_for("rates"))
+
+
+@app.route("/guilds")
+@login_required
+def guilds_page():
+    """The bot guilds: tier, level, members, ladder, the war under way. Read
+    from the cores' playerbot_guild_status.tsv; nothing is written."""
+    guilds = read_guild_status()
+    # Per kingdom: seconds until its next bot war (0 = under way), so a
+    # player who wants to watch one knows when and where to be.
+    next_wars = {}
+    for g in guilds:
+        nw = g.get("next_war_in_s")
+        if nw is None:
+            continue
+        cur = next_wars.get(g["empire"])
+        if cur is None or (nw >= 0 and (cur < 0 or nw < cur)):
+            next_wars[g["empire"]] = nw
+    next_war_rows = [(GUILD_EMPIRE_KEYS.get(e, "gl_empire_unknown"), s) for e, s in sorted(next_wars.items())]
+    return render_template_string(TPL_GUILDS, guilds=guilds, tier_keys=GUILD_TIER_KEYS,
+                                  next_wars=next_war_rows)
 
 
 @app.route("/events", methods=["GET", "POST"])
@@ -12561,6 +13530,10 @@ def ai_weights():
         vals["BOOKS"] = 1 if request.form.get("BOOKS") else 0
         vals["NIGHT"] = 1 if request.form.get("NIGHT") else 0
         vals["LIFE"] = 1 if request.form.get("LIFE") else 0
+        vals["WARS"] = 1 if request.form.get("WARS") else 0
+        vals["TOWER"] = 1 if request.form.get("TOWER") else 0
+        vals["ISHOP"] = 1 if request.form.get("ISHOP") else 0
+        vals["PERSONA"] = 1 if request.form.get("PERSONA") else 0
         try:
             vals["SCRAP"] = max(0, min(100, int(request.form.get("SCRAP", 0))))
         except (TypeError, ValueError):
@@ -12612,8 +13585,43 @@ def ai_weights():
         cur["CHEST"] = chest_kill
         cur["CHEST_STONE"] = chest_stone
     return render_template_string(TPL_AI, cur=cur, chest_off=chest_off,
-                                  keys=keys, wmin=AI_W_MIN,
+                                  keys=keys, wmin=AI_W_MIN, bots_held=read_bot_hold(),
                                   wmax=AI_W_MAX, wneutral=AI_W_NEUTRAL)
+
+
+@app.route("/ai/tower_now", methods=["POST"])
+@login_required
+def ai_tower_now():
+    """"Now" for the bot guilds' Demon Tower: the core watches this file's
+    mtime (PLAYERBOT_TOWER_NOW_PATH in playerbot_types.h) and calls a raid on
+    its next check when none is under way."""
+    path = os.path.join(AI_SPOOL, "playerbot_tower_now")
+    try:
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.utime(path, None)
+        flash(t("ai_tower_now_done"))
+    except OSError as e:
+        flash("%s: %s" % (t("ai_tower_now"), e))
+    return redirect(url_for("ai_weights"))
+
+
+@app.route("/ai/release_bots", methods=["POST"])
+@login_required
+def ai_release_bots():
+    """Let a held world's bots in.
+
+    A world made a moment ago has nobody's rates, respawns or personalities in
+    it yet, so the launcher can ask for its bots to wait at the door; this is
+    the door. The core reads the file on the same five-second clock as the
+    weights and fills the world through the ordinary spawn window, so nothing
+    is restarted and nothing arrives all at once."""
+    try:
+        write_bot_hold(False)
+        flash(t("ai_bots_released"))
+    except OSError as e:
+        flash("%s: %s" % (t("ai_bots_release"), e))
+    return redirect(url_for("ai_weights"))
 
 
 @app.route("/ai/items", methods=["GET", "POST"])
@@ -13789,7 +14797,10 @@ def action():
             return redirect(url_for("player", pid=pid))
         arg1, arg2 = preset.split(" ", 1)
     elif cmd == "SPEED":
-        arg2 = "3600"
+        # Thirty days: the speed stays until "Normal (reset)" takes it off.
+        # An hour looked like a speed that stopped working, and on mt2009 the
+        # old affect ignored the duration anyway (web_admin.quest, SPEED).
+        arg2 = "2592000"
     elif cmd == "LEVEL":
         # Checked here rather than left to the server, which does not refuse it
         # -- it returns from PointChange without a word and reports success all

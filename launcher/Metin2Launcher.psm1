@@ -40,6 +40,11 @@ function Get-M2DefaultLauncherConfig {
         # English-speaking, and a launcher nobody can read is a launcher nobody
         # runs correctly.
         language = 'pl'
+        # Whether PLAY starts the game client as well as the server. On by
+        # default, because that is what the button has always done and what
+        # most people want; an operator who only keeps the world running for
+        # other people turns it off and stops having a client open itself.
+        launchClientOnPlay = $true
         serverRoot = [IO.Path]::GetFullPath($ServerRoot)
     }
 }
@@ -61,6 +66,11 @@ function Get-M2LauncherConfig {
             $defaults.$name = [string]$loaded.$name
         }
     }
+    # Its own line, because the loop above casts to [string] and "False" is a
+    # non-empty string - every config would then read as "yes, start it".
+    if ($null -ne $loaded.PSObject.Properties['launchClientOnPlay']) {
+        $defaults.launchClientOnPlay = [bool]$loaded.launchClientOnPlay
+    }
     # A config saved before the client was unpacked beside the server, or
     # pointing at a client that has since moved, still gets the sibling.
     if (-not [string]$defaults.clientExecutable -or
@@ -80,7 +90,7 @@ function Save-M2LauncherConfig {
         [Parameter(Mandatory = $true)][string]$ConfigPath
     )
 
-    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl, language |
+    $Config | Select-Object schema, manifestUrl, clientRoot, clientExecutable, supportUploadUrl, language, launchClientOnPlay |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 }
 
@@ -236,6 +246,58 @@ function New-M2AntivirusError {
         'zebysmy zobaczyli, o ktory plik chodzi.')
 }
 
+function Get-M2FolderProcesses {
+    # Nazwy programow uruchomionych z tego folderu (albo z jego podfolderow).
+    # Windows nie pozwala nadpisac pliku .exe dzialajacego programu, a mowi
+    # o tym dopiero przy kopiowaniu - po pobraniu calej paczki.
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $names = @()
+    try {
+        $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+        foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
+            $path = $null
+            try { $path = $process.Path } catch { }
+            if ($path -and $path.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+                $names += $process.Name
+            }
+        }
+    }
+    catch { }
+    return @($names | Select-Object -Unique)
+}
+
+function Test-M2FileInUse {
+    # "Proces nie moze uzyskac dostepu do pliku, poniewaz jest on uzywany przez
+    # inny proces": ERROR_SHARING_VIOLATION albo ERROR_LOCK_VIOLATION, jako
+    # IOException gdzies w lancuchu wyjatkow (jak przy Test-M2AccessDenied).
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($exception) {
+        if ($exception.HResult -eq -2147024864 -or $exception.HResult -eq -2147024863) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+function New-M2FileInUseError {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Root
+    )
+
+    $holders = @(Get-M2FolderProcesses -Root $Root)
+    $lines = @()
+    $lines += "Plik jest teraz uzywany przez uruchomiony program: $Path"
+    if ($holders.Count -gt 0) {
+        $lines += "Z tego folderu dziala: $($holders -join ', ')."
+    }
+    $lines += 'Zamknij gre (sprawdz tez Menedzer zadan, czy metin2client.exe nie zostal w tle) i kliknij ZAINSTALUJ AKTUALIZACJE jeszcze raz.'
+    $lines += 'Nic nie zostalo zmienione - poprzednia wersja dziala dalej.'
+    return ($lines -join [Environment]::NewLine)
+}
+
 function Test-M2AccessDenied {
     # Nie da sie tego zlapac przez `catch [UnauthorizedAccessException]`:
     # przy $ErrorActionPreference = 'Stop' PowerShell 5.1 opakowuje blad
@@ -374,14 +436,27 @@ function Get-M2Download {
     if (-not [Uri]::TryCreate($Source, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne 'https') {
         throw 'Pakiet aktualizacji musi pochodzić z lokalnego pliku albo adresu HTTPS.'
     }
-    try {
-        Invoke-WebRequest -Uri $uri -OutFile $Destination -UseBasicParsing -TimeoutSec 300
-    }
-    catch {
-        if (Test-M2AntivirusBlock -ErrorRecord $_) {
-            throw (New-M2AntivirusError -Path $Destination -ErrorRecord $_)
+    # Three attempts: a release asset on GitHub answered "(500) Wewnetrzny
+    # blad serwera" and "Polaczenie zostalo nieoczekiwanie zakonczone" a
+    # second into the download, twice in two minutes, and served the same
+    # file minutes later (Hiob, 17 September). One request, one failure was
+    # the whole update. An antivirus block is raised at once - it does not
+    # mend itself.
+    $attempts = 3
+    for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $uri -OutFile $Destination -UseBasicParsing -TimeoutSec 300
+            return
         }
-        throw
+        catch {
+            if (Test-M2AntivirusBlock -ErrorRecord $_) {
+                throw (New-M2AntivirusError -Path $Destination -ErrorRecord $_)
+            }
+            if ($attempt -ge $attempts) { throw }
+            Write-Warning ('Pobieranie nie powiodlo sie (proba ' + $attempt + ' z ' + $attempts + '): ' + $_.Exception.Message + ' - ponawiam za 5 s.')
+            Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+        }
     }
 }
 
@@ -444,7 +519,9 @@ function Test-M2ProtectedPath {
         'linux-port\docker\.env',
         '.m2launcher.json',
         '.m2launcher-state.json',
-        '.m2install.json'
+        '.m2install.json',
+        # COOP: the friends' accounts and passwords, the hosting state.
+        '.m2coop.json'
     )
     foreach ($protectedFile in $protectedFiles) {
         if ($path.Equals($protectedFile, [StringComparison]::OrdinalIgnoreCase)) {
@@ -544,6 +621,12 @@ function Invoke-M2PackageUpdate {
                 catch {
                     if (Test-M2AntivirusBlock -ErrorRecord $_) {
                         throw (New-M2AntivirusError -Path $change.Relative -ErrorRecord $_)
+                    }
+                    # The game still running from this folder: its exe cannot be
+                    # replaced, and Windows says so only here (Ratorex, 18
+                    # September - five tries, each after a 65 MB download).
+                    if (Test-M2FileInUse -ErrorRecord $_) {
+                        throw (New-M2FileInUseError -Path $change.Destination -Root $target)
                     }
                     if (-not (Test-M2AccessDenied -ErrorRecord $_)) { throw }
                     # One repair is worth trying before this is called a failure:
@@ -1083,11 +1166,23 @@ function New-M2SupportBundle {
             # per core, and the crash traces m2-supervise keeps beside the
             # syserr (crash-<stamp>.txt, 2.0.8) - the only way to see where a
             # player's core died.
-            foreach ($core in @('first', 'game1', 'game2')) {
+            # The second channel's cores too, when the server has run one
+            # (M2_PLAYERBOT_CH2): their files are named ch2-<core>.
+            $coreKeys = @('first', 'game1', 'game2')
+            # A command that prints nothing gives $null, and [string] of that
+            # is $null too in Windows PowerShell 5.1 - so .Trim() on it threw
+            # "You cannot call a method on a null-valued expression" and the
+            # whole bundle failed on every server without a second channel
+            # (2.0.76: archonek, Urtopy). Joined and asked, never called.
+            $ch2Probe = $null
+            try { $ch2Probe = docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c 'ls /opt/metin2/var/channel2/game1/syslog 2>/dev/null' } catch { $ch2Probe = $null }
+            if (-not [string]::IsNullOrWhiteSpace([string](@($ch2Probe) -join ''))) { $coreKeys += @('ch2-first', 'ch2-game1', 'ch2-game2') }
+            foreach ($core in $coreKeys) {
                 $coreDir = '/opt/metin2/var/channel1/' + $core
+                if ($core -like 'ch2-*') { $coreDir = '/opt/metin2/var/channel2/' + $core.Substring(4) }
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('playerbot-syslog-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
-                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_EVENT -e PLAYERBOT_LIFE -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e PLAYERBOT_OFFLINE -e PLAYERBOT_MARKET -e PLAYERBOT_BAG -e PLAYERBOT_AI -e PLAYERBOT_ECONOMY -e PLAYERBOT_PVP -e PLAYERBOT_LOOT -e PLAYERBOT_PARTY:.accepted -e GMPANEL -e GM_PROFILE -e autospawn | tail -n 40000')
+                        ('for f in ' + $coreDir + '/log/*/syslog.* ' + $coreDir + '/syslog; do [ -f $f ] && tail -n 400000 $f; done 2>/dev/null | grep -a -e PLAYERBOT_WORLD -e PLAYERBOT_PORTAL -e PLAYERBOT_NAV -e PLAYERBOT_WATCHDOG -e PLAYERBOT_GOAL -e PLAYERBOT_LOAD -e PLAYERBOT_SHOP -e PLAYERBOT_TOWN -e PLAYERBOT_DEPARTURE -e PLAYERBOT_HORSE -e PLAYERBOT_MONKEY -e PLAYERBOT_AUTH -e PLAYERBOT_CHANNEL -e PLAYERBOT_SERVICE -e PLAYERBOT_CONFIG -e PLAYERBOT_EVENT -e PLAYERBOT_LIFE -e PLAYERBOT_CHEST -e PLAYERBOT_COMBAT -e PLAYERBOT_STOCK -e PLAYERBOT_GUILD -e PLAYERBOT_TOWER -e PLAYERBOT_ISHOP -e PLAYERBOT_OFFLINE -e PLAYERBOT_MARKET -e PLAYERBOT_BAG -e INVENTORY_ARRANGE -e PLAYERBOT_AI -e PLAYERBOT_ECONOMY -e PLAYERBOT_PVP -e PLAYERBOT_LOOT -e PLAYERBOT_MOOD -e PLAYERBOT_PERSONA -e PLAYERBOT_ANTIPK -e PLAYERBOT_MERC -e PLAYERBOT_LPP -e PLAYERBOT_PARTY:.accepted -e PLAYERBOT_PARTY:.asked -e QUEST_ITEM -e GMPANEL -e GM_PROFILE -e autospawn | tail -n 40000')
                 }
                 Invoke-M2CapturedCommand -OutputPath (Join-Path $work ('syserr-' + $core + '.txt')) -Command {
                     docker compose --project-directory $composeDir -f $composeFile exec -T game sh -c `
@@ -1780,7 +1875,16 @@ function New-M2DatabaseBackup {
 
         $zip = Join-Path $BackupRoot ($name + '.zip')
         if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-        Compress-Archive -Path (Join-Path $dir '*') -DestinationPath $zip -CompressionLevel Optimal
+        # Not Compress-Archive: in Windows PowerShell 5.1 it holds every entry
+        # in a MemoryStream, which stops at 2 GB, and a world whose log.sql had
+        # grown past that failed its backup with "Stream was too long". The
+        # backup comes before anything is deleted, so every reset of such a
+        # world was refused - three tries in a day for uxietoszef (18
+        # September), the world untouched each time. CreateFromDirectory
+        # writes each file straight into the zip, the same layout as before.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($dir, $zip,
+            [System.IO.Compression.CompressionLevel]::Optimal, $false)
         return [pscustomobject]@{
             Folder   = $dir
             Zip      = $zip
@@ -1974,5 +2078,6 @@ Export-ModuleMember -Function @(
     'Test-M2DockerRunning',
     'Sync-M2PlayerbotOverlay',
     'Set-M2PlayerbotsVersionEnvironment',
-    'Invoke-M2EnginePatches'
+    'Invoke-M2EnginePatches',
+    'Get-M2FolderProcesses'
 )

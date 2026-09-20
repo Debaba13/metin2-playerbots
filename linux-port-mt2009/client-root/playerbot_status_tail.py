@@ -47,17 +47,20 @@ def show(vid_arg, hex_arg):
 	textTail.RegisterChatTail(status[0], status[1])
 
 
-# A bot's personality where a player's alignment title stands.
+# A bot's personality, on its own row between its nickname and its guild name
+# (2026-09-16: textTail.AttachPersonality, a new CPythonTextTail row added
+# specifically for this - see UserInterface/PythonTextTail.cpp/.h. Before that
+# this used AttachTitle and sat where the alignment title (ranga) stands,
+# fighting the client over that one spot; the two are independent now, so the
+# classic alignment title is never touched and always shows.
 #
 # The server (ManagePlayerBotPersonalityTitle in playerbot_status.h) sends
 # "PlayerBotTitle <vid> <personality>" while a player is near, about every ten
-# seconds. textTail.AttachTitle writes it in the title's place, and the client
-# writes the alignment title back there whenever the bot's alignment changes -
-# which is every kill - so the keeper, one of game.py's updateables, attaches
-# the personality again once a second for every bot heard from in the last
-# minute. The names are the classic panel's, in CP1250 like every name the
-# client draws; the colours are neither the alignment titles' green nor their
-# red, so a personality does not read as a rank.
+# seconds. AttachPersonality is safe to call every second - unlike AttachTitle
+# it isn't fighting anything for its slot - so the keeper, one of game.py's
+# updateables, refreshes every bot heard from in the last minute anyway, simply
+# to expire ones nobody has heard from in a while. The names are the classic
+# panel's, in CP1250 like every name the client draws.
 
 PERSONALITY_TITLES = {
 	0: "Wytrwa\xb3y poszukiwacz",
@@ -71,6 +74,19 @@ PERSONALITY_TITLES = {
 	8: "Dropek z M3",
 	9: "Dropek z M2",
 	10: "Dropek medali",
+	# Iwakura's personalities (playerbot_persona_rules.h, PERSONA_TITLE_BASE +
+	# EPersona): under the server's PERSONA switch the title is the one that
+	# claims the bot now, and it changes with what the bot is doing.
+	100: "Grinder",
+	101: "Zdobywca",
+	102: "Handlarz",
+	103: "Hazardzista",
+	104: "Perfekcjonista",
+	105: "Pogromca Metin\xf3w",
+	106: "G\xf3rnik",
+	107: "Rybak",
+	108: "Najemnik",
+	109: "Towarzysz",
 }
 
 PERSONALITY_COLOURS = {
@@ -85,18 +101,29 @@ PERSONALITY_COLOURS = {
 	8: (0.95, 0.7, 0.95),
 	9: (0.8, 0.85, 0.65),
 	10: (0.95, 0.8, 0.55),
+	100: (0.8, 0.8, 0.8),
+	101: (0.55, 0.95, 0.55),
+	102: (1.0, 0.95, 0.5),
+	103: (1.0, 0.55, 0.85),
+	104: (1.0, 0.85, 0.35),
+	105: (1.0, 0.65, 0.3),
+	106: (0.75, 0.65, 0.5),
+	107: (0.45, 0.8, 1.0),
+	108: (1.0, 0.45, 0.45),
+	109: (0.45, 0.9, 0.95),
 }
 
 TITLE_REFRESH_SECONDS = 1.0
 TITLE_FORGET_SECONDS = 60.0
 
-# The player's own switch, "Tytuly botow" in the game options: the
-# personalities or the classic alignment titles (NerrVoVy, 15 September). One
-# line in playerbot_titles.cfg beside the client, because systemSetting has no
-# key of its own for it; a missing or unreadable file means on. Off, nothing is
-# attached and the keeper forgets what it held: the client writes the alignment
-# title back on the bot's next alignment change - a kill away - and textTail has
-# no DetachTitle to call.
+# The player's own switch, "Tytuly botow" in the game options: whether a bot's
+# personality shows in its own row at all (NerrVoVy, 15 September; moved off
+# AttachTitle onto its own row 2026-09-16). One line in playerbot_titles.cfg
+# beside the client, because systemSetting has no key of its own for it; a
+# missing or unreadable file means on. Off, nothing is attached and the keeper
+# forgets what it held; textTail.DetachPersonality clears anything already
+# showing. Either way the classic alignment title (ranga) is untouched - this
+# switch no longer has anything to do with it.
 TITLES_CONFIG_FILE = "playerbot_titles.cfg"
 TITLES_CONFIG_KEY = "personality_titles"
 _titlesEnabled = None
@@ -140,7 +167,12 @@ def SetTitlesEnabled(enabled):
 	except (IOError, OSError):
 		pass
 	if not _titlesEnabled:
-		GetTitleKeeper().Destroy()
+		keeper = GetTitleKeeper()
+		import textTail
+		if hasattr(textTail, "DetachPersonality"):
+			for vid in keeper.titles.keys():
+				textTail.DetachPersonality(vid)
+		keeper.Destroy()
 	return _titlesEnabled
 
 
@@ -160,10 +192,10 @@ def decode_title(vid_arg, personality_arg):
 
 def attach_title(vid, personality):
 	import textTail
-	if not hasattr(textTail, "AttachTitle"):
+	if not hasattr(textTail, "AttachPersonality"):
 		return False
 	(r, g, b) = PERSONALITY_COLOURS.get(personality, (1.0, 1.0, 1.0))
-	textTail.AttachTitle(vid, PERSONALITY_TITLES[personality], r, g, b)
+	textTail.AttachPersonality(vid, PERSONALITY_TITLES[personality], r, g, b)
 	return True
 
 

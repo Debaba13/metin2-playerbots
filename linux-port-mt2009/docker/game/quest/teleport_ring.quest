@@ -93,6 +93,9 @@ quest teleport_ring begin
 
         when 70058.use begin
             local player_level = pc.get_level()
+            -- The engine logs the use (QUEST_ITEM: use); this line says the
+            -- handler itself ran, which no log said on 2.0.62-2.0.64.
+            sys_log(0, string.format("QUEST_ITEM: teleport_ring runs name=%s level=%d map=%d", pc.get_name(), player_level, pc.get_map_index()))
             local is_in_any_city = is_player_in_any_m1() or is_player_in_any_m2()
             local base_price = math.max(math.floor(player_level / 5) * 1000, 1000)
 

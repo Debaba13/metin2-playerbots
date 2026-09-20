@@ -147,6 +147,25 @@ OWN = {
   `item_abs_chance` int(11) NOT NULL DEFAULT 0,
   `success` tinyint(4) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;""",
+    # Written by the game's CItemShopManager::BuyItem (itemshop_manager.cpp) for
+    # every purchase in the in-game ItemShop, a bot's included since 2.0.60:
+    # INSERT INTO itemshop VALUES (pid, aid, item_index, vnum, quantity, price,
+    # currency, item_id, NOW(), money_before). No dump in the package defines
+    # it (its itemshop_log is another shape nothing writes), so every purchase
+    # logged "Table 'log.itemshop' doesn't exist". item_id arrives as the
+    # literal null when the goods went to item_award.
+    'itemshop': """CREATE TABLE IF NOT EXISTS `itemshop` (
+  `pid` int(10) unsigned NOT NULL DEFAULT 0,
+  `aid` int(10) unsigned NOT NULL DEFAULT 0,
+  `item_index` int(11) NOT NULL DEFAULT 0,
+  `vnum` int(10) unsigned NOT NULL DEFAULT 0,
+  `quantity` int(11) NOT NULL DEFAULT 0,
+  `price` bigint(20) NOT NULL DEFAULT 0,
+  `currency` tinyint(4) NOT NULL DEFAULT 0,
+  `item_id` int(10) unsigned DEFAULT NULL,
+  `time` datetime NOT NULL DEFAULT current_timestamp(),
+  `money_before` int(10) unsigned NOT NULL DEFAULT 0
+) ENGINE=InnoDB;""",
     # Written by the package's own itemshop_manage quest (object/8001[4-6]/use):
     # INSERT INTO itemshop_dragon_scroll VALUES (pid, aid, NOW(), id, value).
     # No dump in the package defines it, so every purchase logged

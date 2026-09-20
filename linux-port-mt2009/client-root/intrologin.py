@@ -1156,11 +1156,20 @@ class LoginWindow(ui.ScriptWindow):
 			print " __RequestServerStateList - serverInfo.SERVER_LIST(%d)" % (serverID)
 			return
 
+		shown = []
 		for channelID, channelDataDict in channelDict.items():
 			channelName = channelDataDict["name"]
 			channelState = channelDataDict["state"]
+			# The second channel runs only when the server switches it on
+			# (M2_PLAYERBOT_CH2): listed once it answers, never as a dead line.
+			# CH1 is always the first line, so a line is still its channel.
+			if channelID > 0 and channelState in (serverInfo.STATE_NONE, serverInfo.STATE_DICT[0]):
+				continue
 			self.channelList.InsertItem(channelID, "%s %s" % (channelName, channelState))
+			shown.append(channelID)
 
+		if bakChannelID not in shown:
+			bakChannelID = 0
 		self.channelList.SelectItem(bakChannelID)
 
 	def NotifyChannelState(self, addrKey, state):
