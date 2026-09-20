@@ -641,9 +641,22 @@ function Assert-WorldLayoutDefault {
     if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return $Content }
     if ((Get-Content -LiteralPath $marker -Raw).Trim() -eq 'r40250') { return $Content }
     if ([Regex]::IsMatch($Content, '(?m)^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=')) { return $Content }
+    # How big this world is. Since 2.0.83 an operator may ask per kingdom
+    # instead of once, and then PLAYERBOT_AUTOSPAWN_COUNT says nothing about
+    # the size - three times seven hundred is the world one core would carry.
     $bots = 0
-    $count = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_COUNT=(.*)$')
-    if ($count.Success) { [int]::TryParse($count.Groups[1].Value.Trim(), [ref]$bots) | Out-Null }
+    $perKingdom = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_PER_KINGDOM=(.*)$')
+    if ($perKingdom.Success -and $perKingdom.Groups[1].Value.Trim() -eq '1') {
+        foreach ($key in @('PLAYERBOT_AUTOSPAWN_SHINSOO', 'PLAYERBOT_AUTOSPAWN_CHUNJO', 'PLAYERBOT_AUTOSPAWN_JINNO')) {
+            $one = 0
+            $match = [Regex]::Match($Content, ('(?m)^' + $key + '=(.*)$'))
+            if ($match.Success) { [int]::TryParse($match.Groups[1].Value.Trim(), [ref]$one) | Out-Null }
+            $bots += $one
+        }
+    } else {
+        $count = [Regex]::Match($Content, '(?m)^PLAYERBOT_AUTOSPAWN_COUNT=(.*)$')
+        if ($count.Success) { [int]::TryParse($count.Groups[1].Value.Trim(), [ref]$bots) | Out-Null }
+    }
     if ($bots -gt 1500) {
         Write-Host "Uklad swiata: zostaje split - ten swiat prosi o $bots botow, a przy takiej liczbie jeden rdzen bylby za wolny." -ForegroundColor Gray
         return (Set-DotEnvValue -Content $Content -Name 'M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED' -Value '1')

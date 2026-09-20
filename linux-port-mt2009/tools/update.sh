@@ -221,10 +221,24 @@ migrate_world_layout() {
     _env="$COMPOSE_DIR/.env"
     [ -f "$_env" ] || return 0
     grep -q '^M2_PLAYERBOT_WORLD_LAYOUT_DEFAULTED=' "$_env" && return 0
-    _bots=$(kv "$_env" PLAYERBOT_AUTOSPAWN_COUNT | tr -d ' \r')
-    case "$_bots" in
-        ''|*[!0-9]*) _bots=0 ;;
-    esac
+    # How big this world is. Since 2.0.83 an operator may ask per kingdom
+    # instead of once, and then PLAYERBOT_AUTOSPAWN_COUNT says nothing about
+    # the size - three times seven hundred is the world one core would carry.
+    if [ "$(kv "$_env" PLAYERBOT_AUTOSPAWN_PER_KINGDOM | tr -d ' \r')" = 1 ]; then
+        _bots=0
+        for _k in PLAYERBOT_AUTOSPAWN_SHINSOO PLAYERBOT_AUTOSPAWN_CHUNJO PLAYERBOT_AUTOSPAWN_JINNO; do
+            _one=$(kv "$_env" "$_k" | tr -d ' \r')
+            case "$_one" in
+                ''|*[!0-9]*) _one=0 ;;
+            esac
+            _bots=$((_bots + _one))
+        done
+    else
+        _bots=$(kv "$_env" PLAYERBOT_AUTOSPAWN_COUNT | tr -d ' \r')
+        case "$_bots" in
+            ''|*[!0-9]*) _bots=0 ;;
+        esac
+    fi
     [ -n "$(tail -c 1 "$_env")" ] && printf '\n' >> "$_env"
     if [ "$_bots" -gt 1500 ]; then
         note "   the world layout stays split: this world asks for $_bots bots"

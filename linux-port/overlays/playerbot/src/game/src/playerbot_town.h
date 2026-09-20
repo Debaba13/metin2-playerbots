@@ -2232,11 +2232,15 @@ namespace
 					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item)) ? 800 : -1;
 		if (item->GetType() == ITEM_POLYMORPH || IsPlayerBotMetinDetector(item->GetVnum()))
 			return PLAYERBOT_SHOP_POLYMORPH_SCORE;
-		// A bonus stone over what the bot keeps for its own rerolling. It is
-		// exempt from the junk rule - no bot may vendor one - and until now no
-		// counter listed one either, so whatever a bot could not spend it kept
-		// for ever: a hundred and ninety change stones in one bag (Nagash).
-		// Above the books and below the materials, the way a marble sits.
+		// A bonus stone over what the bot keeps for its own rerolling, above the
+		// books and below the materials, the way a marble sits. On this world it
+		// reaches no counter and that is the engine's word, not this branch's:
+		// 71084, 71085 and the ItemShop copies 76023/76024 all carry
+		// ITEM_ANTIFLAG_MYSHOP, so CollectPlayerBotShopItems drops them at its
+		// first line and a player cannot stand one on their own counter either.
+		// The rule is written by subtype rather than by vnum so a stone without
+		// the flag - a green 71151/71152, or any of them if an operator ever
+		// clears it in item_proto - is goods the day it appears.
 		if (IsPlayerBotBonusStoneItem(item))
 			return playerbot_stall_rules::HoldsSpare(CountPlayerBotVnumUnitsAhead(ch, item),
 					(int)item->GetCount(), GetPlayerBotCountedGoodsKeep(ch, item))
