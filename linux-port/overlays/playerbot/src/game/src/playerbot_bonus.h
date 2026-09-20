@@ -233,11 +233,52 @@ namespace
 	// wspanialy is worth a third more, what he calls bardzo zly a quarter.
 	// The equipment score scales its lines the same way
 	// (ScorePlayerBotApplyTiered), so buying and rerolling agree.
+	// The three slots a young bot is told to bonus first, and what it is told
+	// to want on each (Community Patch 1). They are the cheap pieces - the
+	// jewellery and the boots a bot of twenty wears are the weakest thing it
+	// owns - and that is the point: a line on one of them is worth more early
+	// than a grade of refine on any of them.
+	bool IsPlayerBotEarlySlotLine(BYTE wearCell, BYTE type)
+	{
+		switch (wearCell)
+		{
+			case WEAR_FOOTS:
+				// Maks. PZ, Szansa na cios krytyczny, Szybkosc ataku
+				return type == APPLY_MAX_HP || type == APPLY_CRITICAL_PCT ||
+						type == APPLY_ATT_SPEED;
+			case WEAR_NECK:
+				// Maks. PZ, Szansa na cios krytyczny, Szansa na przeszywajace uderzenie
+				return type == APPLY_MAX_HP || type == APPLY_CRITICAL_PCT ||
+						type == APPLY_PENETRATE_PCT;
+			case WEAR_WRIST:
+				// Maks. PZ, x% obrazen dodanych do PZ, przeszywajace uderzenie,
+				// Silny przeciwko Zwierzetom, Silny przeciwko Orkom
+				return type == APPLY_MAX_HP || type == APPLY_STEAL_HP ||
+						type == APPLY_PENETRATE_PCT ||
+						type == APPLY_ATTBONUS_ANIMAL || type == APPLY_ATTBONUS_ORC;
+			default:
+				return false;
+		}
+	}
+
+	// Under PLAYERBOT_EARLY_BONUS_MAX_LEVEL the jewellery and the boots come
+	// before everything else, and the change stone's refine floor does not
+	// apply to them.
+	bool IsPlayerBotEarlyBonusSlot(LPCHARACTER ch, BYTE wearCell)
+	{
+		if (!ch || ch->GetLevel() >= PLAYERBOT_EARLY_BONUS_MAX_LEVEL)
+			return false;
+		return wearCell == WEAR_NECK || wearCell == WEAR_WRIST || wearCell == WEAR_FOOTS;
+	}
+
 	int ScorePlayerBotBonusLine(LPCHARACTER ch, BYTE wearCell, BYTE type, short value)
 	{
 		const int raw = ScorePlayerBotBonusLineRaw(ch, wearCell, type, value);
 		const int tier = ch ? GetPlayerBotBonusTier(type, (int)ch->GetJob(), false) : 0;
-		return tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
+		int score = tier > 0 ? raw * PLAYERBOT_BONUS_TIER_PERCENT[tier] / 100 : raw;
+		if (IsPlayerBotEarlyBonusSlot(ch, wearCell) && IsPlayerBotEarlySlotLine(wearCell, type))
+			score = score * PLAYERBOT_EARLY_BONUS_PERCENT / 100;
+		return score;
 	}
 
 	// The one roll that finishes an item, and it is a different roll for every
@@ -699,26 +740,51 @@ namespace
 		state.dwNextBonusCheckTime = dwNow + PLAYERBOT_BONUS_INTERVAL;
 		// A young bot spends the green stones only, on the gear they are for.
 		const bool greenOnly = ch->GetLevel() < PLAYERBOT_BONUS_MIN_LEVEL;
+		// The green stones the engine lets a young bot use work on a weapon and
+		// on body armour of level forty or less, and on nothing else - so the
+		// necklace, the wrist and the boots Community Patch 1 asks a young bot
+		// to bonus first can only be done with an ordinary stone. Under the
+		// level those three slots are therefore allowed one, and every other
+		// slot is still green-only.
+		const bool ordinaryForJewellery = greenOnly &&
+				(HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_ADD_VNUM, false) ||
+				 HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_CHANGE_VNUM, false));
 		// Nothing to spend, nothing to weigh: the pass below scores every line
 		// of eight worn pieces, and a bag with no stone and no marble ends here.
 		if (!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_ADD_VNUM, greenOnly) &&
 				!HasPlayerBotBonusStone(ch, PLAYERBOT_BONUS_CHANGE_VNUM, greenOnly) &&
+				!ordinaryForJewellery &&
 				(greenOnly || FindPlayerBotBlessingMarbleCell(ch) < 0))
 			return false;
 
-		const BYTE wearSlots[] = {
+		// The order the stones are spent in. Past the early band it is the
+		// order the gear matters in; under it, Community Patch 1 puts the
+		// necklace, the wrist and the boots first, because that is where a
+		// line is worth more than a grade of refine.
+		const BYTE wearSlotsLate[] = {
 			WEAR_WEAPON, WEAR_BODY, WEAR_HEAD, WEAR_SHIELD,
 			WEAR_FOOTS, WEAR_WRIST, WEAR_NECK, WEAR_EAR
 		};
+		const BYTE wearSlotsEarly[] = {
+			WEAR_NECK, WEAR_WRIST, WEAR_FOOTS,
+			WEAR_WEAPON, WEAR_BODY, WEAR_HEAD, WEAR_SHIELD, WEAR_EAR
+		};
+		const bool early = ch->GetLevel() < PLAYERBOT_EARLY_BONUS_MAX_LEVEL;
+		const BYTE* wearSlots = early ? wearSlotsEarly : wearSlotsLate;
+		const size_t wearSlotCount = early ? sizeof(wearSlotsEarly) / sizeof(wearSlotsEarly[0])
+				: sizeof(wearSlotsLate) / sizeof(wearSlotsLate[0]);
 
 		int stonesUsed = 0;
-		for (size_t i = 0; i < sizeof(wearSlots) / sizeof(wearSlots[0]) &&
+		for (size_t i = 0; i < wearSlotCount &&
 				stonesUsed < PLAYERBOT_BONUS_STONES_PER_VISIT; ++i)
 		{
 			const BYTE wearCell = wearSlots[i];
 			LPITEM item = ch->GetWear(wearCell);
 			if (!CanPlayerBotRerollItem(item))
 				continue;
+			// A green stone cannot touch jewellery or boots at all, so the
+			// three early slots take an ordinary one even under the level.
+			const bool slotGreenOnly = greenOnly && !IsPlayerBotEarlyBonusSlot(ch, wearCell);
 
 			const int count = item->GetAttributeCount();
 			const int score = ScorePlayerBotItemBonuses(ch, item, wearCell);
@@ -729,7 +795,7 @@ namespace
 			// Four by the stone; the fifth is the marble's, below, and only when
 			// the bag holds one.
 			const bool bWantAdd = count < PLAYERBOT_BONUS_MAX_LINES;
-			const int marbleCell = (count == PLAYERBOT_BONUS_MAX_LINES && !greenOnly)
+			const int marbleCell = (count == PLAYERBOT_BONUS_MAX_LINES && !slotGreenOnly)
 					? FindPlayerBotBlessingMarbleCell(ch) : -1;
 			const bool bWantMarble = marbleCell >= 0;
 			// An item that has landed the roll its slot is bought for is finished.
@@ -740,7 +806,8 @@ namespace
 			// weapon full of them at twelve percent average was "good enough"
 			// to the score and not to anybody who looked at it.
 			const bool bWantChange = !bWantAdd && !bWantMarble &&
-					item->GetRefineLevel() >= PLAYERBOT_BONUS_CHANGE_MIN_REFINE &&
+					(item->GetRefineLevel() >= PLAYERBOT_BONUS_CHANGE_MIN_REFINE ||
+					 IsPlayerBotEarlyBonusSlot(ch, wearCell)) &&
 					!HasPlayerBotFinishedBonus(ch, item, wearCell) &&
 					(score < PLAYERBOT_BONUS_KEEP_SCORE ||
 					 IsPlayerBotSpecialLevel30WeaponVnum(item->GetVnum()));
@@ -750,7 +817,7 @@ namespace
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
 			const int stoneCell = bWantMarble ? -1
-					: FindPlayerBotBonusStoneCellLike(ch, stoneVnum, item, greenOnly);
+					: FindPlayerBotBonusStoneCellLike(ch, stoneVnum, item, slotGreenOnly);
 			if (!bWantMarble && stoneCell < 0)
 				continue;
 
@@ -831,6 +898,7 @@ namespace
 				continue;
 			const DWORD stoneVnum = bWantAdd ? PLAYERBOT_BONUS_ADD_VNUM
 					: PLAYERBOT_BONUS_CHANGE_VNUM;
+			// A weapon, so the green stone is the one a young bot may use here.
 			const int stoneCell = FindPlayerBotBonusStoneCellLike(ch, stoneVnum, item, greenOnly);
 			if (stoneCell < 0)
 				continue;

@@ -178,15 +178,36 @@ int main()
 		assert(GrinderTierFor(51) == 7 && GrinderTierFor(65) == 7);
 		assert(GrinderTierFor(66) == GRINDER_TIER_BEYOND && GrinderTierFor(120) == GRINDER_TIER_BEYOND);
 
+		unsigned int skippers = 0;
+		bool seen13 = false, seen19 = false, seenM3low = false, seenM3high = false;
 		for (uint32_t pid = 4; pid < 2504; ++pid)
 		{
 			// Nothing held under ten.
 			assert(GrinderLockFor(9, pid) == 0);
-			// The first village holds at fifteen; M3 at twenty-three.
-			assert(GrinderLockFor(10, pid) == 15 && GrinderLockFor(14, pid) == 15);
-			assert(GrinderLockFor(19, pid) == 23 && GrinderLockFor(23, pid) == 23);
+			// Community Patch 1: the first village holds somewhere in 13-19
+			// and M3 in 19-25, rather than every bot on the same level.
+			const uint8_t m1 = GrinderLockFor(12, pid);
+			assert(m1 >= 13 && m1 <= 19);
+			seen13 = seen13 || m1 == 13;
+			seen19 = seen19 || m1 == 19;
+			const uint8_t m3 = GrinderLockFor(19, pid);
+			// A quarter of the bots walk through the village and are held
+			// nowhere in it; the rest stop inside the band.
+			if (SkipsFirstVillage(pid))
+			{
+				++skippers;
+				assert(GrinderLockFor(13, pid) == 0 && GrinderLockFor(17, pid) == 0);
+			}
+			else
+			{
+				const uint8_t held = GrinderLockFor(13, pid);
+				assert(held >= 13 && held <= 19);
+			}
+			assert(m3 >= 19 && m3 <= 25);
+			seenM3low = seenM3low || m3 == 19;
+			seenM3high = seenM3high || m3 == 25;
 			// A bot already past its tier's lock holds where it stands.
-			assert(GrinderLockFor(17, pid) == 17 && GrinderLockFor(25, pid) == 25);
+			assert(GrinderLockFor(25, pid) == 25);
 			// The second village holds between thirty and thirty-five.
 			const uint8_t m2 = GrinderLockFor(26, pid);
 			assert(m2 >= 30 && m2 <= 35);
@@ -201,7 +222,7 @@ int main()
 			// The same pid always gets the same lock - every core asks.
 			assert(GrinderLockFor(26, pid) == m2);
 		}
-		// The spread uses the whole range.
+		// The spread uses the whole range, in every band.
 		bool seen30 = false, seen35 = false;
 		for (uint32_t pid = 4; pid < 2504; ++pid)
 		{
@@ -209,6 +230,9 @@ int main()
 			seen35 = seen35 || GrinderLockFor(26, pid) == 35;
 		}
 		assert(seen30 && seen35);
+		assert(seen13 && seen19 && seenM3low && seenM3high);
+		// A quarter, near enough: the draw is a hash, not a counter.
+		assert(skippers > 2500 / 6 && skippers < 2500 / 3);
 	}
 
 	// --- the Law of Advancement -----------------------------------------------
@@ -247,29 +271,65 @@ int main()
 		g.weapon = TGearPiece(9, 1);
 		g.armour = TGearPiece(9, 1);
 		g.shield = TGearPiece(9, 1);
+		g.helmet = TGearPiece(6, 30);
 		assert(AwansGaps(g) == (AWANS_GAP_WEAPON | AWANS_GAP_ARMOUR));
+		// From AWANS_HARD_FROM_LEVEL the weapon is asked for +8, not +7.
 		g.weapon = TGearPiece(7, 20);
 		g.armour = TGearPiece(6, 26);
 		g.shield = TGearPiece(6, 0);
+		assert(AwansGaps(g) == AWANS_GAP_WEAPON);
+		g.weapon = TGearPiece(8, 20);
 		assert(AwansGaps(g) == 0);
 		// The window is inclusive: a weapon of 20 still counts at 40.
 		g.level = 41;
 		assert(AwansGaps(g) == AWANS_GAP_WEAPON);
-		g.weapon = TGearPiece(7, 30, true);
+		g.weapon = TGearPiece(8, 30, true);
 		g.level = 60;
 		g.armour = TGearPiece(6, 48);
+		g.helmet = TGearPiece(6, 45);
 		assert(AwansGaps(g) == 0);
 		g.level = 61;
 		assert(AwansGaps(g) == AWANS_GAP_WEAPON);
 		g.level = 69;
-		assert(AwansGaps(g) == (AWANS_GAP_WEAPON | AWANS_GAP_ARMOUR));
+		// The helmet of 45 has fallen out of its window here too.
+		assert(AwansGaps(g) == (AWANS_GAP_WEAPON | AWANS_GAP_ARMOUR | AWANS_GAP_HELMET));
 		// A level-0 shield at +6 is still a shield at level seventy; one at +5 is not.
 		g.level = 70;
-		g.weapon = TGearPiece(7, 55);
+		g.weapon = TGearPiece(8, 55);
 		g.armour = TGearPiece(6, 54);
+		g.helmet = TGearPiece(6, 55);
 		assert(AwansGaps(g) == 0);
 		g.shield.plus = 5;
 		assert(AwansGaps(g) == AWANS_GAP_SHIELD);
+	}
+
+	{
+		// Community Patch 1: "od 35. poziomu wzwyz ... broni ulepszonej
+		// przynajmniej na +8 oraz zbroi, tarczy i maski/helmu na minimum +6".
+		// Below that level the helmet is not asked for at all - no merchant of
+		// a first village sells one a young bot could wear, and asking would
+		// hold every Grinder at its tier for good.
+		TAdvanceGear g;
+		g.level = AWANS_HARD_FROM_LEVEL - 1;
+		g.weapon = TGearPiece(7, 20);
+		g.armour = TGearPiece(6, 20);
+		g.shield = TGearPiece(6, 0);
+		assert(AwansGaps(g) == 0);
+		// One level on, the same bot is short of a helmet and of a grade.
+		g.level = AWANS_HARD_FROM_LEVEL;
+		assert(AwansGaps(g) == (AWANS_GAP_WEAPON | AWANS_GAP_HELMET));
+		g.weapon = TGearPiece(8, 20);
+		assert(AwansGaps(g) == AWANS_GAP_HELMET);
+		g.helmet = TGearPiece(5, 30);
+		assert(AwansGaps(g) == AWANS_GAP_HELMET);
+		g.helmet = TGearPiece(6, 30);
+		assert(AwansGaps(g) == 0);
+		// A helmet from level one is no helmet for a bot of fifty.
+		g.level = 50;
+		g.weapon = TGearPiece(8, 40);
+		g.armour = TGearPiece(6, 40);
+		g.helmet = TGearPiece(9, 1);
+		assert(AwansGaps(g) == AWANS_GAP_HELMET);
 	}
 	{
 		// M3's door: weapon +6 and armour +5, or the weapon alone for the

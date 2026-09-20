@@ -110,6 +110,8 @@ namespace
 				weapon && IsPlayerBotSpecialLevel30Weapon(weapon));
 		gear.armour = GetPlayerBotPersonaPiece(ch->GetWear(WEAR_BODY), false);
 		gear.shield = GetPlayerBotPersonaPiece(ch->GetWear(WEAR_SHIELD), false);
+		// The mask or the helmet, which the law asks for from level 35 on.
+		gear.helmet = GetPlayerBotPersonaPiece(ch->GetWear(WEAR_HEAD), false);
 		gear.wantsShield = PlayerBotWantsShield(ch);
 		return gear;
 	}

@@ -2454,7 +2454,8 @@ namespace
 		if (!gear)
 			return false;
 		if (grade < PLAYERBOT_SOUL_STONE_MIN_GRADE)
-			return IsPlayerBotWeakSoulStoneGear(gear);
+			return grade >= PLAYERBOT_SOUL_STONE_WEAK_MIN_GRADE &&
+					IsPlayerBotWeakSoulStoneGear(gear);
 		const int refine = gear->GetRefineLevel();
 		if (refine >= PLAYERBOT_SOUL_STONE_TOP_GEAR_REFINE)
 			return grade >= PLAYERBOT_SOUL_STONE_TOP_GEAR_MIN_GRADE;

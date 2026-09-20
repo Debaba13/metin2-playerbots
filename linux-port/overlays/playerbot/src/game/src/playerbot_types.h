@@ -698,6 +698,12 @@ namespace
 	// bought for that - the market wants +3 and +4 only.
 	const int PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_LEVEL = 21;
 	const int PLAYERBOT_SOUL_STONE_WEAK_GEAR_MAX_REFINE = 6;
+	// And Community Patch 1 names the grade the exception is for: "w ekwipunku
+	// przeznaczonym na poziomy 1-20 dopuszcza sie umieszczanie Kamieni Duszy
+	// (KD) +2, pod warunkiem, ze sa to wartosciowe kamienie zgodnie z tabela
+	// tierow KD". A +0 or a +1 goes nowhere now, whatever the piece; the kind
+	// is judged by the table as it always was.
+	const int PLAYERBOT_SOUL_STONE_WEAK_MIN_GRADE = 2;
 	const DWORD PLAYERBOT_GOAL_PLAN_INTERVAL = 5000;
 	// How long the population takes to log in after a start, and how often a
 	// batch goes out. The whole cohort used to be asked for in one call, and the
@@ -1398,6 +1404,15 @@ namespace
 	// weapon, or sells it whole on an offline counter, rather than mixing it off.
 	const long PLAYERBOT_BONUS_SKILL_PVP_PCT = 21;
 	const BYTE PLAYERBOT_BONUS_CHANGE_MIN_REFINE = 5;
+	// Community Patch 1 (Iwakura, 20 September): "na wczesnym etapie gry
+	// (przed 45. poziomem) bonusy w bransoletach, naszyjnikach oraz butach sa
+	// znacznie wazniejsze niz stopien ulepszenia tych przedmiotow ... nawet
+	// jesli sa to przedmioty bazowo najslabsze i bez wzgledu na poziom ich
+	// ulepszenia". So under this level those three slots are worked on first,
+	// the change stone's +5 floor does not apply to them, and the lines he
+	// names for each are worth half as much again as the table alone says.
+	const BYTE PLAYERBOT_EARLY_BONUS_MAX_LEVEL = 45;
+	const int PLAYERBOT_EARLY_BONUS_PERCENT = 150;
 	const long PLAYERBOT_BONUS_KEEP_HP = 1500;
 	const long PLAYERBOT_BONUS_KEEP_CRIT = 5;
 	// The caster's half of the same rule, and it exists because the two damage

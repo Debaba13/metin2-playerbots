@@ -2295,8 +2295,10 @@ namespace
 		if (scrollCell < 0)
 			return false;
 
+		// "1. Bronie, 2. Zbroje, 3. Tarcze, 4. Helmy" (Community Patch 1) -
+		// the order every other refine pass already used, and this one did not.
 		const BYTE wearSlots[] = {
-			WEAR_WEAPON, WEAR_BODY, WEAR_HEAD, WEAR_SHIELD,
+			WEAR_WEAPON, WEAR_BODY, WEAR_SHIELD, WEAR_HEAD,
 			WEAR_FOOTS, WEAR_WRIST, WEAR_NECK, WEAR_EAR
 		};
 		LPITEM best = NULL;

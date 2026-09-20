@@ -268,8 +268,17 @@ namespace playerbot_persona
 	};
 
 	const TGrinderTier GRINDER_TIERS[] = {
-		{ 1, 10, 18, 15, 15 },  // first village
-		{ 2, 19, 25, 23, 23 },  // M3, the cursed animals and the level-30 weapons
+		// Community Patch 1 (Iwakura, 20 September) widened the first two: a
+		// tier that stopped every bot on the same level made a first village
+		// of bots all of fifteen, which is not what a village looks like.
+		// Each level of the range is as likely as any other - the lock is
+		// MixPid over it - so the band fills evenly rather than at its ends.
+		// The band a tier is farmed on is unchanged - tier 1 is the first
+		// village, which ends where M3 begins - and only where the bot
+		// stops inside it moved. A lock of 19 therefore carries the bot to
+		// the last level of the village and no further.
+		{ 1, 10, 18, 13, 19 },  // first village
+		{ 2, 19, 25, 19, 25 },  // M3, the cursed animals and the level-30 weapons
 		{ 3, 26, 35, 30, 35 },  // second village
 		{ 5, 36, 50, 40, 48 },  // Orc Valley and the Yongbi Desert
 		{ 7, 51, 65, 55, 62 },  // Mount Sohan
@@ -277,6 +286,13 @@ namespace playerbot_persona
 	const unsigned int GRINDER_TIER_COUNT = sizeof(GRINDER_TIERS) / sizeof(GRINDER_TIERS[0]);
 	// Under this the bot is still learning to walk: no lock at all.
 	const uint8_t GRINDER_FREE_BELOW = 10;
+	// "25% botow moze pominac farmienie M1 na 13. poziomie, aby od razu
+	// skupic sie na Tierze 2 (M3)" - Community Patch 1. Such a bot is held
+	// nowhere in the first village: it walks through tier 1 and stops for the
+	// first time in the M3 band, which is where its tier 2 lock puts it. The
+	// share is drawn by pid, so it is the same bot every time it logs in.
+	const uint8_t GRINDER_TIER1_SKIP_PERCENT = 25;
+	const uint8_t GRINDER_TIER1_SKIP_LEVEL = 13;
 	// The tier number the document never names, for everything past Sohan.
 	const uint8_t GRINDER_TIER_BEYOND = 8;
 
@@ -304,6 +320,12 @@ namespace playerbot_persona
 	// The level a Grinder of this level holds at: the tier's lock, spread by
 	// pid inside the tier's lock range, or the bot's own level when it has
 	// already passed that (it holds where it stands). Zero is no lock.
+	// True for the quarter of the bots that do not stop in the first village.
+	inline bool SkipsFirstVillage(uint32_t pid)
+	{
+		return MixPid(pid, 0x534b4950u) % 100u < (uint32_t)GRINDER_TIER1_SKIP_PERCENT;
+	}
+
 	inline uint8_t GrinderLockFor(uint8_t level, uint32_t pid)
 	{
 		if (level < GRINDER_FREE_BELOW)
@@ -313,6 +335,11 @@ namespace playerbot_persona
 			const TGrinderTier& t = GRINDER_TIERS[i];
 			if (level < t.minLevel || level > t.maxLevel)
 				continue;
+			// The quarter that walks through the first village: no lock here
+			// at all from the level the document names, so the bot carries on
+			// to M3 and is held there for the first time.
+			if (t.tier == 1 && level >= GRINDER_TIER1_SKIP_LEVEL && SkipsFirstVillage(pid))
+				return 0;
 			const uint8_t lock = (uint8_t)(t.lockMin +
 					MixPid(pid, 0x4c4f434bu) % (uint32_t)(t.lockMax - t.lockMin + 1));
 			return lock < level ? level : lock;
@@ -332,6 +359,15 @@ namespace playerbot_persona
 	const uint8_t AWANS_WEAPON_PLUS = 7;
 	const uint8_t AWANS_ARMOUR_PLUS = 6;
 	const uint8_t AWANS_SHIELD_PLUS = 6;
+	// "Dla botow od 35. poziomu wzwyz optymalnym rozwiazaniem jest posiadanie
+	// broni ulepszonej przynajmniej na +8 oraz zbroi, tarczy i maski/helmu na
+	// minimum +6. Pozniejsze etapy gry wymagaja znacznie wiekszej defensywy"
+	// (Community Patch 1). The helmet joins the law there and not before: the
+	// merchants of the first villages sell none a bot of ten could wear, and
+	// asking for one would hold every young Grinder at its tier for ever.
+	const uint8_t AWANS_HARD_FROM_LEVEL = 35;
+	const uint8_t AWANS_WEAPON_PLUS_HARD = 8;
+	const uint8_t AWANS_HELMET_PLUS = 6;
 	const uint8_t AWANS_LEVEL_WINDOW = 20;
 	const uint8_t AWANS_PREMIUM_LEVEL_WINDOW = 30;
 	// A shield is asked for its +6 and not for its level. The document wants
@@ -366,6 +402,8 @@ namespace playerbot_persona
 		TGearPiece weapon;
 		TGearPiece armour;
 		TGearPiece shield;
+		// Asked for from AWANS_HARD_FROM_LEVEL, and ignored below it.
+		TGearPiece helmet;
 		// A bow and a two-handed weapon leave the shield slot empty for good.
 		bool wantsShield;
 		TAdvanceGear() : level(1), wantsShield(true) {}
@@ -375,6 +413,7 @@ namespace playerbot_persona
 	const int AWANS_GAP_WEAPON = 1;
 	const int AWANS_GAP_ARMOUR = 2;
 	const int AWANS_GAP_SHIELD = 4;
+	const int AWANS_GAP_HELMET = 8;
 
 	inline bool IsPieceCurrent(const TGearPiece& p, uint8_t level)
 	{
@@ -385,8 +424,12 @@ namespace playerbot_persona
 	inline int AwansGaps(const TAdvanceGear& g)
 	{
 		int gaps = 0;
-		if (!IsPieceCurrent(g.weapon, g.level) || g.weapon.plus < AWANS_WEAPON_PLUS)
+		const bool hard = g.level >= AWANS_HARD_FROM_LEVEL;
+		const uint8_t weaponPlus = hard ? AWANS_WEAPON_PLUS_HARD : AWANS_WEAPON_PLUS;
+		if (!IsPieceCurrent(g.weapon, g.level) || g.weapon.plus < weaponPlus)
 			gaps |= AWANS_GAP_WEAPON;
+		if (hard && (!IsPieceCurrent(g.helmet, g.level) || g.helmet.plus < AWANS_HELMET_PLUS))
+			gaps |= AWANS_GAP_HELMET;
 		if (!IsPieceCurrent(g.armour, g.level) || g.armour.plus < AWANS_ARMOUR_PLUS)
 			gaps |= AWANS_GAP_ARMOUR;
 		const bool shieldCurrent = g.shield.present &&
