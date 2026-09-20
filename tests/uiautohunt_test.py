@@ -428,6 +428,40 @@ class HuntTest(unittest.TestCase):
 		step(self.hunter, 3.1)
 		self.assertEqual(STATE['used'], [9, 9])
 
+	def test_one_item_a_pass_and_the_rest_a_moment_later(self):
+		# The engine takes one item use at a time and refuses the rest, so a
+		# frame that sent four ended with one working (Colide, 20 September).
+		self.hunter.config['item6_vnum'] = 70038
+		self.hunter.config['item6_val'] = 30
+		self.hunter.config['item7_vnum'] = 71016
+		self.hunter.config['item7_val'] = 30
+		self.hunter.config['item8_vnum'] = 27001
+		self.hunter.config['item8_val'] = 30
+		STATE['bag'][3] = 70038
+		STATE['bag'][4] = 71016
+		STATE['bag'][5] = 27001
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [3])
+		# Inside the shared interval nothing else goes, however ripe its clock.
+		step(self.hunter, 0.05)
+		self.assertEqual(STATE['used'], [3])
+		step(self.hunter, 0.2)
+		self.assertEqual(STATE['used'], [3, 4])
+		step(self.hunter, 0.2)
+		self.assertEqual(STATE['used'], [3, 4, 5])
+
+	def test_a_missing_item_does_not_hold_the_others_back(self):
+		# The slot's own clock is set before the bag is searched, so an item
+		# nobody carries is looked for once an interval and never blocks the
+		# pass - it is not a use, so it does not spend the shared interval.
+		self.hunter.config['item6_vnum'] = 70038
+		self.hunter.config['item6_val'] = 30
+		self.hunter.config['item7_vnum'] = 71016
+		self.hunter.config['item7_val'] = 30
+		STATE['bag'][4] = 71016
+		step(self.hunter)
+		self.assertEqual(STATE['used'], [4])
+
 	def test_no_items_on_a_clock_when_they_are_switched_off(self):
 		self.hunter.config['use_buffs'] = 0
 		self.hunter.config['item6_vnum'] = 70038

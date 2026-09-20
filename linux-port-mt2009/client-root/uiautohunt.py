@@ -113,6 +113,13 @@ REVIVE_RETRY = 5.0
 REVIVE_MIN_SECONDS = 10
 SKILL_MIN_INTERVAL = 1.5
 ITEM_MIN_INTERVAL = 1
+# Odstep miedzy dwoma odpalami, wspolny dla wszystkich slotow.
+# Silnik przyjmuje jedno uzycie przedmiotu na raz i odrzuca reszte,
+# a klatka, ktora wysylala cztery, konczyla sie tym, ze dzialal
+# pierwszy (Colide, 20 wrzesnia). Sto milisekund wystarczylo w jego
+# tescie; gdyby silnik gdzies jeszcze odmowil, ta liczba jest
+# miejscem, w ktorym sie to zwalnia.
+BUFF_GLOBAL_INTERVAL = 0.1
 STATUS_INTERVAL = 0.3
 MELEE_REACH = 200
 ARCHER_REACH = 800
@@ -381,6 +388,7 @@ class Hunter(object):
         self.approachSince = 0.0
         self.skillNext = [0.0] * SKILL_SLOTS
         self.itemNext = [0.0] * USE_ITEM_SLOTS
+        self.nextBuffGlobal = 0.0
         self.lootVid = 0
         self.lootPos = (0, 0)
         self.lootSince = 0.0
@@ -516,7 +524,7 @@ class Hunter(object):
             if wanted:
                 self.nextPotion = now + POTION_INTERVAL
 
-        if self.config['use_buffs']:
+        if self.config['use_buffs'] and now >= self.nextBuffGlobal:
             for i in xrange(POTION_SLOTS, USE_ITEM_SLOTS):
                 vnum = self.config['item%d_vnum' % i]
                 interval = self.config['item%d_val' % i]
@@ -526,6 +534,10 @@ class Hunter(object):
                 cell = FindInventoryCell(vnum)
                 if cell >= 0:
                     net.SendItemUsePacket(cell)
+                    # Jeden na przebieg: reszta poczeka BUFF_GLOBAL_INTERVAL
+                    # i pojdzie w nastepnym, bo ich wlasne zegary juz dojrzaly.
+                    self.nextBuffGlobal = now + BUFF_GLOBAL_INTERVAL
+                    break
 
     def AskForLoot(self, now):
         mask = LootMask(self.config)
