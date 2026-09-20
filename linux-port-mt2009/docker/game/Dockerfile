@@ -369,6 +369,22 @@ RUN set -eu; \
 # beside the stock ones). Empty when web_admin.quest was left out.
 COPY --from=quests /out-quest/ /opt/metin2/share/locale/
 
+# The quests stage only ever writes under locale/turkey/ (mkdir -p
+# /out-quest/turkey/quest, hardcoded), but LOCALE in the common.locale table
+# is "poland" -- locale_service.cpp's g_setQuestObjectDir only ever points at
+# locale/<LOCALE>/quest/object, so a poland-locale core never scanned
+# web_admin's compiled object at all. Every web_admin_queue command
+# (level/gold/item/warp/speed from the panel) silently timed out waiting for
+# an in-game answer that could never come; ingame_helper_seen() was always
+# false. Mirror the compiled object tree into poland/ too so both locales
+# carry it, whichever one common.locale actually names.
+RUN set -eu; \
+    if [ -d /opt/metin2/share/locale/turkey/quest/object ]; then \
+      mkdir -p /opt/metin2/share/locale/poland/quest/object; \
+      cp -a /opt/metin2/share/locale/turkey/quest/object/. /opt/metin2/share/locale/poland/quest/object/; \
+      echo "share: web_admin's compiled quest object mirrored into locale/poland"; \
+    fi
+
 # Seed for a core's mark/ directory (guild symbols): copied into the state
 # volume on first run only.
 COPY src/serverfiles/mark-default /opt/metin2/share/mark-default
