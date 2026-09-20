@@ -17,6 +17,68 @@ every version here.
 
 ---
 
+## 2.0.87 — 2026-09-20
+
+Serwer 2.0.87. Zawiera wszystko z 2.0.86.
+
+### Nowy świat zaczyna się wtedy, kiedy chcesz
+
+Do tej pory po wyzerowaniu świata serwer ruszał natychmiast, a panel pokazywał
+650% doświadczenia, którego w grze nie było: mnożniki stawek na tej wersji
+silnika powstają dopiero przy pierwszym kliknięciu **Zastosuj** na stronie
+„Stawki”, więc świeży świat chodził na 100%, a panel obiecywał coś innego.
+Pierwsze kliknięcie — choćby bez ruszania pól — robiło z tej obietnicy prawdę.
+
+- **Launcher pyta o stawki, gdy zakładasz nowy świat.** Normalnie (100/100/100),
+  Spokojnie (300/200/200), Szybko (1000/500/500) albo własne liczby. To, co
+  wybierzesz, jest zapisywane zanim rdzenie wstaną, więc pierwszy bot gra już
+  na Twoich ustawieniach. Świat, który raz je dostał, zmienia się wyłącznie ze
+  strony „Stawki” w panelu — tak jak dotąd.
+- **Boty mogą poczekać przy drzwiach.** Przy zerowaniu świata możesz zaznaczyć,
+  że świat ma wstać pusty. Ustawiasz wtedy spokojnie stawki, respawny,
+  osobowości i cokolwiek jeszcze, a potem klikasz **Wpuść boty do świata** na
+  stronie AI w panelu. Boty wchodzą stopniowo, tak jak po zwykłym starcie.
+  Domyślnie wyłączone — kto nic nie zaznaczy, dostaje to, co dotąd.
+- Kto nie korzysta z launchera, ma w `.env` trzy nowe linie (`M2_RATE_EXP`,
+  `M2_RATE_DROP`, `M2_RATE_YANG`) i przełącznik `M2_PLAYERBOT_START_HELD`.
+
+### Iwakura Community Patch 1
+
+Pierwsza poprawka Iwakury do systemu osobowości:
+
+- **Grinder nie zatrzymuje się już całą wsią na jednym poziomie.** Blokada
+  pierwszej wioski jest losowana równo z przedziału 13–19, a blokada M3 z
+  19–25. Co czwarty bot w ogóle nie zatrzymuje się w pierwszej wiosce — od 13.
+  poziomu idzie prosto na M3 i dopiero tam staje.
+- **Od 35. poziomu Prawo Awansu jest ostrzejsze:** broń przynajmniej +8, a do
+  zbroi i tarczy dochodzi maska albo hełm na +6. Wcześniej hełmu nikt nie
+  wymaga — w pierwszych wioskach nie ma go gdzie kupić.
+- **Przed 45. poziomem bot bonuje najpierw naszyjnik, bransoletę i buty**, bez
+  względu na to, jak słabe są i na ile ulepszone, i celuje w linie z tabeli
+  Iwakury dla każdego z tych slotów. Młody bot sięga po to zwykły kamień
+  zmiany/dodania — zielone działają wyłącznie na broni i zbroi, więc inaczej
+  reguła nie miałaby jak zadziałać.
+- Ulepszanie idzie kolejnością: bronie, zbroje, tarcze, hełmy.
+- **Kamień Duszy +2** wolno włożyć w słaby sprzęt wczesnej gry; +0 i +1 już nie.
+
+### Walka botów
+
+- **Cios trafia to, co jest przed botem.** Bot bił do czterech potworów w
+  promieniu 300 jednostek, także tych za plecami. Gracz trafia wszystko przed
+  sobą, bo łuk broni zakreśla się z przodu — bot ma teraz ten sam łuk. Liczby
+  celów nie zmieniamy: gracz może trafić szesnaście, bot najwyżej cztery.
+- **Słaba broń bije jak słaba broń.** Gdy wyliczone obrażenia wychodziły małe,
+  bot podstawiał wymyśloną liczbę — około trzystu dla bota z siedemdziesiątki,
+  niezależnie od tego, co trzymał. Teraz cios jest wart tyle, ile liczy gra.
+
+### Panel
+
+- Z okna ekwipunku znika przycisk **odśwież**: wejście w postać i tak pobiera
+  dane od nowa, a teraz robi to z gwarancją, że przeglądarka nie poda starej
+  kopii.
+
+---
+
 ## 2.0.86 — 2026-09-20
 
 Serwer 2.0.86, klient 2.0.20. Zawiera wszystko z 2.0.85.
