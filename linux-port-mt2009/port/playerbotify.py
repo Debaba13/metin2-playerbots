@@ -2239,8 +2239,12 @@ def apply_refine_quality_of_life(game):
     # nietkniete, a REFINE_TYPE_MONEY_ONLY (Wieza Demona) celowo nie dostaje
     # keep-open.
     #
-    # Przelacznik to flaga specjalna "refine.keep_open": przezywa relog, jest
-    # wysylana do klienta i wlacza sie komenda /refine_keep_open 1.
+    # Przelacznik to flaga specjalna "refine.keep_open": przezywa relog i jest
+    # wysylana do klienta. Od 2.0.86 wlaczony dla kazdego - brak wpisu i 1
+    # znacza "trzymaj otwarte", a /refine_keep_open 0 zapisuje 2, czyli
+    # "zamykaj". Dwojka zamiast zera, bo GetSpecialFlag zwraca zero takze dla
+    # postaci, ktora nigdy nic nie ustawila; jedynka zostaje tym, czym byla
+    # dla tych, ktorzy komende znali.
     # UWAGA: kliencka polowa (dwa checkboxy i potwierdzanie Enterem w
     # uirefine.py) NIE jedzie w tej paczce - linux-port/client-root nie zawiera
     # uirefine.py ani special_flags.py, wiec to osobna zmiana klienta i osobne
@@ -2270,7 +2274,7 @@ def apply_refine_quality_of_life(game):
          '// Refine QoL: "nie zamykaj okna". skipSave=false, bo wybor ma przezyc relog.\n'
          'ACMD(do_refine_keep_open)\n{\n\tchar arg1[256];\n\tone_argument(argument, arg1, sizeof(arg1));\n\n'
          '\tif (*arg1)\n\t{\n\t\tBYTE flag = 0;\n\t\tstr_to_number(flag, arg1);\n'
-         '\t\tch->SetSpecialFlag("refine.keep_open", flag ? 1 : 0, false);\n\t}\n}\n')
+         '\t\tch->SetSpecialFlag("refine.keep_open", flag ? 1 : 2, false);\n\t}\n}\n')
     edit(os.path.join(game, 'constants.cpp'),
          '\tif (flag == "shop_unlock_slot")\n\t\treturn true;\n',
          '\tif (flag == "refine.keep_open")\n\t\treturn true;\n\n'
@@ -2288,7 +2292,11 @@ def apply_refine_quality_of_life(game):
          '\t\treturn;\n'
          '\t}\n\n',
          '\t// Refine QoL (Pabloo): stan sesji zapamietany zanim cokolwiek ja wyczysci.\n'
-         '\tconst bool bKeepRefineOpen = ch->GetSpecialFlag("refine.keep_open") != 0;\n'
+         '\t// Wlaczone dla kazdego od 2.0.86: brak wpisu i 1 znacza "trzymaj okno\n'
+         '\t// otwarte", 2 znaczy "zamykaj". Dwojka, a nie zero, bo GetSpecialFlag\n'
+         '\t// zwraca zero rowniez dla postaci, ktora nigdy nic nie ustawila, a\n'
+         '\t// jedynka musi dalej znaczyc to, co znaczyla przed ta zmiana.\n'
+         '\tconst bool bKeepRefineOpen = ch->GetSpecialFlag("refine.keep_open") != 2;\n'
          '\tconst int iRefineAdditionalCell = ch->GetRefineAdditionalCell();\n'
          '\tconst DWORD dwRefineNPCVID = ch->GetRefineNPCVID();\n\n')
     edit(os.path.join(game, 'input_main.cpp'),
