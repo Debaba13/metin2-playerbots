@@ -5750,7 +5750,7 @@ MAP_I18N = {
   "horse_lv":"Koń Lv","visible":"Widocznych","characters":"postaci","in_group":"W grupie [PT]","solo":"Solo","player":"GRACZ","bot":"Bot","class":"Klasa","action":"Akcja","status":"Status","personality":"Osobowość","mood":"Nastrój","charakter":"Charakter","ambition":"Ambicja","current_goal":"Aktualny cel",
   "coordinates":"Koordynaty","open_inventory":"Kliknij, aby otworzyć ekwipunek i EQ","loading_character":"Ładowanie ekwipunku i statystyk postaci","error":"Błąd","not_found":"Nie znaleziono danych",
   "teleport_me":"Teleportuj moją postać w grze (1 klik)","position":"Pozycja","horse":"Koń","biologist":"Biolog","bio_stage":"Etap Biologa","hunting":"Polowanie","no_data":"Brak danych",
-  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.","shop":"Sklep","shop_none":"Ten bot nie ma otwartego sklepu.","shop_empty":"Lada jest pusta.","shop_price":"Cena","shop_premium":"premium","refresh":"Odśwież (dane z bazy)",
+  "stats":"Statystyki","unspent_stats":"Nierozdane: {n} pkt statystyk","skills":"Umiejętności","profession_none":"Nie wybrano","profession_pending":"Profesja nie została jeszcze wybrana.","depot":"Magazyn","depot_empty":"Magazyn jest pusty.","shop":"Sklep","shop_none":"Ten bot nie ma otwartego sklepu.","shop_empty":"Lada jest pusta.","shop_price":"Cena","shop_premium":"premium",
   "unspent_skills":"Nierozdane: {n} pkt umiejętności","equipped":"Założony ekwipunek (EQ)","weapon":"Broń","armor":"Zbroja","helmet":"Hełm","shield":"Tarcza","bracelet":"Bransoleta",
   "boots":"Buty","necklace":"Naszyjnik","earrings":"Kolczyki","empty":"Puste","inventory":"Zawartość ekwipunku","items_count":"przedmiotów","inventory_empty":"Ekwipunek jest pusty.","quantity":"Ilość",
   "gear_history":"Historia ekwipunku","gear_history_hint":"Ulepszenia, spalenia, założenia, prezenty, sprzedaż, magazyn — z log.log","gear_history_loading":"Ładowanie historii...","gear_history_empty":"Brak wpisów o ekwipunku tej postaci.","gear_history_more":"Pokaż starsze",
@@ -5771,7 +5771,7 @@ MAP_I18N = {
   "horse_lv":"Horse Lv","visible":"Visible","characters":"characters","in_group":"In party [PT]","solo":"Solo","player":"PLAYER","bot":"Bot","class":"Class","action":"Action","status":"Status","personality":"Personality","mood":"Mood","charakter":"Character","ambition":"Ambition","current_goal":"Current goal",
   "coordinates":"Coordinates","open_inventory":"Click to open inventory and equipment","loading_character":"Loading character equipment and statistics","error":"Error","not_found":"No data found",
   "teleport_me":"Teleport my in-game character (one click)","position":"Position","horse":"Horse","biologist":"Biologist","bio_stage":"Biologist stage","hunting":"Hunting","no_data":"No data",
-  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.","shop":"Shop","shop_none":"This bot has no stall open.","shop_empty":"The counter is empty.","shop_price":"Price","shop_premium":"premium","refresh":"Refresh (from the database)",
+  "stats":"Statistics","unspent_stats":"Unspent: {n} stat points","skills":"Skills","profession_none":"Not selected","profession_pending":"The profession has not been selected yet.","depot":"Depot","depot_empty":"The depot is empty.","shop":"Shop","shop_none":"This bot has no stall open.","shop_empty":"The counter is empty.","shop_price":"Price","shop_premium":"premium",
   "unspent_skills":"Unspent: {n} skill points","equipped":"Equipped items","weapon":"Weapon","armor":"Armour","helmet":"Helmet","shield":"Shield","bracelet":"Bracelet",
   "boots":"Boots","necklace":"Necklace","earrings":"Earrings","empty":"Empty","inventory":"Inventory contents","items_count":"items","inventory_empty":"The inventory is empty.","quantity":"Quantity",
   "gear_history":"Equipment history","gear_history_hint":"Refines, burns, equips, gifts, sales, safebox — from log.log","gear_history_loading":"Loading history...","gear_history_empty":"No equipment entries for this character.","gear_history_more":"Show older",
@@ -7213,7 +7213,7 @@ function toggleBotShop(pid, name) {
   if (titleEl) titleEl.textContent = (I18N.shop || 'Sklep') + (name ? ' — ' + name : '');
   renderShopWindow(null);
 
-  fetch('/api/bot_shop/' + pid)
+  fetch('/api/bot_shop/' + pid, {cache:'no-store'})
     .then(function(res) { return res.json(); })
     .then(function(data) {
       // Another bot may have been clicked while this was in flight.
@@ -7287,7 +7287,7 @@ function toggleBotSafebox(pid, name) {
   if (titleEl) titleEl.textContent = (I18N.depot || 'Magazyn') + (name ? ' — ' + name : '');
 
   renderSafeboxGrid([]);
-  fetch('/api/bot_safebox/' + pid)
+  fetch('/api/bot_safebox/' + pid, {cache:'no-store'})
     .then(function(res) { return res.json(); })
     .then(function(data) {
       // The window may have been pointed at a different bot while this was in
@@ -7579,7 +7579,7 @@ function openBotModal(pid) {
   modal.style.display = 'flex';
   content.innerHTML = '<p class="muted" style="text-align:center;padding:20px">' + I18N.loading_character + ' #' + pid + '...</p>';
 
-  fetch('/api/bot_inventory/' + pid)
+  fetch('/api/bot_inventory/' + pid, {cache:'no-store'})
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (!data || !data.ok) {
@@ -7769,15 +7769,15 @@ function openBotModal(pid) {
               ' data-botpid="' + p.id + '" data-botname="' + p.name + '"' +
               ' onclick="toggleBotShopFromEl(this)">\U0001F3EA</div>';
 
-      // Read again, for the impatient: this window is the database, and the
-      // game core writes a bot's items with a delay of its own, so a swap made
-      // seconds ago can still be missing (Tieru, 17 September). An equip is
-      // written at once since 2.0.70; everything else still waits for the
-      // core's own cache.
-      html += '<div class="m2-equip-slot" title="' + (I18N.refresh || 'Odswiez') +
-              '" style="left:150px;top:86px;width:34px;height:34px;cursor:pointer;' +
-              'display:flex;align-items:center;justify-content:center;font-size:19px"' +
-              ' onclick="openBotModal(' + p.id + ')">↻</div>';
+      // No refresh button: opening a character is the refresh. openBotModal
+      // reads /api/bot_inventory every time it runs, and the three fetches of
+      // this window ask the browser for no cached copy, so what the card shows
+      // is what the database held the moment it was opened (Tieru, 20
+      // September - "jak wchodzi sie w jakas postac niech sie odswieza").
+      // What is left of the old caveat is the core's own delay, not ours: a
+      // bot's items are written on the cache cycle, an equip at once since
+      // 2.0.70, so a swap made seconds ago can still be missing whatever this
+      // window does.
 
       html += '</div>'; // End Equipment Section
 
