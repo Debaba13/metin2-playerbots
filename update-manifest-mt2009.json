@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "channel": "stable",
-  "publishedAt": "2026-09-20T11:19:51Z",
-  "statusMessage": "2.0.88 (serwer 2.0.88, klient bez zmian - 2.0.20): nowy cennik Iwakury z 20 wrzesnia. Ruszyl sie prawie kazdy numer, wiekszosc materialow o jakies siedemdziesiat procent (Zab Orka 136 730 -> 232 441, Zwoj Blogoslawienstwa 180 000 -> 550 000), a receptury zielarskie maja cene po raz pierwszy - czterdziesci pozycji po 450 000. Stragany, ktore juz stoja, przeceniaja sie same przy najblizszej wizycie wlasciciela.",
+  "publishedAt": "2026-09-20T11:53:45Z",
+  "statusMessage": "2.0.88 (serwer 2.0.88, klient 2.0.21): nowy cennik Iwakury z 20 wrzesnia - ruszyl sie prawie kazdy numer, wiekszosc materialow o jakies siedemdziesiat procent, a receptury zielarskie maja cene po raz pierwszy. W kliencie wracaja nazwy osobowosci nad glowami botow (Grinder, Zdobywca, Handlarz...) - klient 2.0.20 ich nie znal i dlatego nic nie pokazywal - oraz poprawka Colide'a do Auto Lowow: odpaly ida po jednym, wiec silnik nie odrzuca trzech z czterech. Zaktualizuj takze klienta.",
   "server": {
     "version": "2.0.88",
     "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.88/metin2-server-update-2.0.88.zip",
@@ -13,8 +13,8 @@
     "uploadUrl": ""
   },
   "client": {
-    "version": "2.0.20",
-    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.86/metin2-client-update-2.0.20.zip",
-    "sha256": "70592474D3E2D46A53580A0B446E4F86C79F09A3BD7152D515B5D089D0917441"
+    "version": "2.0.21",
+    "url": "https://github.com/TieruYT/metin2-playerbots/releases/download/v2.0.88/metin2-client-update-2.0.21.zip",
+    "sha256": "20526060A9CB81900B2FDDFC391FA3EF76378027FA5F82E7A1506DDEB9E9D209"
   }
 }

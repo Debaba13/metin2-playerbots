@@ -19,7 +19,22 @@ every version here.
 
 ## 2.0.88 — 2026-09-20
 
-Serwer 2.0.88. Zawiera wszystko z 2.0.87.
+Serwer 2.0.88, klient 2.0.21. Zawiera wszystko z 2.0.87.
+
+### Nazwy osobowości wracają nad głowy botów
+
+Serwer od 2.0.86 wysyła nad głową bota nazwę osobowości, która go teraz trzyma
+— Grinder, Zdobywca, Handlarz i tak dalej. Klient 2.0.20 tych nazw **nie znał**:
+poprawka leżała w repozytorium od 19 września, ale nie trafiła do paczki klienta,
+więc bot dostawał numer, którego klient nie umiał nazwać, i nie rysował nic. Kto
+zauważył, że osobowości zniknęły — miał rację. **Zaktualizuj też klienta.**
+
+### Auto Łowy: odpały idą po jednym
+
+Silnik przyjmuje jedno użycie przedmiotu naraz i odrzuca resztę, więc klatka
+wysyłająca cztery odpały kończyła się tym, że działał pierwszy. Teraz między dwoma
+użyciami jest sto milisekund, a reszta idzie w następnych przebiegach. Poprawka
+od **Colide**, autora tego okna.
 
 ### Nowy cennik Iwakury
 
