@@ -283,6 +283,14 @@ class Resolver(object):
             self.items.setdefault(norm(name), vnum)
             item_type = int(rest[0]) if rest and rest[0].isdigit() else 0
             self.goods.setdefault(goods_key(name), []).append((vnum, item_type))
+        # Cennik 1.3 wycenia je jednym wierszem - "WSZYSTKIE RECEPTURY np.
+        # Zielony Wywar, Platynowy Wywar, Szary wywar itd." - bo w grze jest
+        # ich czterdziesci i wszystkie kosztuja tyle samo. Jego przyklady to
+        # nazwy po slowie "Receptura", wiec wiazemy po tym slowie, a nie po
+        # nazwie wywaru.
+        self.recipes = sorted(set(
+            vnum for vnum, name, rest in items
+            if norm(name).startswith('receptura') or norm(name).endswith(' receptura')))
         self.mobs = {}
         for vnum, name, rest in mobs:
             self.mobs.setdefault(norm(name), vnum)
@@ -299,6 +307,10 @@ class Resolver(object):
         key = goods_key(name)
         if key in SKIPPED_ROWS:
             return []
+        if key.startswith('wszystkie receptury'):
+            if not self.recipes:
+                self.missing.append('przedmiot: %s (zadnej receptury w item_proto)' % name)
+            return self.recipes
         key = GOODS_ALIASES.get(key, key)
         if key in VNUM_OVERRIDES:
             return VNUM_OVERRIDES[key]

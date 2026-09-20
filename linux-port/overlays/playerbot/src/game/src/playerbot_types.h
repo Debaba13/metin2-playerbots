@@ -1918,7 +1918,10 @@ namespace
 	// so a rate moved in the panel reprices every stand, not only a new table.
 	// 5: a weapon's damage lines are read between the sheet's bands
 	// (GetPlayerBotDamageTierPct), so a 19% average asks more than a 10% one.
-	const DWORD PLAYERBOT_PRICE_TABLE_VERSION = 7;
+	// 8: his price list of 20 September - nearly every number moved, most of
+	// the materials by about seventy percent, and the herbalist's recipes are
+	// priced for the first time (one row for all forty of them).
+	const DWORD PLAYERBOT_PRICE_TABLE_VERSION = 8;
 	// Iwakura's tier list (playerbot_item_tiers.h, 16 September): a family's
 	// PvE tier moves the whole equipment score by this much per step from
 	// the neutral 3 (tier 6 is +24%, tier 1 is -16%), and a bonus line's PvE
