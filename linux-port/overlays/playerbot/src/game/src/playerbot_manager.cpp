@@ -121,14 +121,17 @@ extern void SendShout(const char* szText, BYTE bEmpire);
 // playerbot_llm_shop.h's header comment. Upstream's own pricing-aware
 // replacement (playerbot_shop_name_rules.h / playerbot_shop_names.h) is not
 // adopted here, per the seam pattern in playerbot_status.h.
+#include "playerbot_shop_signs.h"
+#include "playerbot_llm_shop.h"
+// playerbot_town.h has to precede playerbot_gambler.h: the gambler visit
+// uses its pricing helpers (ScalePlayerBotIwakuraPrice and friends) without
+// its own declarations.
+#include "playerbot_town.h"
 // Iwakura's gambler: the session a town visit turns into at its end.
 #include "playerbot_gambler.h"
 // Iwakura's Useful Items List: what a bot keeps at the storekeeper rather than
 // sells, and when it lets it go.
 #include "playerbot_lpp.h"
-#include "playerbot_shop_signs.h"
-#include "playerbot_llm_shop.h"
-#include "playerbot_town.h"
 #include "playerbot_offline_shop.h"
 #include "playerbot_itemshop.h"
 #include "playerbot_weapon_goal.h"
