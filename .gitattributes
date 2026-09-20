@@ -17,6 +17,14 @@
 # rewritten line ending makes every hunk fail to apply.
 *.patch -text
 
+# The game's Lua/text loaders in this tree expect the package's own CRLF
+# exactly (see the Dockerfile's own `sed -i 's/$/\r/'` steps on siblings of
+# these files); LF-normalising them on checkout would silently corrupt the
+# translate tables and locale strings the game boots from.
+linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/translate.lua -text
+linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/quest/libs/translate/translate.lua -text
+linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/locale_string.txt -text
+
 # Binary, never transform.
 *.png binary
 *.ico binary
