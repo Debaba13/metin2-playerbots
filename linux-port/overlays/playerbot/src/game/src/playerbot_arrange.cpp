@@ -335,6 +335,36 @@ void RestateCell(LPCHARACTER ch, WORD cell)
 	desc->Packet(&pack, sizeof(pack));
 }
 
+// An empty cell the grid still calls taken, with nothing above it to explain
+// the mark. SetItem writes the item's pointer into its top cell alone while
+// bItemGrid is marked for every cell the piece covers, so "no pointer here,
+// and the grid says taken" is the ordinary state of the lower half of every
+// sword and every breastplate. Counting those called 2188 healthy bags broken
+// on the test world - and not one of them differed before and after, which is
+// what said the measurement was wrong rather than the bags. The footprint is
+// taken first and only what it cannot account for is a hole.
+int CountPlayerBotGridHoles(LPCHARACTER ch, WORD cells)
+{
+	std::vector<uint8_t> covered(cells, 0);
+	for (WORD cell = 0; cell < cells; ++cell) {
+		LPITEM item = ch->GetInventoryItem(cell);
+		if (!item)
+			continue;
+		const TItemTable* proto = item->GetProto();
+		const int height = (proto && proto->bSize > 0) ? proto->bSize : 1;
+		for (int k = 0; k < height && rules::RowOf(cell) + k < rules::PAGE_ROWS; ++k) {
+			const int at = (int)cell + k * rules::PAGE_COLUMNS;
+			if (at >= 0 && at < (int)cells)
+				covered[at] = 1;
+		}
+	}
+	int holes = 0;
+	for (WORD cell = 0; cell < cells; ++cell)
+		if (!covered[cell] && !ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
+			++holes;
+	return holes;
+}
+
 }  // namespace
 
 TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
@@ -434,10 +464,7 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 	// nothing in it, and reading it as a hole says every bot without the full
 	// bag has half a page of them.
 	const WORD bagCells = std::min<WORD>(ch->GetInventoryMaxCount(), INVENTORY_DEFAULT_MAX_NUM);
-	int holesBefore = 0;
-	for (WORD cell = 0; cell < bagCells; ++cell)
-		if (!ch->GetInventoryItem(cell) && !ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
-			++holesBefore;
+	const int holesBefore = CountPlayerBotGridHoles(ch, bagCells);
 
 	// Merge groups by comparing the items themselves.
 	std::vector<LPITEM> representatives;
@@ -614,13 +641,7 @@ TResult ArrangeInventory(LPCHARACTER ch, bool fromPlayer)
 	// Counted before the plan as well as after it (`holesBefore`), because a
 	// cell the bag already carried that way is not this operation's doing and
 	// the two answers are told apart in the line.
-	int gridHoles = 0;
-	for (WORD cell = 0; cell < bagCells; ++cell) {
-		if (ch->GetInventoryItem(cell))
-			continue;
-		if (!ch->IsEmptyItemGrid(TItemPos(INVENTORY, cell), 1))
-			++gridHoles;
-	}
+	const int gridHoles = CountPlayerBotGridHoles(ch, bagCells);
 	if (gridHoles || holesBefore)
 		sys_err("INVENTORY_ARRANGE: pid=%u name=%s empty cells marked taken in the grid: %d before, %d after",
 				ch->GetPlayerID(), ch->GetName(), holesBefore, gridHoles);

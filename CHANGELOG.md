@@ -17,6 +17,53 @@ every version here.
 
 ---
 
+## 2.0.86 — 2026-09-20
+
+Serwer 2.0.86. Klient bez zmian (2.0.19). Zawiera wszystko z 2.0.85.
+
+### Okno ulepszania nie zamyka sie po kazdej probie
+
+- Ulepszasz dalej bez klikania od nowa w kowala i w przedmiot. System byl w
+  serwerze od 2.0.31, ale tylko dla kogos, kto wiedzial o komendzie
+  `/refine_keep_open 1` — teraz dziala u kazdego (podpowiedzial sizowski).
+- Kto woli po staremu, wpisuje `/refine_keep_open 0`. Wybor zostaje po
+  wylogowaniu, a kto juz wczesniej ustawil sobie wlaczone, niczego nie traci.
+- Bez zmian w Wiezy Demona — tamto ulepszanie zamyka sie jak dotad.
+
+### GRAJ moze uruchomic sam serwer
+
+- Pod przyciskiem GRAJ jest **„Uruchom takze klienta gry”**. Odznacz, jesli
+  trzymasz swiat wlaczony dla innych i nie chcesz, zeby za kazdym razem
+  otwieralo Ci sie okno gry.
+- Napis na przycisku mowi wtedy „GRAJ (SAM SERWER)”, wiec widac, co sie stanie.
+  Wybor pamieta sie na stale — odznaczasz raz.
+
+### Kazde ustawienie w `.env` opisane po polsku
+
+- Nad kazda linia w `linux-port\docker\.env` jest teraz komentarz `# PL:`
+  mowiacy, co ten parametr robi i co mozna w nim wpisac. Dotad plik byl
+  opisany wylacznie po angielsku i to stad bralo sie najwiecej pytan.
+- Opis musi byc w osobnej linii **nad** ustawieniem. Dopisanie komentarza w tej
+  samej linii (`KLUCZ=1 # opis`) psuje wartosc — Docker czyta wtedy „1 # opis”.
+
+### Poprawki
+
+- **Swiat opisany osobno dla kazdego krolestwa** liczyl sie jako maly i trafial
+  na jeden rdzen. Trzy razy po 700 botow to 2100 botow, a nie „nic”: taki swiat
+  zostaje teraz na trzech rdzeniach, tak jak mial.
+- **Log serwera przestal straszyc** przy sortowaniu ekwipunku. Kontrola zajetosci
+  liczyla dolna polowe kazdego miecza i kazdej zbroi jako bled i pisala o tym do
+  `syserr` — 2188 wpisow o plecakach, z ktorymi nic nie bylo nie tak. Samo
+  sortowanie bylo i jest bezpieczne: w 2188 pomiarach nie zmienilo stanu ani
+  jednej komorki.
+- **Kamienie bonusu** (zmianki, dodania): sprawdzone do konca. Nie da sie ich
+  wystawic na straganie i nie jest to wina botow — sam silnik na to nie
+  pozwala (te przedmioty maja blokade sklepu, gracz tez ich nie wystawi).
+  Boty ich uzywaja normalnie do mixowania; zajmuja srednio 1,6 komorki, bo sie
+  stackuja.
+
+---
+
 ## 2.0.85 — 2026-09-20
 
 Serwer 2.0.85. Klient bez zmian (2.0.19).

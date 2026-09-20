@@ -6626,6 +6626,43 @@ Four things the personalities changed that are easy to trip over later:
   kind is. When a rule exempts an item from the merchant, read the counter's
   scorer for it in the same breath: between the two there is a bag with no
   bottom, and the medals above are the same shape found the same night.
+  **And then the measurement said no counter ever listed one anyway, because
+  the engine forbids it:** 71084, 71085 and the ItemShop copies 76023/76024
+  carry `ITEM_ANTIFLAG_MYSHOP` (and GIVE), which
+  `CollectPlayerBotShopItems` refuses on the first line of its loop, before
+  any score is asked - a player cannot stand one on their own counter either.
+  The branch stays, written by subtype, so a stone without the flag (a green
+  71151/71152) is goods the day it appears. What is left is not a full bag:
+  the stones stack, so they are 1.61 cells a bot on the test world and four
+  at the worst, and the bots do spend them - 2 285 adds and 1 667 changes in
+  two days. Nagash's wish needs the flag cleared in `item_proto`, which is
+  the operator's call about the world's economy, not a bug to fix. Before
+  concluding that a counter rule does nothing, read the item's antiflags:
+  `dwAntiFlags` answers in one query what a day of scoring cannot.
+- **The grid audit counted the bottom half of every sword.** `SetItem` writes
+  the item's pointer into its top cell alone while `bItemGrid` is marked for
+  every cell the piece covers, so "no pointer here and the grid says taken"
+  is the ordinary state of a three-cell weapon and a two-cell armour.
+  `ArrangeInventory`'s own check counted those as damage and wrote 2 188
+  syserr lines about healthy bags. What said the measurement was wrong rather
+  than the world: **not one of them differed before and after** - the same
+  number of "holes" going in as coming out, on an operation that only moves
+  items. `CountPlayerBotGridHoles` marks each item's footprint first and
+  counts only what no item above explains. This is the third shape of one
+  mistake in this file (the cell centre the navigation samples, the bag size
+  `IsEmptyItemGrid` measures by, and now the cells an item covers): measure
+  what the engine holds, not what one accessor returns.
+- **A render nobody runs is a render that will delete something.**
+  `linux-port-mt2009/port/envify.py` writes that line's `.env.example` from
+  the r40250 one, and had not been run since 2.0.1 while 18 keys were added
+  to the rendered file by hand - the difficulty, the second channel, the
+  medal droppers, the world layout, the per-kingdom counts. One run would
+  have dropped every one of them, and that file is what a new install's
+  `.env` is written from and what `Add-MissingDotEnvKeys` tops an older one
+  up from, so those settings would have quietly stopped reaching anybody.
+  It refuses to write while the render would lose a key and names each one.
+  A generator that has fallen behind its output is more dangerous than no
+  generator: check what it would produce before running it.
 - **A channel nobody can reach is a channel that is running.** Channel N
   listens on 13000+10*(N-1)..+2 inside the container and compose publishes
   `M2_GAME_PORT_RANGE` onto `M2_GAME_CONTAINER_PORT_RANGE`, so with the second
