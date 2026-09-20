@@ -25,6 +25,12 @@ linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/translate.lua 
 linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/quest/libs/translate/translate.lua -text
 linux-port-mt2009/docker/game/src/serverfiles/share/locale/poland/locale_string.txt -text
 
+# world.sql (the mob_proto/item_proto DB seed) is cp1250, mostly LF, but a
+# handful of NPC names carry a literal embedded CRLF as part of the value
+# itself (not a line terminator) -- eol=lf normalisation would silently
+# rewrite those bytes inside the SQL string literal.
+linux-port-mt2009/docker/mariadb/initdb.d/dumps/world.sql -text
+
 # Binary, never transform.
 *.png binary
 *.ico binary
