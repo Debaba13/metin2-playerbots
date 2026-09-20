@@ -459,7 +459,7 @@ EDITS = {
          b'\t\tif bakChannelID not in shown:\r\n'
          b'\t\t\tbakChannelID = 0\r\n'
          b'\t\tself.channelList.SelectItem(bakChannelID)\r\n'),
-        (b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://mt2009.pl/")\r\n',
+        (b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/TieruYT/metin2-playerbots")\r\n',
          b'\t\tself.homePageButton.SAFE_SetEvent(self.OpenURL, "https://github.com/Debaba13/metin2-playerbots")\r\n'),
         (b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://www.facebook.com/Metin2009PL")\r\n',
          b'\t\tself.facebookButton.SAFE_SetEvent(self.OpenURL, "https://buycoffee.to/metin2-playerbots")\r\n'),
