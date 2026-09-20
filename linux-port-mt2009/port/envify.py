@@ -40,6 +40,24 @@ EXTRA = """
 # Another country wants a closer mirror, e.g. http://mirrors.edge.kernel.org/ubuntu/
 # or http://archive.ubuntu.com/ubuntu/ for the official one.
 M2_APT_MIRROR=
+
+# Ile razy szybciej niz w oryginalnej grze idzie doswiadczenie, dropia
+# przedmioty i sypie sie yang - w procentach, 100 to dokladnie tak, jak gra
+# zostala stworzona. Te trzy liczby sa uzywane TYLKO przy pierwszym starcie
+# swiezego swiata (i po wyzerowaniu swiata): migrator zapisuje z nich flagi
+# zdarzen, ktore rdzenie czytaja, zanim wpuszcza pierwszego bota. Swiat, ktory
+# juz raz je dostal, zmienia sie wylacznie ze strony "Stawki" w panelu - tego
+# pliku wtedy nikt nie czyta, wiec zmiana tutaj nic nie da.
+M2_RATE_EXP=100
+M2_RATE_DROP=100
+M2_RATE_YANG=100
+
+# Swiat wstaje, ale boty czekaja przy drzwiach: 1 oznacza, ze po starcie w
+# swiecie nie ma ani jednego bota, dopoki operator nie wpusci ich przyciskiem
+# w panelu (strona AI) albo w launcherze. Do tego czasu mozna spokojnie
+# ustawic stawki, respawny i osobowosci - nic sie nie dzieje. Launcher
+# proponuje to przy zerowaniu swiata; domyslnie wylaczone.
+M2_PLAYERBOT_START_HELD=0
 """
 
 

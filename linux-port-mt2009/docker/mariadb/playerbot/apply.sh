@@ -499,6 +499,49 @@ before=$(db -e "
      WHERE id BETWEEN $first_pid AND $last_pid;
 ")
 
+# The rates of a world that has never had any, before the cores start. On this
+# engine a rate is not a rewritten table but three event flags (player.quest,
+# dwPID 0) that CQuestManager::SetEventFlag maps onto CHARACTER_MANAGER's
+# multipliers, and until somebody presses "Zastosuj" in the panel those rows do
+# not exist - so a fresh world ran at 100% whatever the panel's own table said.
+# It said 650% experience, seeded into web_admin_rates by the panel's schema
+# for a test cycle long ago, and that number reached every player as a promise
+# the game never kept: the panel showed it, the bots levelled at 100%, and the
+# first press of the button - even without touching a field - was what made it
+# real (NerrVoVy and Tieru, 20 September).
+#
+# So the numbers the launcher asked for are written here, into both places at
+# once, and only while the flags are absent: a world that has been set from the
+# panel is never touched again, whatever this file says. That is also why the
+# panel's schema no longer seeds the table.
+rate_ok() {
+    # A newline, because awk reads no record from an empty input and
+    # the substitution would then be empty - not a number, so the SQL
+    # below would be a syntax error rather than a default.
+    printf '%s\n' "$1" | tr -d ' \r' | awk -v d="$2" '{ v = $1 + 0; if (v < 1 || v > 10000) v = d; printf "%d", v }'
+}
+r_exp=$(rate_ok "${M2_RATE_EXP:-100}" 100)
+r_drop=$(rate_ok "${M2_RATE_DROP:-100}" 100)
+r_yang=$(rate_ok "${M2_RATE_YANG:-100}" 100)
+db -e "CREATE TABLE IF NOT EXISTS player.web_admin_rates (
+        name VARCHAR(24) PRIMARY KEY, value INT NOT NULL DEFAULT 100);" >/dev/null 2>&1 \
+    || echo "[playerbot-migrate] WARNING: could not make player.web_admin_rates" >&2
+rates_set=$(db -e "SELECT COUNT(*) FROM player.quest WHERE dwPID = 0 AND szName = 'mob_exp';" 2>/dev/null || echo x)
+if [ "$rates_set" = "x" ]; then
+    echo "[playerbot-migrate] WARNING: could not read the rate flags; leaving them alone" >&2
+elif [ "$rates_set" = "0" ]; then
+    if db -e "REPLACE INTO player.quest (dwPID, szName, szState, lValue) VALUES
+            (0, 'mob_exp', '', $r_exp),   (0, 'mob_exp_buyer', '', $r_exp),
+            (0, 'mob_item', '', $r_drop), (0, 'mob_item_buyer', '', $r_drop),
+            (0, 'mob_gold', '', $r_yang), (0, 'mob_gold_buyer', '', $r_yang);
+        REPLACE INTO player.web_admin_rates (name, value) VALUES
+            ('exp', $r_exp), ('drop', $r_drop), ('yang', $r_yang);"; then
+        echo "[playerbot-migrate] fresh world: experience ${r_exp}%, item drops ${r_drop}%, yang ${r_yang}%"
+    else
+        echo "[playerbot-migrate] WARNING: could not write the fresh world's rates" >&2
+    fi
+fi
+
 # The world's difficulty, as event flags in seconds (player.quest, dwPID 0 -
 # what the db core loads at boot and pushes to every game core, the package's
 # own idiom for a world-wide switch). quest/m2_difficulty.lua reads them: the
@@ -514,8 +557,8 @@ case "$difficulty" in
     hard)   dlevel=2; bio=86400; hbuy=43200; hup=43200; htr=64800; htr2=75600 ;;
     custom)
         dlevel=3
-        bio=$(printf '%s' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
-        hbuy=$(printf '%s' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        bio=$(printf '%s\n' "${M2_BIOLOGIST_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
+        hbuy=$(printf '%s\n' "${M2_HORSE_WAIT_HOURS:-0}" | tr -d ' \r' | awk '{ h = $1 + 0; if (h < 0) h = 0; printf "%d", h * 3600 }')
         hup=$hbuy; htr=$hbuy; htr2=$hbuy ;;
     *)      difficulty=easy; dlevel=0; bio=0; hbuy=0; hup=0; htr=0; htr2=0 ;;
 esac

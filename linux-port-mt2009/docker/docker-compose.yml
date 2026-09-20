@@ -80,6 +80,13 @@ services:
       M2_DIFFICULTY: "${M2_DIFFICULTY:-easy}"
       M2_BIOLOGIST_WAIT_HOURS: "${M2_BIOLOGIST_WAIT_HOURS:-0}"
       M2_HORSE_WAIT_HOURS: "${M2_HORSE_WAIT_HOURS:-0}"
+      # The rates a fresh world starts on, as event flags written before
+      # the cores come up (apply.sh). A world that has been set from the
+      # panel keeps what the panel said; these reach only a world whose
+      # flags do not exist yet.
+      M2_RATE_EXP: "${M2_RATE_EXP:-100}"
+      M2_RATE_DROP: "${M2_RATE_DROP:-100}"
+      M2_RATE_YANG: "${M2_RATE_YANG:-100}"
 
     entrypoint: ["/bin/sh", "/opt/playerbot/apply.sh"]
 
